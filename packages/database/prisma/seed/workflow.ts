@@ -26,7 +26,13 @@ export const STAGE_LIBRARY_NAME_HE: Record<string, string> = {
   INSPECTION: 'בדיקת איכות',
   PACKAGING: 'אריזה',
   DELIVERY: 'אספקה',
+  DISMANTLE_RECOVER: 'פירוק ושחזור',
 };
+
+export const RETURN_RECOVERY_WORKFLOW_CODE = 'RETURN_RECOVERY';
+export const RETURN_REPAIR_WORKFLOW_CODE = 'RETURN_REPAIR';
+
+const RETURN_REPAIR_STAGE_CODES = ['CARPENTRY', 'INSPECTION', 'PACKAGING', 'DELIVERY'] as const;
 
 const FOAM_STAGE = {
   code: 'FOAM',
@@ -198,6 +204,204 @@ export async function seedStandardFurnitureWorkflow(prisma: PrismaClient): Promi
   await prisma.productionWorkflow.update({
     where: { id: workflow.id },
     data: { activeVersionId: version.id, status: 'ACTIVE' },
+  });
+}
+
+/**
+ * Single-stage return workflow for dismantle & recover. Shape (DISMANTLE_RECOVER
+ * on the graph) drops the finishing trio — scope stays RETURN.
+ */
+export async function seedReturnRecoveryWorkflow(prisma: PrismaClient): Promise<void> {
+  const stage = await prisma.productionStageDefinition.upsert({
+    where: { code: 'DISMANTLE_RECOVER' },
+    update: {
+      nameAr: 'تفكيك واسترداد',
+      nameEn: 'Dismantle & recover',
+      nameHe: STAGE_LIBRARY_NAME_HE.DISMANTLE_RECOVER,
+      isActive: true,
+      executionKind: 'PRODUCTION',
+      responsibleDepartment: 'WH',
+    },
+    create: {
+      code: 'DISMANTLE_RECOVER',
+      nameAr: 'تفكيك واسترداد',
+      nameEn: 'Dismantle & recover',
+      nameHe: STAGE_LIBRARY_NAME_HE.DISMANTLE_RECOVER,
+      sortOrder: 90,
+      dependsOnCodes: [],
+      responsibleDepartment: 'WH',
+      executionKind: 'PRODUCTION',
+      requiresPhotos: true,
+    },
+  });
+
+  const workflow = await prisma.productionWorkflow.upsert({
+    where: { code: RETURN_RECOVERY_WORKFLOW_CODE },
+    update: {
+      nameAr: 'تفكيك واسترداد المرتجع',
+      nameEn: 'Return dismantle & recover',
+      nameHe: 'פירוק ושחזור החזרה',
+      status: 'ACTIVE',
+      scope: 'RETURN',
+      archivedAt: null,
+    },
+    create: {
+      code: RETURN_RECOVERY_WORKFLOW_CODE,
+      nameAr: 'تفكيك واسترداد المرتجع',
+      nameEn: 'Return dismantle & recover',
+      nameHe: 'פירוק ושחזור החזרה',
+      status: 'ACTIVE',
+      scope: 'RETURN',
+    },
+  });
+
+  let version = await prisma.productionWorkflowVersion.findUnique({
+    where: { workflowId_versionNumber: { workflowId: workflow.id, versionNumber: 1 } },
+  });
+  if (!version) {
+    version = await prisma.productionWorkflowVersion.create({
+      data: {
+        workflowId: workflow.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        name: 'Return recovery v1',
+        description: 'Single dismantle & recover stage.',
+        publishedAt: new Date(),
+      },
+    });
+  } else if (version.status !== 'PUBLISHED') {
+    version = await prisma.productionWorkflowVersion.update({
+      where: { id: version.id },
+      data: { status: 'PUBLISHED', publishedAt: version.publishedAt ?? new Date() },
+    });
+  }
+
+  const existingNodeCount = await prisma.productionWorkflowNode.count({
+    where: { workflowVersionId: version.id },
+  });
+  if (existingNodeCount === 0) {
+    await prisma.productionWorkflowNode.create({
+      data: {
+        workflowVersionId: version.id,
+        stageDefinitionId: stage.id,
+        nodeKey: 'DISMANTLE_RECOVER',
+        sortOrder: 1,
+        isRequiredByDefault: true,
+        canBeSkipped: false,
+        defaultEstimatedMinutes: 60,
+      },
+    });
+  }
+
+  await prisma.productionWorkflow.update({
+    where: { id: workflow.id },
+    data: { activeVersionId: version.id, status: 'ACTIVE', scope: 'RETURN' },
+  });
+}
+
+/**
+ * Repair-shaped return workflow: no forced opening stage, finishing trio last.
+ */
+export async function seedReturnRepairWorkflow(prisma: PrismaClient): Promise<void> {
+  const stages = await prisma.productionStageDefinition.findMany({
+    where: { code: { in: [...RETURN_REPAIR_STAGE_CODES] } },
+  });
+  const stageByCode = new Map(stages.map((s) => [s.code, s]));
+  for (const code of RETURN_REPAIR_STAGE_CODES) {
+    if (!stageByCode.has(code)) {
+      throw new Error(`RETURN_REPAIR seed missing stage ${code}`);
+    }
+  }
+
+  const workflow = await prisma.productionWorkflow.upsert({
+    where: { code: RETURN_REPAIR_WORKFLOW_CODE },
+    update: {
+      nameAr: 'إصلاح المرتجع',
+      nameEn: 'Return repair',
+      nameHe: 'תיקון החזרה',
+      descriptionAr: 'مسار إصلاح المرتجع — نجارة ثم فحص وتعبئة وتسليم.',
+      descriptionEn: 'Return repair path — carpentry through inspection, packaging, and delivery.',
+      descriptionHe: 'מסלול תיקון החזרה — נגרות ואחריו בדיקה, אריזה ואספקה.',
+      status: 'ACTIVE',
+      scope: 'RETURN',
+      archivedAt: null,
+    },
+    create: {
+      code: RETURN_REPAIR_WORKFLOW_CODE,
+      nameAr: 'إصلاح المرتجع',
+      nameEn: 'Return repair',
+      nameHe: 'תיקון החזרה',
+      descriptionAr: 'مسار إصلاح المرتجع — نجارة ثم فحص وتعبئة وتسليم.',
+      descriptionEn: 'Return repair path — carpentry through inspection, packaging, and delivery.',
+      descriptionHe: 'מסלול תיקון החזרה — נגרות ואחריו בדיקה, אריזה ואספקה.',
+      status: 'ACTIVE',
+      scope: 'RETURN',
+    },
+  });
+
+  let version = await prisma.productionWorkflowVersion.findUnique({
+    where: { workflowId_versionNumber: { workflowId: workflow.id, versionNumber: 1 } },
+  });
+  if (!version) {
+    version = await prisma.productionWorkflowVersion.create({
+      data: {
+        workflowId: workflow.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        name: 'Return repair v1',
+        description: 'Carpentry plus the finishing trio.',
+        publishedAt: new Date(),
+      },
+    });
+  } else if (version.status !== 'PUBLISHED') {
+    version = await prisma.productionWorkflowVersion.update({
+      where: { id: version.id },
+      data: { status: 'PUBLISHED', publishedAt: version.publishedAt ?? new Date() },
+    });
+  }
+
+  const existingNodeCount = await prisma.productionWorkflowNode.count({
+    where: { workflowVersionId: version.id },
+  });
+  if (existingNodeCount === 0) {
+    const codeToNodeId = new Map<string, string>();
+    for (const [index, code] of RETURN_REPAIR_STAGE_CODES.entries()) {
+      const stage = stageByCode.get(code)!;
+      const node = await prisma.productionWorkflowNode.create({
+        data: {
+          workflowVersionId: version.id,
+          stageDefinitionId: stage.id,
+          nodeKey: code,
+          sortOrder: index + 1,
+          isRequiredByDefault: true,
+          canBeSkipped: false,
+          defaultEstimatedMinutes: stage.estimatedHours
+            ? Math.round(Number(stage.estimatedHours) * 60)
+            : code === 'CARPENTRY'
+              ? 120
+              : 45,
+        },
+      });
+      codeToNodeId.set(code, node.id);
+    }
+    for (let i = 0; i < RETURN_REPAIR_STAGE_CODES.length - 1; i += 1) {
+      const fromNodeId = codeToNodeId.get(RETURN_REPAIR_STAGE_CODES[i]!);
+      const toNodeId = codeToNodeId.get(RETURN_REPAIR_STAGE_CODES[i + 1]!);
+      if (!fromNodeId || !toNodeId) continue;
+      await prisma.productionWorkflowEdge.create({
+        data: {
+          workflowVersionId: version.id,
+          fromNodeId,
+          toNodeId,
+          dependencyType: 'HARD',
+        },
+      });
+    }
+  }
+
+  await prisma.productionWorkflow.update({
+    where: { id: workflow.id },
+    data: { activeVersionId: version.id, status: 'ACTIVE', scope: 'RETURN' },
   });
 }
 

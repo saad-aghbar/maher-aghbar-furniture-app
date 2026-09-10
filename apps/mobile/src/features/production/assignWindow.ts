@@ -1,6 +1,4 @@
-/** Helpers for production assign windows — prefer short slots over full-day defaults. */
-
-export const DEFAULT_ASSIGN_DURATION_MINUTES = 120;
+/** Helpers for production assign windows — duration comes from the stage time. */
 
 export type LocalWallParts = {
   ymd: string;
@@ -23,77 +21,7 @@ export function partsFromIso(iso: string | null | undefined): LocalWallParts | n
   };
 }
 
-/**
- * Default assign window: existing planned times, else order production start day,
- * else a short afternoon/morning slot from now.
- */
-export function defaultAssignWindowParts(opts?: {
-  plannedStart?: string | null;
-  plannedCompletion?: string | null;
-  estimatedMinutes?: number | null;
-  /** Order-level production start (admin-chosen on the plan). */
-  orderPlannedStartDate?: string | null;
-  now?: Date;
-}): {
-  start: LocalWallParts;
-  due: LocalWallParts;
-  estHours: string;
-  estMinutes: string;
-} {
-  const now = opts?.now ?? new Date();
-  const fromStart = partsFromIso(opts?.plannedStart ?? null);
-  const fromDue = partsFromIso(opts?.plannedCompletion ?? null);
-  const duration = Math.max(
-    30,
-    Math.round(opts?.estimatedMinutes ?? DEFAULT_ASSIGN_DURATION_MINUTES),
-  );
-  const eh = Math.floor(duration / 60);
-  const em = duration % 60;
-
-  if (fromStart && fromDue) {
-    return {
-      start: fromStart,
-      due: fromDue,
-      estHours: String(eh || ''),
-      estMinutes: em ? String(em).padStart(2, '0') : '',
-    };
-  }
-
-  if (fromDue && !fromStart) {
-    const dueDate = new Date(opts!.plannedCompletion!);
-    const startDate = new Date(dueDate.getTime() - duration * 60_000);
-    return {
-      start: partsFromIso(startDate.toISOString())!,
-      due: fromDue,
-      estHours: String(eh || ''),
-      estMinutes: em ? String(em).padStart(2, '0') : '',
-    };
-  }
-
-  const orderYmd = (() => {
-    const raw = opts?.orderPlannedStartDate?.trim();
-    if (!raw) return null;
-    const m = /^(\d{4}-\d{2}-\d{2})/.exec(raw);
-    if (m) return m[1]!;
-    return partsFromIso(raw)?.ymd ?? null;
-  })();
-  if (orderYmd && !fromStart) {
-    const start: LocalWallParts = {
-      ymd: orderYmd,
-      hour: '8',
-      minute: '00',
-    };
-    const startDate = new Date(`${orderYmd}T08:00:00`);
-    const end = new Date(startDate.getTime() + duration * 60_000);
-    return {
-      start,
-      due: partsFromIso(end.toISOString())!,
-      estHours: String(eh || ''),
-      estMinutes: em ? String(em).padStart(2, '0') : '',
-    };
-  }
-
-  // Next local work block: round up to next half hour, 2h (or estimate) long.
+function nextWorkStart(now: Date): Date {
   const start = new Date(now);
   start.setSeconds(0, 0);
   const mins = start.getMinutes();
@@ -105,12 +33,82 @@ export function defaultAssignWindowParts(opts?: {
   } else if (start.getHours() < 8) {
     start.setHours(8, 0, 0, 0);
   }
-  const end = new Date(start.getTime() + duration * 60_000);
+  return start;
+}
+
+/**
+ * Default assign window: existing planned times, else order production start day,
+ * else the next work slot. End is derived from the stage estimate — never a
+ * silent 2-hour default.
+ */
+export function defaultAssignWindowParts(opts?: {
+  plannedStart?: string | null;
+  plannedCompletion?: string | null;
+  estimatedMinutes?: number | null;
+  /** Order-level production start (admin-chosen on the plan). */
+  orderPlannedStartDate?: string | null;
+  now?: Date;
+}): {
+  start: LocalWallParts;
+  due: LocalWallParts;
+  hasStageTime: boolean;
+} {
+  const now = opts?.now ?? new Date();
+  const fromStart = partsFromIso(opts?.plannedStart ?? null);
+  const fromDue = partsFromIso(opts?.plannedCompletion ?? null);
+  const raw = opts?.estimatedMinutes;
+  const hasStageTime = raw != null && Number.isFinite(raw) && raw > 0;
+  const duration = hasStageTime ? Math.max(1, Math.round(raw)) : null;
+
+  if (fromStart && fromDue) {
+    return { start: fromStart, due: fromDue, hasStageTime };
+  }
+
+  if (fromDue && !fromStart) {
+    const dueDate = new Date(opts!.plannedCompletion!);
+    const startDate =
+      duration != null
+        ? new Date(dueDate.getTime() - duration * 60_000)
+        : dueDate;
+    return {
+      start: partsFromIso(startDate.toISOString())!,
+      due: fromDue,
+      hasStageTime,
+    };
+  }
+
+  const orderYmd = (() => {
+    const rawDate = opts?.orderPlannedStartDate?.trim();
+    if (!rawDate) return null;
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(rawDate);
+    if (m) return m[1]!;
+    return partsFromIso(rawDate)?.ymd ?? null;
+  })();
+  if (orderYmd && !fromStart) {
+    const start: LocalWallParts = {
+      ymd: orderYmd,
+      hour: '8',
+      minute: '00',
+    };
+    const startDate = new Date(`${orderYmd}T08:00:00`);
+    const end =
+      duration != null
+        ? new Date(startDate.getTime() + duration * 60_000)
+        : startDate;
+    return {
+      start,
+      due: partsFromIso(end.toISOString())!,
+      hasStageTime,
+    };
+  }
+
+  const start = nextWorkStart(now);
+  const end =
+    duration != null ? new Date(start.getTime() + duration * 60_000) : start;
   return {
     start: partsFromIso(start.toISOString())!,
     due: partsFromIso(end.toISOString())!,
-    estHours: String(eh || ''),
-    estMinutes: em ? String(em).padStart(2, '0') : '',
+    hasStageTime,
   };
 }
 

@@ -25,6 +25,8 @@ export type IndustrialFloorTaskCardModel = {
   completed?: boolean;
   /** True when the scheduler has planned this task's work for today. */
   isScheduledToday?: boolean;
+  /** Predecessor wait / blocked remaining work (order cards). */
+  blocked?: boolean;
 };
 
 type Props = {
@@ -33,6 +35,10 @@ type Props = {
   hero?: boolean;
   showOpenButton?: boolean;
   animateEnter?: boolean;
+  href?: Href;
+  onPress?: () => void;
+  /** Replaces the stage inset row (order cards show remaining count). */
+  metaStage?: { label: string; value: string };
 };
 
 /** Near-square product crop — closer to catalog photo proportions. */
@@ -64,14 +70,18 @@ export function IndustrialFloorTaskCard({
   hero = false,
   showOpenButton = true,
   animateEnter = true,
+  href: hrefOverride,
+  onPress,
+  metaStage,
 }: Props) {
   const { t, formatDateTime, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
-  const href = `/(app)/(employee)/tasks/${task.id}` as Href;
+  const href = hrefOverride ?? (`/(app)/(employee)/tasks/${task.id}` as Href);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const urgent = task.priority === 'urgent' || task.priority === 'high';
+  const blocked = Boolean(task.blocked) && !task.completed;
   const late = Boolean(task.emphasize) && !task.completed;
   const mediaUri = resolveOrderMediaUri(task.imageUrl);
 
@@ -79,7 +89,7 @@ export function IndustrialFloorTaskCard({
     ? colors.success
     : late
       ? colors.error
-      : urgent
+      : urgent || blocked
         ? colors.warning
         : colors.brand;
 
@@ -87,7 +97,7 @@ export function IndustrialFloorTaskCard({
     ? colors.success
     : late
       ? colors.error
-      : urgent
+      : urgent || blocked
         ? colors.warning
         : colors.borderStrong;
 
@@ -103,16 +113,26 @@ export function IndustrialFloorTaskCard({
     ? { soft: colors.successSoft, ink: colors.success, label: t('mobile.tasks.segments.done') }
     : late
       ? { soft: colors.errorSoft, ink: colors.error, label: t('mobile.production.late') }
-      : urgent
+        : urgent
         ? {
             soft: colors.warningSoft,
             ink: colors.warning,
             label: priorityStampLabel(task.priority, t),
           }
+        : blocked
+          ? {
+              soft: colors.warningSoft,
+              ink: colors.warning,
+              label: t('mobile.tasks.lockLocked'),
+            }
         : null;
 
   const open = () => {
     void haptics.selection();
+    if (onPress) {
+      onPress();
+      return;
+    }
     router.push(href);
   };
 
@@ -144,7 +164,7 @@ export function IndustrialFloorTaskCard({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: late || urgent || task.completed ? 0.95 : 0.55,
+            opacity: late || urgent || blocked || task.completed ? 0.95 : 0.55,
           }}
         />
 
@@ -380,8 +400,8 @@ export function IndustrialFloorTaskCard({
             <Divider compact />
             <MetaRow
               iconName="layers-outline"
-              label={t('mobile.tasks.cardStage')}
-              value={task.department}
+              label={metaStage?.label ?? t('mobile.tasks.cardStage')}
+              value={metaStage?.value ?? task.department}
               isRTL={isRTL}
             />
             <Divider compact />

@@ -92,7 +92,24 @@ export function InvoiceBoardCard({
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <StatusBadge status={invoice.status} dot />
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <StatusBadge status={invoice.status} dot />
+          {invoice.returnNumber ? (
+            <StatusBadge
+              status="RETURN"
+              label={t('mobile.invoices.returnChip')}
+              branded
+            />
+          ) : null}
+        </View>
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -177,7 +194,7 @@ export function InvoiceBoardCard({
           </View>
         </View>
 
-        {(invoice.factoryOrderNumber || invoice.dealerOrderNumber) && (
+        {(invoice.returnNumber || invoice.factoryOrderNumber || invoice.dealerOrderNumber) && (
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -185,17 +202,23 @@ export function InvoiceBoardCard({
               gap: theme.spacing.sm,
             }}
           >
-            {!dealerFacing && invoice.factoryOrderNumber ? (
+            {invoice.returnNumber ? (
+              <RefChip label={`${t('mobile.invoices.returnChip')} ${invoice.returnNumber}`} />
+            ) : null}
+            {!invoice.returnNumber && !dealerFacing && invoice.factoryOrderNumber ? (
               <RefChip
                 label={`${t('accounting.factoryOrderShort')} ${invoice.factoryOrderNumber}`}
               />
             ) : null}
-            {invoice.dealerOrderNumber ? (
+            {!invoice.returnNumber && invoice.dealerOrderNumber ? (
               <RefChip
                 label={`${dealerOrderLabel} ${invoice.dealerOrderNumber}`}
               />
             ) : null}
-            {dealerFacing && !invoice.dealerOrderNumber && invoice.factoryOrderNumber ? (
+            {!invoice.returnNumber &&
+            dealerFacing &&
+            !invoice.dealerOrderNumber &&
+            invoice.factoryOrderNumber ? (
               <RefChip
                 label={`${dealerOrderLabel} ${invoice.factoryOrderNumber}`}
               />

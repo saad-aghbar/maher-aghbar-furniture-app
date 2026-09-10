@@ -202,6 +202,11 @@ enum DeliveryStatus {
   CANCELLED
 }
 
+enum DeliveryPurpose {
+  OUTBOUND_ORDER
+  RETURN_RESHIP
+}
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
@@ -311,6 +316,77 @@ enum ReturnInventoryFate {
   REWORK
   DAMAGED
   SCRAP
+}
+
+enum ReturnLifecycleState {
+  REQUESTED
+  NEED_INFO
+  APPROVED
+  IN_TRANSIT
+  RECEIVED
+  INSPECTING
+  REWORKING
+  REPLACING
+  READY_TO_RETURN
+  RETURNING
+  RETURNED_TO_STOCK
+  SCRAPPED
+  COMPLETED
+  REJECTED
+}
+
+enum ReturnResponsibility {
+  FACTORY_WARRANTY
+  DEALER_RESPONSIBILITY
+  SHARED
+  UNDETERMINED
+}
+
+enum ReturnChargeStatus {
+  NOT_REQUIRED
+  DRAFT
+  AWAITING_DEALER
+  CONFIRMED
+  REJECTED
+  INVOICED
+}
+
+enum ReturnInspectionResult {
+  PASS
+  FAIL
+  PARTIAL
+}
+
+enum ReturnPieceDecision {
+  REPAIR
+  REPLACEMENT
+  SCRAP_RECOVERY
+}
+
+enum ReturnPieceState {
+  AWAITING_RECEIPT
+  RECEIVED
+  DECIDED
+  IN_PROGRESS
+  READY_TO_RETURN
+  RETURNING
+  RETURNED
+  RECOVERED
+  CANCELLED
+}
+
+enum ReturnRecoveryOutcome {
+  RECOVER_TO_INVENTORY
+  DISPOSE
+  DAMAGED
+}
+
+enum ProductionOrderOriginType {
+  SALES_ORDER
+  RETURN_WORK
+  REPLACEMENT
+  RETURN_RECOVERY
+  INTERNAL
 }
 
 enum InventoryCategory {
@@ -473,6 +549,11 @@ enum ProductionWorkflowStatus {
   ARCHIVED
 }
 
+enum ProductionWorkflowScope {
+  STANDARD
+  RETURN
+}
+
 enum ProductionWorkflowVersionStatus {
   DRAFT
   PUBLISHED
@@ -553,6 +634,10 @@ model User {
   schedulesApproved  ProductionSchedule[]   @relation("ScheduleApprover")
   wipKitsClaimed     WipKit[]               @relation("WipKitClaimer")
   wipHandoffsReceived WipHandoff[]          @relation("WipHandoffReceiver")
+  returnPiecesReceived ReturnPiece[]        @relation("ReturnPieceReceiver")
+  returnPiecesDecided ReturnPiece[]         @relation("ReturnPieceDecider")
+  returnRecoveryLines ReturnRecoveryLine[]  @relation("ReturnRecoveryRecorder")
+  laborRates          LaborRate[]
 
   @@index([customerId])
   @@index([departmentId])
@@ -831,6 +916,8 @@ model Product {
 
   quotationLines   QuotationLine[]
   salesOrderLines  SalesOrderLine[]
+  returns          ReturnRequest[]
+  returnPieces     ReturnPiece[]
   productionOrders ProductionOrder[]
   dealerPrices     DealerPrice[]
   requestItems     RequestItem[]
@@ -933,7 +1020,7 @@ model Supplier {
   paymentTermsDays Int      @default(30)
   leadTimeDays    Int       @default(7)
   rating          Decimal?  @db.Decimal(3, 2)
-  isCertified     Boolean   @default(false)
+  isCertified     Boolean   @default(true)
   status          String    @default("ACTIVE")
   notes           String?
   createdAt       DateTime  @default(now())
@@ -1033,6 +1120,25 @@ model PurchaseRequestLine {
   @@map("purchase_request_lines")
 }
 
+/// Groups one-or-more single-supplier purchase orders created together
+/// (manual builder, low-stock batch). Existing POs keep a null run.
+model PurchaseRun {
+  id                   String    @id @default(uuid())
+  number               String    @unique
+  /// MANUAL | LOW_STOCK | DEMAND | FABRIC | REQUEST
+  origin               String    @default("MANUAL")
+  notes                String?
+  expectedDeliveryDate DateTime?
+  createdById          String?
+  createdAt            DateTime  @default(now())
+  archivedAt           DateTime?
+
+  orders PurchaseOrder[]
+
+  @@index([createdAt])
+  @@map("purchase_runs")
+}
+
 model PurchaseOrder {
   id                   String              @id @default(uuid())
   number               String              @unique
@@ -1040,6 +1146,8 @@ model PurchaseOrder {
   supplier             Supplier            @relation(fields: [supplierId], references: [id])
   warehouseId          String?
   warehouse            Warehouse?          @relation(fields: [warehouseId], references: [id])
+  purchaseRunId        String?
+  purchaseRun          PurchaseRun?        @relation(fields: [purchaseRunId], references: [id])
   orderDate            DateTime            @default(now())
   expectedDeliveryDate DateTime?
   currency             String              @default("ILS")
@@ -1050,6 +1158,8 @@ model PurchaseOrder {
   shippingAmount       Decimal             @default(0) @db.Decimal(18, 3)
   total                Decimal             @default(0) @db.Decimal(18, 3)
   notes                String?
+  /// How the order was created: MANUAL | LOW_STOCK | DEMAND | FABRIC | REQUEST
+  origin               String              @default("MANUAL")
   /** Last WhatsApp send attempt (order stays SENT even if messaging failed). */
   whatsappSentAt       DateTime?
   whatsappLastBody     String?
@@ -1067,6 +1177,7 @@ model PurchaseOrder {
 
   @@index([supplierId])
   @@index([status])
+  @@index([purchaseRunId])
   @@map("purchase_orders")
 }
 
@@ -1086,10 +1197,15 @@ model PurchaseOrderLine {
   salesOrderLineId String?
   fabricProcurementId String?
   fabricProcurement   FabricProcurement? @relation(fields: [fabricProcurementId], references: [id], onDelete: SetNull)
+  warehouseId         String?
+  warehouse           Warehouse?         @relation("PurchaseOrderLineWarehouse", fields: [warehouseId], references: [id])
+  locationId          String?
+  location            WarehouseLocation? @relation("PurchaseOrderLineLocation", fields: [locationId], references: [id])
 
   @@index([purchaseOrderId])
   @@index([salesOrderId])
   @@index([fabricProcurementId])
+  @@index([warehouseId])
   @@map("purchase_order_lines")
 }
 
@@ -1130,8 +1246,13 @@ model GoodsReceiptLine {
   extendedCost    Decimal?     @db.Decimal(18, 3)
   batchNumber     String?
   qualityStatus   String?
+  warehouseId     String?
+  warehouse       Warehouse?         @relation("GoodsReceiptLineWarehouse", fields: [warehouseId], references: [id])
+  locationId      String?
+  location        WarehouseLocation? @relation("GoodsReceiptLineLocation", fields: [locationId], references: [id])
 
   @@index([goodsReceiptId])
+  @@index([warehouseId])
   @@map("goods_receipt_lines")
 }
 
@@ -1156,7 +1277,9 @@ model Warehouse {
   balances         InventoryBalance[]
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
+  purchaseOrderLines PurchaseOrderLine[] @relation("PurchaseOrderLineWarehouse")
   goodsReceipts    GoodsReceipt[]
+  goodsReceiptLines GoodsReceiptLine[] @relation("GoodsReceiptLineWarehouse")
   transfersFrom    WarehouseTransfer[] @relation("TransferFrom")
   transfersTo      WarehouseTransfer[] @relation("TransferTo")
   lots             InventoryLot[]
@@ -1167,6 +1290,8 @@ model Warehouse {
   wipKits          WipKit[]
   materialUsagesIssued  ProductionTaskMaterialUsage[] @relation("MaterialUsageIssueWarehouse")
   materialUsagesReturned ProductionTaskMaterialUsage[] @relation("MaterialUsageReturnWarehouse")
+  returnPieceCustody ReturnPiece[] @relation("ReturnPieceCustodyWarehouse")
+  recoveryDestinations ReturnRecoveryLine[] @relation("ReturnRecoveryDestinationWarehouse")
 
   @@index([type])
   @@map("warehouses")
@@ -1178,13 +1303,28 @@ model WarehouseLocation {
   warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   code        String
   name        String?
+  qrCode      String?   @unique
+  isDefault   Boolean   @default(false)
+  isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   balances InventoryBalance[]
   lots     InventoryLot[]
   wipKits  WipKit[]
+  purchaseOrderLines PurchaseOrderLine[] @relation("PurchaseOrderLineLocation")
+  goodsReceiptLines GoodsReceiptLine[] @relation("GoodsReceiptLineLocation")
+  returnReceives ReturnRequest[]
+  returnPieceCustody ReturnPiece[] @relation("ReturnPieceCustodyLocation")
+  recoveryDestinations ReturnRecoveryLine[] @relation("ReturnRecoveryDestinationLocation")
+  countLines InventoryCountLine[]
+  transferLinesFrom WarehouseTransferLine[] @relation("TransferLineFromLocation")
+  transferLinesTo   WarehouseTransferLine[] @relation("TransferLineToLocation")
+  materialUsagesIssued ProductionTaskMaterialUsage[] @relation("MaterialUsageIssueLocation")
+  materialUsagesReturned ProductionTaskMaterialUsage[] @relation("MaterialUsageReturnLocation")
 
   @@unique([warehouseId, code])
+  @@index([warehouseId])
   @@map("warehouse_locations")
 }
 
@@ -1241,6 +1381,7 @@ model InventoryItem {
   snapshotMaterialInputs ProductionOrderWorkflowSnapshotMaterialInput[]
   taskMaterialUsages     ProductionTaskMaterialUsage[]
   salesOrderMaterialRequirements SalesOrderLineMaterialRequirement[]
+  recoveryLines    ReturnRecoveryLine[]
 
   @@index([category])
   @@index([itemClass])
@@ -1281,6 +1422,12 @@ model InventoryTransaction {
   unitCost        Decimal?       @db.Decimal(18, 3)
   referenceType   String?
   referenceId     String?
+  productionOrderId String?
+  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+  productionTaskId  String?
+  productionTask    ProductionTask?  @relation(fields: [productionTaskId], references: [id], onDelete: SetNull)
+  salesOrderId      String?
+  salesOrder        SalesOrder?      @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
   notes           String?
   idempotencyKey  String?        @unique
   createdAt       DateTime       @default(now())
@@ -1290,6 +1437,9 @@ model InventoryTransaction {
   @@index([warehouseId])
   @@index([createdAt])
   @@index([type])
+  @@index([productionOrderId])
+  @@index([productionTaskId])
+  @@index([salesOrderId])
   @@map("inventory_transactions")
 }
 
@@ -1314,11 +1464,14 @@ model InventoryCountLine {
   inventoryCount  InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
   inventoryItemId String
   inventoryItem   InventoryItem  @relation(fields: [inventoryItemId], references: [id])
+  locationId      String?
+  location        WarehouseLocation? @relation(fields: [locationId], references: [id])
   systemQty       Decimal        @db.Decimal(18, 3)
   countedQty      Decimal?       @db.Decimal(18, 3)
   varianceQty     Decimal?       @db.Decimal(18, 3)
 
   @@index([inventoryCountId])
+  @@index([locationId])
   @@map("inventory_count_lines")
 }
 
@@ -1346,8 +1499,14 @@ model WarehouseTransferLine {
   inventoryItemId String
   inventoryItem   InventoryItem     @relation(fields: [inventoryItemId], references: [id])
   quantity        Decimal           @db.Decimal(18, 3)
+  fromLocationId  String?
+  fromLocation    WarehouseLocation? @relation("TransferLineFromLocation", fields: [fromLocationId], references: [id])
+  toLocationId    String?
+  toLocation      WarehouseLocation? @relation("TransferLineToLocation", fields: [toLocationId], references: [id])
 
   @@index([transferId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
   @@map("warehouse_transfer_lines")
 }
 
@@ -1392,6 +1551,7 @@ model InventoryLot {
   wipHandoffs WipHandoff[]
   deliveryLoadPieces DeliveryLoadPiece[]
   materialUsages ProductionTaskMaterialUsage[]
+  returnPieces ReturnPiece[]
 
   @@index([inventoryItemId])
   @@index([warehouseId])
@@ -1483,6 +1643,9 @@ model WipPiece {
   qrCode           String?      @unique
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
+
+  inspectionItems QualityInspectionItem[]
+  reworkRequests  ReworkRequest[]
 
   @@index([kitId])
   @@map("wip_pieces")
@@ -1785,6 +1948,8 @@ model SalesOrder {
   manufacturingCost    Decimal?         @db.Decimal(18, 3)
   /// { fabricQty, fabricCost, woodQty, woodCost, foamQty, foamCost, accessoriesQty, accessoriesCost }
   costBreakdown        Json?
+  /// When set, manufacturingCost/costBreakdown are the frozen planned baseline.
+  plannedCostFrozenAt  DateTime?
   receivingDate        DateTime?
   depositRequired      Decimal?         @db.Decimal(18, 3)
   cancellationReason   String?
@@ -1799,8 +1964,10 @@ model SalesOrder {
   deliveries       Delivery[]
   invoices         Invoice[]
   returns          ReturnRequest[]
+  returnPieces     ReturnPiece[]
   documents        Document[]
   inventoryLots    InventoryLot[]
+  inventoryTransactions InventoryTransaction[]
   productionSetup  SalesOrderProductionSetup?
   fabricProcurements FabricProcurement[]
 
@@ -1838,6 +2005,8 @@ model SalesOrderLine {
   inventoryLots    InventoryLot[]
   productionSetup  SalesOrderLineSetup?
   fabricProcurements FabricProcurement[]
+  returns            ReturnRequest[]
+  returnPieces       ReturnPiece[]
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
@@ -1897,8 +2066,10 @@ model SalesOrderLineSetup {
 
 model SalesOrderLineMaterialRequirement {
   id              String                            @id @default(uuid())
-  lineSetupId     String
-  lineSetup       SalesOrderLineSetup               @relation(fields: [lineSetupId], references: [id], onDelete: Cascade)
+  lineSetupId     String?
+  lineSetup       SalesOrderLineSetup?              @relation(fields: [lineSetupId], references: [id], onDelete: Cascade)
+  productionOrderId String?
+  productionOrder   ProductionOrder?                @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
   inventoryItemId String?
   inventoryItem   InventoryItem?                    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   sku             String?
@@ -1923,6 +2094,7 @@ model SalesOrderLineMaterialRequirement {
   fabricProcurement FabricProcurement?
 
   @@index([lineSetupId])
+  @@index([productionOrderId])
   @@index([inventoryItemId])
   @@map("sales_order_line_material_requirements")
 }
@@ -1933,10 +2105,12 @@ model FabricProcurement {
   id                      String                  @id @default(uuid())
   requirementId           String                  @unique
   requirement             SalesOrderLineMaterialRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
-  salesOrderId            String
-  salesOrder              SalesOrder              @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
-  salesOrderLineId        String
-  salesOrderLine          SalesOrderLine          @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade)
+  salesOrderId            String?
+  salesOrder              SalesOrder?             @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrderLineId        String?
+  salesOrderLine          SalesOrderLine?         @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade)
+  productionOrderId       String?
+  productionOrder         ProductionOrder?        @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
   supplierId              String?
   supplier                Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   state                   FabricProcurementState  @default(NEEDS_ORDERING)
@@ -1963,6 +2137,7 @@ model FabricProcurement {
 
   @@index([salesOrderId])
   @@index([salesOrderLineId])
+  @@index([productionOrderId])
   @@index([supplierId])
   @@index([state])
   @@map("fabric_procurements")
@@ -2044,6 +2219,7 @@ model ProductionStageDefinition {
   snapshotNodes  ProductionOrderWorkflowSnapshotNode[]
   stageOverrides ProductWorkflowStageOverride[]
   stageMaterialInputs ProductStageMaterialInput[]
+  laborRates          LaborRate[]
 
   @@map("production_stage_definitions")
 }
@@ -2077,6 +2253,13 @@ model ProductionOrder {
   /// Hard Preparing → Production boundary. Null = still Orders Preparing (plan editable).
   releasedToFactoryAt   DateTime?
   releasedToFactoryById String?
+  /// Frozen planned material cost at factory release. Never rewritten live.
+  plannedMaterialCost   Decimal?              @db.Decimal(18, 3)
+  plannedCostBreakdown  Json?
+  plannedCostFrozenAt   DateTime?
+  originType            ProductionOrderOriginType @default(SALES_ORDER)
+  returnRequestId       String?
+  returnRequest         ReturnRequest?        @relation("ReturnWorkOrders", fields: [returnRequestId], references: [id])
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   createdById           String?
@@ -2092,10 +2275,21 @@ model ProductionOrder {
   estimateProposals SchedulingEstimateProposal[]
   workflowSnapshot ProductionOrderWorkflowSnapshot?
   inventoryLots InventoryLot[]
+  inventoryTransactions InventoryTransaction[]
   wipKits       WipKit[]
   wipHandoffs   WipHandoff[]
+  materialRequirements SalesOrderLineMaterialRequirement[]
+  fabricProcurements FabricProcurement[]
+  sourceReturns ReturnRequest[] @relation("ReturnSourceProductionOrder")
+  returnPieceId String?
+  returnPiece ReturnPiece? @relation("ProductionOrderReturnPiece", fields: [returnPieceId], references: [id])
+  returnPieceAsWork ReturnPiece? @relation("ReturnPieceWorkOrder")
+  returnPieceAsRecovery ReturnPiece? @relation("ReturnPieceRecoveryOrder")
 
   @@index([salesOrderId])
+  @@index([returnPieceId])
+  @@index([returnRequestId])
+  @@index([originType])
   @@index([status])
   @@index([releasedToFactoryAt])
   @@index([requiredDeliveryDate])
@@ -2169,9 +2363,11 @@ model ProductionTask {
   blockers    TaskBlocker[]
   allocations ScheduleAllocation[]
   materialUsages ProductionTaskMaterialUsage[]
+  inventoryTransactions InventoryTransaction[]
   producedWipKits WipKit[] @relation("WipKitProducingTask")
   claimedWipKits  WipKit[] @relation("WipKitClaimedTask")
   wipHandoffsReceived WipHandoff[] @relation("WipHandoffReceivingTask")
+  recoveryLines ReturnRecoveryLine[]
 
   @@index([productionOrderId])
   @@index([assignedEmployeeId])
@@ -2181,6 +2377,24 @@ model ProductionTask {
   @@index([assignedEmployeeId, plannedStart])
   @@index([reworkRequestId])
   @@map("production_tasks")
+}
+
+/// Dated labor rate. Worker+stage beats worker, which beats stage-only.
+model LaborRate {
+  id                String   @id @default(uuid())
+  stageDefinitionId String?
+  stageDefinition   ProductionStageDefinition? @relation(fields: [stageDefinitionId], references: [id], onDelete: Cascade)
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hourlyRate        Decimal  @db.Decimal(18, 3)
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+  createdAt         DateTime @default(now())
+  createdById       String?
+
+  @@index([stageDefinitionId, effectiveFrom])
+  @@index([userId, effectiveFrom])
+  @@map("labor_rates")
 }
 
 enum MaterialScrapReason {
@@ -2214,9 +2428,13 @@ model ProductionTaskMaterialUsage {
   /// RAW warehouse for PRODUCTION_ISSUE (required when over-use / EXTRA).
   issueWarehouseId       String?
   issueWarehouse         Warehouse?           @relation("MaterialUsageIssueWarehouse", fields: [issueWarehouseId], references: [id])
+  issueLocationId        String?
+  issueLocation          WarehouseLocation?   @relation("MaterialUsageIssueLocation", fields: [issueLocationId], references: [id])
   /// RAW warehouse for PRODUCTION_RETURN (required when returnedQty > 0).
   returnWarehouseId      String?
   returnWarehouse        Warehouse?           @relation("MaterialUsageReturnWarehouse", fields: [returnWarehouseId], references: [id])
+  returnLocationId       String?
+  returnLocation         WarehouseLocation?   @relation("MaterialUsageReturnLocation", fields: [returnLocationId], references: [id])
   recordedById           String?
   recordedBy             User?                @relation("MaterialUsageRecorder", fields: [recordedById], references: [id])
   finalizedAt            DateTime?
@@ -2237,6 +2455,8 @@ model ProductionTaskMaterialUsage {
   @@index([inventoryItemId])
   @@index([issueWarehouseId])
   @@index([returnWarehouseId])
+  @@index([issueLocationId])
+  @@index([returnLocationId])
   @@map("production_task_material_usages")
 }
 
@@ -2255,18 +2475,25 @@ model TaskTimeEntry {
 }
 
 model TaskBlocker {
-  id           String          @id @default(uuid())
-  taskId       String
-  task         ProductionTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  category     BlockerCategory
-  reason       String
-  reportedById String?
-  reportedBy   User?           @relation("BlockerReporter", fields: [reportedById], references: [id])
-  resolvedAt   DateTime?
-  resolution   String?
-  createdAt    DateTime        @default(now())
+  id                        String          @id @default(uuid())
+  taskId                    String
+  task                      ProductionTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  category                  BlockerCategory
+  reason                    String
+  reportedById              String?
+  reportedBy                User?           @relation("BlockerReporter", fields: [reportedById], references: [id])
+  resolvedAt                DateTime?
+  resolution                String?
+  voiceDocumentId           String?
+  resolutionVoiceDocumentId String?
+  photoDocumentIds          String[] @default([])
+  resolutionPhotoDocumentIds String[] @default([])
+  resolvedById              String?
+  resolutionAt              DateTime?
+  createdAt                 DateTime        @default(now())
 
   @@index([taskId])
+  @@index([resolvedAt])
   @@map("task_blockers")
 }
 
@@ -2329,8 +2556,18 @@ model QualityInspectionItem {
   result        ChecklistItemResult?
   note          String?
   severity      String?
+  wipPieceId    String?
+  wipPiece      WipPiece?          @relation(fields: [wipPieceId], references: [id], onDelete: SetNull)
+  /// Inspector-chosen stages this piece should return to on FAIL.
+  reentryStageInstanceIds String[] @default([])
+  voiceDocumentId String?
+  voiceDocument   Document?        @relation("QcItemVoice", fields: [voiceDocumentId], references: [id], onDelete: SetNull)
+  photoDocumentIds String[]        @default([])
+
+  reworkRequests ReworkRequest[]
 
   @@index([inspectionId])
+  @@index([wipPieceId])
   @@map("quality_inspection_items")
 }
 
@@ -2354,6 +2591,10 @@ model ReworkRequest {
   productionOrder        ProductionOrder    @relation(fields: [productionOrderId], references: [id])
   inspectionId           String?
   inspection             QualityInspection? @relation(fields: [inspectionId], references: [id])
+  inspectionItemId       String?
+  inspectionItem         QualityInspectionItem? @relation(fields: [inspectionItemId], references: [id], onDelete: SetNull)
+  wipPieceId             String?
+  wipPiece               WipPiece?          @relation(fields: [wipPieceId], references: [id], onDelete: SetNull)
   returnRequestId        String?
   returnRequest          ReturnRequest?     @relation(fields: [returnRequestId], references: [id])
   description            String
@@ -2370,6 +2611,8 @@ model ReworkRequest {
   @@index([productionOrderId])
   @@index([reentryStageInstanceId])
   @@index([returnRequestId])
+  @@index([inspectionItemId])
+  @@index([wipPieceId])
   @@map("rework_requests")
 }
 
@@ -2391,6 +2634,9 @@ model Delivery {
   driver          User?          @relation("DeliveryDriver", fields: [driverId], references: [id])
   vehicle         String?
   status          DeliveryStatus @default(PLANNED)
+  purpose         DeliveryPurpose @default(OUTBOUND_ORDER)
+  returnRequestId String?
+  returnRequest   ReturnRequest? @relation("ReturnReship", fields: [returnRequestId], references: [id])
   recipientName   String?
   signatureData   String?
   /// Dealer/customer receipt confirmation (commercial close). Not inventory.
@@ -2410,6 +2656,8 @@ model Delivery {
 
   @@index([customerId])
   @@index([status])
+  @@index([purpose])
+  @@index([returnRequestId])
   @@index([driverId])
   @@index([customerConfirmedById])
   @@map("deliveries")
@@ -2456,6 +2704,8 @@ model Invoice {
   customer          Customer      @relation(fields: [customerId], references: [id])
   salesOrderId      String?
   salesOrder        SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  returnRequestId   String?
+  returnRequest     ReturnRequest? @relation("ReturnChargeInvoice", fields: [returnRequestId], references: [id])
   invoiceDate       DateTime      @default(now())
   dueDate           DateTime?
   currency          String        @default("ILS")
@@ -2467,10 +2717,6 @@ model Invoice {
   paidAmount        Decimal       @default(0) @db.Decimal(18, 3)
   outstandingAmount Decimal       @default(0) @db.Decimal(18, 3)
   notes             String?
-  jofotaraUuid      String?
-  jofotaraQr        String?
-  jofotaraStatus    String?
-  jofotaraClearedAt DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   createdById       String?
@@ -2482,6 +2728,7 @@ model Invoice {
 
   @@index([customerId])
   @@index([status])
+  @@index([returnRequestId])
   @@map("invoices")
 }
 
@@ -2638,6 +2885,13 @@ model ReturnRequest {
   customer       Customer          @relation(fields: [customerId], references: [id])
   salesOrderId   String?
   salesOrder     SalesOrder?       @relation(fields: [salesOrderId], references: [id])
+  salesOrderLineId String?
+  salesOrderLine   SalesOrderLine? @relation(fields: [salesOrderLineId], references: [id])
+  productId      String?
+  product        Product?          @relation(fields: [productId], references: [id])
+  /// Original production order the returned piece came from.
+  sourceProductionOrderId String?
+  sourceProductionOrder   ProductionOrder? @relation("ReturnSourceProductionOrder", fields: [sourceProductionOrderId], references: [id])
   /// Optional link to the outbound delivery this return refers to.
   deliveryId     String?
   delivery       Delivery?         @relation(fields: [deliveryId], references: [id])
@@ -2652,8 +2906,31 @@ model ReturnRequest {
   approvalStatus String            @default("PENDING")
   /// Piece 11 physical lifecycle: NONE | WAITING_RETURN | RETURNED | INSPECTING | RESOLVED
   physicalStatus String            @default("NONE")
+  lifecycleState ReturnLifecycleState @default(REQUESTED)
+  responsibility ReturnResponsibility @default(UNDETERMINED)
+  chargeAmount   Decimal?          @db.Decimal(18, 3)
+  factoryShareAmount Decimal?      @db.Decimal(18, 3)
+  chargeStatus   ReturnChargeStatus @default(NOT_REQUIRED)
+  chargeSentAt   DateTime?
+  chargeConfirmedAt DateTime?
+  chargeConfirmedById String?
+  chargeRejectedAt DateTime?
+  chargeRejectionNote String?
   receivedAt     DateTime?
   receivedById   String?
+  receivedQuantity Decimal?        @db.Decimal(18, 3)
+  receivedCondition String?
+  receivedLocationId String?
+  receivedLocation   WarehouseLocation? @relation(fields: [receivedLocationId], references: [id])
+  receivedNotes  String?
+  receivePhotoKey String?
+  sentToFactoryAt DateTime?
+  sentToFactoryById String?
+  collectedAt    DateTime?
+  collectedById  String?
+  inspectedAt    DateTime?
+  inspectedById  String?
+  inspectionNotes String?
   /// Admin request for more dealer information (Need info loop).
   needInfoNote   String?
   resolution     ReturnResolution?
@@ -2662,10 +2939,104 @@ model ReturnRequest {
   updatedAt      DateTime          @updatedAt
 
   reworkRequests ReworkRequest[]
+  workOrders     ProductionOrder[] @relation("ReturnWorkOrders")
+  chargeInvoices Invoice[]         @relation("ReturnChargeInvoice")
+  reshipDeliveries Delivery[]      @relation("ReturnReship")
+  pieces         ReturnPiece[]
 
   @@index([customerId])
   @@index([deliveryId])
+  @@index([salesOrderLineId])
+  @@index([productId])
+  @@index([sourceProductionOrderId])
+  @@index([lifecycleState])
   @@map("return_requests")
+}
+
+model ReturnPiece {
+  id              String            @id @default(uuid())
+  returnRequestId String
+  returnRequest   ReturnRequest     @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  pieceNo         Int
+  code            String            @unique
+  salesOrderId    String?
+  salesOrder      SalesOrder?       @relation(fields: [salesOrderId], references: [id])
+  salesOrderLineId String?
+  salesOrderLine  SalesOrderLine?   @relation(fields: [salesOrderLineId], references: [id])
+  productId       String?
+  product         Product?          @relation(fields: [productId], references: [id])
+  productDesc     String
+  specSnapshot    Json?
+  state           ReturnPieceState  @default(AWAITING_RECEIPT)
+  receivedAt      DateTime?
+  receivedById    String?
+  receivedBy      User?             @relation("ReturnPieceReceiver", fields: [receivedById], references: [id])
+  receivedCondition ReturnInspectionResult?
+  conditionNotes  String?
+  photoKeys       String[]          @default([])
+  custodyWarehouseId String?
+  custodyWarehouse Warehouse?       @relation("ReturnPieceCustodyWarehouse", fields: [custodyWarehouseId], references: [id])
+  custodyLocationId String?
+  custodyLocation WarehouseLocation? @relation("ReturnPieceCustodyLocation", fields: [custodyLocationId], references: [id])
+  inventoryLotId  String?
+  inventoryLot    InventoryLot?     @relation(fields: [inventoryLotId], references: [id])
+  decision        ReturnPieceDecision?
+  decidedAt       DateTime?
+  decidedById     String?
+  decidedBy       User?             @relation("ReturnPieceDecider", fields: [decidedById], references: [id])
+  inspectionNotes String?
+  productionOrderId String?         @unique
+  productionOrder ProductionOrder?  @relation("ReturnPieceWorkOrder", fields: [productionOrderId], references: [id])
+  recoveryOrderId String?           @unique
+  recoveryOrder   ProductionOrder?  @relation("ReturnPieceRecoveryOrder", fields: [recoveryOrderId], references: [id])
+  qcResult        ReturnInspectionResult?
+  readyAt         DateTime?
+  resolvedAt      DateTime?
+  outboundEligible Boolean          @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  linkedOrders   ProductionOrder[] @relation("ProductionOrderReturnPiece")
+  recoveryLines  ReturnRecoveryLine[]
+
+  @@unique([returnRequestId, pieceNo])
+  @@index([returnRequestId])
+  @@index([state])
+  @@index([decision])
+  @@index([salesOrderLineId])
+  @@map("return_pieces")
+}
+
+model ReturnRecoveryLine {
+  id                     String                 @id @default(uuid())
+  returnPieceId          String
+  returnPiece            ReturnPiece            @relation(fields: [returnPieceId], references: [id], onDelete: Cascade)
+  productionTaskId       String?
+  productionTask         ProductionTask?        @relation(fields: [productionTaskId], references: [id])
+  inventoryItemId        String?
+  inventoryItem          InventoryItem?         @relation(fields: [inventoryItemId], references: [id])
+  label                  String
+  quantity               Decimal                @db.Decimal(18, 3)
+  unit                   String
+  condition              ReturnInspectionResult?
+  outcome                ReturnRecoveryOutcome
+  destinationWarehouseId String?
+  destinationWarehouse   Warehouse?             @relation("ReturnRecoveryDestinationWarehouse", fields: [destinationWarehouseId], references: [id])
+  destinationLocationId  String?
+  destinationLocation    WarehouseLocation?     @relation("ReturnRecoveryDestinationLocation", fields: [destinationLocationId], references: [id])
+  unitCost               Decimal?               @db.Decimal(18, 3)
+  notes                  String?
+  photoKeys              String[]               @default([])
+  recordedById           String
+  recordedBy             User                   @relation("ReturnRecoveryRecorder", fields: [recordedById], references: [id])
+  recordedAt             DateTime               @default(now())
+  postedAt               DateTime?
+  idempotencyKey         String                 @unique
+
+  @@index([returnPieceId])
+  @@index([productionTaskId])
+  @@index([inventoryItemId])
+  @@map("return_recovery_lines")
 }
 
 // ─── Documents & Notifications ───────────────────────────────────────────────
@@ -2696,6 +3067,7 @@ model Document {
   archivedAt       DateTime?
 
   wipPieces WipPiece[]
+  qcVoiceItems QualityInspectionItem[] @relation("QcItemVoice")
 
   @@index([customerId])
   @@map("documents")
@@ -2933,7 +3305,7 @@ model FactoryCalendar {
   maxProductionEarlyWorkingDays Int @default(10)
   /// Occupancy reporting/heuristic ceiling for capacity optimize. Not a fake capacity cap.
   targetFactoryUtilizationPercent Int @default(85)
-  /// [{ start: "12:00", end: "13:00" }]
+  /// [{ start: "12:00", end: "12:30" }]
   breaks           Json?
   overtimeConfig   Json?
   isDefault        Boolean  @default(true)
@@ -3163,6 +3535,7 @@ model ProductionWorkflow {
   descriptionEn   String?
   descriptionHe   String?
   status          ProductionWorkflowStatus @default(DRAFT)
+  scope           ProductionWorkflowScope  @default(STANDARD)
   activeVersionId String?                  @unique
   activeVersion   ProductionWorkflowVersion? @relation("WorkflowActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
   createdAt       DateTime                 @default(now())
@@ -3176,6 +3549,7 @@ model ProductionWorkflow {
   salesOrderLineSetups    SalesOrderLineSetup[]
 
   @@index([status])
+  @@index([scope])
   @@map("production_workflows")
 }
 

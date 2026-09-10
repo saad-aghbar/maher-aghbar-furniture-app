@@ -1,11 +1,23 @@
 import {
   invoiceListCustomerScope,
   invoiceRemainingDue,
+  paymentHistoryCaption,
   selectInvoiceCard,
   selectInvoiceDealerChip,
   selectInvoiceDetail,
 } from '../selectInvoice';
 import type { Invoice } from '../api';
+
+describe('paymentHistoryCaption', () => {
+  it('joins date, method, and reference without leaking code', () => {
+    expect(paymentHistoryCaption(['6 Sep 2026', 'Bank transfer', null])).toBe(
+      '6 Sep 2026 · Bank transfer',
+    );
+    expect(paymentHistoryCaption(['16 Aug 2026', 'Card', 'REF-9'])).toBe(
+      '16 Aug 2026 · Card · REF-9',
+    );
+  });
+});
 
 describe('invoiceListCustomerScope', () => {
   it('forces dealer ownership when user has customerId', () => {
@@ -55,10 +67,6 @@ const baseInv: Invoice = {
       referenceNumber: 'REF-9',
     },
   ],
-  jofotaraUuid: 'uuid-1',
-  jofotaraStatus: 'CLEARED',
-  jofotaraQr: 'data:image/png;base64,abc',
-  jofotaraClearedAt: '2026-05-02T12:00:00.000Z',
 };
 
 describe('selectInvoiceCard', () => {
@@ -104,7 +112,7 @@ describe('selectInvoiceCard', () => {
 });
 
 describe('selectInvoiceDetail', () => {
-  it('maps totals, lines, payments, and JoFotara', () => {
+  it('maps totals, lines, and payments', () => {
     const detail = selectInvoiceDetail(baseInv, 'en');
     expect(detail.outstanding).toBe(40);
     expect(detail.paid).toBe(60);
@@ -116,25 +124,9 @@ describe('selectInvoiceDetail', () => {
     expect(detail.payments).toHaveLength(1);
     expect(detail.payments[0]?.method).toBe('BANK_TRANSFER');
     expect(detail.payments[0]?.reference).toBe('REF-9');
-    expect(detail.jofotara.submitted).toBe(true);
-    expect(detail.jofotara.uuid).toBe('uuid-1');
-    expect(detail.jofotara.qr).toBe('data:image/png;base64,abc');
     expect(detail.factoryOrderNumber).toBe('SO-9');
     expect(detail.dealerChip).toEqual({ value: 'D-22', prefixDealer: false });
-  });
-
-  it('treats missing JoFotara as not submitted', () => {
-    const detail = selectInvoiceDetail(
-      {
-        ...baseInv,
-        jofotaraUuid: null,
-        jofotaraQr: null,
-        jofotaraStatus: null,
-        jofotaraClearedAt: null,
-      },
-      'en',
-    );
-    expect(detail.jofotara.submitted).toBe(false);
+    expect(detail).not.toHaveProperty('jofotara');
   });
 
   it('derives paid from total - outstanding when paidAmount missing', () => {
@@ -214,6 +206,87 @@ describe('selectInvoiceDetail', () => {
     expect(detail.outstanding).toBe(127.6);
     expect(detail.status).toBe('ISSUED');
     expect(detail.total).toBe(127.6);
+  });
+
+  it('keeps Amount due on this invoice when dealerFinance.amountDue is huge', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        outstandingAmount: '40',
+        paidAmount: '60',
+        total: '100',
+        dealerFinance: { amountDue: 14913.38, availableCredit: 7000 },
+      },
+      'en',
+    );
+    expect(detail.amountDue).toBe(40);
+    expect(detail.outstanding).toBe(40);
+    expect(detail.availableCredit).toBe(7000);
+  });
+
+  it('shows apply-credit as a history row from allocations', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        payments: [],
+        allocations: [
+          {
+            id: 'alloc-c',
+            amount: '25',
+            payment: {
+              id: 'pay-credit',
+              number: 'PAY-9',
+              amount: '200',
+              method: 'CASH',
+              paymentDate: '2026-05-11T00:00:00.000Z',
+              invoiceId: 'other-inv',
+            },
+          },
+        ],
+      },
+      'en',
+    );
+    expect(detail.payments).toHaveLength(1);
+    expect(detail.payments[0]?.kind).toBe('credit');
+    expect(detail.payments[0]?.method).toBe('CASH');
+    expect(detail.payments[0]?.amount).toBe(25);
+    expect(detail.payments[0]?.id).toBe('pay-credit');
+    expect(detail.payments[0]?.amountLabel).toContain('25');
+    expect(detail.payments[0]?.amountLabel).not.toContain('200');
+  });
+
+  it('uses the allocation amount when a payment covers more than this invoice', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        payments: [
+          {
+            id: 'p1',
+            number: 'PAY-1',
+            amount: '200',
+            method: 'BANK_TRANSFER',
+            invoiceId: '1',
+          },
+        ],
+        allocations: [
+          {
+            id: 'alloc-1',
+            amount: '60',
+            payment: {
+              id: 'p1',
+              number: 'PAY-1',
+              amount: '200',
+              method: 'BANK_TRANSFER',
+              invoiceId: '1',
+            },
+          },
+        ],
+      },
+      'en',
+    );
+    expect(detail.payments[0]?.kind).toBe('payment');
+    expect(detail.payments[0]?.amountLabel).toContain('60');
+    expect(detail.payments[0]?.amountLabel).not.toContain('200');
   });
 
   it('subtracts invoice credit from remaining due without inventing paid-in-full', () => {

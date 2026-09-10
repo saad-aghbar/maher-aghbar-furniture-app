@@ -45,6 +45,12 @@
   "FABRIC_NOT_READY": "הבד הנדרש אינו מוכן לשלב זה.",
   "FABRIC_WRONG_ORDER": "בד זה שייך להזמנה אחרת.",
   "FABRIC_WRONG_RECEIVED": "זה אינו הבד הנדרש למשימה זו.",
+  "FABRIC_ITEM_REQUIRED": "יש לבחור בד לפני אישור הגעה.",
+  "FABRIC_COST_REQUIRED": "יש להזין מחיר יחידה לפני קבלת הבד.",
+  "OVER_RECEIPT": "לא ניתן לקבל יותר מהכמות שנותרה בהזמנת הרכש.",
+  "ITEM_CATEGORY_FORBIDDEN": "הכנת הייצור יכולה להוסיף רק בדי בד.",
+  "FABRIC_REPLACE_FORBIDDEN": "החלפת בד דורשת הרשאת עקיפת החזקה.",
+  "REASON_REQUIRED": "יש להזין סיבה בת 3 תווים לפחות.",
   "FABRIC_ALREADY_ISSUED": "חבילת בד זו אינה זמינה לקליטה.",
   "FABRIC_WRONG_STAGE": "בד זה מיועד לשלב ייצור אחר.",
   "INSUFFICIENT_SEMI_FINISHED_STOCK": "מלאי החצי-גמור הנדרש אינו מוכן למשימה זו.",
@@ -57,10 +63,14 @@
   "LOCATION_EXISTS": "קוד המיקום כבר קיים במחסן זה.",
   "LOCATION_HAS_STOCK": "במיקום עדיין יש מלאי ולא ניתן למחוק אותו.",
 
+  "RETURN_CHARGE_NOT_CONFIRMED": "אשרו את חיוב הסוחר לפני תחילת עבודת המפעל.",
+  "RETURN_CHARGE_LOCKED": "חשבונית ההחזרה כבר קיימת — לא ניתן לערוך את החיוב.",
+  "RETURN_CHARGE_NOT_DRAFT": "שמרו סכום לסוחר לפני שליחה לאישור.",
+  "RETURN_CHARGE_NOT_AWAITING": "ההחזרה אינה ממתינה לאישור סוחר.",
+  "RETURN_NOT_CHARGEABLE": "אשרו את סכום הסוחר לפני יצירת חשבונית החזרה.",
   "INVOICE_EXISTS": "כבר קיימת חשבונית להזמנת מכירה זו.",
   "SUPPLIER_INVOICE_EXISTS": "כבר קיימת חשבונית ספק להזמנת רכש זו.",
   "PAYMENT_EXCEEDS_OUTSTANDING": "סכום התשלום עולה על היתרה שנותרה.",
-  "JOFOTARA_FAILED": "שליחת החשבונית האלקטרונית נכשלה.",
 
   "SUPPLIER_NOT_CERTIFIED": "יש לאשר את הספק לפני יצירת הזמנת רכש.",
   "ORDER_LOCKED": "ההזמנה נעולה ולא ניתן לערוך אותה.",
@@ -118,6 +128,8 @@
   "WORKFLOW_VERSION_STALE": "הטיוטה השתנתה במקום אחר. נא לרענן את הדף ולנסות שוב.",
   "WORKFLOW_STAGE_IN_USE": "השלב בשימוש ולא ניתן למחוק אותו.",
   "ORDER_WORKFLOW_LOCKED": "לא ניתן לשנות את תהליך הייצור אחרי שהעבודה על ההזמנה התחילה.",
+  "STAGE_TIME_LOCKED": "זמני השלבים נעולים אחרי אישור תוכנית הייצור.",
+  "WORKFLOW_SCOPE_MISMATCH": "לא ניתן לשייך תהליך החזרה להזמנת מכירה רגילה.",
 
   "AI_CHAT_DISABLED": "העוזר אינו זמין כרגע.",
   "AI_CHAT_RATE_LIMIT": "יותר מדי בקשות. נא להמתין ולנסות שוב.",
@@ -164,6 +176,7 @@
   "SETUP_DELIVERY_MUST_NOT_PRODUCE": "מסירה מסמנת חבילות על המשאית ואינה יוצרת מלאי.",
   "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "אריזה חייבת לייצר את המוצר המוגמר עם חבילות משלוח.",
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "אריזה חייבת לקחת את הקיט החצי-מוגמר ממעלה הזרם.",
-  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "בדיקה חייבת לקחת את הקיט החצי-מוגמר לאישור.",
+  "SETUP_INSPECTION_MUST_NOT_CONSUME": "בדיקה מאשרת איכות בלבד ואינה לוקחת קיטים או חומרים.",
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "בדיקה מאשרת איכות בלבד ואינה לוקחת קיטים או חומרים.",
   "DELIVERY_DATE_TOO_SOON": "בחרו תאריך אספקה לפחות ארבעה ימים מהיום."
 }

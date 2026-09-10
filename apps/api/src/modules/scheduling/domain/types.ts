@@ -64,6 +64,8 @@ export interface CalendarExceptionInput {
   shiftStart?: string | null;
   shiftEnd?: string | null;
   note?: string | null;
+  /** Empty/omitted = factory-wide EXTRA_SHIFT. Non-empty restricts overtime to these workers. */
+  overtimeEmployeeIds?: string[] | null;
 }
 
 export interface FactoryCalendarInput {
@@ -168,6 +170,8 @@ export interface PlannerStageInput {
   resourceSlots?: number | null;
   /** Stage-level notBefore (materials / WIP). */
   notBefore?: Date | null;
+  /** Zero-duration quality/logistics gate — no worker, no capacity. */
+  isMilestone?: boolean;
 }
 
 export interface PlannerOrderInput {

@@ -21,7 +21,7 @@ export type OrdersStreamStripModel = {
   deliveryDate: string | null;
   dealerName?: string;
   sellerPrice?: number | null;
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
 };
 
 type Props = {

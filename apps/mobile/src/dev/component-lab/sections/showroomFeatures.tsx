@@ -1,12 +1,14 @@
 /**
  * Showroom feature demos — real cards with fixture models (no API).
  */
+import { useState } from 'react';
 import { UrgentAlertCard } from '@/features/admin-home/components/UrgentAlertCard';
 import { ProductCard } from '@/features/catalog/components/ProductCard';
 import { DealerBalanceCard } from '@/features/dealer-ui/DealerBalanceCard';
 import { InventoryFinishedOrderCard } from '@/features/inventory/components/InventoryFinishedOrderCard';
 import { InventoryMaterialCard } from '@/features/inventory/components/InventoryMaterialCard';
 import { InventorySemiOrderGroupCard } from '@/features/inventory/components/InventorySemiOrderGroupCard';
+import { WarehouseBinBoard } from '@/features/inventory/components/WarehouseBinBoard';
 import type { FinishedOrderGroup } from '@/features/inventory/selectFinishedOrders';
 import type { InventoryItemCardModel } from '@/features/inventory/selectInventory';
 import type { SemiOrderGroup } from '@/features/inventory/selectSemiOrders';
@@ -17,11 +19,13 @@ import type { NotificationCardModel } from '@/features/notifications/selectNotif
 import { ProductionLifecycleStrip } from '@/features/production/components/ProductionLifecycleStrip';
 import { ProductionOrderCard } from '@/features/production/components/ProductionOrderCard';
 import type { ProductionCardModel } from '@/features/production/selectProduction';
+import { BuilderLineCard } from '@/features/purchasing/components/BuilderLineCard';
+import { LowStockSupplierBoard } from '@/features/purchasing/components/LowStockSupplierBoard';
 import { PurchaseOrderBoardCard } from '@/features/purchasing/components/PurchaseOrderBoardCard';
-import { PurchaseRequestBoardCard } from '@/features/purchasing/components/PurchaseRequestBoardCard';
+import { PurchasingBuyAlertCard } from '@/features/purchasing/components/PurchasingBuyAlertCard';
+import { ReceiveLineCard } from '@/features/purchasing/components/ReceiveLineCard';
 import type {
   PurchaseCardModel,
-  PurchaseRequestCardModel,
 } from '@/features/purchasing/selectPurchase';
 import { AdminOrderCard } from '@/features/sales-orders/components/AdminOrderCard';
 import { DealerOrderCard } from '@/features/sales-orders/components/DealerOrderCard';
@@ -92,6 +96,7 @@ const productionOrder = (over: Partial<ProductionCardModel> = {}): ProductionCar
   actualStartDate: null,
   releasedToFactoryAt: null,
   startDueHint: null,
+  origin: null,
   showStages: false,
   ...over,
 });
@@ -129,6 +134,8 @@ const material = (over: Partial<InventoryItemCardModel> = {}): InventoryItemCard
   category: 'Wood',
   materialType: 'PLYWOOD',
   barcode: null,
+  preferredSupplierId: null,
+  preferredSupplierName: null,
   color: null,
   size: '18mm',
   customMeasurements: null,
@@ -137,6 +144,7 @@ const material = (over: Partial<InventoryItemCardModel> = {}): InventoryItemCard
   isActive: true,
   archivedAt: null,
   minStock: 20,
+  reorderQty: null,
   standardCost: 85,
   quantityLabel: '42 sheets',
   onHand: 42,
@@ -212,17 +220,6 @@ const purchaseOrder = (over: Partial<PurchaseCardModel> = {}): PurchaseCardModel
   ...over,
 });
 
-const purchaseRequest = (): PurchaseRequestCardModel => ({
-  id: 'pr-1',
-  number: 'PR-SHOW-01',
-  status: 'OPEN',
-  reason: 'Low stock — plywood',
-  supplierName: 'North Woods Supply',
-  offerCount: 2,
-  linkedPoNumber: null,
-  warehouseLabel: 'Main',
-});
-
 const invoice = (over: Partial<InvoiceCardModel> = {}): InvoiceCardModel => ({
   id: 'inv-1',
   number: 'INV-SHOW-01',
@@ -242,6 +239,8 @@ const invoice = (over: Partial<InvoiceCardModel> = {}): InvoiceCardModel => ({
   invoiceDateLabel: '1 Sep 2026',
   factoryOrderNumber: 'SO-SHOW-001',
   dealerOrderNumber: null,
+  returnNumber: null,
+  returnRequestId: null,
   isOverdue: false,
   ...over,
 });
@@ -485,6 +484,49 @@ export function buildFeatureShowroomItems(): ShowroomItem[] {
       ],
     },
     {
+      id: 'feature.inventory.warehouse-bin-board',
+      componentName: 'WarehouseBinBoard',
+      section: 'INVENTORY',
+      role: 'Admin',
+      sourceFile: 'src/features/inventory/components/WarehouseBinBoard.tsx',
+      usedIn: ['Inventory receive/issue/transfer/count', 'Returns recovery', 'Purchasing GRN'],
+      description: 'Shared parchment bin trigger + shelf strip for destination pick.',
+      layout: 'full',
+      mode: 'inline',
+      tags: ['WarehouseBinBoard', 'bin', 'inventory'],
+      contains: ['WarehouseBinTrigger', 'WarehouseBinStrip'],
+      render: function WarehouseBinBoardDemo() {
+        const [selected, setSelected] = useState('raw-a1');
+        return (
+          <WarehouseBinBoard
+            warehouseLabel="Raw Materials"
+            warehouseSubtitle="RAW · Aisle A1"
+            locations={[
+              {
+                id: 'raw-main',
+                warehouseId: 'raw',
+                code: 'RAW-MAIN',
+                name: 'Main floor',
+                isDefault: true,
+                qrCode: 'BIN-RAW-RAW-MAIN',
+              },
+              {
+                id: 'raw-a1',
+                warehouseId: 'raw',
+                code: 'RAW-A1',
+                name: 'Aisle A1',
+                isDefault: false,
+                qrCode: 'BIN-RAW-RAW-A1',
+              },
+            ]}
+            selectedLocationId={selected}
+            onOpenWarehouse={() => undefined}
+            onSelectLocation={setSelected}
+          />
+        );
+      },
+    },
+    {
       id: 'feature.inventory.semi-order-group-card',
       componentName: 'InventorySemiOrderGroupCard',
       section: 'SEMI',
@@ -531,18 +573,79 @@ export function buildFeatureShowroomItems(): ShowroomItem[] {
       },
     },
     {
-      id: 'feature.purchasing.pr-card',
-      componentName: 'PurchaseRequestBoardCard',
+      id: 'feature.purchasing.buy-alert',
+      componentName: 'PurchasingBuyAlertCard',
       section: 'PURCHASING',
       role: 'Admin',
-      sourceFile: 'src/features/purchasing/components/PurchaseRequestBoardCard.tsx',
-      usedIn: ['Purchasing → Requests'],
-      description: 'Purchase request board card.',
+      sourceFile: 'src/features/purchasing/components/PurchasingBuyAlertCard.tsx',
+      usedIn: ['Purchasing hub'],
+      description: 'Buy-alert card for low stock and production shortages.',
       layout: 'full',
       mode: 'inline',
-      tags: ['PurchaseRequestBoardCard', 'purchasing'],
-      render: function PrCardDemo() {
-        return <PurchaseRequestBoardCard request={purchaseRequest()} onPress={() => undefined} />;
+      tags: ['PurchasingBuyAlertCard', 'purchasing'],
+      render: function BuyAlertDemo() {
+        return <PurchasingBuyAlertCard count={4} onPress={() => undefined} />;
+      },
+    },
+    {
+      id: 'feature.purchasing.builder-line-card',
+      componentName: 'BuilderLineCard',
+      section: 'PURCHASING',
+      role: 'Admin',
+      sourceFile: 'src/features/purchasing/components/BuilderLineCard.tsx',
+      usedIn: ['Purchasing → New order'],
+      description: 'Order builder line card with qty, price and destination.',
+      layout: 'full',
+      mode: 'inline',
+      tags: ['BuilderLineCard', 'purchasing'],
+      render: function BuilderLineDemo() {
+        return (
+          <BuilderLineCard
+            name="Oak plywood"
+            sku="WOOD-SHOW-01"
+            quantity="12"
+            unitPrice="18.50"
+            destination="RAW · Main"
+          />
+        );
+      },
+    },
+    {
+      id: 'feature.purchasing.low-stock-board',
+      componentName: 'LowStockSupplierBoard',
+      section: 'PURCHASING',
+      role: 'Admin',
+      sourceFile: 'src/features/purchasing/components/LowStockSupplierBoard.tsx',
+      usedIn: ['Purchasing → Low stock'],
+      description: 'Low-stock review board grouped by supplier.',
+      layout: 'full',
+      mode: 'inline',
+      tags: ['LowStockSupplierBoard', 'purchasing'],
+      render: function LowStockBoardDemo() {
+        return <LowStockSupplierBoard supplierName="North Woods Supply" itemCount={4} />;
+      },
+    },
+    {
+      id: 'feature.purchasing.receive-line-card',
+      componentName: 'ReceiveLineCard',
+      section: 'PURCHASING',
+      role: 'Admin',
+      sourceFile: 'src/features/purchasing/components/ReceiveLineCard.tsx',
+      usedIn: ['Inventory → Receive orders'],
+      description: 'Receive-goods line card with remaining qty and destination.',
+      layout: 'full',
+      mode: 'inline',
+      tags: ['ReceiveLineCard', 'purchasing'],
+      render: function ReceiveLineDemo() {
+        return (
+          <ReceiveLineCard
+            name="Velvet fabric"
+            sku="FAB-SHOW-01"
+            ordered="20"
+            remaining="8"
+            destination="RAW · HOLD-01"
+          />
+        );
       },
     },
     {

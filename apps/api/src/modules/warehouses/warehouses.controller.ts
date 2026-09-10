@@ -27,10 +27,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import {
+  nextLocationCode,
   nextWarehouseCode,
   slugFromWarehouseName,
 } from '../../common/helpers/warehouse-code.util';
-import type { AuthUser } from '@maher/types';
+import { binScanPayload, type AuthUser } from '@maher/types';
+import { allocateBinQrCode, ensureDefaultBinId } from '../inventory/bin-resolve';
 
 class WarehouseDto {
   /** Optional — auto-generated from the English name when omitted. */
@@ -62,8 +64,32 @@ class WarehouseDto {
 }
 
 class LocationDto {
-  @IsString() @MinLength(1) code!: string;
-  @IsOptional() @IsString() name?: string;
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+class LocationPatchDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 @ApiTags('warehouses')
@@ -140,7 +166,77 @@ export class WarehousesController {
       });
     }
     await this.audit(user.id, 'warehouse.create', row.id, row);
-    return row;
+    await ensureDefaultBinId(this.prisma, row.id);
+    return this.prisma.warehouse.findUniqueOrThrow({
+      where: { id: row.id },
+      include: { locations: true },
+    });
+  }
+
+  @Get('locations/by-code/:code')
+  @RequireAnyPermissions('warehouse.read', 'warehouse.manage', 'inventory.read', 'inventory.receive')
+  async findLocationByCode(@Param('code') raw: string) {
+    const code = decodeURIComponent(String(raw ?? '')).trim();
+    if (!code) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Bin not found.' });
+    }
+    const prefixed = code.startsWith('BIN:') && !code.startsWith('BIN-');
+    const idOrCode = prefixed ? code.slice('BIN:'.length) : code;
+    const stripped = code.startsWith('BIN-') ? code.slice('BIN-'.length) : '';
+    const location = await this.prisma.warehouseLocation.findFirst({
+      where: prefixed
+        ? { id: idOrCode }
+        : {
+            OR: [
+              { qrCode: code },
+              { id: idOrCode },
+              { code: idOrCode },
+              ...(stripped ? [{ code: stripped }] : []),
+            ],
+          },
+      include: {
+        warehouse: {
+          select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true, type: true },
+        },
+        balances: {
+          where: {
+            OR: [{ availableQty: { gt: 0 } }, { reservedQty: { gt: 0 } }],
+          },
+          include: {
+            inventoryItem: {
+              select: {
+                id: true,
+                sku: true,
+                nameEn: true,
+                nameAr: true,
+                nameHe: true,
+                unit: true,
+                imageUrl: true,
+              },
+            },
+          },
+          take: 80,
+        },
+      },
+    });
+    if (!location) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Bin not found.' });
+    }
+    return {
+      ...location,
+      scanCode: binScanPayload(location),
+      contents: location.balances.map((b) => ({
+        inventoryItemId: b.inventoryItemId,
+        sku: b.inventoryItem.sku,
+        nameEn: b.inventoryItem.nameEn,
+        nameAr: b.inventoryItem.nameAr,
+        nameHe: b.inventoryItem.nameHe,
+        unit: b.inventoryItem.unit,
+        imageUrl: b.inventoryItem.imageUrl,
+        availableQty: Number(b.availableQty),
+        reservedQty: Number(b.reservedQty),
+      })),
+    };
   }
 
   @Get(':id')
@@ -227,7 +323,7 @@ export class WarehousesController {
   }
 
   @Post(':id/locations')
-  @RequirePermissions('warehouse.manage')
+  @RequireAnyPermissions('warehouse.manage', 'inventory.receive')
   async addLocation(
     @Param('id') warehouseId: string,
     @Body() dto: LocationDto,
@@ -235,12 +331,63 @@ export class WarehousesController {
   ) {
     const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
     if (!warehouse) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Warehouse not found.' });
+    const existing = await this.prisma.warehouseLocation.findMany({
+      where: { warehouseId },
+      select: { code: true },
+    });
+    const code =
+      dto.code?.trim() ||
+      nextLocationCode(
+        dto.name ?? '',
+        existing.map((row) => row.code),
+      );
     try {
+      const qrCode = await allocateBinQrCode(this.prisma, warehouse.code, code);
       const row = await this.prisma.warehouseLocation.create({
-        data: { warehouseId, code: dto.code, name: dto.name },
+        data: { warehouseId, code, name: dto.name?.trim() || dto.name, qrCode },
       });
       await this.audit(user.id, 'warehouse.location.create', row.id, row);
-      return row;
+      return { ...row, scanCode: binScanPayload(row) };
+    } catch {
+      throw new ConflictException({
+        code: 'LOCATION_EXISTS',
+        message: 'Location code already exists in this warehouse.',
+      });
+    }
+  }
+
+  @Patch(':id/locations/:locationId')
+  @RequireAnyPermissions('warehouse.manage', 'inventory.receive')
+  async updateLocation(
+    @Param('id') warehouseId: string,
+    @Param('locationId') locationId: string,
+    @Body() dto: LocationPatchDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.warehouseLocation.findFirst({
+      where: { id: locationId, warehouseId },
+    });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Holding location not found.' });
+    }
+    try {
+      if (dto.isDefault === true) {
+        await this.prisma.warehouseLocation.updateMany({
+          where: { warehouseId, isDefault: true, id: { not: locationId } },
+          data: { isDefault: false },
+        });
+      }
+      const row = await this.prisma.warehouseLocation.update({
+        where: { id: locationId },
+        data: {
+          ...(dto.code !== undefined ? { code: dto.code.trim() } : {}),
+          ...(dto.name !== undefined ? { name: dto.name.trim() || null } : {}),
+          ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        },
+      });
+      await this.audit(user.id, 'warehouse.location.update', row.id, row);
+      return { ...row, scanCode: binScanPayload(row) };
     } catch {
       throw new ConflictException({
         code: 'LOCATION_EXISTS',
@@ -250,19 +397,37 @@ export class WarehousesController {
   }
 
   @Delete(':id/locations/:locationId')
-  @RequirePermissions('warehouse.manage')
+  @RequireAnyPermissions('warehouse.manage', 'inventory.receive')
   async removeLocation(
     @Param('id') warehouseId: string,
     @Param('locationId') locationId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const bal = await this.prisma.inventoryBalance.count({
-      where: {
-        locationId,
-        OR: [{ availableQty: { gt: 0 } }, { reservedQty: { gt: 0 } }],
-      },
+    const existing = await this.prisma.warehouseLocation.findFirst({
+      where: { id: locationId, warehouseId },
     });
-    if (bal > 0) {
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Holding location not found.' });
+    }
+    if (existing.isDefault) {
+      throw new BadRequestException({
+        code: 'DEFAULT_LOCATION',
+        message: 'The main floor bin cannot be deleted. Deactivate extra bins instead.',
+      });
+    }
+    const [bal, lots, kits] = await Promise.all([
+      this.prisma.inventoryBalance.count({
+        where: {
+          locationId,
+          OR: [{ availableQty: { gt: 0 } }, { reservedQty: { gt: 0 } }],
+        },
+      }),
+      this.prisma.inventoryLot.count({
+        where: { locationId, remainingQty: { gt: 0 } },
+      }),
+      this.prisma.wipKit.count({ where: { locationId } }),
+    ]);
+    if (bal > 0 || lots > 0 || kits > 0) {
       throw new BadRequestException({
         code: 'LOCATION_HAS_STOCK',
         message: 'Cannot remove a location that still has stock.',

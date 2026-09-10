@@ -27,6 +27,12 @@ import { localizedName } from '@maher/i18n';
 import { usePathname, useRouter } from '@/i18n/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OrdersLens } from '@/components/cost-performance/orders-lens';
+import {
+  MaterialsCoverageLens,
+  ProductAnalyticsLens,
+  ReturnsLens,
+} from '@/components/cost-performance/returns-materials-lens';
 
 interface DashboardReport {
   newOrders?: number;
@@ -190,6 +196,7 @@ interface PurchasingReport {
     createdAt?: string;
     purchaseOrder?: { id: string; number: string } | null;
     warehouse?: { code: string } | null;
+    lines?: Array<{ location?: { code: string } | null }>;
   }>;
 }
 
@@ -296,7 +303,6 @@ function useReportQuery<T>(key: string, path: string) {
 }
 
 export default function ReportsPage() {
-  const t = useTranslations('navigation');
   const ta = useTranslations('accounting');
   const tCommon = useTranslations('common');
   const locale = useLocale();
@@ -464,6 +470,11 @@ export default function ReportsPage() {
       revenueOrders: number;
       revenueInvoiced: number;
       materialCogs: number;
+      reworkCost?: number;
+      replacementCost?: number;
+      recoveredValue?: number;
+      scrapValue?: number;
+      returnWriteOff?: number;
       supplierSpend: number;
       laborHours: number;
       laborCost: number;
@@ -521,7 +532,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <PageHero
-        title={t('reports')}
+        title={ta('reportsTitle')}
         description={`${ta('reportsSubtitle')} ${ta('exportGapsNote')}`}
         tone="soft"
         actions={
@@ -699,6 +710,11 @@ export default function ReportsPage() {
           </div>
         }
       />
+
+      <OrdersLens periodQs={periodQs} />
+      <ReturnsLens />
+      <MaterialsCoverageLens />
+      <ProductAnalyticsLens />
 
       <p className="text-sm text-text-secondary">{ta('csvExportHint')}</p>
 
@@ -970,6 +986,26 @@ export default function ReportsPage() {
             <MetricCard
               label={ta('materialCogs')}
               value={<span dir="ltr">{money(periodPl.data.totals.materialCogs)}</span>}
+            />
+            <MetricCard
+              label={ta('reworkCost')}
+              value={<span dir="ltr">{money(periodPl.data.totals.reworkCost ?? 0)}</span>}
+            />
+            <MetricCard
+              label={ta('replacementCost')}
+              value={<span dir="ltr">{money(periodPl.data.totals.replacementCost ?? 0)}</span>}
+            />
+            <MetricCard
+              label={ta('recoveredValue')}
+              value={<span dir="ltr">{money(periodPl.data.totals.recoveredValue ?? 0)}</span>}
+            />
+            <MetricCard
+              label={ta('scrapValue')}
+              value={<span dir="ltr">{money(periodPl.data.totals.scrapValue ?? 0)}</span>}
+            />
+            <MetricCard
+              label={ta('returnWriteOff')}
+              value={<span dir="ltr">{money(periodPl.data.totals.returnWriteOff ?? 0)}</span>}
             />
             <MetricCard
               label={ta('laborCost')}
@@ -1533,6 +1569,7 @@ export default function ReportsPage() {
                     <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
                     <TableHeaderCell>{ta('purchaseOrder')}</TableHeaderCell>
                     <TableHeaderCell>{ta('warehouse')}</TableHeaderCell>
+                    <TableHeaderCell>{ta('bin')}</TableHeaderCell>
                     <TableHeaderCell>{tCommon('date')}</TableHeaderCell>
                   </TableRow>
                 </TableHead>
@@ -1553,6 +1590,11 @@ export default function ReportsPage() {
                         )}
                       </TableCell>
                       <TableNumericCell>{r.warehouse?.code ?? '—'}</TableNumericCell>
+                      <TableCell dir="ltr">
+                        {[...new Set((r.lines ?? []).map((line) => line.location?.code).filter(Boolean))].join(
+                          ' · ',
+                        ) || '—'}
+                      </TableCell>
                       <TableNumericCell>{r.createdAt?.slice(0, 10) ?? '—'}</TableNumericCell>
                     </TableRow>
                   ))}

@@ -17,6 +17,7 @@ import type { Response } from 'express';
 import { extname } from 'path';
 import { memoryStorage } from 'multer';
 import { DocumentVisibility } from '@maher/database';
+import { dispositionFor, mimeFromKey } from '../../common/helpers/download-mime';
 import { PrismaService } from '../../common/prisma.service';
 import { Public, RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -31,7 +32,15 @@ const ALLOWED = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'audio/m4a',
+  'audio/mp4',
+  'audio/aac',
+  'audio/webm',
+  'audio/x-m4a',
+  'audio/mpeg',
 ]);
+
+const AUDIO_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Catalog product images need durable public download links. */
 const LONG_LIVED_TTL_SECONDS = 10 * 365 * 24 * 3600;
@@ -44,25 +53,6 @@ class UploadFromUrlDto {
   @IsOptional()
   @IsString()
   fileName?: string;
-}
-
-function mimeFromKey(key: string): string {
-  const ext = key.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'pdf':
-      return 'application/pdf';
-    default:
-      return 'application/octet-stream';
-  }
 }
 
 function tokenTtlForCategory(category: string | null | undefined): number {
@@ -228,6 +218,12 @@ export class UploadsController {
     if (!ALLOWED.has(file.mimetype)) {
       throw new BadRequestException({ code: 'INVALID_FILE_TYPE', message: 'File type not allowed.' });
     }
+    if (file.mimetype.startsWith('audio/') && file.size > AUDIO_MAX_BYTES) {
+      throw new BadRequestException({
+        code: 'FILE_TOO_LARGE',
+        message: 'Voice note exceeds 8MB limit.',
+      });
+    }
 
     const stored = await this.storage.putObject(file.originalname, file.mimetype, file.buffer);
     return this.createDocument({
@@ -348,12 +344,7 @@ export class UploadsController {
     const mime = mimeFromKey(key);
     const fileName = key.split('/').pop() ?? 'file';
     res.setHeader('Content-Type', mime);
-    res.setHeader(
-      'Content-Disposition',
-      mime.startsWith('image/')
-        ? `inline; filename="${fileName}"`
-        : `attachment; filename="${fileName}"`,
-    );
+    res.setHeader('Content-Disposition', `${dispositionFor(mime)}; filename="${fileName}"`);
     stream.pipe(res);
   }
 

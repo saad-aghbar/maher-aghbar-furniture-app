@@ -317,6 +317,65 @@ describe('validateProductionSetup', () => {
     expect(result.issues.some((i) => i.code === 'SETUP_INSPECTION_MUST_NOT_PRODUCE')).toBe(true);
   });
 
+  it('rejects Inspection that consumes kits', () => {
+    const result = validateProductionSetup({
+      hasPublishedWorkflow: true,
+      dagIssues: [],
+      bomLines: [],
+      stages: [
+        readyStage,
+        {
+          workflowNodeId: 'n-insp',
+          nodeKey: 'inspection',
+          stageDefinitionId: 's-insp',
+          stageCode: 'INSPECTION',
+          behavior: 'USES_SEMI_FINISHED' as const,
+          consumeOutputIds: ['out-1'],
+          consumesSemiFinished: true,
+        },
+        fg,
+      ],
+      outputIds: new Set(['out-1', 'out-2']),
+      defaultWarehouseByType: {
+        RAW_MATERIALS: true,
+        SEMI_FINISHED: true,
+        FINISHED_GOODS: true,
+      },
+    });
+    expect(result.status).toBe('INVALID');
+    expect(result.issues.some((i) => i.code === 'SETUP_INSPECTION_MUST_NOT_CONSUME')).toBe(true);
+  });
+
+  it('accepts Inspection NONE with mix producing and packaging consuming', () => {
+    const result = validateProductionSetup({
+      hasPublishedWorkflow: true,
+      dagIssues: [],
+      bomLines: [],
+      stages: [
+        readyStage,
+        {
+          workflowNodeId: 'n-insp',
+          nodeKey: 'inspection',
+          stageDefinitionId: 's-insp',
+          stageCode: 'INSPECTION',
+          isRequired: true,
+          behavior: 'NONE' as const,
+          consumeOutputIds: [],
+          consumesSemiFinished: false,
+        },
+        fg,
+      ],
+      outputIds: new Set(['out-1', 'out-2']),
+      defaultWarehouseByType: {
+        RAW_MATERIALS: true,
+        SEMI_FINISHED: true,
+        FINISHED_GOODS: true,
+      },
+    });
+    expect(result.status).toBe('READY');
+    expect(result.issues).toEqual([]);
+  });
+
   it('rejects Delivery that produces stocked output', () => {
     const result = validateProductionSetup({
       hasPublishedWorkflow: true,

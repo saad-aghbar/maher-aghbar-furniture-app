@@ -107,6 +107,15 @@ describe('optional identifier DTOs', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
+  it('CreateWorkflowDto accepts RETURN scope', async () => {
+    const dto = plainToInstance(CreateWorkflowDto, {
+      nameEn: 'Return dismantle',
+      nameAr: 'تفكيك المرتجع',
+      scope: 'RETURN',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
   it('CreateStageDto accepts omitted code', async () => {
     const dto = plainToInstance(CreateStageDto, {
       nameEn: 'Custom Finish',
@@ -205,6 +214,7 @@ describe('WorkflowVersionService identifier generation', () => {
           id: 'mid',
           stageDefinition: { code: 'FOAM' },
         }),
+        findMany: jest.fn().mockResolvedValue([{ stageDefinition: { code: 'FOAM' } }]),
         delete: jest.fn().mockResolvedValue({}),
       },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },

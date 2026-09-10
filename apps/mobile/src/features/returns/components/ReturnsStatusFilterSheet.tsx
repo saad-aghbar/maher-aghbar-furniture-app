@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { returnCtaStyle } from './returnFloorCta';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
@@ -35,7 +36,7 @@ export function ReturnsStatusFilterSheet({
   const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.58), 480);
+  const sheetHeight = Math.min(Math.round(height * 0.72), 560);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const [draft, setDraft] = useState<ReturnStatusFilter>(status);
@@ -62,11 +63,17 @@ export function ReturnsStatusFilterSheet({
       open={open}
       onClose={dismiss}
       title={t('accounting.filterTitle')}
-      fitContent
-      maxHeight={sheetHeight}
+      expandable
+      sheetHeight={sheetHeight}
     >
-      <View style={{ gap: theme.spacing.md }}>
-        <View
+      <View style={{ flex: 1, minHeight: 0, gap: theme.spacing.md }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: theme.spacing.sm }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator
+        >
+          <View
           style={{
             borderRadius: theme.radius.xl,
             borderWidth: 1,
@@ -215,25 +222,25 @@ export function ReturnsStatusFilterSheet({
             })}
           </View>
         </View>
+        </ScrollView>
 
         <View
           style={{
-            paddingTop: theme.spacing.sm,
-            borderTopWidth: StyleSheet.hairlineWidth,
+            paddingTop: theme.spacing.md,
+            borderTopWidth: 1,
             borderTopColor: colors.border,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
             gap: theme.spacing.sm,
           }}
         >
-          <SecondaryButton
-            label={t('accounting.filterReset')}
-            onPress={reset}
-            style={{ flex: 1, borderRadius: theme.radius.xl }}
-          />
           <PrimaryButton
             label={t('accounting.filterApply')}
             onPress={apply}
-            style={{ flex: 1.35, borderRadius: theme.radius.xl }}
+            style={returnCtaStyle(theme)}
+          />
+          <SecondaryButton
+            label={t('accounting.filterReset')}
+            onPress={reset}
+            style={returnCtaStyle(theme)}
           />
         </View>
       </View>

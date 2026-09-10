@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -15,6 +17,7 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
@@ -29,6 +32,7 @@ import {
 import { useAccessoryCamera } from './components/AccessoryCameraProvider';
 import { AccessoryPhotoSourceSheet } from './components/AccessoryPhotoSourceSheet';
 import { AddStockSheet } from './components/AddStockSheet';
+import { EditInventoryItemSheet } from './components/EditInventoryItemSheet';
 import { InventoryQrSheet, qrItemFromCard } from './components/InventoryQrSheet';
 import { InventoryAdjustmentHistoryBoard } from './components/InventoryAdjustmentHistoryBoard';
 import {
@@ -38,12 +42,14 @@ import {
 import { InventoryIdentityBoard } from './components/InventoryIdentityBoard';
 import { InventoryReceiveDock } from './components/InventoryReceiveDock';
 import { InventoryDetailSkeleton } from './components/InventorySkeleton';
+import { WarehouseBinPlace } from './components/WarehouseBinBoard';
 import { openInventoryLabelPdf, openInventoryQrLabelPdf } from './api';
 import { toGoodsReceiptArgs } from './stockMoveSubmit';
 import {
   flattenInventoryTransactionPages,
   useInventoryItemQuery,
   useInventoryTransactionsInfiniteQuery,
+  useIssueStockMutation,
   useReceiveAgainstPoMutation,
   useReceiveStockMutation,
   useUpdateInventoryItemMutation,
@@ -51,6 +57,7 @@ import {
 } from './query';
 import {
   formatInventoryMaterialType,
+  inventoryItemCanPurchase,
   inventoryItemLifecycleEyebrow,
   selectInventoryItemDetail,
   selectInventoryTransaction,
@@ -63,6 +70,7 @@ type InventoryItemDetailScreenProps = {
 
 export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenProps) {
   const { user } = useAuth();
+  const router = useRouter();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -72,20 +80,27 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const reduce = useReducedMotion();
   const allowed = can(user, 'inventory.read');
   const canReceive = can(user, 'inventory.receive');
-  const canEditPhoto = can(user, 'inventory.adjust');
+  const canIssue = can(user, 'inventory.issue');
+  const canEdit = can(user, 'inventory.adjust');
+  const canEditCost = can(user, 'inventory.cost.read');
+  const canEditPhoto = canEdit;
+  const canCreatePo = can(user, 'purchase-order.create');
 
-  const [addOpen, setAddOpen] = useState(false);
+  const [stockMode, setStockMode] = useState<'receive' | 'issue' | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const pendingPrintAfterQrRef = useRef(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [skuPhotoFailed, setSkuPhotoFailed] = useState(false);
   const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const itemQuery = useInventoryItemQuery(itemId, allowed);
   const txQuery = useInventoryTransactionsInfiniteQuery(itemId, allowed);
-  const warehousesQuery = useWarehousesQuery(canReceive && addOpen);
+  const warehousesQuery = useWarehousesQuery((canReceive || canIssue) && stockMode != null);
   const receiveMutation = useReceiveStockMutation(itemId);
   const receivePoMutation = useReceiveAgainstPoMutation(itemId);
+  const issueMutation = useIssueStockMutation(itemId);
   const updateItemMutation = useUpdateInventoryItemMutation();
   const { openAccessoryCamera } = useAccessoryCamera();
 
@@ -94,6 +109,12 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
     [itemQuery.data, locale],
   );
   const showsSkuPhoto = showsRawMaterialPhoto(detail?.itemClass);
+  const skuPhotoUri = detail?.imageUrl?.trim() || null;
+  useEffect(() => {
+    setSkuPhotoFailed(false);
+  }, [detail?.id, skuPhotoUri]);
+  const showSkuPhotoWell =
+    showsSkuPhoto && (canEditPhoto || (Boolean(skuPhotoUri) && !skuPhotoFailed));
 
   const transactions = useMemo(() => {
     if (!detail) return [];
@@ -129,9 +150,23 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   ]);
 
   const showReceive = canReceive && detail?.isActive && !detail?.archivedAt && detail?.itemClass !== 'FINISHED_GOOD';
-  const stickyPad = showReceive
-    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 88
-    : theme.spacing['3xl'];
+  const canOrder = canCreatePo && Boolean(detail && inventoryItemCanPurchase(detail));
+  const showOrderDock = canOrder;
+  const dockBody =
+    (showOrderDock ? 56 : 0) +
+    (showReceive ? 56 : 0) +
+    (showReceive && showOrderDock ? theme.spacing.sm : 0);
+  const stickyPad =
+    showReceive || showOrderDock
+      ? stickyCtaBottomInset(
+          insets.bottom,
+          theme.spacing.md,
+          surfaceTabBarStackInset(insets.bottom),
+        ) +
+        theme.spacing.xl +
+        dockBody +
+        120
+      : theme.spacing['3xl'];
 
   async function onRefresh() {
     await Promise.all([itemQuery.refetch(), txQuery.refetch()]);
@@ -408,12 +443,12 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               />
             </View>
 
-            {showsSkuPhoto && (detail.imageUrl || canEditPhoto) ? (
+            {showSkuPhotoWell ? (
               <AnimatedPressable
                 variant="card"
                 accessibilityRole={canEditPhoto ? 'button' : 'image'}
                 accessibilityLabel={
-                  detail.imageUrl
+                  skuPhotoUri && !skuPhotoFailed
                     ? t('mobile.inventory.accessoryPhoto')
                     : t('mobile.inventory.takePhoto')
                 }
@@ -433,12 +468,13 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   ...orderBoardShadow(colorScheme),
                 }}
               >
-                {detail.imageUrl ? (
+                {skuPhotoUri && !skuPhotoFailed ? (
                   <Image
-                    source={{ uri: detail.imageUrl }}
+                    source={{ uri: skuPhotoUri }}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
                     accessibilityIgnoresInvertColors
+                    onError={() => setSkuPhotoFailed(true)}
                   />
                 ) : (
                   <View style={{ gap: theme.spacing.xs, paddingHorizontal: theme.spacing.lg }}>
@@ -502,52 +538,48 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   marginTop: theme.spacing.sm,
                 }}
               >
-                <AnimatedPressable
-                  variant="button"
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.inventory.qrCode')}
-                  onPress={() => {
-                    void haptics.selection();
-                    setQrOpen(true);
-                  }}
-                  style={{
-                    minHeight: 40,
-                    paddingHorizontal: theme.spacing.md,
-                    borderRadius: theme.radius.full,
-                    borderWidth: 1,
-                    borderColor: colors.brand,
-                    backgroundColor: colors.brandSoft,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
-                    {t('mobile.inventory.qrCode')}
-                  </AppText>
-                </AnimatedPressable>
-                <AnimatedPressable
-                  variant="button"
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.inventory.labelPdf')}
-                  onPress={() => {
-                    void haptics.selection();
-                    openLabelPdf();
-                  }}
-                  style={{
-                    minHeight: 40,
-                    paddingHorizontal: theme.spacing.md,
-                    borderRadius: theme.radius.full,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surfaceSecondary,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
-                    {t('mobile.inventory.labelPdf')}
-                  </AppText>
-                </AnimatedPressable>
+                {showReceive ? (
+                  <ActionRailChip
+                    label={t('mobile.inventory.receive')}
+                    tone="brand"
+                    onPress={() => setStockMode('receive')}
+                  />
+                ) : null}
+                {canIssue && detail.isActive && !detail.archivedAt && detail.itemClass !== 'FINISHED_GOOD' ? (
+                  <ActionRailChip
+                    label={t('mobile.inventory.issue')}
+                    tone="solid"
+                    onPress={() => setStockMode('issue')}
+                  />
+                ) : null}
+                {canOrder ? (
+                  <ActionRailChip
+                    label={t('mobile.inventory.createPurchaseOrder')}
+                    tone="brand"
+                    onPress={() =>
+                      router.push(
+                        `/(app)/(admin)/purchasing/new?itemIds=${encodeURIComponent(detail.id)}` as Href,
+                      )
+                    }
+                  />
+                ) : null}
+                {canEdit && !detail.archivedAt ? (
+                  <ActionRailChip
+                    label={t('mobile.inventory.edit')}
+                    tone="ghost"
+                    onPress={() => setEditOpen(true)}
+                  />
+                ) : null}
+                <ActionRailChip
+                  label={t('mobile.inventory.labelPdf')}
+                  tone="ghost"
+                  onPress={openLabelPdf}
+                />
+                <ActionRailChip
+                  label={t('mobile.inventory.qrCode')}
+                  tone="brand"
+                  onPress={() => setQrOpen(true)}
+                />
               </View>
             </InventoryBoardCard>
 
@@ -560,7 +592,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                 >
                   {detail.balances.map((b, i) => (
                     <View
-                      key={b.warehouseId}
+                      key={`${b.warehouseId}-${b.locationId ?? i}`}
                       style={{
                         gap: theme.spacing.sm,
                         paddingVertical: theme.spacing.md,
@@ -571,12 +603,11 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                         borderTopColor: colors.border,
                       }}
                     >
-                      <AppText
-                        variant="body"
-                        weight={locale === 'ar' ? 'regular' : 'medium'}
-                      >
-                        {b.warehouseName}
-                      </AppText>
+                      <WarehouseBinPlace
+                        warehouseName={b.warehouseName}
+                        binLabel={b.locationName}
+                        titleWeight={locale === 'ar' ? 'regular' : 'medium'}
+                      />
                       {showBreakdown ? (
                         <InventoryQtyStrip
                           onHand={b.availableQty}
@@ -611,16 +642,34 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           </HeaderShell>
       </ScrollView>
 
-      {showReceive ? (
-        <FloatingActionDock floating>
-          <InventoryReceiveDock onPress={() => setAddOpen(true)} />
+      {showReceive || showOrderDock ? (
+        <FloatingActionDock
+          floating
+          tabClearance={surfaceTabBarStackInset(insets.bottom)}
+        >
+          <View style={{ gap: theme.spacing.sm }}>
+            {showOrderDock ? (
+              <PrimaryButton
+                label={t('mobile.inventory.createPurchaseOrder')}
+                onPress={() =>
+                  router.push(
+                    `/(app)/(admin)/purchasing/new?itemIds=${encodeURIComponent(detail.id)}` as Href,
+                  )
+                }
+                style={{ borderRadius: theme.radius.full, minHeight: 44 }}
+              />
+            ) : null}
+            {showReceive ? (
+              <InventoryReceiveDock onPress={() => setStockMode('receive')} />
+            ) : null}
+          </View>
         </FloatingActionDock>
       ) : null}
 
       <AddStockSheet
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        mode="receive"
+        open={stockMode != null}
+        onClose={() => setStockMode(null)}
+        mode={stockMode ?? 'receive'}
         warehouses={warehousesQuery.data ?? []}
         initialItem={{
           id: detail.id,
@@ -636,37 +685,73 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           availableQty: detail.freeQty,
           balances: addStockBalances,
         }}
-        loading={receiveMutation.isPending || receivePoMutation.isPending}
+        loading={
+          receiveMutation.isPending || receivePoMutation.isPending || issueMutation.isPending
+        }
         onSubmit={(input) => {
+          const issuing = stockMode === 'issue';
           const onSuccess = () => {
             void haptics.confirmMedium();
-            setAddOpen(false);
+            setStockMode(null);
             showToast({
               variant: 'success',
-              message: t('mobile.inventory.receiveStockSuccess'),
+              message: issuing
+                ? t('mobile.inventory.issueStockSuccess')
+                : t('mobile.inventory.receiveStockSuccess'),
             });
           };
           const onError = () => {
             void haptics.error();
             showToast({
               variant: 'error',
-              message: t('mobile.inventory.receiveStockFailed'),
+              message: issuing
+                ? t('mobile.inventory.issueStockFailed')
+                : t('mobile.inventory.receiveStockFailed'),
             });
           };
-          const po = toGoodsReceiptArgs(input);
+          const po = issuing ? null : toGoodsReceiptArgs(input);
           if (po) {
             receivePoMutation.mutate(po, { onSuccess, onError });
             return;
           }
-          receiveMutation.mutate(
+          const body = {
+            inventoryItemId: input.inventoryItemId,
+            warehouseId: input.warehouseId,
+            locationId: input.locationId,
+            quantity: input.quantity,
+            notes: input.notes,
+            idempotencyKey: `mobile-${issuing ? 'issue' : 'receipt'}-${input.inventoryItemId}-${Date.now()}`,
+          };
+          const mutation = issuing ? issueMutation : receiveMutation;
+          mutation.mutate(body, { onSuccess, onError });
+        }}
+      />
+      <EditInventoryItemSheet
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        item={detail}
+        canEditCost={canEditCost}
+        loading={updateItemMutation.isPending}
+        onSubmit={(body) => {
+          updateItemMutation.mutate(
+            { id: detail.id, body },
             {
-              inventoryItemId: input.inventoryItemId,
-              warehouseId: input.warehouseId,
-              quantity: input.quantity,
-              notes: input.notes,
-              idempotencyKey: `mobile-receipt-${input.inventoryItemId}-${Date.now()}`,
+              onSuccess: () => {
+                void haptics.confirmMedium();
+                setEditOpen(false);
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.inventory.itemUpdated'),
+                });
+              },
+              onError: () => {
+                void haptics.error();
+                showToast({
+                  variant: 'error',
+                  message: t('mobile.inventory.itemUpdateFailed'),
+                });
+              },
             },
-            { onSuccess, onError },
           );
         }}
       />
@@ -690,5 +775,44 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
       />
       {pdfDownloadSheet}
     </AppScreen>
+  );
+}
+
+function ActionRailChip({
+  label,
+  tone,
+  onPress,
+}: {
+  label: string;
+  tone: 'brand' | 'solid' | 'ghost';
+  onPress: () => void;
+}) {
+  const { locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const brand = tone === 'brand';
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: 40,
+        paddingHorizontal: theme.spacing.md,
+        borderRadius: theme.radius.full,
+        borderWidth: 1,
+        borderColor: brand ? colors.brand : colors.border,
+        backgroundColor: brand ? colors.brandSoft : colors.surfaceSecondary,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
+        {label}
+      </AppText>
+    </AnimatedPressable>
   );
 }

@@ -120,6 +120,15 @@ export type ProductionOrderListItem = {
     number: string;
     externalOrderNumber?: string | null;
   } | null;
+  originType?: 'SALES_ORDER' | 'RETURN_WORK' | 'REPLACEMENT' | 'INTERNAL' | string | null;
+  originLabel?: 'RETURN WORK' | 'REPLACEMENT' | string | null;
+  returnRequestId?: string | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+    salesOrder?: { id: string; number: string } | null;
+  } | null;
   salesOrderLine?: {
     id: string;
     description?: string | null;
@@ -144,6 +153,7 @@ export type ProductionOrderListItem = {
 };
 
 export type ProductionDateMode = 'planned' | 'actual';
+export type ProductionDayFocus = 'late_missed' | 'at_risk';
 
 export type ProductionDayLensPlannedTask = {
   taskId: string;
@@ -164,9 +174,14 @@ export type ProductionDayLensEvent = {
   kind: string;
   at: string;
   stage?: string | null;
+  stageNameEn?: string | null;
+  stageNameAr?: string | null;
+  stageNameHe?: string | null;
   worker?: string | null;
   sku?: string | null;
   name?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
 };
 
 export type ProductionDayLensPayload = {
@@ -187,13 +202,20 @@ export type ProductionDaySummary = {
   planned: {
     orders: number;
     tasks: number;
-    byDepartment: Array<{ code: string; nameEn: string; taskCount: number }>;
+    byDepartment: Array<{
+      code: string;
+      nameEn: string;
+      nameAr?: string | null;
+      nameHe?: string | null;
+      taskCount: number;
+    }>;
   };
   actual: {
     orders: number;
     taskEvents: number;
   };
   lateMissed: number;
+  lateMissedTasks?: number;
   atRisk: number;
   /** Board lane counts scoped to onDate + dateMode (view/filter only). */
   board?: {
@@ -213,6 +235,26 @@ export type ProductionBlocker = {
   taskId?: string;
   taskName?: string;
   taskNumber?: string;
+};
+
+export type ProductionProblemStatus = 'open' | 'answered' | 'all';
+
+export type ProductionProblemRow = {
+  id: string;
+  taskId: string;
+  category: string;
+  reason: string;
+  voiceDocumentId: string | null;
+  photoDocumentIds?: string[];
+  resolution: string | null;
+  resolutionVoiceDocumentId?: string | null;
+  resolutionPhotoDocumentIds?: string[];
+  createdAt: string;
+  elapsedMinutes: number;
+  worker: { id: string; name: string } | null;
+  stage: { code: string; nameEn: string; nameAr?: string | null; nameHe?: string | null } | null;
+  order: { id: string; number: string } | null;
+  task: { id: string; name: string };
 };
 
 export type ProductionTask = {
@@ -286,6 +328,7 @@ export type ProductionOrderDetail = ProductionOrderListItem & {
       name: string;
       elapsedMinutes?: number;
       actualMinutes?: number;
+      actualSeconds?: number;
       running?: boolean;
       openStartedAt?: string | null;
       estimatedMinutes?: number | null;
@@ -303,6 +346,9 @@ export type ProductionOrderDetail = ProductionOrderListItem & {
       dependsOnCodes?: string[] | null;
     };
     tasks?: ProductionTask[];
+    inspectionStatus?: string | null;
+    inspectionProgress?: { passed: number; total: number; status?: string | null } | null;
+    backForRework?: boolean;
   }>;
   manufacturingCosting?: {
     status?: string | null;
@@ -330,6 +376,7 @@ export type WorkerDayWindow = {
   label: string;
   salesOrderNumber?: string | null;
   stage?: string | null;
+  kind?: 'work' | 'stopped';
 };
 
 export type AssignableWorker = {
@@ -357,8 +404,9 @@ export type AssignableWorker = {
   } | null;
 };
 
-export async function getProductionSummary() {
-  return apiGet<ProductionSummary>('/reports/production-summary');
+export async function getProductionSummary(origin?: 'normal' | 'returned') {
+  const qs = toSearchParams({ origin });
+  return apiGet<ProductionSummary>(`/reports/production-summary${qs}`);
 }
 
 export async function listProductionOrders(
@@ -373,6 +421,8 @@ export async function listProductionOrders(
     /** Factory-local YYYY-MM-DD — view/filter only. */
     onDate?: string;
     dateMode?: ProductionDateMode;
+    origin?: 'normal' | 'returned';
+    dayFocus?: ProductionDayFocus;
   } = {},
 ) {
   const qs = toSearchParams({
@@ -386,6 +436,8 @@ export async function listProductionOrders(
     assignedEmployeeId: params.assignedEmployeeId,
     onDate: params.onDate,
     dateMode: params.dateMode,
+    origin: params.origin,
+    dayFocus: params.dayFocus,
   });
   return apiGet<PaginatedResponse<ProductionOrderListItem>>(`/production-orders${qs}`);
 }
@@ -395,12 +447,16 @@ export async function getProductionDaySummary(params: {
   dateMode?: ProductionDateMode;
   bucket?: ProductionListBucket;
   customerId?: string;
+  origin?: 'normal' | 'returned';
+  dayFocus?: ProductionDayFocus;
 } = {}) {
   const qs = toSearchParams({
     onDate: params.onDate,
     dateMode: params.dateMode,
     bucket: params.bucket === 'all' ? undefined : params.bucket,
     customerId: params.customerId,
+    origin: params.origin,
+    dayFocus: params.dayFocus,
   });
   return apiGet<ProductionDaySummary>(`/production-orders/day-summary${qs}`);
 }
@@ -461,6 +517,7 @@ export type OrderPlanSetupTask = {
   assignedEmployeeId?: string | null;
   plannedStart?: string | null;
   plannedCompletion?: string | null;
+  estimatedMinutes?: number | null;
   /** Worker-facing instructions for this task (shown on the worker portal). */
   notes?: string | null;
   stageDefinitionId?: string | null;
@@ -517,6 +574,15 @@ export type OrderPlanCatalogDiffRow = {
 
 export type OrderPlanSetupResponse = {
   productionOrderId: string;
+  number?: string | null;
+  originType?: string | null;
+  originLabel?: string | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+    salesOrder?: { id: string; number: string } | null;
+  } | null;
   salesOrderId: string | null;
   salesOrderLineId: string | null;
   manufacturingComplexity?: string | null;
@@ -539,6 +605,14 @@ export type OrderPlanSetupResponse = {
     nameAr?: string | null;
     nameHe?: string | null;
     imageUrl?: string | null;
+  } | null;
+  productDescription?: string | null;
+  customer?: {
+    id: string;
+    name?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
   } | null;
   salesOrder?: {
     id: string;
@@ -567,6 +641,14 @@ export type OrderPlanSetupResponse = {
     nameHe?: string | null;
     type: string;
     isDefault: boolean;
+    locations?: Array<{
+      id: string;
+      code: string;
+      name?: string | null;
+      isDefault?: boolean;
+      isActive?: boolean;
+      qrCode?: string | null;
+    }>;
   }>;
   tasks: OrderPlanSetupTask[];
   readiness: {
@@ -580,11 +662,28 @@ export type OrderPlanSetupResponse = {
     dates?: { required: number; ready: number; missing: string[] };
     canConfirm: boolean;
   };
+  planDrift?: {
+    drifted: boolean;
+    issues: Array<{
+      snapshotNodeId: string;
+      stageCode: string;
+      field: string;
+      snapshot: string;
+      catalog: string;
+    }>;
+  };
 };
 
 export async function getOrderPlanSetup(productionOrderId: string) {
   return apiGet<OrderPlanSetupResponse>(
     `/production-orders/${encodeURIComponent(productionOrderId)}/plan-setup`,
+  );
+}
+
+export async function resyncOrderPlanSetup(productionOrderId: string) {
+  return apiPost<OrderPlanSetupResponse>(
+    `/production-orders/${encodeURIComponent(productionOrderId)}/plan-setup/resync`,
+    {},
   );
 }
 
@@ -686,7 +785,10 @@ export async function assignTask(
     plannedStart?: string;
     plannedCompletion?: string;
     estimatedMinutes?: number;
+    overtime?: boolean;
     overrideConflict?: boolean;
+    acknowledge?: boolean;
+    reason?: string;
   },
 ) {
   return apiPost(`/tasks/${encodeURIComponent(taskId)}/assign`, body);
@@ -701,6 +803,25 @@ export async function blockProductionTask(
   body: { category: string; reason: string },
 ) {
   return apiPost(`/tasks/${encodeURIComponent(taskId)}/block`, body);
+}
+
+export async function fetchProductionProblems(status: ProductionProblemStatus = 'open') {
+  return apiGet<{ data: ProductionProblemRow[] }>(`/production/problems?status=${status}`);
+}
+
+export async function resolveTaskBlocker(
+  taskId: string,
+  blockerId: string,
+  body: {
+    resolution: string;
+    resolutionVoiceDocumentId?: string;
+    resolutionPhotoDocumentIds?: string[];
+  },
+) {
+  return apiPost(
+    `/tasks/${encodeURIComponent(taskId)}/blockers/${encodeURIComponent(blockerId)}/resolve`,
+    body,
+  );
 }
 
 export async function pauseProductionTask(taskId: string) {

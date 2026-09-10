@@ -37,10 +37,19 @@ export type FabricTrackerRow = {
   productName: string | null;
   productImageUrl: string | null;
   supplierName: string | null;
+  inventoryItemId: string | null;
+  sku: string | null;
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: string | null;
+  supplierInvoiceId: string | null;
+  supplierInvoiceNumber: string | null;
   imageUrl: string | null;
   locationLabel: string | null;
   qrCodes: string[];
   lots: FabricTrackerItem['lots'];
+  expectedAvailableAt: string | null;
+  costOnFile: boolean;
+  resolvedUnitCost: number | null;
 };
 
 export function fabricLaneOf(item: Pick<FabricTrackerItem, 'readiness'>): string {
@@ -70,10 +79,19 @@ export function selectFabricTrackerRow(item: FabricTrackerItem): FabricTrackerRo
     productName: item.productName ?? null,
     productImageUrl: item.productImageUrl ?? null,
     supplierName: item.supplier?.name ?? null,
+    inventoryItemId: item.inventoryItemId ?? null,
+    sku: item.sku ?? item.readiness.sku ?? null,
+    purchaseOrderId: item.purchaseOrderId ?? null,
+    purchaseOrderNumber: item.purchaseOrderNumber ?? null,
+    supplierInvoiceId: item.supplierInvoiceId ?? null,
+    supplierInvoiceNumber: item.supplierInvoiceNumber ?? null,
     imageUrl: item.imageUrl ?? null,
     locationLabel: loc,
     qrCodes: item.lots.map((l) => l.qrCode).filter((c): c is string => Boolean(c)),
     lots: item.lots,
+    expectedAvailableAt: item.expectedAvailableAt ?? null,
+    costOnFile: Boolean(item.costOnFile),
+    resolvedUnitCost: item.resolvedUnitCost ?? null,
   };
 }
 
@@ -108,6 +126,12 @@ export function fabricRowFromHolding(row: FabricHoldingRow): FabricTrackerRow {
     productName: row.productName ?? null,
     productImageUrl: row.productImageUrl ?? null,
     supplierName: null,
+    inventoryItemId: null,
+    sku: row.sku ?? null,
+    purchaseOrderId: null,
+    purchaseOrderNumber: null,
+    supplierInvoiceId: null,
+    supplierInvoiceNumber: null,
     imageUrl: row.imageUrl ?? null,
     locationLabel: lot?.locationLabel ?? null,
     qrCodes: row.lots.map((l) => l.qrCode).filter((c): c is string => Boolean(c)),
@@ -120,6 +144,9 @@ export function fabricRowFromHolding(row: FabricHoldingRow): FabricTrackerRow {
       status: l.status,
       unitCost: l.unitCost,
     })),
+    expectedAvailableAt: null,
+    costOnFile: row.lots.some((l) => l.unitCost != null && Number(l.unitCost) > 0),
+    resolvedUnitCost: row.lots.find((l) => l.unitCost != null && Number(l.unitCost) > 0)?.unitCost ?? null,
   };
 }
 
@@ -230,6 +257,40 @@ type StatusFields = Pick<
   FabricTrackerRow,
   'derivedStatus' | 'overridden' | 'readyForProduction' | 'expectedQty' | 'arrivedQty' | 'attentionCode'
 >;
+
+/** Still waiting on supply — not issued, not production-ready, and not fully arrived. */
+export function fabricAwaitsSupply(
+  row: Pick<FabricTrackerRow, 'derivedStatus' | 'readyForProduction' | 'expectedQty' | 'arrivedQty'>,
+): boolean {
+  if (row.derivedStatus === 'ISSUED') return false;
+  if (row.readyForProduction) return false;
+  if (
+    row.expectedQty != null &&
+    row.expectedQty > 0 &&
+    row.arrivedQty + 1e-9 >= row.expectedQty
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function fabricRemainingNeed(
+  row: Pick<FabricTrackerRow, 'expectedQty' | 'arrivedQty'>,
+): number | null {
+  if (row.expectedQty == null) return null;
+  return Math.max(0, row.expectedQty - row.arrivedQty);
+}
+
+export function fabricStockCoverage(input: {
+  need: number | null;
+  free: number;
+}): 'full' | 'partial' | 'none' {
+  if (!(input.free > 0)) return 'none';
+  if (input.need == null) return 'full';
+  if (input.need <= 0) return 'full';
+  if (input.free + 1e-9 >= input.need) return 'full';
+  return 'partial';
+}
 
 export function fabricIsPartial(row: Pick<FabricTrackerRow, 'derivedStatus' | 'expectedQty' | 'arrivedQty' | 'readyForProduction'>): boolean {
   if (row.derivedStatus === 'ISSUED') return false;
@@ -434,6 +495,87 @@ export function filterRowsByDeskBucket<T extends StatusFields>(
   return rows.filter((row) => fabricDeskBucketOf(row) === bucket);
 }
 
+export type FabricStockSearchFields = {
+  name: string;
+  nameEn: string;
+  nameAr: string;
+  sku: string;
+  scanCode: string | null;
+  barcode: string | null;
+  color: string | null;
+  size: string | null;
+};
+
+function searchTokens(needle: string): string[] {
+  return needle
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function haystackMatches(haystack: string, tokens: string[]): boolean {
+  return tokens.every((token) => haystack.includes(token));
+}
+
+function fabricRowHaystack(row: FabricTrackerRow): string {
+  return [
+    row.label,
+    row.role,
+    row.orderNumber,
+    row.dealerName,
+    row.productName,
+    row.supplierName,
+    row.sku,
+    row.purchaseOrderNumber,
+    row.supplierInvoiceNumber,
+    row.locationLabel,
+    ...row.qrCodes,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ')
+    .toLowerCase();
+}
+
+export function fabricRowMatchesQuery(row: FabricTrackerRow, needle: string): boolean {
+  const tokens = searchTokens(needle);
+  if (tokens.length === 0) return true;
+  return haystackMatches(fabricRowHaystack(row), tokens);
+}
+
+export function filterFabricRowsByQuery<T extends FabricTrackerRow>(
+  rows: T[],
+  needle: string,
+): T[] {
+  if (!needle.trim()) return rows;
+  return rows.filter((row) => fabricRowMatchesQuery(row, needle));
+}
+
+function fabricStockHaystack(item: FabricStockSearchFields): string {
+  return [
+    item.name,
+    item.nameEn,
+    item.nameAr,
+    item.sku,
+    item.scanCode,
+    item.barcode,
+    item.color,
+    item.size,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ')
+    .toLowerCase();
+}
+
+export function fabricStockMatchesQuery(
+  item: FabricStockSearchFields,
+  needle: string,
+): boolean {
+  const tokens = searchTokens(needle);
+  if (tokens.length === 0) return true;
+  return haystackMatches(fabricStockHaystack(item), tokens);
+}
+
 export type FabricOrderGroup = {
   id: string;
   key: string;
@@ -442,6 +584,10 @@ export type FabricOrderGroup = {
   productName: string | null;
   dealerName: string | null;
   productImageUrl: string | null;
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: string | null;
+  supplierInvoiceId: string | null;
+  supplierInvoiceNumber: string | null;
   rows: FabricTrackerRow[];
   readyCount: number;
   requiredCount: number;
@@ -499,6 +645,11 @@ export function groupFabricRowsBySalesOrder(rows: FabricTrackerRow[]): FabricOrd
       productName: groupRows.map((r) => r.productName).find((v) => Boolean(v)) ?? null,
       dealerName: groupRows.map((r) => r.dealerName).find((v) => Boolean(v)) ?? null,
       productImageUrl: pickGroupImage(groupRows),
+      purchaseOrderId: groupRows.map((r) => r.purchaseOrderId).find((v) => Boolean(v)) ?? null,
+      purchaseOrderNumber: groupRows.map((r) => r.purchaseOrderNumber).find((v) => Boolean(v)) ?? null,
+      supplierInvoiceId: groupRows.map((r) => r.supplierInvoiceId).find((v) => Boolean(v)) ?? null,
+      supplierInvoiceNumber:
+        groupRows.map((r) => r.supplierInvoiceNumber).find((v) => Boolean(v)) ?? null,
       rows: groupRows,
       readyCount: ready,
       requiredCount: required,
@@ -632,6 +783,12 @@ export function fabricRowFromTaskItem(
     productName: null,
     productImageUrl: null,
     supplierName: null,
+    inventoryItemId: null,
+    sku: null,
+    purchaseOrderId: null,
+    purchaseOrderNumber: null,
+    supplierInvoiceId: null,
+    supplierInvoiceNumber: null,
     imageUrl: item.imageUrl ?? null,
     locationLabel: item.lots.map((l) => l.locationLabel).find((v) => Boolean(v)) ?? null,
     qrCodes: item.lots.map((l) => l.qrCode).filter((c): c is string => Boolean(c)),
@@ -644,5 +801,8 @@ export function fabricRowFromTaskItem(
       status: l.status,
       unitCost: null,
     })),
+    expectedAvailableAt: null,
+    costOnFile: false,
+    resolvedUnitCost: null,
   };
 }

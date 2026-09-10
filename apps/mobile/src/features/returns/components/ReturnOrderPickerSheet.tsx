@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, ScrollView, View } from 'react-native';
+import { Image, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -8,9 +8,8 @@ import {
 } from '@/api/modules/sales-orders';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { ReturnSheetFooter } from './ReturnSheetFooter';
 import { DealerSearchBar } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
@@ -39,6 +38,8 @@ export function ReturnOrderPickerSheet({
 }: Props) {
   const { t, isRTL, locale, formatDate } = useLocale();
   const { theme } = useTheme();
+  const { height } = useWindowDimensions();
+  const sheetHeight = Math.min(Math.round(height * 0.78), 680);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const [search, setSearch] = useState('');
@@ -75,7 +76,8 @@ export function ReturnOrderPickerSheet({
       open={open}
       onClose={onClose}
       title={t('catalog.selectSalesOrder')}
-      sheetHeight={560}
+      expandable
+      sheetHeight={sheetHeight}
     >
       <View style={{ flex: 1, minHeight: 0, gap: theme.spacing.md }}>
         <DealerSearchBar
@@ -120,24 +122,17 @@ export function ReturnOrderPickerSheet({
           )}
         </ScrollView>
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <PrimaryButton
-            label={t('common.confirm')}
-            disabled={!draftOrder}
-            onPress={() => {
-              if (!draftOrder) return;
-              void haptics.confirmLight();
-              onConfirm(draftOrder);
-              onClose();
-            }}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-          <SecondaryButton
-            label={t('common.cancel')}
-            onPress={onClose}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-        </View>
+        <ReturnSheetFooter
+          confirmLabel={t('common.confirm')}
+          disabled={!draftOrder}
+          onConfirm={() => {
+            if (!draftOrder) return;
+            void haptics.confirmLight();
+            onConfirm(draftOrder);
+            onClose();
+          }}
+          onCancel={onClose}
+        />
       </View>
     </BottomSheet>
   );

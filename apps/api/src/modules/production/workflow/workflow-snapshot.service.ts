@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@maher/database';
+import { isReturnWorkflowScope } from '@maher/types';
 import { PrismaService } from '../../../common/prisma.service';
 import { SequenceService } from '../../../common/sequence.service';
 import { buildStageTaskInstructions } from '../../../common/helpers/stage-task-instructions';
@@ -168,6 +169,23 @@ export class WorkflowSnapshotService {
           'READY_FOR_DELIVERY',
           'COMPLETED',
         ].includes(status);
+      const workflow = await tx.productionWorkflow.findUnique({
+        where: { id: workflowId },
+        select: { scope: true },
+      });
+      if (!workflow) {
+        throw new BadRequestException({
+          code: 'NOT_FOUND',
+          message: 'Workflow not found.',
+        });
+      }
+      if (isReturnWorkflowScope(workflow.scope) && po.originType === 'SALES_ORDER') {
+        throw new BadRequestException({
+          code: 'WORKFLOW_SCOPE_MISMATCH',
+          message: 'A return workflow cannot be assigned to a sales-order production order.',
+        });
+      }
+
       if (factoryStarted) {
         throw new BadRequestException({
           code: 'ORDER_WORKFLOW_LOCKED',

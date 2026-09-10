@@ -21,10 +21,8 @@ import {
   withSuccessorIds,
   type PlacementIntent,
 } from '@/lib/workflow-domain-adapter';
-import {
-  isLockedAnchorStageCode,
-  middleProductionNodes,
-} from '@/lib/workflow-terminal';
+import { isLockedAnchorStageCodeForScope, isRecoveryStageCode, isReturnWorkflowScope } from '@maher/types';
+import { middleProductionNodes } from '@/lib/workflow-terminal';
 import { Button, Input } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useLocale, useTranslations } from 'next-intl';
@@ -37,6 +35,7 @@ type Props = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   library: StageDefinition[];
+  scope?: 'STANDARD' | 'RETURN' | null;
   saving?: boolean;
   onClose: () => void;
   onAdd: (args: {
@@ -58,6 +57,7 @@ export function AddWorkflowStageDrawer({
   nodes,
   edges,
   library,
+  scope,
   saving,
   onClose,
   onAdd,
@@ -82,7 +82,7 @@ export function AddWorkflowStageDrawer({
     return [...opening, ...editable];
   }, [nodes, editable]);
 
-  const domain = useMemo(() => toDomainGraph({ nodes, edges }), [nodes, edges]);
+  const domain = useMemo(() => toDomainGraph({ nodes, edges, scope }), [nodes, edges, scope]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,12 +105,17 @@ export function AddWorkflowStageDrawer({
   const available = useMemo(() => {
     const q = query.trim().toLowerCase();
     return library.filter((s) => {
-      if (!s.isActive || usedStageIds.has(s.id) || isLockedAnchorStageCode(s.code)) return false;
+      if (!s.isActive || usedStageIds.has(s.id) || isLockedAnchorStageCodeForScope(s.code, scope)) {
+        return false;
+      }
+      if (isRecoveryStageCode(s.code) && !isReturnWorkflowScope(scope)) {
+        return false;
+      }
       if (!q) return true;
       const name = localizedName(locale, s).toLowerCase();
       return name.includes(q) || s.nameEn.toLowerCase().includes(q);
     });
-  }, [library, locale, query, usedStageIds]);
+  }, [library, locale, query, scope, usedStageIds]);
 
   const bandForAfter = useMemo(() => {
     if (afterIds.length !== 1) return null;
@@ -338,6 +343,15 @@ export function AddWorkflowStageDrawer({
               </button>
             ))}
           </div>
+          {placement === 'start' ? (
+            <p className="text-xs text-text-tertiary">
+              {t(
+                isReturnWorkflowScope(scope)
+                  ? 'workflow.placementStartHintReturn'
+                  : 'workflow.placementStartHint',
+              )}
+            </p>
+          ) : null}
         </div>
 
         {placement === 'after' && afterOptions.length > 0 ? (

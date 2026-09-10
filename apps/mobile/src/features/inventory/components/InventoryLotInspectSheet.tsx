@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { locationPickerLabel } from '../pickDefaultLocation';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
@@ -79,11 +80,13 @@ function FactRow({
   label,
   value,
   last,
+  valueDir,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   last?: boolean;
+  valueDir?: 'auto' | 'ltr';
 }) {
   const { isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -117,7 +120,7 @@ function FactRow({
         <AppText variant="caption" color="muted">
           {label}
         </AppText>
-        <AppText variant="bodySecondary" weight="medium" numberOfLines={2}>
+        <AppText variant="bodySecondary" weight="medium" numberOfLines={2} dir={valueDir}>
           {value}
         </AppText>
       </View>
@@ -191,9 +194,7 @@ export function InventoryLotInspectSheet({
     stage && nextStage ? `${stage} → ${nextStage}` : stage ?? nextStage;
   const orderNumber = lot.productionOrderNumber ?? lot.productionOrder?.number ?? null;
   const warehouseName = localizedName(locale, lot.warehouse);
-  const binLabel = lot.location
-    ? lot.location.name?.trim() || lot.location.code
-    : null;
+  const binLabel = locationPickerLabel(lot.location) || null;
   const scanCode = lot.qrCode?.trim() || lot.wipKit?.qrCode?.trim() || null;
   const movements = lot.laterMovements ?? [];
   const statusLabel = t(`mobile.inventory.lotStatus.${lot.status}`);
@@ -345,7 +346,17 @@ export function InventoryLotInspectSheet({
               icon="location-outline"
               label={t('mobile.inventory.wipLocation')}
               value={binLabel}
+              valueDir="ltr"
               last={!scanCode}
+            />
+          ) : null}
+          {scanCode ? (
+            <FactRow
+              icon="qr-code-outline"
+              label={t('mobile.inventory.wipQrLabel')}
+              value={scanCode}
+              valueDir="ltr"
+              last
             />
           ) : null}
           {scanCode ? (

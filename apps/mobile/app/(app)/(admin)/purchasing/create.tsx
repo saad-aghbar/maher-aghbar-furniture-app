@@ -7,7 +7,7 @@ export default function AdminCreatePurchaseRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="purchase-order.create" mode="all">
-      <Redirect href={'/(app)/(admin)/purchasing' as Href} />
+      <Redirect href={'/(app)/(admin)/purchasing/new' as Href} />
     </PermissionGate>
   );
 }

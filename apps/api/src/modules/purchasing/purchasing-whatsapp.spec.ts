@@ -18,8 +18,11 @@ describe('PurchasingService WhatsApp helpers', () => {
         { description: 'Foam', quantity: '2.5', unit: 'pcs' },
       ],
     });
-    expect(body).toContain('Purchase order PORD-1');
+    expect(body).toContain('أمر شراء PORD-1');
+    expect(body).toContain('يرجى التوريد:');
+    expect(body).toContain('شكراً لكم.');
     expect(body).toContain('• Oak veneer: 12 m');
     expect(body).toContain('• Foam: 2.5 pcs');
+    expect(body).not.toContain('Purchase order');
   });
 });

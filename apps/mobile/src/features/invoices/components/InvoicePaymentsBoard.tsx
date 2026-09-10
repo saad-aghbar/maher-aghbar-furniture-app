@@ -1,16 +1,20 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
+import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import type { InvoiceDetailModel } from '../selectInvoice';
+import { paymentHistoryCaption, type InvoiceDetailModel } from '../selectInvoice';
 import { InvoiceFloorBoard } from './InvoiceFloorBoard';
+import { InvoiceRowActionChip } from './InvoiceRowActionChip';
 
 type Props = {
   model: InvoiceDetailModel;
   currencySuffix?: string;
   methodLabel: (method: string) => string;
   onPaymentPdf?: (paymentId: string) => void;
+  canEditPayments?: boolean;
+  onEditPayment?: (row: InvoiceDetailModel['payments'][number]) => void;
+  onDeletePayment?: (row: InvoiceDetailModel['payments'][number]) => void;
 };
 
 /** Timeline-ish payment history board. */
@@ -19,6 +23,9 @@ export function InvoicePaymentsBoard({
   currencySuffix = '₪',
   methodLabel,
   onPaymentPdf,
+  canEditPayments,
+  onEditPayment,
+  onDeletePayment,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -35,8 +42,10 @@ export function InvoicePaymentsBoard({
           {t('accounting.noPayments')}
         </AppText>
       ) : (
-        model.payments.map((p, index) => (
-          <ListItemEnter key={p.id} index={index}>
+        model.payments.map((p, index) => {
+          const canMutateRow = Boolean(canEditPayments);
+          return (
+          <ListItemEnter key={p.allocationId ?? p.id} index={index}>
             <View
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -104,48 +113,59 @@ export function InvoicePaymentsBoard({
                     {`${p.amountLabel} ${currencySuffix}`}
                   </AppText>
                 </View>
-                <View
+                <AppText
+                  variant="caption"
+                  color="secondary"
                   style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: theme.spacing.sm,
+                    textAlign: isRTL ? 'right' : 'left',
+                    lineHeight: 17,
                   }}
                 >
-                  <AppText
-                    variant="caption"
-                    color="secondary"
+                  {paymentHistoryCaption([
+                    p.dateLabel,
+                    p.kind === 'credit' ? t('accounting.applyCredit') : methodLabel(p.method),
+                    p.reference,
+                  ])}
+                </AppText>
+                {onPaymentPdf || (canMutateRow && (onEditPayment || onDeletePayment)) ? (
+                  <View
                     style={{
-                      flex: 1,
-                      textAlign: isRTL ? 'right' : 'left',
-                      lineHeight: 17,
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: theme.spacing.sm,
+                      paddingTop: 4,
                     }}
                   >
-                    {[p.dateLabel, methodLabel(p.method), p.reference]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </AppText>
-                  {onPaymentPdf ? (
-                    <AnimatedPressable
-                      variant="button"
-                      accessibilityRole="button"
-                      accessibilityLabel={t('accounting.downloadPdf')}
-                      onPress={() => {
-                        void haptics.selection();
-                        onPaymentPdf(p.id);
-                      }}
-                      hitSlop={8}
-                    >
-                      <AppText variant="caption" color="brand" weight="semibold">
-                        {t('catalog.pdf')}
-                      </AppText>
-                    </AnimatedPressable>
-                  ) : null}
-                </View>
+                    {onPaymentPdf ? (
+                      <InvoiceRowActionChip
+                        label={t('catalog.pdf')}
+                        icon="download-outline"
+                        onPress={() => onPaymentPdf(p.id)}
+                      />
+                    ) : null}
+                    {canMutateRow && onEditPayment ? (
+                      <InvoiceRowActionChip
+                        label={t('mobile.invoices.edit')}
+                        icon="create-outline"
+                        onPress={() => onEditPayment(p)}
+                      />
+                    ) : null}
+                    {canMutateRow && onDeletePayment ? (
+                      <InvoiceRowActionChip
+                        label={t('common.delete')}
+                        icon="trash-outline"
+                        tone="danger"
+                        onPress={() => onDeletePayment(p)}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             </View>
           </ListItemEnter>
-        ))
+          );
+        })
       )}
     </InvoiceFloorBoard>
   );

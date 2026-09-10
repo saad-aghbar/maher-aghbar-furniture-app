@@ -47,6 +47,12 @@ describe('api config', () => {
     expect(getApiV1Url()).toBe('http://192.168.1.10:4000/api/v1');
   });
 
+  it('follows Metro when a pinned private LAN IP is stale', () => {
+    process.env.EXPO_PUBLIC_API_BASE_URL = 'http://192.168.1.46:4000';
+    constants.expoConfig.hostUri = '192.168.1.23:8081';
+    expect(getApiBaseUrl()).toBe('http://192.168.1.23:4000');
+  });
+
   it('overrides loopback with Expo LAN host on physical devices', () => {
     process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:4000';
     constants.expoConfig.hostUri = '172.20.10.2:8082';

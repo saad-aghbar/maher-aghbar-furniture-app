@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listCustomers } from '@/api/modules/customers';
-import { queryKeys } from '@/api/queryKeys';
+import { invalidateKeys, queryKeys } from '@/api/queryKeys';
 import {
   flattenPaginatedPages,
   getNextPageParamFromMeta,
@@ -25,10 +25,12 @@ import {
   returnProductionUnusedMaterial,
   getOrderPlanSetup,
   putOrderPlanSetup,
+  resyncOrderPlanSetup,
   suggestPlanSchedule,
   type ProductionListBucket,
   type ProductionPriority,
   type ProductionDateMode,
+  type ProductionDayFocus,
 } from './api';
 import {
   patchOrderSetupLine,
@@ -37,10 +39,13 @@ import {
 } from '@/api/modules/sales-orders';
 import { invalidateAfterCatalogSeed } from '@/features/sales-orders/catalogTemplateSheet';
 
-export function useProductionSummaryQuery(enabled: boolean) {
+export function useProductionSummaryQuery(
+  enabled: boolean,
+  origin?: 'normal' | 'returned',
+) {
   return useQuery({
-    queryKey: queryKeys.production.summary(),
-    queryFn: getProductionSummary,
+    queryKey: [...queryKeys.production.summary(), origin ?? null] as const,
+    queryFn: () => getProductionSummary(origin),
     enabled,
     staleTime: 30_000,
   });
@@ -52,6 +57,8 @@ export function useProductionDaySummaryQuery(
     dateMode?: ProductionDateMode;
     bucket?: ProductionListBucket;
     customerId?: string;
+    origin?: 'normal' | 'returned';
+    dayFocus?: ProductionDayFocus;
   },
   enabled: boolean,
 ) {
@@ -60,7 +67,15 @@ export function useProductionDaySummaryQuery(
     queryFn: () => getProductionDaySummary(filters),
     enabled: enabled && Boolean(filters.onDate),
     staleTime: 15_000,
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) => {
+      const previousFilters = previousQuery?.queryKey[2] as
+        | { origin?: 'normal' | 'returned' }
+        | undefined;
+      if ((previousFilters?.origin ?? null) !== (filters.origin ?? null)) {
+        return undefined;
+      }
+      return previousData;
+    },
   });
 }
 
@@ -80,6 +95,8 @@ export function useProductionOrdersInfiniteQuery(
     customerId?: string;
     onDate?: string;
     dateMode?: ProductionDateMode;
+    origin?: 'normal' | 'returned';
+    dayFocus?: ProductionDayFocus;
   },
   enabled: boolean,
 ) {
@@ -94,6 +111,8 @@ export function useProductionOrdersInfiniteQuery(
         customerId: filters.customerId,
         onDate: filters.onDate,
         dateMode: filters.dateMode,
+        origin: filters.origin,
+        dayFocus: filters.dayFocus,
       }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,
@@ -141,6 +160,22 @@ export function usePutOrderPlanSetupMutation(productionOrderId: string) {
         qc.invalidateQueries({ queryKey: queryKeys.production.detail(productionOrderId) }),
         qc.invalidateQueries({ queryKey: queryKeys.production.all }),
         qc.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
+      ]);
+    },
+  });
+}
+
+export function useResyncOrderPlanSetupMutation(productionOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => resyncOrderPlanSetup(productionOrderId),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({
+          queryKey: queryKeys.production.planSetup(productionOrderId),
+        }),
+        qc.invalidateQueries({ queryKey: queryKeys.production.detail(productionOrderId) }),
+        qc.invalidateQueries({ queryKey: queryKeys.production.all }),
       ]);
     },
   });
@@ -220,19 +255,11 @@ async function invalidateProduction(
   qc: ReturnType<typeof useQueryClient>,
   orderId?: string,
 ) {
-  await Promise.all([
-    qc.invalidateQueries({ queryKey: queryKeys.production.lists() }),
-    qc.invalidateQueries({ queryKey: queryKeys.production.summary() }),
-    qc.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
-    orderId
-      ? qc.invalidateQueries({ queryKey: queryKeys.production.detail(orderId) })
-      : Promise.resolve(),
-    orderId
-      ? qc.invalidateQueries({
-          queryKey: queryKeys.production.planSetup(orderId),
-        })
-      : Promise.resolve(),
-  ]);
+  await Promise.all(
+    invalidateKeys.afterPlacementMutation(orderId).map((key) =>
+      qc.invalidateQueries({ queryKey: key as readonly unknown[] }),
+    ),
+  );
 }
 
 export function useAssignTaskMutation(orderId: string) {
@@ -245,7 +272,10 @@ export function useAssignTaskMutation(orderId: string) {
       plannedStart?: string;
       plannedCompletion?: string;
       estimatedMinutes?: number;
+      overtime?: boolean;
       overrideConflict?: boolean;
+      acknowledge?: boolean;
+      reason?: string;
     }) =>
       assignTask(args.taskId, {
         employeeId: args.employeeId,
@@ -253,7 +283,10 @@ export function useAssignTaskMutation(orderId: string) {
         plannedStart: args.plannedStart,
         plannedCompletion: args.plannedCompletion,
         estimatedMinutes: args.estimatedMinutes,
+        overtime: args.overtime,
         overrideConflict: args.overrideConflict,
+        acknowledge: args.acknowledge ?? args.overrideConflict,
+        reason: args.reason,
       }),
     onSuccess: () => invalidateProduction(qc, orderId),
   });

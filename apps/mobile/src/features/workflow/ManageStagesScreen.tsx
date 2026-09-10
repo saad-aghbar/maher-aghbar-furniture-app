@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { localizedName } from '@maher/i18n';
 import { can, canAny } from '@maher/permissions';
 import {
   isLockedAnchorStageCode,
+  isProtectedStageCode,
+  isRecoveryStageCode,
   OPENING_STAGE_CODE,
   TERMINAL_STAGE_CODES,
 } from '@maher/types';
@@ -20,20 +21,25 @@ import {
 } from '@/api/modules/workflow';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
+import { AppTextInput } from '@/components/forms/AppTextInput';
+import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { TextField } from '@/components/forms/TextField';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
-import { DealerFormSection } from '@/features/dealers/components/dealerSheetForm';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
+import {
+  DealerFormFooter,
+  DealerFormSection,
+} from '@/features/dealers/components/dealerSheetForm';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
-import { useTheme } from '@/theme';
+import { AnimatedPressable, haptics } from '@/motion';
+import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   StageQuietDelete,
   StageScheduleModePicker,
@@ -83,11 +89,10 @@ function draftFromRow(row: StageDefinition): Draft {
 
 export function ManageStagesScreen() {
   const { user } = useAuth();
-  const { t, locale } = useLocale();
-  const { theme, colors } = useTheme();
+  const { t, locale, isRTL } = useLocale();
+  const { theme, colors, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const allowed = canAny(user, ['production.workflow.read', 'production-order.update']);
   const canManage = can(user, 'production.workflow.manage');
@@ -123,11 +128,14 @@ export function ManageStagesScreen() {
   const finishing = TERMINAL_STAGE_CODES.map(
     (code) => activeRows.find((row) => row.code === code) ?? null,
   );
-  const production = activeRows.filter((row) => !isLockedAnchorStageCode(row.code));
+  const recovery = activeRows.find((row) => isRecoveryStageCode(row.code)) ?? null;
+  const production = activeRows.filter(
+    (row) => !isLockedAnchorStageCode(row.code) && !isRecoveryStageCode(row.code),
+  );
 
   if (!allowed) return null;
 
-  const lockedEditor = editor?.row ? isLockedAnchorStageCode(editor.row.code) : false;
+  const lockedEditor = editor?.row ? isProtectedStageCode(editor.row.code) : false;
 
   function openCreate() {
     setDraft(emptyDraft());
@@ -205,7 +213,17 @@ export function ManageStagesScreen() {
 
   return (
     <>
-      <ScrollableScreen>
+      <ScrollableScreen
+        scrollProps={{
+          refreshControl: (
+            <RefreshControl
+              refreshing={libraryQuery.isRefetching && !libraryQuery.isLoading}
+              onRefresh={() => void libraryQuery.refetch()}
+              tintColor={colors.brand}
+            />
+          ),
+        }}
+      >
         {showOfflineBanner ? <OfflineBanner /> : null}
 
         <WorkflowPageHeader
@@ -214,24 +232,85 @@ export function ManageStagesScreen() {
           subtitle={t('mobile.production.workflow.manageStagesSubtitle')}
         />
 
-        <TextField
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t('mobile.production.workflow.searchStages')}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-
         {canManage ? (
-          <PrimaryButton
-            label={t('mobile.production.workflow.createStage')}
-            onPress={openCreate}
-            leading={<Ionicons name="add" size={18} color={colors.onBrand} />}
-            style={{ borderRadius: theme.radius.xl }}
-          />
+          <AnimatedPressable
+            variant="button"
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.production.workflow.createStage')}
+            onPress={() => {
+              void haptics.selection();
+              openCreate();
+            }}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: theme.spacing.sm,
+              minHeight: theme.sizes.touch.min,
+              borderRadius: theme.radius.full,
+              backgroundColor: colors.brand,
+            }}
+          >
+            <Ionicons name="add" size={18} color={colors.onBrand} />
+            <AppText color="onBrand" weight={titleWeight}>
+              {t('mobile.production.workflow.createStage')}
+            </AppText>
+          </AnimatedPressable>
         ) : null}
+
+        <View
+          style={{
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surface,
+            overflow: 'hidden',
+            ...orderBoardShadow(colorScheme),
+          }}
+        >
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              width: 3,
+              backgroundColor: colors.brand,
+              opacity: 0.55,
+              ...(isRTL ? { right: 0 } : { left: 0 }),
+            }}
+          />
+          <View
+            style={{
+              padding: theme.spacing.md,
+              ...(isRTL
+                ? { paddingRight: theme.spacing.md + 4 }
+                : { paddingLeft: theme.spacing.md + 4 }),
+            }}
+          >
+            <SearchBarShell>
+              <AppTextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t('mobile.production.workflow.searchStages')}
+                placeholderTextColor={colors.textMuted}
+                style={[
+                  styles.searchInput,
+                  {
+                    color: colors.textPrimary,
+                    textAlign: isRTL ? 'right' : 'left',
+                    writingDirection: isRTL ? 'rtl' : 'ltr',
+                  },
+                  resolveAppFontStyle(locale, { variant: 'body' }),
+                ]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+            </SearchBarShell>
+          </View>
+        </View>
 
         {libraryQuery.isLoading ? (
           <AppText color="secondary">{t('mobile.production.loadingMore')}</AppText>
@@ -243,14 +322,19 @@ export function ManageStagesScreen() {
             onRetry={() => void libraryQuery.refetch()}
           />
         ) : activeRows.length === 0 ? (
-          <EmptyState title={t('mobile.production.workflow.noStagesMatch')} />
+          <DealerEmptyPanel
+            icon="layers-outline"
+            text={t('mobile.production.workflow.noStagesMatch')}
+          />
         ) : (
-          <View style={{ gap: theme.spacing['2xl'] }}>
+          <View style={{ gap: theme.spacing.xl }}>
             {opening ? (
-              <StageLibrarySection
-                title={t('mobile.production.workflow.openingSection')}
-                hint={t('mobile.production.workflow.openingHint')}
-              >
+              <View style={{ gap: theme.spacing.md }}>
+                <StageLibrarySection
+                  title={t('mobile.production.workflow.openingSection')}
+                  hint={t('mobile.production.workflow.openingHint')}
+                  count={1}
+                />
                 <StageLibraryCard
                   row={opening}
                   locked
@@ -258,40 +342,68 @@ export function ManageStagesScreen() {
                   index={0}
                   onPress={() => openEdit(opening)}
                 />
-              </StageLibrarySection>
+              </View>
             ) : null}
 
-            <StageLibrarySection title={t('mobile.production.workflow.productionSection')}>
+            {recovery ? (
+              <View style={{ gap: theme.spacing.md }}>
+                <StageLibrarySection
+                  title={t('mobile.production.workflow.recoverySection')}
+                  hint={t('mobile.production.workflow.recoveryHint')}
+                  count={1}
+                />
+                <StageLibraryCard
+                  row={recovery}
+                  locked
+                  caption={t('mobile.production.workflow.alwaysAvailable')}
+                  index={0}
+                  onPress={() => openEdit(recovery)}
+                />
+              </View>
+            ) : null}
+
+            <View style={{ gap: theme.spacing.md }}>
+              <StageLibrarySection
+                title={t('mobile.production.workflow.productionSection')}
+                hint={t('mobile.production.workflow.productionHint')}
+                count={production.length}
+              />
               {production.length === 0 ? (
-                <AppText variant="caption" color="muted">
-                  {t('mobile.production.workflow.noStagesMatch')}
-                </AppText>
+                <DealerEmptyPanel
+                  icon="construct-outline"
+                  text={t('mobile.production.workflow.noStagesMatch')}
+                />
               ) : (
                 production.map((row, index) => (
                   <StageLibraryCard
                     key={row.id}
                     row={row}
-                    index={index}
+                    index={index + 1}
                     onPress={() => openEdit(row)}
                   />
                 ))
               )}
-            </StageLibrarySection>
+            </View>
 
             {finishing.some(Boolean) ? (
-              <StageLibrarySection title={t('mobile.production.workflow.finishingSection')}>
+              <View style={{ gap: theme.spacing.md }}>
+                <StageLibrarySection
+                  title={t('mobile.production.workflow.finishingSection')}
+                  hint={t('mobile.production.workflow.finishingHint')}
+                  count={finishing.filter(Boolean).length}
+                />
                 {finishing.map((row, index) =>
                   row ? (
                     <StageLibraryCard
                       key={row.id}
                       row={row}
                       locked
-                      index={index}
+                      index={index + 1 + production.length}
                       onPress={() => openEdit(row)}
                     />
                   ) : null,
                 )}
-              </StageLibrarySection>
+              </View>
             ) : null}
           </View>
         )}
@@ -318,7 +430,7 @@ export function ManageStagesScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
             gap: theme.spacing.md,
-            paddingBottom: insets.bottom + theme.spacing['3xl'],
+            paddingBottom: theme.spacing.md,
           }}
         >
           {lockedEditor ? (
@@ -416,32 +528,33 @@ export function ManageStagesScreen() {
             )}
           </DealerFormSection>
 
-          {canManage ? (
-            <View style={{ gap: theme.spacing.xs, paddingTop: theme.spacing.sm }}>
-              <PrimaryButton
-                label={
-                  editor?.mode === 'create'
-                    ? t('mobile.production.workflow.createStage')
-                    : t('common.save')
-                }
-                loading={saving}
-                disabled={
-                  saving ||
-                  (!lockedEditor && (!draft.nameEn.trim() || !draft.nameAr.trim()))
-                }
-                onPress={() => void saveEditor()}
-                style={{ borderRadius: theme.radius.full }}
-              />
-              {editor?.mode === 'edit' && editor.row && !lockedEditor ? (
-                <StageQuietDelete
-                  label={t('mobile.production.workflow.deleteStage')}
-                  disabled={saving || deleting}
-                  onPress={() => setDeleteTarget(editor.row!)}
-                />
-              ) : null}
-            </View>
+          {canManage && editor?.mode === 'edit' && editor.row && !lockedEditor ? (
+            <StageQuietDelete
+              label={t('mobile.production.workflow.deleteStage')}
+              disabled={saving || deleting}
+              onPress={() => setDeleteTarget(editor.row!)}
+            />
           ) : null}
         </ScrollView>
+        {canManage ? (
+          <DealerFormFooter
+            confirmLabel={
+              editor?.mode === 'create'
+                ? t('mobile.production.workflow.createStage')
+                : t('common.save')
+            }
+            onConfirm={() => void saveEditor()}
+            onCancel={() => {
+              if (saving) return;
+              setEditor(null);
+            }}
+            loading={saving}
+            disabled={
+              saving ||
+              (!lockedEditor && (!draft.nameEn.trim() || !draft.nameAr.trim()))
+            }
+          />
+        ) : null}
       </BottomSheet>
 
       <ConfirmationSheet
@@ -488,3 +601,12 @@ export function ManageStagesScreen() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+});

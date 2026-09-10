@@ -30,6 +30,7 @@ import { useTheme } from '@/theme';
 
 type Props = {
   taskId: string;
+  readOnly?: boolean;
 };
 
 type ScanPreview = {
@@ -39,7 +40,7 @@ type ScanPreview = {
   orderNumber: string | null;
 };
 
-export function TaskFabricTakeInBoard({ taskId }: Props) {
+export function TaskFabricTakeInBoard({ taskId, readOnly = false }: Props) {
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -124,6 +125,7 @@ export function TaskFabricTakeInBoard({ taskId }: Props) {
   const total = boardQuery.data?.total ?? items.length;
 
   async function onScan() {
+    if (readOnly) return;
     setWarning(null);
     setScanning(true);
     try {
@@ -222,7 +224,7 @@ export function TaskFabricTakeInBoard({ taskId }: Props) {
           </View>
         ) : null}
 
-        {preview ? (
+        {readOnly ? null : preview ? (
           <View
             style={{
               borderRadius: theme.radius.lg,

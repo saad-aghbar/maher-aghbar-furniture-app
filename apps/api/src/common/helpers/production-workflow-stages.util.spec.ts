@@ -1,4 +1,5 @@
 import {
+  decorateInspectionJourneyFields,
   mapWorkflowStageAdmin,
   mapWorkflowStageSafe,
   photosForStage,
@@ -96,6 +97,34 @@ describe('production-workflow-stages.util', () => {
     expect(admin.photos).toHaveLength(1);
   });
 
+  it('overlays live timer percent instead of stored qty percent', () => {
+    const admin = mapWorkflowStageAdmin(
+      {
+        ...stage,
+        progressPercent: 40,
+        tasks: [
+          {
+            id: 'task-1',
+            status: 'IN_PROGRESS',
+            actualMinutes: 60,
+            estimatedMinutes: 120,
+            assignedEmployee: { id: 'w1', firstName: 'Ali', lastName: 'Hassan' },
+            blockers: [],
+            notes: null,
+            timeEntries: [
+              {
+                startedAt: new Date('2026-08-09T10:00:00.000Z'),
+                endedAt: new Date('2026-08-09T11:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+      },
+      docs,
+    );
+    expect(admin.progressPercent).toBe(50);
+  });
+
   it('includes live openStartedAt when a worker timer is running', () => {
     const admin = mapWorkflowStageAdmin(
       {
@@ -144,5 +173,25 @@ describe('production-workflow-stages.util', () => {
     expect(cleaned).not.toHaveProperty('assignees');
     expect(cleaned).not.toHaveProperty('notes');
     expect(cleaned.photos).toHaveLength(1);
+  });
+
+  it('decorates inspection status without a piece-count overlay', () => {
+    const overlay = { passed: 2, total: 3, reworkBackCodes: ['UPH'] };
+    const inspection = decorateInspectionJourneyFields(
+      { code: 'INSPECTION', status: 'IN_PROGRESS' },
+      { inspectionStatus: 'PARTIAL' },
+      overlay,
+    );
+    expect(inspection.inspectionProgress).toBeNull();
+    expect(inspection.inspectionStatus).toBe('PARTIAL');
+    expect(inspection.backForRework).toBe(false);
+
+    const upholstery = decorateInspectionJourneyFields(
+      { code: 'UPH', status: 'READY' },
+      { inspectionStatus: 'PARTIAL' },
+      overlay,
+    );
+    expect(upholstery.inspectionProgress).toBeNull();
+    expect(upholstery.backForRework).toBe(true);
   });
 });

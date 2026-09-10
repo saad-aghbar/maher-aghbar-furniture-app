@@ -1,15 +1,16 @@
 import { View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import Animated from 'react-native-reanimated';
-import type { WorkerHomeTaskWithFloor } from '../selectWorkerHome';
-import { todayBucketLabelKey } from '../selectWorkerHome';
 import {
   localizedWorkerProductTitle,
   localizedWorkerStageName,
+  todayBucketLabelKey,
+  workerHomeLaneHref,
+  type WorkerHomeTaskWithFloor,
 } from '../selectWorkerHome';
 import type { TodayFloorBucket } from '@/features/tasks/floorPhase';
 import { todayQualityStampLabelKey } from '@/features/tasks/floorPhase';
@@ -137,7 +138,7 @@ export function TodayFloorBucketSection({ bucket, tasks }: Props) {
                 accessibilityLabel={`${productTitle} ${task.orderNumber}`}
                 onPress={() => {
                   void haptics.selection();
-                  router.push(`/(app)/(employee)/tasks/${task.id}` as Href);
+                  router.push(workerHomeLaneHref(task));
                 }}
                 style={{
                   padding: theme.spacing.md,

@@ -3,7 +3,7 @@ import { parseYmd, todayYmd, toYmd } from '@/components/calendar/calendarMath';
 import { dateRangeParts, formatCurrency, formatNumber } from '@/i18n/format';
 
 export type ReportsPeriod = 'today' | 'week' | 'month';
-export type ReportsCategory = 'dashboard' | 'sales' | 'production' | 'financial';
+export type ReportsCategory = 'orders' | 'dashboard' | 'sales' | 'production' | 'financial';
 
 export type ReportsDateRange = { from: string; to: string };
 

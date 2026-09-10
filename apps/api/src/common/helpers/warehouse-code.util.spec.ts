@@ -1,4 +1,4 @@
-import { nextWarehouseCode, slugFromWarehouseName } from './warehouse-code.util';
+import { nextLocationCode, nextWarehouseCode, slugFromWarehouseName } from './warehouse-code.util';
 
 describe('warehouse-code.util', () => {
   it('slugs English names', () => {
@@ -16,5 +16,10 @@ describe('warehouse-code.util', () => {
     expect(nextWarehouseCode('SHOWROOM', ['SHOWROOM', 'SHOWROOM-2'])).toBe(
       'SHOWROOM-3',
     );
+  });
+
+  it('auto-codes a holding location from the name', () => {
+    expect(nextLocationCode('Aisle 3', [])).toBe('AISLE-3');
+    expect(nextLocationCode('طاولة أ', ['HOLD'])).toBe('HOLD-2');
   });
 });

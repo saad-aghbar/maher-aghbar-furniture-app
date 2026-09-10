@@ -6,7 +6,7 @@ import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type Props = {
-  children: ReactNode;
+  children?: ReactNode;
   title?: string;
   titleWeight?: 'medium' | 'semibold';
   trailing?: ReactNode;
@@ -94,20 +94,22 @@ export function DealerBoard({
           {trailing}
         </View>
       ) : null}
-      <View
-        style={[
-          {
-            padding: theme.spacing.lg,
-            gap: theme.spacing.md,
-            ...(isRTL
-              ? { paddingRight: theme.spacing.lg + 4 }
-              : { paddingLeft: theme.spacing.lg + 4 }),
-          },
-          contentStyle,
-        ]}
-      >
-        {children}
-      </View>
+      {children == null || children === false ? null : (
+        <View
+          style={[
+            {
+              padding: theme.spacing.lg,
+              gap: theme.spacing.md,
+              ...(isRTL
+                ? { paddingRight: theme.spacing.lg + 4 }
+                : { paddingLeft: theme.spacing.lg + 4 }),
+            },
+            contentStyle,
+          ]}
+        >
+          {children}
+        </View>
+      )}
     </View>
   );
 }

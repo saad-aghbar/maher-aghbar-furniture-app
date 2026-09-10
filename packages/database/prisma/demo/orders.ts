@@ -1185,10 +1185,7 @@ export async function seedDemoOrders(
                 : story.returnInfo.approval === 'REJECTED'
                   ? ReturnResolution.REJECTED
                   : undefined,
-            inventoryFate:
-              story.returnInfo.approval === 'APPROVED'
-                ? ReturnInventoryFate.RETURN_TO_STOCK
-                : ReturnInventoryFate.PENDING,
+            inventoryFate: ReturnInventoryFate.PENDING,
             createdAt: atOrBefore(addDays(deliveredAt, 4), asOf),
           },
         });

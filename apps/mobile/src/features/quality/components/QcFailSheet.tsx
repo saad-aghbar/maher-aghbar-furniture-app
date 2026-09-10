@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { uploadFile } from '@/api/modules/uploads';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
+import { ProblemPhotoBar, uploadProblemPhotos } from '@/features/tasks/components/ProblemPhotoBar';
+import { VoiceRecorderBar } from '@/features/tasks/components/VoiceNoteControls';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import {
   getReworkStages,
@@ -35,6 +38,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   productionOrderId: string;
+  taskId: string;
   quantity: number;
   busy?: boolean;
   onConfirm: (args: {
@@ -43,24 +47,26 @@ type Props = {
     affectedQty: number;
     severity: string;
     reentryStageInstanceId?: string;
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
   }) => void;
 };
 
-/**
- * QC fail sheet — category, description, affected qty, severity,
- * recommended rework stage from API, confirm.
- */
 export function QcFailSheet({
   open,
   onClose,
   productionOrderId,
+  taskId,
   quantity,
   busy,
   onConfirm,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
+  const { showToast } = useToast();
+  const { height: windowH } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const sheetHeight = Math.round(windowH * 0.86);
 
   const [category, setCategory] = useState<DefectCategory>('OTHER');
   const [description, setDescription] = useState('');
@@ -70,6 +76,20 @@ export function QcFailSheet({
   const [eligible, setEligible] = useState<EligibleReworkStage[]>([]);
   const [stageId, setStageId] = useState<string | null>(null);
   const [loadingStages, setLoadingStages] = useState(false);
+  const [uri, setUri] = useState<string | null>(null);
+  const [photoUris, setPhotoUris] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [hostYield, setHostYield] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setDescription('');
+      setUri(null);
+      setPhotoUris([]);
+      setHostYield(false);
+      setAffectedText(String(Math.max(1, quantity)));
+    }
+  }, [open, quantity]);
 
   useEffect(() => {
     if (!open || !productionOrderId) return;
@@ -95,12 +115,43 @@ export function QcFailSheet({
     };
   }, [open, productionOrderId, category]);
 
-  function submit() {
+  const valid = Boolean(description.trim());
+  const submitting = Boolean(busy || uploading);
+
+  async function submit() {
     const desc = description.trim();
     if (!desc) {
       void haptics.error();
+      showToast({ variant: 'error', message: t('mobile.quality.failDescriptionRequired') });
       return;
     }
+    let voiceDocumentId: string | undefined;
+    let photoDocumentIds: string[] | undefined;
+    setUploading(true);
+    try {
+      if (uri) {
+        const uploaded = await uploadFile({
+          uri,
+          fileName: `inspection-fail-${taskId}.m4a`,
+          mimeType: 'audio/m4a',
+          category: `QC_VOICE:${taskId}`,
+          taskId,
+        });
+        voiceDocumentId = uploaded.document.id;
+      }
+      if (photoUris.length) {
+        photoDocumentIds = await uploadProblemPhotos({
+          uris: photoUris,
+          taskId,
+          uploadFile,
+        });
+      }
+    } catch {
+      showToast({ variant: 'error', message: t('mobile.tasks.uploadFailed') });
+      setUploading(false);
+      return;
+    }
+    setUploading(false);
     const qty = Math.max(1, Math.floor(Number(affectedText) || 1));
     void haptics.confirmMedium();
     onConfirm({
@@ -109,6 +160,8 @@ export function QcFailSheet({
       affectedQty: qty,
       severity,
       reentryStageInstanceId: stageId ?? undefined,
+      voiceDocumentId,
+      photoDocumentIds,
     });
   }
 
@@ -117,219 +170,228 @@ export function QcFailSheet({
 
   return (
     <BottomSheet
-      open={open}
+      open={open && !hostYield}
       onClose={onClose}
-      title={t('mobile.quality.reportProblem')}
-      sheetHeight={560}
+      title={t('mobile.quality.failInspection')}
+      overlay
+      expandable
+      sheetHeight={sheetHeight}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.xl }}
-      >
-        <AppText variant="bodySecondary" color="secondary" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-          {t('mobile.quality.failHint')}
-        </AppText>
-
-        <AppText
-          variant="caption"
-          weight="semibold"
-          style={{
-            color: colors.brand,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-            fontSize: 11,
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        >
-          {t('mobile.quality.defectCategory')}
-        </AppText>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            flexWrap: 'wrap',
-            gap: theme.spacing.sm,
-          }}
-        >
-          {CATEGORIES.map((cat) => {
-            const active = category === cat;
-            return (
-              <Pressable
-                key={cat}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => {
-                  void haptics.selection();
-                  setCategory(cat);
-                }}
-                style={{
-                  paddingHorizontal: theme.spacing.md,
-                  paddingVertical: theme.spacing.sm,
-                  borderRadius: theme.radius.md,
-                  backgroundColor: active ? colors.brand : colors.surfaceSecondary,
-                  borderWidth: 1,
-                  borderColor: active ? colors.brand : colors.border,
-                  ...(active ? orderBoardShadow(colorScheme) : null),
-                }}
-              >
-                <AppText
-                  variant="caption"
-                  weight={active ? 'semibold' : 'medium'}
-                  style={{ color: active ? colors.onBrand : colors.textPrimary }}
-                >
-                  {t(`mobile.quality.category.${cat}`)}
-                </AppText>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <TextField
-          label={t('mobile.quality.problemDescription')}
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          numberOfLines={3}
-          placeholder={t('mobile.quality.problemDescriptionPlaceholder')}
-        />
-
-        <TextField
-          label={t('mobile.quality.affectedQty')}
-          value={affectedText}
-          onChangeText={setAffectedText}
-          keyboardType="number-pad"
-        />
-
-        <AppText
-          variant="caption"
-          weight="semibold"
-          style={{
-            color: colors.brand,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-            fontSize: 11,
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        >
-          {t('mobile.quality.severity')}
-        </AppText>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            flexWrap: 'wrap',
-            gap: theme.spacing.sm,
-          }}
-        >
-          {SEVERITIES.map((sev) => {
-            const active = severity === sev;
-            return (
-              <Pressable
-                key={sev}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => {
-                  void haptics.selection();
-                  setSeverity(sev);
-                }}
-                style={{
-                  paddingHorizontal: theme.spacing.md,
-                  paddingVertical: theme.spacing.sm,
-                  borderRadius: theme.radius.md,
-                  backgroundColor: active ? colors.warning : colors.surfaceSecondary,
-                  borderWidth: 1,
-                  borderColor: active ? colors.warning : colors.border,
-                }}
-              >
-                <AppText
-                  variant="caption"
-                  weight={active ? 'semibold' : 'medium'}
-                  style={{ color: active ? colors.onBrand : colors.textPrimary }}
-                >
-                  {t(`mobile.quality.severityLevel.${sev}`)}
-                </AppText>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View
-          style={{
-            borderRadius: theme.radius.xl,
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            backgroundColor: colors.surfaceSecondary,
-            padding: theme.spacing.md,
-            gap: theme.spacing.sm,
-          }}
+      <View style={{ flex: 1, minHeight: 0 }}>
+        <ScrollView
+          style={{ flex: 1, minHeight: 0 }}
+          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
         >
           <AppText
-            variant="caption"
-            weight="semibold"
+            variant="bodySecondary"
+            color="secondary"
+            style={{ textAlign: isRTL ? 'right' : 'left' }}
+          >
+            {t('mobile.quality.failHint')}
+          </AppText>
+
+          <View
             style={{
-              color: colors.brand,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              fontSize: 11,
-              textAlign: isRTL ? 'right' : 'left',
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexWrap: 'wrap',
+              gap: theme.spacing.sm,
             }}
           >
-            {t('mobile.quality.recommendedStage')}
-          </AppText>
-          {loadingStages ? (
-            <AppText variant="caption" color="muted">
-              {t('mobile.quality.loadingStages')}
-            </AppText>
-          ) : eligible.length === 0 ? (
-            <AppText variant="bodySecondary" color="muted">
-              {t('mobile.quality.noReworkStages')}
-            </AppText>
-          ) : (
-            eligible.map((s) => {
-              const active = stageId === s.stageInstanceId;
-              const isRec = recommended?.stageInstanceId === s.stageInstanceId;
+            {CATEGORIES.map((cat) => {
+              const active = category === cat;
               return (
-                <Pressable
-                  key={s.stageInstanceId}
+                <AnimatedPressable
+                  key={cat}
+                  variant="button"
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
                   onPress={() => {
                     void haptics.selection();
-                    setStageId(s.stageInstanceId);
+                    setCategory(cat);
                   }}
                   style={{
-                    padding: theme.spacing.md,
+                    paddingHorizontal: theme.spacing.md,
+                    paddingVertical: theme.spacing.sm,
+                    minHeight: 40,
                     borderRadius: theme.radius.lg,
-                    borderWidth: 1,
+                    backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+                    borderWidth: 1.5,
                     borderColor: active ? colors.brand : colors.border,
-                    backgroundColor: active ? colors.brandSoft : colors.surface,
-                    gap: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {active ? (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        width: 3,
+                        backgroundColor: colors.brand,
+                        opacity: 0.55,
+                        ...(isRTL ? { right: 0 } : { left: 0 }),
+                      }}
+                    />
+                  ) : null}
+                  <AppText
+                    variant="caption"
+                    weight={active ? titleWeight : 'medium'}
+                    style={{ color: active ? colors.brand : colors.textPrimary }}
+                  >
+                    {t(`mobile.quality.category.${cat}`)}
+                  </AppText>
+                </AnimatedPressable>
+              );
+            })}
+          </View>
+
+          <TextField
+            label={t('mobile.quality.problemDescription')}
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={3}
+            placeholder={t('mobile.quality.problemDescriptionPlaceholder')}
+          />
+          <VoiceRecorderBar uri={uri} onUri={setUri} />
+          <ProblemPhotoBar
+            uris={photoUris}
+            onUris={setPhotoUris}
+            onHostYieldChange={setHostYield}
+          />
+          <TextField
+            label={t('mobile.quality.affectedQty')}
+            value={affectedText}
+            onChangeText={setAffectedText}
+            keyboardType="number-pad"
+          />
+
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexWrap: 'wrap',
+              gap: theme.spacing.sm,
+            }}
+          >
+            {SEVERITIES.map((sev) => {
+              const active = severity === sev;
+              return (
+                <AnimatedPressable
+                  key={sev}
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => {
+                    void haptics.selection();
+                    setSeverity(sev);
+                  }}
+                  style={{
+                    paddingHorizontal: theme.spacing.md,
+                    paddingVertical: theme.spacing.sm,
+                    minHeight: 40,
+                    borderRadius: theme.radius.lg,
+                    backgroundColor: active ? colors.warningSoft : colors.surfaceSecondary,
+                    borderWidth: 1.5,
+                    borderColor: active ? colors.warning : colors.border,
                   }}
                 >
                   <AppText
-                    variant="label"
-                    weight={titleWeight}
-                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    variant="caption"
+                    weight={active ? titleWeight : 'medium'}
+                    style={{ color: active ? colors.warning : colors.textPrimary }}
                   >
-                    {stageName(s)}
+                    {t(`mobile.quality.severityLevel.${sev}`)}
                   </AppText>
-                  {isRec ? (
-                    <AppText
-                      variant="caption"
-                      style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
-                    >
-                      {t('mobile.quality.recommended')}
-                    </AppText>
-                  ) : null}
-                </Pressable>
+                </AnimatedPressable>
               );
-            })
-          )}
-        </View>
+            })}
+          </View>
 
-        <PrimaryButton
-          label={t('mobile.quality.confirmProblem')}
-          onPress={submit}
-          loading={busy}
-          style={{ minHeight: theme.sizes.touch.min }}
+          <DealerBoard title={t('mobile.quality.recommendedStage')} titleWeight={titleWeight}>
+            {loadingStages ? (
+              <AppText variant="caption" color="muted">
+                {t('mobile.quality.loadingStages')}
+              </AppText>
+            ) : eligible.length === 0 ? (
+              <AppText variant="caption" color="muted">
+                {t('mobile.quality.noReworkStages')}
+              </AppText>
+            ) : (
+              eligible.map((stage, index) => {
+                const active = stageId === stage.stageInstanceId;
+                const isRec = recommended?.stageInstanceId === stage.stageInstanceId;
+                return (
+                  <ListItemEnter key={stage.stageInstanceId} index={index}>
+                    <AnimatedPressable
+                      variant="button"
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                      onPress={() => {
+                        void haptics.selection();
+                        setStageId(stage.stageInstanceId);
+                      }}
+                      style={{
+                        minHeight: 44,
+                        borderRadius: theme.radius.lg,
+                        borderWidth: 1.5,
+                        borderColor: active ? colors.brand : colors.border,
+                        backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+                        paddingHorizontal: theme.spacing.md,
+                        paddingVertical: theme.spacing.sm,
+                        overflow: 'hidden',
+                        marginBottom: theme.spacing.sm,
+                      }}
+                    >
+                      {active ? (
+                        <View
+                          pointerEvents="none"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            width: 3,
+                            backgroundColor: colors.brand,
+                            opacity: 0.55,
+                            ...(isRTL ? { right: 0 } : { left: 0 }),
+                          }}
+                        />
+                      ) : null}
+                      <AppText
+                        variant="label"
+                        weight={active ? titleWeight : 'medium'}
+                        style={{
+                          color: active ? colors.brand : colors.textPrimary,
+                          textAlign: isRTL ? 'right' : 'left',
+                        }}
+                      >
+                        {stageName(stage)}
+                      </AppText>
+                      {isRec ? (
+                        <AppText
+                          variant="caption"
+                          style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
+                        >
+                          {t('mobile.quality.recommended')}
+                        </AppText>
+                      ) : null}
+                    </AnimatedPressable>
+                  </ListItemEnter>
+                );
+              })
+            )}
+          </DealerBoard>
+        </ScrollView>
+        <DealerFormFooter
+          confirmLabel={t('mobile.quality.confirmProblem')}
+          onConfirm={() => void submit()}
+          onCancel={onClose}
+          loading={submitting}
+          disabled={!valid || submitting}
         />
-        <SecondaryButton label={t('mobile.tasks.cancel')} onPress={onClose} />
-      </ScrollView>
+      </View>
     </BottomSheet>
   );
 }

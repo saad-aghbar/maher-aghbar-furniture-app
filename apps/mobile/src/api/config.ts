@@ -28,6 +28,10 @@ function isLoopbackUrl(url: string): boolean {
   }
 }
 
+function isPrivateLanHost(hostname: string): boolean {
+  return /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
+}
+
 /** Parse Metro / Expo Go host from hostUri, debuggerHost, linkingUri, or scriptURL. */
 export function hostnameFromDevUri(uri: string | null | undefined): string | undefined {
   if (!uri) return undefined;
@@ -107,8 +111,15 @@ export function getApiBaseUrl(): string {
 
   const lanHost = expoDevHost();
 
-  // Explicit non-loopback wins (LAN IP, staging, etc.).
-  if (configured && !isLoopbackUrl(configured)) return configured;
+  // Explicit non-loopback wins (LAN IP, staging, etc.), unless a pinned
+  // private LAN IP no longer matches Metro after DHCP changed the Mac address.
+  if (configured && !isLoopbackUrl(configured)) {
+    const pinnedHost = hostnameFromDevUri(configured);
+    if (lanHost && pinnedHost && isPrivateLanHost(pinnedHost) && pinnedHost !== lanHost) {
+      return `http://${lanHost}:${API_PORT}`;
+    }
+    return configured;
+  }
 
   // Physical device / Expo Go: Metro is on the LAN — API is too.
   if (lanHost) return `http://${lanHost}:${API_PORT}`;

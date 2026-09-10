@@ -10,8 +10,10 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
-import { DeliveryStatus, Prisma, SalesOrderStatus } from '@maher/database';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { DeliveryPurpose, DeliveryStatus, Prisma, SalesOrderStatus } from '@maher/database';
+import { tryApplyLifecycle } from '../contracts/return-lifecycle';
+import { syncReturnCaseLifecycle } from '../contracts/return-piece.service';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -24,6 +26,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { DeliveryLoadService } from './delivery-load.service';
+import { deliveryDealerWarehouseClauses } from './delivery-list-filter';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
@@ -45,8 +48,17 @@ class CreateDeliveryDto {
   @IsUUID()
   customerId!: string;
 
+  @IsOptional()
   @IsUUID()
-  salesOrderId!: string;
+  salesOrderId?: string;
+
+  @IsOptional()
+  @IsIn(['OUTBOUND_ORDER', 'RETURN_RESHIP'])
+  purpose?: DeliveryPurpose;
+
+  @IsOptional()
+  @IsUUID()
+  returnRequestId?: string;
 
   @IsString()
   deliveryAddress!: string;
@@ -182,6 +194,9 @@ export class DeliveriesController {
       mine?: string | boolean;
       attention?: string | boolean;
       scope?: 'open' | 'completed' | 'all';
+      dealerId?: string;
+      customerId?: string;
+      warehouseId?: string;
     },
     @CurrentUser() user: AuthUser,
   ) {
@@ -198,6 +213,8 @@ export class DeliveriesController {
         scope: query.scope,
         status: query.status,
         q: query.q,
+        dealerId: query.dealerId || query.customerId,
+        warehouseId: query.warehouseId,
       });
     }
 
@@ -275,6 +292,13 @@ export class DeliveriesController {
     const andClauses: Prisma.DeliveryWhereInput[] = [];
     if (attentionClause) andClauses.push(attentionClause);
     if (qClause) andClauses.push(qClause);
+    andClauses.push(
+      ...deliveryDealerWarehouseClauses({
+        dealerId: query.dealerId,
+        customerId: query.customerId,
+        warehouseId: query.warehouseId,
+      }),
+    );
 
     const where: Prisma.DeliveryWhereInput = {
       ...(user.customerId ? { customerId: user.customerId } : {}),
@@ -309,6 +333,54 @@ export class DeliveriesController {
   @Post()
   @RequirePermissions('delivery.update')
   async create(@Body() dto: CreateDeliveryDto) {
+    const purpose = dto.purpose ?? DeliveryPurpose.OUTBOUND_ORDER;
+    const isReship = purpose === DeliveryPurpose.RETURN_RESHIP;
+
+    if (isReship) {
+      if (!dto.returnRequestId) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: 'returnRequestId is required for a return reship.',
+        });
+      }
+      const ret = await this.prisma.returnRequest.findUnique({
+        where: { id: dto.returnRequestId },
+        include: { salesOrder: { include: { lines: true } } },
+      });
+      if (!ret) {
+        throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Return not found.' });
+      }
+      if (ret.customerId !== dto.customerId) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: 'Customer does not match return.',
+        });
+      }
+      const number = await this.sequences.next('DEL', 'DEL');
+      return this.prisma.delivery.create({
+        data: {
+          number,
+          customerId: dto.customerId,
+          salesOrderId: dto.salesOrderId ?? ret.salesOrderId,
+          purpose,
+          returnRequestId: ret.id,
+          deliveryAddress: dto.deliveryAddress,
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
+          driverId: dto.driverId,
+          notes: dto.notes ?? `Return reship ${ret.number}`,
+          status: DeliveryStatus.PLANNED,
+          items: {
+            create: [{ description: ret.productDesc, quantity: ret.quantity }],
+          },
+        },
+        include: { items: true, customer: true, salesOrder: true },
+      });
+    }
+
+    if (!dto.salesOrderId) {
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'salesOrderId is required.' });
+    }
     const so = await this.prisma.salesOrder.findFirst({
       where: { id: dto.salesOrderId, archivedAt: null },
       include: { lines: true },
@@ -353,6 +425,7 @@ export class DeliveriesController {
         number,
         customerId: dto.customerId,
         salesOrderId: dto.salesOrderId,
+        purpose,
         deliveryAddress: dto.deliveryAddress,
         latitude: latitude ?? null,
         longitude: longitude ?? null,
@@ -591,11 +664,34 @@ export class DeliveriesController {
         },
       });
 
-      if (existing.salesOrderId) {
+      const isReship = existing.purpose === DeliveryPurpose.RETURN_RESHIP;
+      if (existing.salesOrderId && !isReship) {
         await tx.salesOrder.update({
           where: { id: existing.salesOrderId },
           data: { status: SalesOrderStatus.DELIVERED },
         });
+      }
+      if (isReship && existing.returnRequestId) {
+        const ret = await tx.returnRequest.findUnique({ where: { id: existing.returnRequestId } });
+        if (ret) {
+          let current = ret.lifecycleState;
+          let next = tryApplyLifecycle(current, 'RETURNING');
+          if (next) current = next.lifecycleState;
+          const completed = tryApplyLifecycle(current, 'COMPLETED');
+          if (completed) next = completed;
+          if (next) {
+            await tx.returnRequest.update({ where: { id: ret.id }, data: next });
+          }
+          await tx.returnPiece.updateMany({
+            where: {
+              returnRequestId: ret.id,
+              outboundEligible: true,
+              state: { in: ['READY_TO_RETURN', 'RETURNING'] },
+            },
+            data: { state: 'RETURNED', resolvedAt: now },
+          });
+          await syncReturnCaseLifecycle(tx, ret.id);
+        }
       }
 
       await tx.auditEvent.create({
@@ -615,7 +711,7 @@ export class DeliveriesController {
       return updated;
     });
 
-    if (existing.salesOrderId) {
+    if (existing.salesOrderId && existing.purpose !== DeliveryPurpose.RETURN_RESHIP) {
       const productionOrders = await this.prisma.productionOrder.findMany({
         where: { salesOrderId: existing.salesOrderId, archivedAt: null },
         select: { id: true },
@@ -628,16 +724,24 @@ export class DeliveriesController {
         /* must not block dealer confirmation */
       });
     }
+    if (existing.purpose === DeliveryPurpose.RETURN_RESHIP && existing.returnRequestId) {
+      await this.invoices.ensureFromReturn(existing.returnRequestId, user.id).catch(() => {
+        /* must not block dealer confirmation */
+      });
+    }
 
+    const isReshipNotify = existing.purpose === DeliveryPurpose.RETURN_RESHIP;
     await this.notifications
       .notifyCustomerUsers(existing.customerId, {
-        templateCode: 'DELIVERY_COMPLETED',
+        templateCode: isReshipNotify ? 'RETURN_DELIVERED' : 'DELIVERY_COMPLETED',
         vars: {
           orderNumber: delivery.number,
           number: delivery.number,
           date: now.toISOString().slice(0, 10),
         },
-        linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
+        linkUrl: isReshipNotify
+          ? `/returns/${existing.returnRequestId ?? ''}`
+          : `/sales-orders/${existing.salesOrderId ?? ''}`,
       })
       .catch(() => undefined);
 

@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -17,6 +18,10 @@ import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
+import { PurchaseWhatsAppPreviewSheet } from './components/PurchaseWhatsAppPreviewSheet';
+import { PurchasingSkeleton } from './components/PurchasingSkeleton';
+import { openPurchaseOrderPdf } from './api';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -24,8 +29,8 @@ import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PurchaseWhatsAppResult } from '@/api/modules/purchasing';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
-import { ReceiveGoodsSheet } from './components/ReceiveGoodsSheet';
 import { usePurchaseActionMutation, usePurchaseOrderQuery } from './query';
+import { groupReceiptsByWarehouse } from './receiveLineDrafts';
 import {
   localizedNamed,
   purchaseLineQtyLabel,
@@ -40,6 +45,7 @@ const RECEIPTS_TAB_CLEARANCE_EXTRA = 48;
 
 export function PurchaseDetailScreen({ orderId }: Props) {
   const { user } = useAuth();
+  const router = useRouter();
   const { t, locale, formatCurrency, formatDate, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -51,9 +57,11 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const backFallback = '/(app)/(admin)/purchasing' as Href;
 
-  const [confirm, setConfirm] = useState<'approve' | 'send' | null>(null);
-  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [confirm, setConfirm] = useState<'approve' | null>(null);
   const [whatsappPreview, setWhatsappPreview] = useState<PurchaseWhatsAppResult | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewDraft, setPreviewDraft] = useState<{ to: string | null; body: string } | null>(null);
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const query = usePurchaseOrderQuery(orderId, canRead);
   const actions = usePurchaseActionMutation(orderId);
 
@@ -88,7 +96,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   if (!po || !detail) {
     return (
       <AppScreen backFallback={backFallback}>
-        <AppText>{t('mobile.purchasing.loading')}</AppText>
+        <PurchasingSkeleton />
       </AppScreen>
     );
   }
@@ -97,13 +105,14 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   const phaseLabel = resolvePhaseLabel(t, presentation);
   const progressPct = Math.round((Number(presentation?.progress) || 0) * 100);
   const costing = po.purchasingCosting;
-  const remainingLines = (po.lines ?? []).filter((l) => Number(l.remainingQty) > 0).length;
+  const remainingLines = detail.lines.filter((l) => l.remainingQty > 0).length;
+  const remainingNonFabric = detail.lines.filter(
+    (l) => l.remainingQty > 0 && !l.fabricProcurementId,
+  ).length;
   const canOpenReceive =
     canReceive &&
-    (po.status === 'SENT' ||
-      po.status === 'PARTIALLY_RECEIVED' ||
-      po.status === 'APPROVED' ||
-      presentation?.primaryAction === 'RECEIVE');
+    remainingNonFabric > 0 &&
+    (po.status === 'SENT' || po.status === 'PARTIALLY_RECEIVED');
   const showApprove = canApprove && po.status === 'DRAFT';
   const showSend = canApprove && po.status === 'APPROVED';
   const showResendWhatsapp = canApprove && po.status === 'SENT';
@@ -111,8 +120,10 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   const whatsappTo = whatsappPreview?.to ?? po.whatsappLastTo ?? null;
   const hasDockActions = showApprove || showSend || canOpenReceive || showResendWhatsapp;
   const dockPad = hasDockActions
-    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 96
-    : theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+      96 +
+      RECEIPTS_TAB_CLEARANCE_EXTRA
+    : theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + RECEIPTS_TAB_CLEARANCE_EXTRA;
 
   return (
     <AppScreen backFallback={backFallback}>
@@ -165,6 +176,14 @@ export function PurchaseDetailScreen({ orderId }: Props) {
 
         <PurchasingFloorBoard>
           <Meta label={t('catalog.supplier')} value={detail.supplierName} />
+          {po.origin && po.origin !== 'MANUAL' ? (
+            <Meta
+              label={t('mobile.purchasing.origin')}
+              value={t(
+                `mobile.purchasing.origin${po.origin === 'LOW_STOCK' ? 'LowStock' : po.origin === 'DEMAND' ? 'Demand' : po.origin === 'FABRIC' ? 'Fabric' : 'Request'}`,
+              )}
+            />
+          ) : null}
           {detail.expectedDeliveryDate ? (
             <Meta
               label={t('mobile.purchasing.expectedArrival')}
@@ -226,9 +245,48 @@ export function PurchaseDetailScreen({ orderId }: Props) {
                 >
                   {`${t('mobile.purchasing.alreadyReceived')}: ${String(line.receivedQty ?? 0)} · ${t('mobile.purchasing.remaining')}: ${String(line.remainingQty ?? Math.max(0, Number(line.quantity) - Number(line.receivedQty ?? 0)))}`}
                 </AppText>
+                {line.warehouseId || line.locationId || line.warehouse || line.location ? (
+                  <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                    {`${t('mobile.purchasing.destination')}: ${
+                      line.location?.name ||
+                      line.warehouse?.nameAr ||
+                      line.warehouse?.nameEn ||
+                      line.warehouse?.name ||
+                      line.locationId ||
+                      line.warehouseId
+                    }`}
+                  </AppText>
+                ) : null}
                 <AppText variant="caption" weight="semibold" dir="ltr">
                   {String(line.lineTotal ?? '—')}
                 </AppText>
+                {line.fabricProcurementId ? (
+                  <>
+                    <AppText
+                      variant="caption"
+                      color="secondary"
+                      style={{
+                        color: colors.brand,
+                        textAlign: isRTL ? 'right' : 'left',
+                      }}
+                    >
+                      {t('mobile.purchasing.fabricReceiveOnFabricScreen')}
+                    </AppText>
+                    <SecondaryButton
+                      label={t('mobile.purchasing.openFabric')}
+                      onPress={() => {
+                        void haptics.selection();
+                        router.push(
+                          `/(app)/(admin)/purchasing/fabric/${line.fabricProcurementId}` as Href,
+                        );
+                      }}
+                      style={{
+                        borderRadius: theme.radius.xl,
+                        minHeight: theme.sizes.touch.min,
+                      }}
+                    />
+                  </>
+                ) : null}
               </View>
             ))
           )}
@@ -240,7 +298,8 @@ export function PurchaseDetailScreen({ orderId }: Props) {
               {t('mobile.purchasing.noReceiptsYet')}
             </AppText>
           ) : (
-            (po.goodsReceipts ?? []).map((grn) => (
+            groupReceiptsByWarehouse(po.goodsReceipts ?? []).flatMap((group) =>
+              group.receipts.map((grn) => (
               <View key={grn.id} style={{ gap: 4, paddingBottom: theme.spacing.sm }}>
                 <View
                   style={{
@@ -250,7 +309,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
                   }}
                 >
                   <AppText weight="semibold" dir="ltr">
-                    {grn.number ?? grn.id}
+                    {`${grn.number ?? grn.id}${grn.warehouse?.nameEn || grn.warehouseId ? ` · ${grn.warehouse?.nameEn || grn.warehouseId}` : ''}`}
                   </AppText>
                   <AppText variant="caption" color="muted" dir="ltr">
                     {grn.createdAt || grn.receiptDate
@@ -269,7 +328,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
                   </AppText>
                 ))}
               </View>
-            ))
+            )))
           )}
         </PurchasingFloorBoard>
 
@@ -318,7 +377,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
           </PurchasingFloorBoard>
         ) : null}
 
-        {whatsappBody ? (
+        {po.whatsappLastBody || po.whatsappSentAt ? (
           <PurchasingFloorBoard title={t('mobile.purchasing.whatsappMessage')}>
             {whatsappTo ? (
               <AppText variant="caption" color="muted" dir="ltr">
@@ -340,7 +399,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
             <SecondaryButton
               label={t('mobile.purchasing.copyWhatsapp')}
               onPress={() => {
-                void Clipboard.setStringAsync(whatsappBody).then(() => {
+                void Clipboard.setStringAsync(whatsappBody ?? '').then(() => {
                   void haptics.confirmLight();
                   showToast({
                     variant: 'success',
@@ -367,24 +426,62 @@ export function PurchaseDetailScreen({ orderId }: Props) {
             ) : null}
             {showSend ? (
               <PrimaryButton
-                label={t('mobile.purchasing.send')}
-                onPress={() => setConfirm('send')}
-                style={{ borderRadius: theme.radius.xl }}
+                label={t('mobile.purchasing.previewSend')}
+                loading={actions.draftWhatsApp.isPending}
+                onPress={() => {
+                  actions.draftWhatsApp.mutate(undefined, {
+                    onSuccess: (draft) => {
+                      setPreviewDraft({ to: draft.to, body: draft.body });
+                      setPreviewOpen(true);
+                    },
+                    onError: () =>
+                      showToast({ variant: 'error', message: t('mobile.purchasing.updateFailed') }),
+                  });
+                }}
+                style={{ borderRadius: theme.radius.xl, minHeight: 44 }}
               />
             ) : null}
             {showResendWhatsapp ? (
               <SecondaryButton
                 label={t('mobile.purchasing.resendWhatsapp')}
-                onPress={() => setConfirm('send')}
-                style={{ borderRadius: theme.radius.xl }}
+                onPress={() => {
+                  actions.draftWhatsApp.mutate(undefined, {
+                    onSuccess: (draft) => {
+                      setPreviewDraft({ to: draft.to, body: draft.body });
+                      setPreviewOpen(true);
+                    },
+                    onError: () =>
+                      showToast({ variant: 'error', message: t('mobile.purchasing.updateFailed') }),
+                  });
+                }}
+                style={{ borderRadius: theme.radius.xl, minHeight: 44 }}
               />
             ) : null}
+            <SecondaryButton
+              label={t('mobile.purchasing.pdf')}
+              onPress={() => {
+                void pickPdfOptions().then((opts) => {
+                  if (!opts) return;
+                  return openPurchaseOrderPdf(po.id, opts);
+                }).catch(() => {
+                  void haptics.error();
+                  showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
+                });
+              }}
+              style={{ borderRadius: theme.radius.xl, minHeight: 44 }}
+            />
             {canOpenReceive ? (
               <SecondaryButton
                 label={t('mobile.purchasing.receive')}
-                onPress={() => setReceiveOpen(true)}
+                onPress={() =>
+                  router.push(`/(app)/(admin)/inventory/receive/${po.id}` as Href)
+                }
                 style={{ borderRadius: theme.radius.xl }}
               />
+            ) : showSend ? (
+              <AppText color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('mobile.purchasing.receiveAfterSend')}
+              </AppText>
             ) : null}
           </View>
         </FloatingActionDock>
@@ -393,30 +490,41 @@ export function PurchaseDetailScreen({ orderId }: Props) {
       <ConfirmationSheet
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
-        title={t(`mobile.purchasing.${confirm ?? 'approve'}`)}
-        message={t(`mobile.purchasing.${confirm ?? 'approve'}Confirm`)}
+        title={t('mobile.purchasing.approve')}
+        message={t('mobile.purchasing.approveConfirm')}
         confirmLabel={t('mobile.purchasing.confirm')}
         cancelLabel={t('mobile.purchasing.cancel')}
         onConfirm={() => {
-          if (confirm === 'approve') {
-            actions.approve.mutate(undefined, {
-              onSuccess: () => {
-                void haptics.confirmMedium();
-                showToast({
-                  variant: 'success',
-                  message: t('mobile.purchasing.updateSuccess'),
-                });
-              },
-              onError: () =>
-                showToast({
-                  variant: 'error',
-                  message: t('mobile.purchasing.updateFailed'),
-                }),
-            });
-          } else if (confirm === 'send') {
-            actions.send.mutate(undefined, {
+          actions.approve.mutate(undefined, {
+            onSuccess: () => {
+              void haptics.confirmMedium();
+              showToast({
+                variant: 'success',
+                message: t('mobile.purchasing.updateSuccess'),
+              });
+            },
+            onError: () =>
+              showToast({
+                variant: 'error',
+                message: t('mobile.purchasing.updateFailed'),
+              }),
+          });
+        }}
+      />
+      <PurchaseWhatsAppPreviewSheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        to={previewDraft?.to}
+        body={previewDraft?.body ?? ''}
+        templateBody={previewDraft?.body}
+        sending={actions.send.isPending}
+        onSend={(orders) => {
+          actions.send.mutate(
+            { body: orders[0]?.body },
+            {
               onSuccess: (result) => {
                 void haptics.confirmMedium();
+                setPreviewOpen(false);
                 setWhatsappPreview(result.whatsapp);
                 const wa = result.whatsapp;
                 if (wa.ok && wa.to) {
@@ -441,34 +549,12 @@ export function PurchaseDetailScreen({ orderId }: Props) {
                   variant: 'error',
                   message: t('mobile.purchasing.updateFailed'),
                 }),
-            });
-          }
+            },
+          );
         }}
       />
 
-      <ReceiveGoodsSheet
-        open={receiveOpen}
-        onClose={() => setReceiveOpen(false)}
-        order={po}
-        submitting={actions.receive.isPending}
-        onSubmit={(body) => {
-          actions.receive.mutate(body, {
-            onSuccess: () => {
-              void haptics.confirmMedium();
-              setReceiveOpen(false);
-              showToast({
-                variant: 'success',
-                message: t('mobile.purchasing.receiveSuccess'),
-              });
-            },
-            onError: () =>
-              showToast({
-                variant: 'error',
-                message: t('mobile.purchasing.receiveFailed'),
-              }),
-          });
-        }}
-      />
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

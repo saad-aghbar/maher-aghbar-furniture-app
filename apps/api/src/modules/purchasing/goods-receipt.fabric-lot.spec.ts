@@ -1,4 +1,7 @@
-import { createFabricLotsForGoodsReceipt } from './goods-receipt-fabric-lots';
+import {
+  createFabricLotsForGoodsReceipt,
+  createGeneralStockFabricLot,
+} from './goods-receipt-fabric-lots';
 
 describe('createFabricLotsForGoodsReceipt', () => {
   it('creates an ORDER_ALLOCATED fabric lot with cost and is idempotent', async () => {
@@ -91,5 +94,38 @@ describe('createFabricLotsForGoodsReceipt', () => {
     });
     expect(result).toEqual([]);
     expect(tx.inventoryLot.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a GENERAL_STOCK fabric lot for a manual buy', async () => {
+    const created: unknown[] = [];
+    const tx = {
+      inventoryLot: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          created.push(data);
+          return { id: 'lot-gs', qrCode: data.qrCode };
+        }),
+      },
+    };
+    const lot = await createGeneralStockFabricLot({
+      tx,
+      sourceKey: 'grn:grn-3:inv-vel:general',
+      inventoryItemId: 'inv-vel',
+      warehouseId: 'wh-1',
+      locationId: 'loc-1',
+      qty: 8,
+      unitCost: 12,
+      supplierId: 'sup-1',
+      purchaseOrderId: 'po-3',
+      goodsReceiptId: 'grn-3',
+    });
+    expect(lot.reused).toBe(false);
+    expect(created[0]).toMatchObject({
+      allocationMode: 'GENERAL_STOCK',
+      purchaseOrderId: 'po-3',
+      supplierId: 'sup-1',
+    });
+    expect(created[0]).not.toHaveProperty('fabricProcurementId');
   });
 });

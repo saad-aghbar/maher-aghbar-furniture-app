@@ -1,6 +1,6 @@
 import type { Href } from 'expo-router';
 import { Redirect, useRouter } from 'expo-router';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, useEffect, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { findDeliveryForSalesOrder } from '@/api/modules/deliveries';
 import { isApiError } from '@/api/errors';
@@ -103,6 +103,10 @@ import {
   selectProductionDetail,
   type ProductionTaskRow,
 } from './selectProduction';
+import {
+  productionOrderHasRunningTimer,
+  withLiveProductionOrder,
+} from '@/features/tasks/liveTaskProgressPercent';
 
 const STARTABLE_STATUSES = new Set([
   'DRAFT',
@@ -189,6 +193,17 @@ export function ProductionDetailScreen({
   const [workflowPickerOpen, setWorkflowPickerOpen] = useState(false);
 
   const query = useProductionOrderQuery(orderId, canRead);
+  const [now, setNow] = useState(() => Date.now());
+  const timerRunning = query.data ? productionOrderHasRunningTimer(query.data) : false;
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+  const liveOrder = useMemo(
+    () => (query.data ? withLiveProductionOrder(query.data, now) : null),
+    [query.data, now],
+  );
   const workflowsQuery = useWorkflowsQuery(
     canRead && host === 'orders' && hubSection === 'workflow',
   );
@@ -238,8 +253,8 @@ export function ProductionDetailScreen({
   const blockMutation = useBlockTaskMutation(orderId);
 
   const detail = useMemo(
-    () => (query.data ? selectProductionDetail(query.data, locale) : null),
-    [query.data, locale],
+    () => (liveOrder ? selectProductionDetail(liveOrder, locale) : null),
+    [liveOrder, locale],
   );
 
   const readiness = query.data?.readiness ?? null;
@@ -289,8 +304,16 @@ export function ProductionDetailScreen({
   /** Ready for Factory — Replan unlocks back to Needs Planning (not after floor start). */
   const showReplan =
     host === 'production' && releasedToFactory && !floorStarted && canUpdate;
+  const isReturnOrigin =
+    query.data?.originType === 'RETURN_WORK' || query.data?.originType === 'REPLACEMENT';
   const redirectUnreleasedToOrdersPlan =
     host === 'production' && Boolean(query.data) && !releasedToFactory && Boolean(salesOrderId);
+  const redirectUnreleasedReturnToPlan =
+    host === 'production' &&
+    Boolean(query.data) &&
+    !releasedToFactory &&
+    !salesOrderId &&
+    isReturnOrigin;
   /** Active factory work — dossier is read-only by default. */
   const isExecutionDossier = host === 'production' && floorStarted;
   const isReadyDossier = host === 'production' && releasedToFactory && !floorStarted;
@@ -306,13 +329,13 @@ export function ProductionDetailScreen({
   );
 
   const journeyStages = useMemo(
-    () => (query.data ? selectProductionJourney(query.data, locale) : []),
-    [query.data, locale],
+    () => (liveOrder ? selectProductionJourney(liveOrder, locale) : []),
+    [liveOrder, locale],
   );
 
   const whereNow = useMemo(() => {
-    if (!query.data || !detail) return null;
-    return selectProductionWhereNow(query.data, locale, {
+    if (!liveOrder || !detail) return null;
+    return selectProductionWhereNow(liveOrder, locale, {
       dealerName: detail.dealerName,
       productTitle: detail.title,
       imageUrl: detail.imageUrl,
@@ -320,7 +343,7 @@ export function ProductionDetailScreen({
       progressLabel: detail.progressLabel,
       attentionCount: attentionBlocks.length,
     });
-  }, [query.data, detail, locale, attentionBlocks.length]);
+  }, [liveOrder, detail, locale, attentionBlocks.length]);
 
   const openTaskExecution = (row: ProductionTaskRow, intent: 'view' | 'manage' | 'plan') => {
     void haptics.selection();
@@ -432,6 +455,12 @@ export function ProductionDetailScreen({
       <Redirect
         href={`/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href}
       />
+    );
+  }
+
+  if (redirectUnreleasedReturnToPlan) {
+    return (
+      <Redirect href={`/(app)/(admin)/production/${orderId}/plan` as Href} />
     );
   }
 
@@ -576,6 +605,7 @@ export function ProductionDetailScreen({
                 priority={detail.priority}
                 isLate={detail.isLate}
                 imageUrl={detail.imageUrl}
+                origin={detail.origin}
                 onPressImage={() => setImageOpen(true)}
               />
             </HeaderEnter>
@@ -1423,6 +1453,12 @@ export function ProductionDetailScreen({
         scheduleConflict={scheduleConflict}
         onClearScheduleConflict={() => setScheduleConflict(null)}
         onWindowChange={setAssignWindow}
+        onOpenStageTimes={() => {
+          setActiveTask(null);
+          setAssignWindow({});
+          setScheduleConflict(null);
+          router.push(adminProductionFlowHref(detail.id));
+        }}
         onAssign={(payload) => {
           if (!sheetTask) return;
           assignMutation.mutate(
@@ -1432,8 +1468,10 @@ export function ProductionDetailScreen({
               priority: payload.priority,
               plannedStart: payload.plannedStart,
               plannedCompletion: payload.plannedCompletion,
-              estimatedMinutes: payload.estimatedMinutes,
+              overtime: payload.overtime,
               overrideConflict: payload.overrideConflict,
+              acknowledge: payload.acknowledge,
+              reason: payload.reason,
             },
             {
               onSuccess: () => {
@@ -1448,6 +1486,13 @@ export function ProductionDetailScreen({
               },
               onError: (err) => {
                 void haptics.error();
+                if (isApiError(err) && err.code === 'STAGE_TIME_REQUIRED') {
+                  showToast({
+                    variant: 'error',
+                    message: t('mobile.production.stageTimeMissingBody'),
+                  });
+                  return;
+                }
                 if (isApiError(err) && err.code === 'WORKER_SCHEDULE_CONFLICT') {
                   setScheduleConflict({
                     conflicts: Array.isArray(err.details.conflicts)

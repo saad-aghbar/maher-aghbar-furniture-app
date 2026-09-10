@@ -28,6 +28,8 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
       assignedEmployeeId: null,
       productionOrderId: 'po-1',
       stageDefinitionId: 'stage-cut',
+      stageInstanceId: 'si-1',
+      estimatedMinutes: 60,
       productionOrder: { id: 'po-1', number: 'PO-1', status: 'PLANNED' },
       stageInstance: { status: 'PENDING' },
       stageDefinition: {
@@ -72,8 +74,16 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
         findUnique: productionTaskFindUnique,
         findUniqueOrThrow: productionTaskFindUnique,
         update: productionTaskUpdate,
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: productionTaskFindMany,
         count: jest.fn().mockResolvedValue(0),
+      },
+      productionOrderWorkflowSnapshotNode: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'snap-1',
+          estimatedMinutes: 60,
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'snap-1', estimatedMinutes: 60 }),
       },
       scheduleAllocation: { findMany: scheduleAllocationFindMany },
       workerSkill: { count: workerSkillCount },
@@ -209,8 +219,8 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
     );
   });
 
-  it('slides the planned window after a predecessor instead of blocking assign', async () => {
-    const { service, productionTaskFindMany, productionTaskUpdate } = makeService({
+  it('blocks a window that starts before a predecessor instead of sliding it', async () => {
+    const { service, productionTaskFindMany } = makeService({
       stageDefinition: {
         id: 'stage-asm',
         code: 'ASSEMBLY',
@@ -227,25 +237,17 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
       },
     ]);
 
-    await service.assign(
-      'task-1',
-      {
-        employeeId: WORKER_B,
-        plannedStart: '2026-09-01T08:00:00.000Z',
-        plannedCompletion: '2026-09-01T12:00:00.000Z',
-      },
-      ['production-order.assign'],
-    );
-
-    expect(productionTaskUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          assignedEmployeeId: WORKER_B,
-          plannedStart: new Date('2026-09-02T16:00:00.000Z'),
-          plannedCompletion: new Date('2026-09-02T20:00:00.000Z'),
-        }),
-      }),
-    );
+    await expect(
+      service.assign(
+        'task-1',
+        {
+          employeeId: WORKER_B,
+          plannedStart: '2026-09-01T08:00:00.000Z',
+          plannedCompletion: '2026-09-01T12:00:00.000Z',
+        },
+        ['production-order.assign'],
+      ),
+    ).rejects.toMatchObject({ response: { code: 'DEPENDENCY_ORDER' } });
   });
 
   it('rejects reassign after PO is on the floor', async () => {

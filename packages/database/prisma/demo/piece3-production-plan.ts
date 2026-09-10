@@ -888,6 +888,7 @@ export async function seedPiece3ProductionPlanExamples(
           plannedCompletion:
             plan.plannedCompletion === undefined ? undefined : plan.plannedCompletion,
           actualStart: plan.actualStart === undefined ? undefined : plan.actualStart,
+          actualCompletion: status === TaskStatus.COMPLETED ? (plan.actualStart ?? asOf) : undefined,
           estimatedMinutes: 120,
         },
       });

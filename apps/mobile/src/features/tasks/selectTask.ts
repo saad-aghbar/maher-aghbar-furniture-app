@@ -28,6 +28,19 @@ export type TaskCardModel = {
   isScheduledToday: boolean;
 };
 
+export type TaskProblem = {
+  id: string;
+  category: string;
+  reason: string;
+  voiceDocumentId?: string | null;
+  photoDocumentIds?: string[];
+  resolution: string | null;
+  resolutionVoiceDocumentId?: string | null;
+  resolutionPhotoDocumentIds?: string[];
+  createdAt: string | null;
+  answered: boolean;
+};
+
 export type TaskDetailViewModel = TaskCardModel & {
   instructions: string;
   notes: string | null;
@@ -37,14 +50,19 @@ export type TaskDetailViewModel = TaskCardModel & {
   requiresPhotos: boolean;
   producesSemiFinished: boolean;
   expectedPieceCount: number | null;
-  openBlockers: Array<{ id: string; reason: string }>;
+  problems: TaskProblem[];
   canStart: boolean;
   canStop: boolean;
   canResume: boolean;
   canFinish: boolean;
   canReportProblem: boolean;
   canUploadPhoto: boolean;
+  canCarryOver: boolean;
+  leftoverRemainingMinutes: number;
+  carryOverAllowsOvertime: boolean;
   waitingOn: string | null;
+  /** COMPLETED / CANCELLED — history only, no add/edit/scan. */
+  isTerminal: boolean;
   /** Piece 9 — stage / quality routing. */
   stageCode: string | null;
   executionKind: string | null;
@@ -199,9 +217,25 @@ export function selectTaskDetail(
   locale: Locale = 'en',
 ): TaskDetailViewModel {
   const card = selectTaskCard(task, locale);
-  const openBlockers = (task.blockers ?? [])
-    .filter((b) => !b.resolvedAt)
-    .map((b) => ({ id: b.id, reason: b.reason }));
+  const problems: TaskProblem[] = [...(task.blockers ?? [])]
+    .map((b) => ({
+      id: b.id,
+      category: b.category?.trim() || 'OTHER',
+      reason: b.reason,
+      voiceDocumentId: b.voiceDocumentId,
+      photoDocumentIds: b.photoDocumentIds ?? [],
+      resolution: b.resolution ?? null,
+      resolutionVoiceDocumentId: b.resolutionVoiceDocumentId,
+      resolutionPhotoDocumentIds: b.resolutionPhotoDocumentIds ?? [],
+      createdAt: b.createdAt ?? null,
+      answered: Boolean(b.resolvedAt || b.resolution),
+    }))
+    .sort((a, b) => {
+      if (a.answered !== b.answered) return a.answered ? 1 : -1;
+      const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return bTime - aTime;
+    });
 
   const status = card.status;
   const terminal = status === 'COMPLETED' || status === 'CANCELLED';
@@ -262,7 +296,7 @@ export function selectTaskDetail(
         : task.producesSemiFinished
           ? 1
           : null,
-    openBlockers,
+    problems,
     canStart: ['NOT_STARTED', 'READY', 'READY_FOR_INSPECTION'].includes(status) && !waitingOn,
     canStop: status === 'IN_PROGRESS',
     canResume: (status === 'PAUSED' || status === 'BLOCKED') && !waitingOn,
@@ -270,7 +304,11 @@ export function selectTaskDetail(
     canFinish: !terminal && status !== 'BLOCKED',
     canReportProblem: !terminal,
     canUploadPhoto: !terminal,
+    canCarryOver: Boolean(task.canCarryOver),
+    leftoverRemainingMinutes: Math.max(1, task.leftoverRemainingMinutes ?? 30),
+    carryOverAllowsOvertime: Boolean(task.carryOverAllowsOvertime),
     waitingOn,
+    isTerminal: terminal,
     stageCode: stageCode || task.stageDefinition?.code?.trim() || null,
     executionKind: task.stageDefinition?.executionKind?.trim() || null,
     isRework: Boolean(task.isRework),

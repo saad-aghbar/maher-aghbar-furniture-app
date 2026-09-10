@@ -214,7 +214,9 @@ describe('inventory scan identity', () => {
     expect(block).toContain("RequirePermissions('inventory.receive')");
     expect(block).not.toContain('purchase-order.read');
     const serviceSrc = readFileSync(join(inventoryDir, 'inventory.service.ts'), 'utf8');
-    const method = serviceSrc.slice(serviceSrc.indexOf('async listOpenReceipts'));
+    const start = serviceSrc.indexOf('async listOpenReceipts');
+    const next = serviceSrc.indexOf('\n  async ', start + 1);
+    const method = serviceSrc.slice(start, next === -1 ? undefined : next);
     expect(method).not.toContain('unitPrice');
     expect(method).not.toContain('standardCost');
     expect(method).not.toContain('subtotal');

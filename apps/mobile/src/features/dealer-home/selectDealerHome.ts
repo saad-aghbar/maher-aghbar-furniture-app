@@ -22,7 +22,8 @@ export function isDealerHomeEmpty(data: DealerHomePayload): boolean {
     data.completedOrders === 0 &&
     data.recentOrders.length === 0 &&
     Number(data.outstandingBalance) === 0 &&
-    data.recentInvoices.length === 0
+    data.recentInvoices.length === 0 &&
+    Number(data.pendingReturns ?? 0) === 0
   );
 }
 

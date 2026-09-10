@@ -45,6 +45,7 @@ function makeService() {
     },
     productionSchedule: { findFirst: jest.fn() },
     salesOrder: { findMany: jest.fn().mockResolvedValue([]) },
+    delivery: { findMany: jest.fn().mockResolvedValue([]) },
     notificationTemplate: { findUnique: jest.fn().mockResolvedValue({ code: 'DELIVERY_DATE_UPDATED' }) },
     auditEvent: { create: jest.fn().mockResolvedValue(undefined) },
   } as any;
@@ -95,11 +96,61 @@ describe('dealer own schedule + own-deliveries isolation', () => {
         where: { customerId: 'customer-a', archivedAt: null },
       }),
     );
+    expect(prisma.delivery.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { customerId: 'customer-a', purpose: 'RETURN_RESHIP' },
+      }),
+    );
+  });
+
+  it('unions return reships onto the dealer delivery calendar', async () => {
+    const { service, prisma } = makeService();
+    prisma.salesOrder.findMany.mockResolvedValue([]);
+    prisma.delivery.findMany.mockResolvedValue([
+      {
+        id: 'del-reship',
+        number: 'DEL-R1',
+        status: 'PLANNED',
+        deliveryDate: new Date('2026-09-10T00:00:00.000Z'),
+        deliveryAddress: 'Showroom',
+        returnRequest: {
+          id: 'ret-1',
+          number: 'RR-1',
+          productDesc: 'Returned sofa',
+          quantity: 1,
+          salesOrder: {
+            id: 'so-1',
+            number: 'SO-1042',
+            status: 'DELIVERED',
+            requiredDeliveryDate: new Date('2026-09-10T00:00:00.000Z'),
+            deliveryAddress: 'Showroom',
+            projectName: 'Villa',
+            quotation: { request: { status: 'ACCEPTED' } },
+          },
+          workOrders: [
+            {
+              id: 'rw-1',
+              number: 'RW-2026-0017',
+              status: 'READY_FOR_DELIVERY',
+              requiredDeliveryDate: new Date('2026-09-10T00:00:00.000Z'),
+              committedDeliveryDate: new Date('2026-09-10T00:00:00.000Z'),
+              quantity: 1,
+              productDescription: 'Returned sofa',
+              product: { nameEn: 'Sofa', nameAr: 'كنبة', nameHe: null, imageUrl: null },
+              schedules: [],
+            },
+          ],
+        },
+      },
+    ]);
+    const listed = await service.listOwnDeliveries(makeUser());
+    expect(listed.data.some((row: { id: string }) => row.id === 'reship:del-reship')).toBe(true);
+    expect(listed.data[0]?.salesOrderNumber).toBe('SO-1042');
   });
 
   it('maps compact confirmed dates and projected without exposing earliestAvailableDate', async () => {
     const { service, prisma } = makeService();
-    const committed = new Date('2026-08-25T00:00:00.000Z');
+    const committed = new Date('2026-10-25T00:00:00.000Z');
     prisma.productionOrder.findFirst.mockResolvedValue({
       id: 'po-1',
       number: 'PO-1',
@@ -123,7 +174,7 @@ describe('dealer own schedule + own-deliveries isolation', () => {
     const dto = await service.getOwnOrderSchedule('po-1', makeUser());
     expect(dto.customerStatus).toBe('CONFIRMED_ON_TRACK');
     expect(dto.compactDates).toBe(true);
-    expect(dto.calendarDate).toBe('2026-08-25');
+    expect(dto.calendarDate).toBe('2026-10-25');
     expect(dto).toHaveProperty('projectedDeliveryDate');
     expect(dto).not.toHaveProperty('earliestAvailableDate');
     expect(dto).not.toHaveProperty('allocations');
@@ -166,10 +217,10 @@ describe('dealer own schedule + own-deliveries isolation', () => {
     expect(new Date(dto.actualDeliveryDate as Date).toISOString().slice(0, 10)).toBe('2026-08-12');
   });
 
-  it('keeps a slipped commitment on Aug 19 and omits it from Aug 21 range', async () => {
+  it('keeps a slipped commitment on Oct 25 and omits it from Oct 27 range', async () => {
     const { service, prisma } = makeService();
-    const committed = new Date('2026-08-25T00:00:00.000Z');
-    const slipped = new Date('2026-08-27T00:00:00.000Z');
+    const committed = new Date('2026-10-25T00:00:00.000Z');
+    const slipped = new Date('2026-10-27T00:00:00.000Z');
     prisma.salesOrder.findMany.mockResolvedValue([
       {
         id: 'so-19',
@@ -209,22 +260,22 @@ describe('dealer own schedule + own-deliveries isolation', () => {
       },
     ]);
 
-    const august = await service.listOwnDeliveries(makeUser(), { from: '2026-08-01', to: '2026-08-31' });
-    expect(august.data).toHaveLength(1);
-    expect(august.data[0]!.calendarDate).toBe('2026-08-25');
-    expect(august.data[0]!.projectedDeliveryDate).toEqual(slipped);
-    expect(august.data[0]!.customerStatus).toBe('MAY_BE_DELAYED');
-    expect(august.data[0]!.requiresDealerAttention).toBe(false);
+    const october = await service.listOwnDeliveries(makeUser(), { from: '2026-10-01', to: '2026-10-31' });
+    expect(october.data).toHaveLength(1);
+    expect(october.data[0]!.calendarDate).toBe('2026-10-25');
+    expect(october.data[0]!.projectedDeliveryDate).toEqual(slipped);
+    expect(october.data[0]!.customerStatus).toBe('MAY_BE_DELAYED');
+    expect(october.data[0]!.requiresDealerAttention).toBe(false);
 
     const onPromise = await service.listOwnDeliveries(makeUser(), {
-      from: '2026-08-25',
-      to: '2026-08-25',
+      from: '2026-10-25',
+      to: '2026-10-25',
     });
     expect(onPromise.data.map((r: { salesOrderId: string }) => r.salesOrderId)).toEqual(['so-19']);
 
     const onProjection = await service.listOwnDeliveries(makeUser(), {
-      from: '2026-08-27',
-      to: '2026-08-27',
+      from: '2026-10-27',
+      to: '2026-10-27',
     });
     expect(onProjection.data).toHaveLength(0);
   });

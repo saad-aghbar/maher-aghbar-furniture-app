@@ -101,6 +101,30 @@ describe('selectFinishedOrders', () => {
     expect(groups[1]!.salesOrderNumber).toBe('SO-W');
   });
 
+  it('groups return lots without a sales order under the production order', () => {
+    const groups = selectFinishedOrders(
+      [
+        lot({
+          id: 'rw-lot',
+          salesOrder: null,
+          salesOrderNumber: null,
+          productionOrder: {
+            id: 'rw-1',
+            number: 'RW-2026-0017',
+            productDescription: 'Banquette',
+            originType: 'RETURN_WORK',
+          },
+          productionOrderNumber: 'RW-2026-0017',
+        }),
+      ],
+      { scope: 'inWarehouse', fgFilter: 'all' },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.salesOrderId).toBe('rw-1');
+    expect(groups[0]!.salesOrderNumber).toBe('RW-2026-0017');
+    expect(groups[0]!.originKind).toBe('RETURN_WORK');
+  });
+
   it('keeps delivered lots in history scope', () => {
     const groups = selectFinishedOrders(
       [

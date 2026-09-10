@@ -35,20 +35,20 @@ Full lifecycle (release → floor → QC → pack → FIN → depart → confirm
 - PASS 7. Oasis GET other dealer SO → 403/404 — so=SO-P10-B status=403 code=FORBIDDEN
 - PASS 8. carpenter login
 - PASS 9. Worker carpenter GET management-summary → 403 — status=403 code=FORBIDDEN
-- PASS 10. Double depart idempotent (P10 fixture) — d1=201 d2=201 issues 1→1→1 code1= code2=
+- PASS 10. Double depart idempotent (P10 fixture) — d1=201 d2=201 issues 0→1→1 code1= code2=
 - PASS 11. balqis login
 - PASS 12. Double confirm-receipt idempotent (P10 G/H) — c1=201 c2=201 code1= code2=
 - PASS 13. Staff PATCH DELIVERED blocked (DELIVERY_DEALER_CONFIRM_REQUIRED) — dlv=DLV-P10-A status=400 code=DELIVERY_DEALER_CONFIRM_REQUIRED
 - PASS 14. Receive before approve → RETURN_NOT_APPROVED (P11-F) — status=400 code=RETURN_NOT_APPROVED approval=PENDING
 - PASS 15. Admin GET management-summary 200 — status=200
-- PASS 16. Management-summary sample tile counts are numbers — numericTiles=4 outbound.shippedAwaitingDealer=3 exceptions.waitingReturn=0 finance.openInvoices=24 quality.waitingInspection=11
-- PASS 17. Finance oasis summary — receivable/credit separate fields — status=200 amountDue=21458.84 credit=0
+- PASS 16. Management-summary sample tile counts are numbers — numericTiles=4 outbound.shippedAwaitingDealer=3 exceptions.waitingReturn=0 finance.openInvoices=26 quality.waitingInspection=13
+- PASS 17. Finance oasis summary — receivable/credit separate fields — status=200 amountDue=22849.68 credit=0
 
 ## Notes
 
 - SETUP_INCOMPLETE confirm gate skipped: GOLDEN setup already released / POs exist
 - IDOR sample: oasis → SO-P10-B (not oasis-owned)
-- Depart idempotency fixture: DLV-P10-F (already shipped — double depart idempotent)
+- Depart idempotency fixture: DLV-P10-F (READY fully loaded — depart twice)
 - Confirm idempotency fixture: DLV-P10-H (already DELIVERED)
 - DELIVERED gate sample delivery: DLV-P10-A
 - Returns gate fixture: RET-P11-F (PENDING)

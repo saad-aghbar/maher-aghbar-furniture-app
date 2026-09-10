@@ -1,27 +1,18 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Optional, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { QualityResult } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
-import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
-import { StagePipelineService } from '../production/stage-pipeline.service';
-import { ProductionInventoryService } from '../production/production-inventory.service';
 import { ProductionReworkService } from '../production/production-rework.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { QualityFloorService } from './quality-floor.service';
+import { QualityInspectionService, isQcPass, isQcFail } from './quality-inspection.service';
+import { ReturnPieceService } from '../contracts/return-piece.service';
 import type { AuthUser } from '@maher/types';
-
-function isQcPass(result: QualityResult | null | undefined) {
-  return result === QualityResult.PASSED || result === QualityResult.PASSED_WITH_NOTES;
-}
-
-function isQcFail(result: QualityResult | null | undefined) {
-  return result === QualityResult.FAILED_REWORK_REQUIRED || result === QualityResult.BLOCKED;
-}
 
 class CreateInspectionDto {
   @IsUUID()
@@ -50,8 +41,9 @@ class StartReworkDto {
 }
 
 class SubmitInspectionDto {
+  @IsOptional()
   @IsString()
-  result!: QualityResult;
+  result?: QualityResult;
 
   @IsOptional()
   @IsString()
@@ -82,10 +74,22 @@ class SubmitInspectionDto {
   idempotencyKey?: string;
 
   @IsOptional()
-  checklistResults?: { checklistCode: string; result: string; note?: string }[];
+  checklistResults?: {
+    checklistCode: string;
+    result: string;
+    note?: string;
+    reentryStageInstanceIds?: string[];
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
+    defectDescription?: string;
+  }[];
 
   @IsOptional()
   photoDocumentIds?: string[];
+
+  @IsOptional()
+  @IsUUID()
+  voiceDocumentId?: string;
 }
 
 class ListQualityDto extends PaginationDto {
@@ -99,13 +103,12 @@ class ListQualityDto extends PaginationDto {
 export class QualityController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sequences: SequenceService,
-    private readonly pipeline: StagePipelineService,
-    private readonly productionInventory: ProductionInventoryService,
     private readonly rework: ProductionReworkService,
     private readonly scheduling: SchedulingService,
     private readonly floor: QualityFloorService,
+    private readonly inspections: QualityInspectionService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly returnPieces?: ReturnPieceService,
   ) {}
 
   @Get()
@@ -163,69 +166,12 @@ export class QualityController {
   @Post()
   @RequirePermissions('quality-inspection.perform')
   async create(@Body() dto: CreateInspectionDto, @CurrentUser() user: AuthUser) {
-    const existingOpen = await this.prisma.qualityInspection.findFirst({
-      where: {
-        productionOrderId: dto.productionOrderId,
-        result: null,
-      },
-      include: { items: true, productionOrder: true },
-      orderBy: { createdAt: 'desc' },
+    return this.inspections.create({
+      productionOrderId: dto.productionOrderId,
+      stageCode: dto.stageCode,
+      notes: dto.notes,
+      inspectorId: user.id,
     });
-    if (existingOpen) return existingOpen;
-
-    if (dto.idempotencyKey) {
-      const existing = await this.prisma.qualityInspection.findFirst({
-        where: {
-          productionOrderId: dto.productionOrderId,
-          result: null,
-          inspectorId: user.id,
-        },
-        include: { items: true, productionOrder: true },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (existing) return existing;
-    }
-
-    const template = await this.prisma.qualityChecklistTemplate.findFirst({
-      where: {
-        isActive: true,
-        OR: [
-          ...(dto.stageCode ? [{ stageCode: dto.stageCode }] : []),
-          { code: 'FINAL_QC' },
-        ],
-      },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
-      orderBy: { code: 'asc' },
-    });
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const number = await this.sequences.next('QC', 'QC');
-      try {
-        return await this.prisma.qualityInspection.create({
-          data: {
-            number,
-            productionOrderId: dto.productionOrderId,
-            stageCode: dto.stageCode ?? 'INSPECTION',
-            inspectorId: user.id,
-            notes: dto.notes,
-            items: template?.items.length
-              ? {
-                  create: template.items.map((i) => ({
-                    checklistCode: i.code,
-                    label: i.labelEn,
-                  })),
-                }
-              : undefined,
-          },
-          include: { items: true, productionOrder: true },
-        });
-      } catch (err: unknown) {
-        const code = (err as { code?: string })?.code;
-        if (code === 'P2002' && attempt < 2) continue;
-        throw err;
-      }
-    }
-    throw new Error('Could not allocate quality inspection number');
   }
 
   @Post('rework/:reworkId/start')
@@ -286,214 +232,50 @@ export class QualityController {
     @Body() dto: SubmitInspectionDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const inspection = await this.prisma.qualityInspection.findUniqueOrThrow({ where: { id } });
-    if (inspection.result && isQcPass(inspection.result)) {
-      return this.prisma.qualityInspection.findUniqueOrThrow({
-        where: { id },
-        include: { items: true, defects: true, rework: true },
-      });
-    }
-    if (inspection.result && isQcFail(inspection.result) && isQcFail(dto.result)) {
-      return this.prisma.qualityInspection.findUniqueOrThrow({
-        where: { id },
-        include: { items: true, defects: true, rework: true },
-      });
-    }
-
-    const previousResult = inspection.result;
-    let firstNewlyCompletedTaskId: string | undefined;
-    let createdReworkId: string | undefined;
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (dto.checklistResults?.length) {
-        for (const item of dto.checklistResults) {
-          await tx.qualityInspectionItem.updateMany({
-            where: { inspectionId: id, checklistCode: item.checklistCode },
-            data: {
-              result: item.result as never,
-              note: item.note,
-            },
-          });
-        }
-      }
-
-      if (dto.photoDocumentIds?.length) {
-        await tx.document.updateMany({
-          where: { id: { in: dto.photoDocumentIds } },
-          data: {
-            productionOrderId: inspection.productionOrderId,
-            category: `QC_PHOTO:${id}`,
-            visibility: 'INTERNAL',
-          },
-        });
-      }
-
-      const updated = await tx.qualityInspection.update({
-        where: { id },
-        data: {
-          result: dto.result,
-          notes: dto.notes ?? inspection.notes,
-          inspectorId: user.id,
-          inspectedAt: new Date(),
-        },
-        include: { items: true, defects: true },
-      });
-
-      if (isQcFail(dto.result)) {
-        const category = dto.defectCategory ?? 'OTHER';
-        const affected =
-          dto.affectedQty != null ? `Affected qty: ${dto.affectedQty}. ` : '';
-        const description =
-          `${affected}${dto.defectDescription ?? 'Rework required'}`.trim();
-        await tx.qualityDefect.create({
-          data: {
-            inspectionId: id,
-            description,
-            severity: dto.severity ?? 'HIGH',
-            stageCode: category,
-            correctiveAction: dto.reentryStageInstanceId
-              ? `Rework stage ${dto.reentryStageInstanceId}`
-              : null,
-          },
-        });
-        const existingOpen = await tx.reworkRequest.findFirst({
-          where: {
-            inspectionId: id,
-            status: { in: ['AWAITING_STAGE', 'IN_PROGRESS'] },
-          },
-        });
-        if (!existingOpen) {
-          const reworkNumber = await this.sequences.next('RW', 'RW');
-          const created = await tx.reworkRequest.create({
-            data: {
-              number: reworkNumber,
-              productionOrderId: inspection.productionOrderId,
-              inspectionId: id,
-              description,
-              status: 'AWAITING_STAGE',
-              reentryStageInstanceId: dto.reentryStageInstanceId ?? null,
-            },
-          });
-          createdReworkId = created.id;
-        } else {
-          createdReworkId = existingOpen.id;
-        }
-        await tx.productionOrder.update({
-          where: { id: inspection.productionOrderId },
-          data: { status: 'ON_HOLD' },
-        });
-        await this.productionInventory.reverseFinishedGoods({
-          productionOrderId: inspection.productionOrderId,
-          userId: user.id,
-          tx,
-        });
-      }
-
-      if (isQcPass(dto.result)) {
-        const stageCode = inspection.stageCode ?? 'INSPECTION';
-        const stage = await tx.productionStageInstance.findFirst({
-          where: {
-            productionOrderId: inspection.productionOrderId,
-            stageDefinition: { code: stageCode },
-          },
-          include: { tasks: true, stageDefinition: true },
-        });
-        if (stage) {
-          for (const task of stage.tasks) {
-            if (task.status !== 'COMPLETED' && !task.isRework) {
-              await tx.productionTask.update({
-                where: { id: task.id },
-                data: {
-                  status: 'COMPLETED',
-                  progressPercent: 100,
-                  actualCompletion: new Date(),
-                },
-              });
-              firstNewlyCompletedTaskId ??= task.id;
-            }
-          }
-          await this.productionInventory.onInspectionPassed({
-            productionOrderId: inspection.productionOrderId,
-            userId: user.id,
-            tx,
-          });
-          await this.pipeline.onTaskComplete(
-            inspection.productionOrderId,
-            stage.id,
-            tx,
-          );
-        } else {
-          await this.productionInventory.onInspectionPassed({
-            productionOrderId: inspection.productionOrderId,
-            userId: user.id,
-            tx,
-          });
-          await this.pipeline.unlockReadyStages(inspection.productionOrderId, tx);
-          await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
-        }
-
-        await tx.productionOrder.update({
-          where: { id: inspection.productionOrderId },
-          data: { status: 'IN_PROGRESS' },
-        });
-        await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
-      }
-
-      await tx.auditEvent.create({
-        data: {
-          userId: user.id,
-          action: 'quality.submit',
-          entityType: 'QualityInspection',
-          entityId: id,
-          newValues: {
-            result: dto.result,
-            defectCategory: dto.defectCategory ?? null,
-            affectedQty: dto.affectedQty ?? null,
-          },
-        },
-      });
-
-      return updated;
+    const before = await this.prisma.qualityInspection.findUniqueOrThrow({ where: { id } });
+    const previousResult = before.result;
+    const updated = await this.inspections.submit({
+      id,
+      userId: user.id,
+      result: dto.result,
+      notes: dto.notes,
+      defectDescription: dto.defectDescription,
+      defectCategory: dto.defectCategory,
+      affectedQty: dto.affectedQty,
+      severity: dto.severity,
+      reentryStageInstanceId: dto.reentryStageInstanceId,
+      checklistResults: dto.checklistResults,
+      photoDocumentIds: dto.photoDocumentIds,
+      voiceDocumentId: dto.voiceDocumentId,
     });
 
-    if (createdReworkId && dto.reentryStageInstanceId) {
-      await this.rework
-        .startRework({
-          reworkId: createdReworkId,
-          stageInstanceId: dto.reentryStageInstanceId,
-          notes: dto.notes,
-          userId: user.id,
-        })
+    const nextResult = updated.result;
+    if (isQcPass(nextResult) || isQcFail(nextResult) || (!nextResult && !previousResult)) {
+      await this.returnPieces
+        ?.onQualityResult(before.productionOrderId, Boolean(isQcPass(nextResult)))
         .catch(() => undefined);
     }
 
-    if (isQcPass(dto.result) && !isQcPass(previousResult)) {
-      await this.scheduling.enqueueTargetedReplan(
-        inspection.productionOrderId,
-        'qc-pass',
-        firstNewlyCompletedTaskId,
-      );
+    if (isQcPass(nextResult) && !isQcPass(previousResult)) {
+      await this.scheduling.enqueueTargetedReplan(before.productionOrderId, 'qc-pass');
       await this.notifications
         .notifyAdminUsers({
           templateCode: 'ORDER_CONFIRMED',
           vars: { number: updated.number },
-          linkUrl: `/production/${inspection.productionOrderId}`,
+          linkUrl: `/production/${before.productionOrderId}`,
         })
         .catch(() => undefined);
-    } else if (isQcFail(dto.result) && !isQcFail(previousResult)) {
-      await this.scheduling.enqueueTargetedReplan(inspection.productionOrderId, 'qc-fail');
+    } else if ((isQcFail(nextResult) || (!nextResult && dto.checklistResults?.some((i) => i.result === 'FAIL'))) && !isQcFail(previousResult)) {
+      await this.scheduling.enqueueTargetedReplan(before.productionOrderId, 'qc-fail');
       await this.notifications
         .notifyAdminUsers({
           templateCode: 'ORDER_CONFIRMED',
           vars: { number: updated.number },
-          linkUrl: `/production/${inspection.productionOrderId}`,
+          linkUrl: `/production/${before.productionOrderId}`,
         })
         .catch(() => undefined);
     }
 
-    return this.prisma.qualityInspection.findUniqueOrThrow({
-      where: { id },
-      include: { items: true, defects: true, rework: true },
-    });
+    return updated;
   }
 }

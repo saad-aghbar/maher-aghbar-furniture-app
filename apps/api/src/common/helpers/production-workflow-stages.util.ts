@@ -2,6 +2,7 @@
  * Role-scoped production workflow stage projections for sales/production order APIs.
  */
 
+import { livePercentFromTaskRow } from './live-task-progress';
 import { buildTaskTimingSummary, closedSecondsFromTimeEntries } from './task-timing.util';
 
 export type WorkflowStagePhoto = {
@@ -43,6 +44,9 @@ export type WorkflowStageAdmin = WorkflowStageSafe & {
   }>;
   blockers: Array<{ id: string; category: string; reason: string }>;
   attachmentCount: number;
+  inspectionStatus?: string | null;
+  inspectionProgress?: { passed: number; total: number; status?: string | null } | null;
+  backForRework?: boolean;
 };
 
 export type StagePhotoDoc = {
@@ -89,6 +93,7 @@ type StageRow = {
   actualEnd?: Date | string | null;
   plannedEnd?: Date | string | null;
   notes?: string | null;
+  inspectionStatus?: string | null;
   stageDefinition: StageDef;
   tasks?: StageTask[];
 };
@@ -245,7 +250,21 @@ export function mapWorkflowStageAdmin(
     sortOrder: def.sortOrder,
     dependsOnCodes: def.dependsOnCodes ?? [],
     status: s.status,
-    progressPercent: Number(s.progressPercent ?? 0),
+    progressPercent: ['COMPLETED', 'DONE'].includes(s.status.toUpperCase())
+      ? 100
+      : tasks.length
+        ? Math.round(
+            tasks.reduce(
+              (sum, t) =>
+                sum +
+                livePercentFromTaskRow({
+                  ...t,
+                  status: t.status ?? s.status,
+                }),
+              0,
+            ) / tasks.length,
+          )
+        : Number(s.progressPercent ?? 0),
     photos,
     actualStart: s.actualStart ?? null,
     actualEnd: s.actualEnd ?? null,
@@ -255,6 +274,31 @@ export function mapWorkflowStageAdmin(
     assignees: [...assigneeMap.values()],
     blockers,
     attachmentCount: photos.length,
+  };
+}
+
+export type InspectionJourneyOverlay = {
+  passed: number;
+  total: number;
+  reworkBackCodes: string[];
+};
+
+export function decorateInspectionJourneyFields<T extends { code: string }>(
+  stage: T,
+  raw: { inspectionStatus?: string | null },
+  overlay: InspectionJourneyOverlay,
+): T & {
+  inspectionStatus: string | null;
+  inspectionProgress: { passed: number; total: number; status: string | null } | null;
+  backForRework: boolean;
+} {
+  const code = String(stage.code ?? '').toUpperCase();
+  const isInspection = code === 'INSPECTION';
+  return {
+    ...stage,
+    inspectionStatus: isInspection ? raw.inspectionStatus ?? null : null,
+    inspectionProgress: null,
+    backForRework: overlay.reworkBackCodes.includes(stage.code),
   };
 }
 

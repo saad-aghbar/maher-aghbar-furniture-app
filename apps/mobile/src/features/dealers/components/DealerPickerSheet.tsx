@@ -295,7 +295,7 @@ export function DealerPickerSheet({
   );
 }
 
-function DealerFloorRow({
+export function DealerFloorRow({
   label,
   meta,
   icon,

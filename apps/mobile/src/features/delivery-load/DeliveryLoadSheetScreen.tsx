@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Pressable,
   RefreshControl,
   ScrollView,
   View,
@@ -29,7 +28,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
@@ -94,10 +93,11 @@ function PieceRow({
     });
 
   return (
-    <Pressable
+    <AnimatedPressable
+      variant="button"
       disabled={disabled || busy}
       onPress={() => {
-        haptics.selection();
+        void haptics.selection();
         onToggle();
       }}
       style={{
@@ -145,7 +145,7 @@ function PieceRow({
       {!loaded && !disabled ? (
         <Ionicons name="hand-left-outline" size={18} color={colors.textMuted} />
       ) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

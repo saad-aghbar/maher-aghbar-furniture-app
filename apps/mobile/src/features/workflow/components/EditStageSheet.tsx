@@ -12,7 +12,12 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { isLockedAnchorStageCode } from '@maher/types';
+import {
+  isLockedAnchorStageCodeForScope,
+  isReturnWorkflowScope,
+  type ProductionWorkflowScope,
+} from '@maher/types';
+import { formatWorkflowDomainIssues } from '../workflowIssueText';
 import {
   clampParallelReferenceIds,
   clampPredecessorIds,
@@ -49,6 +54,7 @@ type Props = {
   workflowId: string;
   version: WorkflowVersion;
   node: WorkflowNode | null;
+  scope?: ProductionWorkflowScope | null;
   onDirty?: () => void;
 };
 
@@ -75,6 +81,8 @@ function sheetErrorMessage(err: unknown, t: (key: string) => string): string {
   if (err && typeof err === 'object' && 'code' in err) {
     const code = String((err as { code: string }).code);
     if (code === 'WORKFLOW_VALIDATION') {
+      const issues = (err as { issues?: Array<{ code: string; message: string }> }).issues;
+      if (issues?.length) return formatWorkflowDomainIssues(issues, t);
       return err instanceof Error && err.message
         ? err.message
         : t('mobile.production.workflow.saveConnectionsError');
@@ -90,6 +98,7 @@ export function EditStageSheet({
   workflowId,
   version,
   node,
+  scope,
   onDirty,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -119,7 +128,10 @@ export function EditStageSheet({
     () => middleProductionNodes(sortedNodes).filter((n) => n.id !== node?.id),
     [sortedNodes, node?.id],
   );
-  const lockedIds = useMemo(() => lockedAnchorNodeIds(sortedNodes), [sortedNodes]);
+  const lockedIds = useMemo(
+    () => lockedAnchorNodeIds(sortedNodes, scope),
+    [sortedNodes, scope],
+  );
 
   const afterPoolNodes = useMemo(() => {
     const opening = sortedNodes.filter((n) => n.stageDefinition?.code === 'MATERIAL_PREP');
@@ -235,7 +247,7 @@ export function EditStageSheet({
       })
     : [];
 
-  const locked = node ? isLockedAnchorNode(node) : false;
+  const locked = node ? isLockedAnchorNode(node, scope) : false;
 
   useEffect(() => {
     if (!open || !node) return;
@@ -378,7 +390,7 @@ export function EditStageSheet({
 
   async function onRemove() {
     if (!node || busyRef.current || locked) return;
-    if (isLockedAnchorStageCode(node.stageDefinition?.code ?? '')) return;
+    if (isLockedAnchorStageCodeForScope(node.stageDefinition?.code ?? '', scope)) return;
     busyRef.current = true;
     setRemoving(true);
     setFormError(null);
@@ -470,7 +482,11 @@ export function EditStageSheet({
               </View>
               <PlacementModeHint>
                 {placement === 'start'
-                  ? t('mobile.production.workflow.placementStartHint')
+                  ? t(
+                      isReturnWorkflowScope(scope)
+                        ? 'mobile.production.workflow.placementStartHintReturn'
+                        : 'mobile.production.workflow.placementStartHint',
+                    )
                   : placement === 'after'
                     ? t('mobile.production.workflow.placementAfterHint')
                     : t('mobile.production.workflow.placementParallelHint')}

@@ -1,4 +1,5 @@
 import type { InventoryCategoryGroup, InventoryItem, InventoryTransaction } from './api';
+import { locationPickerLabel } from './pickDefaultLocation';
 
 function toNumber(value: number | string | null | undefined): number {
   if (value == null || value === '') return 0;
@@ -40,6 +41,8 @@ export type InventoryItemCardModel = {
   itemClass?: string | null;
   materialType: string | null;
   barcode: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
   color: string | null;
   size: string | null;
   customMeasurements: InventoryItem['customMeasurements'];
@@ -48,6 +51,7 @@ export type InventoryItemCardModel = {
   isActive: boolean;
   archivedAt: string | null;
   minStock: number;
+  reorderQty: number | null;
   standardCost: number | null;
   quantityLabel: string;
   onHand: number;
@@ -63,6 +67,8 @@ export type InventoryItemCardModel = {
   balances: Array<{
     warehouseId: string;
     warehouseName: string;
+    locationId?: string | null;
+    locationName?: string | null;
     availableQty: number;
     reservedQty: number;
     freeQty: number;
@@ -114,6 +120,8 @@ function collapseBalancesByWarehouse(
     {
       warehouseId: string;
       warehouseName: string;
+      locationId?: string | null;
+      locationName?: string | null;
       availableQty: number;
       reservedQty: number;
     }
@@ -121,15 +129,22 @@ function collapseBalancesByWarehouse(
   for (const b of balances) {
     const qty = toNumber(b.availableQty);
     const reserved = toNumber(b.reservedQty);
+    const locName = locationPickerLabel(b.location ?? undefined) || null;
     const existing = byWh.get(b.warehouseId);
     if (existing) {
       existing.availableQty += qty;
       existing.reservedQty += reserved;
+      if (existing.locationId && existing.locationId !== (b.locationId ?? b.location?.id)) {
+        existing.locationId = null;
+        existing.locationName = null;
+      }
       continue;
     }
     byWh.set(b.warehouseId, {
       warehouseId: b.warehouseId,
       warehouseName: warehouseLabel(b, locale),
+      locationId: b.locationId ?? b.location?.id ?? null,
+      locationName: locName,
       availableQty: qty,
       reservedQty: reserved,
     });
@@ -139,6 +154,28 @@ function collapseBalancesByWarehouse(
     freeQty: row.availableQty - row.reservedQty,
     quantityLabel: `${formatQty(row.availableQty)} ${unit}`,
   }));
+}
+
+function expandBalancesByBin(
+  balances: NonNullable<InventoryItem['balances']>,
+  locale: string,
+  unit: string,
+): InventoryItemCardModel['balances'] {
+  return balances.map((b) => {
+    const availableQty = toNumber(b.availableQty);
+    const reservedQty = toNumber(b.reservedQty);
+    const locationName = locationPickerLabel(b.location ?? undefined) || null;
+    return {
+      warehouseId: b.warehouseId,
+      warehouseName: warehouseLabel(b, locale),
+      locationId: b.locationId ?? b.location?.id ?? null,
+      locationName,
+      availableQty,
+      reservedQty,
+      freeQty: availableQty - reservedQty,
+      quantityLabel: `${formatQty(availableQty)} ${unit}`,
+    };
+  });
 }
 
 export function selectInventoryItemCard(
@@ -169,6 +206,8 @@ export function selectInventoryItemCard(
     itemClass: item.itemClass ?? null,
     materialType: item.materialType ?? null,
     barcode: item.barcode ?? null,
+    preferredSupplierId: item.preferredSupplierId ?? item.preferredSupplier?.id ?? null,
+    preferredSupplierName: item.preferredSupplier?.name ?? null,
     color: item.color ?? null,
     size: item.size ?? null,
     customMeasurements: item.customMeasurements ?? null,
@@ -177,6 +216,10 @@ export function selectInventoryItemCard(
     isActive: item.isActive !== false && !item.archivedAt,
     archivedAt: item.archivedAt ?? null,
     minStock,
+    reorderQty:
+      item.reorderQty != null && String(item.reorderQty) !== ''
+        ? toNumber(item.reorderQty)
+        : null,
     standardCost: hasCost ? toNumber(item.standardCost) : null,
     onHand,
     reservedQty,
@@ -204,6 +247,7 @@ export function selectInventoryItemDetail(
   const card = selectInventoryItemCard(item, locale);
   return {
     ...card,
+    balances: expandBalancesByBin(item.balances ?? [], locale, item.unit || 'pcs'),
     color: item.color ?? null,
     size: item.size ?? null,
     customMeasurements: item.customMeasurements ?? null,
@@ -317,6 +361,17 @@ export function humanizeInventoryEnumLabel(value: string): string {
     })
     .filter(Boolean)
     .join(' / ');
+}
+
+export function inventoryItemCanPurchase(item: {
+  itemClass?: string | null;
+  isActive?: boolean;
+  archivedAt?: string | Date | null;
+}): boolean {
+  if (item.archivedAt) return false;
+  if (item.isActive === false) return false;
+  const cls = String(item.itemClass ?? '').toUpperCase();
+  return cls !== 'FINISHED_GOOD' && cls !== 'FINISHED_GOODS' && cls !== 'SEMI_FINISHED_GOOD';
 }
 
 function formatQty(n: number): string {

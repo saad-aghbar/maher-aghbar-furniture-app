@@ -1,7 +1,8 @@
 'use client';
 
 import { MasterCrudPage } from '@/components/admin/master-crud-page';
-import { StatusBadge } from '@maher/ui';
+import { Link } from '@/i18n/navigation';
+import { Button, StatusBadge } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -18,7 +19,6 @@ interface Supplier {
   paymentTermsDays?: number;
   leadTimeDays?: number;
   rating?: string | number | null;
-  isCertified?: boolean;
   notes?: string | null;
   address?: string | null;
 }
@@ -54,11 +54,6 @@ export default function SuppliersPage() {
           render: (r) => (r.phone ? <span dir="ltr">{r.phone}</span> : '—'),
         },
         {
-          key: 'certified',
-          header: t('isCertified'),
-          render: (r) => (r.isCertified ? tCommon('yes') : tCommon('no')),
-        },
-        {
           key: 'rating',
           header: t('rating'),
           render: (r) =>
@@ -82,6 +77,13 @@ export default function SuppliersPage() {
           render: (r) => <StatusBadge status={r.status} />,
         },
       ]}
+      extraActions={(row) => (
+        <Link href={`/suppliers/${row.id}`}>
+          <Button size="sm" variant="ghost">
+            {tCommon('details')}
+          </Button>
+        </Link>
+      )}
       fields={[
         { name: 'nameEn', label: t('nameEn'), required: true },
         { name: 'nameAr', label: t('nameAr'), required: true },
@@ -93,7 +95,6 @@ export default function SuppliersPage() {
         { name: 'paymentTermsDays', label: t('paymentTermsDays'), type: 'number' },
         { name: 'leadTimeDays', label: t('leadTimeDays'), type: 'number' },
         { name: 'rating', label: t('rating'), type: 'number' },
-        { name: 'isCertified', label: t('isCertified'), type: 'checkbox' },
         { name: 'notes', label: t('notes') },
       ]}
       mapRowToForm={(r) => ({
@@ -107,7 +108,6 @@ export default function SuppliersPage() {
         paymentTermsDays: r.paymentTermsDays ?? 30,
         leadTimeDays: r.leadTimeDays ?? 7,
         rating: r.rating != null ? Number(r.rating) : '',
-        isCertified: Boolean(r.isCertified),
         notes: r.notes ?? '',
       })}
       buildPayload={(form) => {
@@ -128,7 +128,6 @@ export default function SuppliersPage() {
             form.rating === '' || form.rating == null
               ? undefined
               : Number(form.rating),
-          isCertified: Boolean(form.isCertified),
           notes: String(form.notes ?? '').trim() || undefined,
         };
       }}

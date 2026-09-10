@@ -1,4 +1,4 @@
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -7,57 +7,30 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 type Props = {
-  canCreatePr: boolean;
   canCreatePo: boolean;
-  fromLowStockLoading?: boolean;
-  onFromLowStock: () => void;
-  onNewRequest: () => void;
+  canReadSuppliers: boolean;
   onNewOrder: () => void;
+  onLowStock: () => void;
+  onSuppliers: () => void;
 };
 
-/**
- * Three equal floor tiles in one row — low stock / new PR / new PO.
- * Compact captions + icons so they sit beside each other on phone width.
- */
 export function PurchasingHeroActions({
-  canCreatePr,
   canCreatePo,
-  fromLowStockLoading,
-  onFromLowStock,
-  onNewRequest,
+  canReadSuppliers,
   onNewOrder,
+  onLowStock,
+  onSuppliers,
 }: Props) {
-  const { isRTL } = useLocale();
-
-  if (!canCreatePr && !canCreatePo) return null;
+  if (!canCreatePo && !canReadSuppliers) return null;
 
   return (
     <View
       style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: 'row',
         alignItems: 'stretch',
         gap: 8,
       }}
     >
-      {canCreatePr ? (
-        <HeroTile
-          icon="flash-outline"
-          labelKey="mobile.purchasing.actionLowStock"
-          a11yKey="catalog.fromLowStock"
-          tone="soft"
-          loading={fromLowStockLoading}
-          onPress={onFromLowStock}
-        />
-      ) : null}
-      {canCreatePr ? (
-        <HeroTile
-          icon="document-text-outline"
-          labelKey="mobile.purchasing.actionNewRequest"
-          a11yKey="catalog.newPurchaseRequest"
-          tone="soft"
-          onPress={onNewRequest}
-        />
-      ) : null}
       {canCreatePo ? (
         <HeroTile
           icon="cart-outline"
@@ -65,6 +38,24 @@ export function PurchasingHeroActions({
           a11yKey="catalog.newPurchaseOrder"
           tone="solid"
           onPress={onNewOrder}
+        />
+      ) : null}
+      {canCreatePo ? (
+        <HeroTile
+          icon="flash-outline"
+          labelKey="mobile.purchasing.actionLowStock"
+          a11yKey="catalog.fromLowStock"
+          tone="soft"
+          onPress={onLowStock}
+        />
+      ) : null}
+      {canReadSuppliers ? (
+        <HeroTile
+          icon="people-outline"
+          labelKey="mobile.purchasing.actionSuppliers"
+          a11yKey="mobile.purchasing.suppliers"
+          tone="soft"
+          onPress={onSuppliers}
         />
       ) : null}
     </View>
@@ -76,17 +67,15 @@ function HeroTile({
   labelKey,
   a11yKey,
   tone,
-  loading,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
   a11yKey: string;
   tone: 'soft' | 'solid';
-  loading?: boolean;
   onPress: () => void;
 }) {
-  const { t, locale } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const solid = tone === 'solid';
   const ink = solid ? colors.onBrand : colors.brand;
@@ -98,8 +87,6 @@ function HeroTile({
       variant="button"
       accessibilityRole="button"
       accessibilityLabel={t(a11yKey)}
-      accessibilityState={{ busy: Boolean(loading), disabled: Boolean(loading) }}
-      disabled={loading}
       onPress={() => {
         void haptics.selection();
         onPress();
@@ -136,38 +123,33 @@ function HeroTile({
           }}
         />
       )}
-      {loading ? (
-        <ActivityIndicator size="small" color={ink} />
-      ) : (
-        <>
-          <View
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 14,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: solid ? 'rgba(255,255,255,0.16)' : colors.brandSoft,
-            }}
-          >
-            <Ionicons name={icon} size={15} color={ink} />
-          </View>
-          <AppText
-            variant="caption"
-            weight={titleWeight}
-            align="center"
-            numberOfLines={2}
-            style={{
-              color: ink,
-              fontSize: 11,
-              lineHeight: 14,
-              letterSpacing: locale === 'ar' ? 0 : 0.2,
-            }}
-          >
-            {label}
-          </AppText>
-        </>
-      )}
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: solid ? 'rgba(255,255,255,0.16)' : colors.brandSoft,
+        }}
+      >
+        <Ionicons name={icon} size={15} color={ink} />
+      </View>
+      <AppText
+        variant="caption"
+        weight={titleWeight}
+        align="center"
+        numberOfLines={2}
+        style={{
+          color: ink,
+          fontSize: 11,
+          lineHeight: 14,
+          letterSpacing: locale === 'ar' ? 0 : 0.2,
+          writingDirection: isRTL ? 'rtl' : 'ltr',
+        }}
+      >
+        {label}
+      </AppText>
     </AnimatedPressable>
   );
 }

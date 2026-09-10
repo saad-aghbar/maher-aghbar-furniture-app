@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
-import { CodeField } from '@/components/forms/CodeField';
+import { AppText } from '@/components/AppText';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
@@ -29,6 +29,9 @@ import { InventoryPickerRow } from './InventoryPickerRow';
 import { InventorySheetBody } from './InventorySheetBody';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventoryUnitPickerSheet } from './InventoryUnitPickerSheet';
+import { PurchasingSupplierSheet } from '@/features/purchasing/components/PurchasingSupplierSheet';
+import { useSuppliersQuery } from '@/features/purchasing/query';
+import { localizedName } from '@maher/i18n';
 
 type Props = {
   open: boolean;
@@ -47,7 +50,7 @@ export function EditInventoryItemSheet({
   canEditCost = false,
   onSubmit,
 }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
 
@@ -57,8 +60,11 @@ export function EditInventoryItemSheet({
   const [nameAr, setNameAr] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [minStock, setMinStock] = useState('0');
+  const [reorderQty, setReorderQty] = useState('0');
   const [standardCost, setStandardCost] = useState('0');
-  const [barcode, setBarcode] = useState('');
+  const [preferredSupplierId, setPreferredSupplierId] = useState('');
+  const [preferredSupplierName, setPreferredSupplierName] = useState('');
+  const [supplierOpen, setSupplierOpen] = useState(false);
   const [color, setColor] = useState('');
   const [measurements, setMeasurements] = useState<InventoryCustomMeasurement[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -73,6 +79,17 @@ export function EditInventoryItemSheet({
     setMeasurements,
     open,
   );
+  const suppliersQuery = useSuppliersQuery(open, { status: 'ACTIVE' });
+  const supplierOptions = (suppliersQuery.data?.data ?? []).map((s) => ({
+    id: s.id,
+    name: localizedName(
+      locale,
+      { name: s.name, nameEn: s.nameEn, nameAr: s.nameAr, nameHe: s.nameHe },
+      s.code,
+    ),
+    code: s.code,
+    searchText: [s.name, s.nameEn, s.nameAr, s.nameHe, s.code].filter(Boolean).join(' '),
+  }));
 
   const showPhoto = true;
 
@@ -84,8 +101,10 @@ export function EditInventoryItemSheet({
     setNameAr(item.nameAr);
     setUnit(item.unit || 'pcs');
     setMinStock(String(item.minStock ?? 0));
+    setReorderQty(item.reorderQty != null && item.reorderQty > 0 ? String(item.reorderQty) : '0');
     setStandardCost(item.standardCost != null ? String(item.standardCost) : '0');
-    setBarcode(item.barcode ?? '');
+    setPreferredSupplierId(item.preferredSupplierId ?? '');
+    setPreferredSupplierName(item.preferredSupplierName ?? '');
     setColor(item.color ?? '');
     setMeasurements(parseInventoryMeasurements(item.customMeasurements));
     setPhotoPreview(item.imageUrl);
@@ -117,7 +136,8 @@ export function EditInventoryItemSheet({
       category: INVENTORY_CATEGORY_FOR_CREATE[materialGroup],
       materialType: materialGroup,
       minStock: Number(minStock) || 0,
-      barcode: barcode.trim() || undefined,
+      reorderQty: Number(reorderQty) > 0 ? Number(reorderQty) : null,
+      preferredSupplierId: preferredSupplierId || null,
       color: color.trim() || undefined,
     };
     const hadMeasurements = (item?.customMeasurements?.length ?? 0) > 0;
@@ -189,6 +209,16 @@ export function EditInventoryItemSheet({
             min={0}
             placeholder="0"
           />
+          <QtyStepperField
+            label={t('mobile.inventory.reorderQty')}
+            value={reorderQty}
+            onChangeText={setReorderQty}
+            min={0}
+            placeholder="0"
+          />
+          <AppText variant="caption" color="muted">
+            {t('mobile.inventory.reorderQtyHint')}
+          </AppText>
           {canEditCost ? (
             <QtyStepperField
               label={t('mobile.inventory.standardCost')}
@@ -198,15 +228,11 @@ export function EditInventoryItemSheet({
               placeholder="0"
             />
           ) : null}
-          <CodeField
-            label={t('mobile.inventory.supplierBarcode')}
-            value={barcode}
-            onChangeText={setBarcode}
-            placeholder={t('mobile.inventory.scanSupplierBarcodeHint')}
-            scanTitle={t('mobile.inventory.scanSupplierBarcode')}
-            scanHint={t('mobile.inventory.scanSupplierBarcodeHint')}
-            scanAccessibilityLabel={t('mobile.inventory.scanSupplierBarcode')}
-            scanIcon="barcode-outline"
+          <InventoryPickerRow
+            label={t('catalog.supplier')}
+            value={preferredSupplierName || t('mobile.purchasing.pickSupplierHint')}
+            icon="business-outline"
+            onPress={() => setSupplierOpen(true)}
           />
           <TextField
             label={t('mobile.inventory.color')}
@@ -244,6 +270,19 @@ export function EditInventoryItemSheet({
         selected={materialGroup}
         onClose={() => setTypeSheet(false)}
         onSelect={selectMaterialGroup}
+      />
+      <PurchasingSupplierSheet
+        overlay
+        allowNone={false}
+        open={supplierOpen}
+        onClose={() => setSupplierOpen(false)}
+        suppliers={supplierOptions}
+        selectedId={preferredSupplierId || null}
+        openOrdersBySupplier={new Map()}
+        onConfirm={(s) => {
+          setPreferredSupplierId(s?.id ?? '');
+          setPreferredSupplierName(s?.name ?? '');
+        }}
       />
     </>
   );

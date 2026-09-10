@@ -6,7 +6,11 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { productionFloorStatusLabel } from '../selectProduction';
+import { productionFloorStatusLabel, type ProductionOriginModel } from '../selectProduction';
+import {
+  ProductionOriginChip,
+  productionOriginTraceLine,
+} from './ProductionOriginChip';
 
 const HERO = 96;
 
@@ -23,6 +27,7 @@ type Props = {
   priority: string;
   isLate: boolean;
   imageUrl?: string | null;
+  origin?: ProductionOriginModel | null;
   onPressImage: () => void;
 };
 
@@ -36,6 +41,7 @@ export function ProductionIdentityBoard({
   priority,
   isLate,
   imageUrl,
+  origin,
   onPressImage,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -119,6 +125,7 @@ export function ProductionIdentityBoard({
               {t('mobile.production.late')}
             </AppText>
           ) : null}
+          {origin ? <ProductionOriginChip origin={origin} compact /> : null}
         </View>
         <AppText variant="caption" color="brand" weight={titleWeight} dir="ltr">
           {number}
@@ -208,6 +215,17 @@ export function ProductionIdentityBoard({
             >
               {number}
             </AppText>
+            {origin ? (
+              <AppText
+                variant="caption"
+                color="muted"
+                dir="ltr"
+                numberOfLines={1}
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {productionOriginTraceLine(origin, t)}
+              </AppText>
+            ) : null}
             <AppText
               variant="body"
               color="secondary"

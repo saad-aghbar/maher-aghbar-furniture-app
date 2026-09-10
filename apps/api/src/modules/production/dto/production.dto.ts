@@ -67,6 +67,17 @@ export class ListProductionOrdersDto extends PaginationDto {
   @IsOptional()
   @IsIn(['planned', 'actual'])
   dateMode?: 'planned' | 'actual';
+
+  @ApiPropertyOptional({ enum: ['normal', 'returned'] })
+  @IsOptional()
+  @IsIn(['normal', 'returned'])
+  origin?: 'normal' | 'returned';
+
+  /** Today-pulse subset: late/missed tasks or at-risk orders (COUNT = list). */
+  @ApiPropertyOptional({ enum: ['late_missed', 'at_risk'] })
+  @IsOptional()
+  @IsIn(['late_missed', 'at_risk'])
+  dayFocus?: 'late_missed' | 'at_risk';
 }
 
 export class ProductionDaySummaryQueryDto {
@@ -90,6 +101,16 @@ export class ProductionDaySummaryQueryDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @ApiPropertyOptional({ enum: ['normal', 'returned'] })
+  @IsOptional()
+  @IsIn(['normal', 'returned'])
+  origin?: 'normal' | 'returned';
+
+  @ApiPropertyOptional({ enum: ['late_missed', 'at_risk'] })
+  @IsOptional()
+  @IsIn(['late_missed', 'at_risk'])
+  dayFocus?: 'late_missed' | 'at_risk';
 }
 
 export class UpdateProductionOrderDto {

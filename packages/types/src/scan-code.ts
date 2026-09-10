@@ -51,3 +51,50 @@ export function parseWipScanCode(raw: string): {
   }
   return { kind: 'unknown', idOrCode: v };
 }
+
+/** Printed shelf QR uses `BIN-{WAREHOUSE}-{LOCATION}`. `BIN:{id}` is a lookup fallback. */
+export const BIN_QR_PREFIX = 'BIN:';
+export const BIN_QR_CODE_PREFIX = 'BIN-';
+
+export function defaultBinCode(warehouseCode: string): string {
+  const code = String(warehouseCode ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 16);
+  return `${code || 'WH'}-MAIN`;
+}
+
+export function formatBinQrCode(warehouseCode: string, locationCode: string): string {
+  const wh =
+    String(warehouseCode ?? '')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .toUpperCase()
+      .slice(0, 12) || 'WH';
+  const loc =
+    String(locationCode ?? '')
+      .replace(/[^A-Za-z0-9-]/g, '')
+      .toUpperCase()
+      .slice(0, 24) || 'BIN';
+  return `${BIN_QR_CODE_PREFIX}${wh}-${loc}`;
+}
+
+export function binScanPayload(loc: { qrCode?: string | null; id?: string }): string {
+  const code = printableScanCode(loc.qrCode, '');
+  if (code) return code;
+  return loc.id ? `${BIN_QR_PREFIX}${loc.id}` : '—';
+}
+
+export function parseBinScanCode(raw: string): {
+  kind: 'bin' | 'unknown';
+  idOrCode: string;
+} {
+  const v = String(raw ?? '').trim();
+  if (v.startsWith(BIN_QR_PREFIX) && !v.startsWith(BIN_QR_CODE_PREFIX)) {
+    return { kind: 'bin', idOrCode: v.slice(BIN_QR_PREFIX.length) };
+  }
+  if (v.startsWith(BIN_QR_CODE_PREFIX)) {
+    return { kind: 'bin', idOrCode: v };
+  }
+  return { kind: 'unknown', idOrCode: v };
+}

@@ -29,6 +29,7 @@ import {
   selectProductionFlowFromWorkflowVersion,
 } from '@/features/workflow/selectProductionFlowFromWorkflowVersion';
 import { StageDurationSheet } from '@/features/workflow/components/StageDurationSheet';
+import { stageNeedsTimeApproval } from '@/features/workflow/productionSetupBehavior';
 
 type Props = {
   productId: string;
@@ -106,7 +107,13 @@ export function ProductWorkflowTimesScreen({
     return stages.reduce((sum, s) => sum + (s.estimatedMinutes ?? 0), 0);
   }, [hasStages, profileQuery.data?.totalStandardMinutes, stages]);
 
-  const missingCount = stages.filter((s) => s.estimateReviewRequired).length;
+  const missingCount = stages.filter((s) =>
+    stageNeedsTimeApproval({
+      code: s.code,
+      estimateReviewRequired: s.estimateReviewRequired,
+      estimatedMinutes: s.estimatedMinutes,
+    }),
+  ).length;
   const loading = (workflowPending || estimatesQuery.isLoading) && !hasStages;
   const productIdentity = formatProductIdentity(
     productQuery.data?.sku,
@@ -220,7 +227,16 @@ export function ProductWorkflowTimesScreen({
           <ProductionFlowMap
             stages={stages}
             showEstimatedDuration
-            onStagePress={(stage) => setSelected(stage)}
+            onStagePress={(stage) => {
+              const needsTime = stageNeedsTimeApproval({
+                code: stage.code,
+                estimateReviewRequired: stage.estimateReviewRequired,
+                estimatedMinutes: stage.estimatedMinutes,
+              });
+              const canEditTime = Boolean(stage.estimatedMinutes && stage.estimatedMinutes > 0);
+              if (!needsTime && !canEditTime) return;
+              setSelected(stage);
+            }}
           />
         ) : (
           <AppText color="muted">{t('mobile.production.workflow.emptyStages')}</AppText>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, InteractionManager, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
@@ -31,6 +31,7 @@ import {
   openWipKitQrLabelPdf,
   type InventoryCategoryGroup,
   type InventoryItem,
+  type WarehouseBinContents,
 } from '../api';
 import { isFinishedScanLot, resolveInventoryScan } from '../resolveInventoryScan';
 import { toGoodsReceiptArgs } from '../stockMoveSubmit';
@@ -56,6 +57,7 @@ import { RawMaterialsReportRow } from './RawMaterialsReportRow';
 import { RawMaterialsReportSheet } from './RawMaterialsReportSheet';
 import { InventoryGroupLoadError } from './InventoryGroupLoadError';
 import { InventoryCompositionChrome } from './InventoryCompositionChrome';
+import { useReceivablePurchaseOrdersQuery } from '@/features/purchasing/query';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
 import { CreateTransferSheet } from './CreateTransferSheet';
@@ -66,6 +68,7 @@ import { InventoryMaterialRow } from './InventoryMaterialRow';
 import { FabricDeskSection } from './FabricDeskSection';
 import { InventoryQrSheet, qrItemFromApi, qrItemFromCard, type InventoryQrItem } from './InventoryQrSheet';
 import { InventoryScanResultSheet } from './InventoryScanResultSheet';
+import { BinContentsSheet } from './BinContentsSheet';
 import { InventorySemiOrderDetailSheet } from './InventorySemiOrderDetailSheet';
 import {
   countActiveSemiFilters,
@@ -89,6 +92,11 @@ import {
 import { InventoryFinishedOrderCard } from './InventoryFinishedOrderCard';
 import { InventoryLotInspectSheet } from './InventoryLotInspectSheet';
 import { InventoryFgLotInspectSheet } from './InventoryFgLotInspectSheet';
+import {
+  OriginFocusBar,
+  originFocusToParam,
+  type OriginFocus,
+} from '@/features/production/components/OriginFocusBar';
 import { warehousesForLifecycle, warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
 import {
   canOpenRawMaterialsReport,
@@ -195,6 +203,7 @@ export function InventorySignatureHome({
   const canEditCost = can(user, 'inventory.cost.read');
   const canRawReport = canOpenRawMaterialsReport(user);
   const canCreateWarehouse = can(user, 'warehouse.manage');
+  const receivableQuery = useReceivablePurchaseOrdersQuery(canReceive);
 
   const [section, setSection] = useState<InventoryHomeSection>('items');
   const [lifecycle, setLifecycle] = useState<InventoryLifecycle>(
@@ -221,6 +230,8 @@ export function InventorySignatureHome({
   const [semiFilterDraft, setSemiFilterDraft] = useState<SemiFilterDraft>(() =>
     defaultSemiFilterDraft(historyDefaults),
   );
+  const [semiOrigin, setSemiOrigin] = useState<OriginFocus>('all');
+  const [fgOrigin, setFgOrigin] = useState<OriginFocus>('all');
   const [inspectKitId, setInspectKitId] = useState<string | null>(null);
   const [inspectKitSeed, setInspectKitSeed] = useState<WipKitCard | null>(null);
   const [createItemOpen, setCreateItemOpen] = useState(false);
@@ -233,6 +244,7 @@ export function InventorySignatureHome({
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [scanResult, setScanResult] = useState<InventoryItem | 'not-found' | null>(null);
+  const [inspectBin, setInspectBin] = useState<WarehouseBinContents | null>(null);
   const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
   const pendingPrintRef = useRef<{
     id: string;
@@ -320,8 +332,9 @@ export function InventorySignatureHome({
         to: semiHistoryTo,
         warehouseId: semiWarehouseId ?? undefined,
         q: section === 'items' ? q || undefined : undefined,
+        origin: originFocusToParam(semiOrigin),
       }),
-    [semiOrderFilter, semiHistoryFrom, semiHistoryTo, semiWarehouseId, section, q],
+    [semiOrderFilter, semiHistoryFrom, semiHistoryTo, semiWarehouseId, section, q, semiOrigin],
   );
   const wipKitBoardQuery = useQuery({
     queryKey: queryKeys.inventory.wipKitBoard(semiBoardParams),
@@ -336,6 +349,7 @@ export function InventorySignatureHome({
       scope: fgScope,
       from: fgScope === 'history' ? fgHistoryFrom : undefined,
       to: fgScope === 'history' ? fgHistoryTo : undefined,
+      origin: originFocusToParam(fgOrigin),
       pageSize: 50,
     },
     allowed && lifecycle === 'finished' && section === 'items',
@@ -540,6 +554,13 @@ export function InventorySignatureHome({
     if (!code) return;
     void haptics.selection();
     const resolved = await resolveInventoryScan(code);
+    if (resolved.status === 'FOUND_BIN') {
+      void haptics.confirmLight();
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(() => setInspectBin(resolved.bin), 280);
+      });
+      return;
+    }
     if (resolved.status === 'FOUND_KIT') {
       void haptics.confirmLight();
       setInspectKitSeed(resolved.kit);
@@ -706,10 +727,14 @@ export function InventorySignatureHome({
         model,
       }));
     }
+    if (lifecycle === 'materials' && categoryGroup === 'fabric') {
+      return [];
+    }
     return items.map((model) => ({ kind: 'item' as const, model }));
   }, [
     section,
     lifecycle,
+    categoryGroup,
     semiOrderFilter,
     items,
     transfers,
@@ -848,7 +873,7 @@ export function InventorySignatureHome({
           lifecycle === 'finished'
             ? t('mobile.inventory.fgDeskTitle')
             : lifecycle === 'semiFinished'
-              ? t('mobile.inventory.semiHeading')
+              ? t('mobile.inventory.semiTitle')
               : t('mobile.inventory.title')
         }
         subtitle={
@@ -898,6 +923,10 @@ export function InventorySignatureHome({
         canCreateWarehouse={canCreateWarehouse}
         warehouseLabel={t('mobile.inventory.newWarehouse')}
         onCreateWarehouse={() => setCreateWarehouseOpen(true)}
+        canReceiveOrders={canReceive}
+        receiveOrdersLabel={t('mobile.inventory.receiveOrders')}
+        receiveOrdersCount={receivableQuery.data?.length ?? 0}
+        onReceiveOrders={() => router.push('/(app)/(admin)/inventory/receive' as Href)}
         canScan={allowed}
         scanLabel={t('mobile.inventory.scan')}
         onScan={() => void runIdentifyScan()}
@@ -914,6 +943,7 @@ export function InventorySignatureHome({
                   fgFilter,
                   historyFrom: fgHistoryFrom,
                   historyTo: fgHistoryTo,
+                  origin: fgOrigin,
                 });
                 setFgFilterSheetOpen(true);
               }
@@ -924,6 +954,7 @@ export function InventorySignatureHome({
                     warehouseId: semiWarehouseId,
                     historyFrom: semiHistoryFrom,
                     historyTo: semiHistoryTo,
+                    origin: semiOrigin,
                   });
                   setSemiFilterSheetOpen(true);
                 }
@@ -938,6 +969,7 @@ export function InventorySignatureHome({
                   fgFilter,
                   historyFrom: fgHistoryFrom,
                   historyTo: fgHistoryTo,
+                  origin: fgOrigin,
                 },
                 historyDefaults,
               )
@@ -948,6 +980,7 @@ export function InventorySignatureHome({
                     warehouseId: semiWarehouseId,
                     historyFrom: semiHistoryFrom,
                     historyTo: semiHistoryTo,
+                    origin: semiOrigin,
                   },
                   historyDefaults,
                 )
@@ -974,17 +1007,15 @@ export function InventorySignatureHome({
           groupLabel={groupLabel}
           topSkuName={topLowStock?.name}
           onPress={() => {
-            if (topLowStock) {
-              router.push(
-                `/(app)/(admin)/inventory/items/${topLowStock.id}` as Href,
-              );
-            }
+            router.push(
+              `/(app)/(admin)/inventory/low-stock?group=${encodeURIComponent(categoryGroup)}` as Href,
+            );
           }}
         />
       ) : null}
 
       {section === 'items' && lifecycle === 'semiFinished' ? (
-        <View style={{ gap: 4, marginBottom: theme.spacing.xs }}>
+        <View style={{ gap: theme.spacing.sm, marginBottom: theme.spacing.xs }}>
           <AppText
             variant="body"
             weight={locale === 'ar' ? 'medium' : 'semibold'}
@@ -999,9 +1030,10 @@ export function InventorySignatureHome({
           >
             {t('mobile.inventory.semiOrdersHint')}
           </AppText>
+          <OriginFocusBar value={semiOrigin} onChange={setSemiOrigin} />
         </View>
       ) : section === 'items' && lifecycle === 'finished' ? (
-        <View style={{ gap: 4, marginBottom: theme.spacing.xs }}>
+        <View style={{ gap: theme.spacing.sm, marginBottom: theme.spacing.xs }}>
           <AppText
             variant="body"
             weight={locale === 'ar' ? 'medium' : 'semibold'}
@@ -1016,6 +1048,7 @@ export function InventorySignatureHome({
           >
             {t('mobile.inventory.finishedSectionHint')}
           </AppText>
+          <OriginFocusBar value={fgOrigin} onChange={setFgOrigin} />
         </View>
       ) : section === 'items' && lifecycle === 'materials' ? (
         categoryGroup === 'fabric' ? (
@@ -1076,6 +1109,8 @@ export function InventorySignatureHome({
         }}
       />
     );
+  } else if (section === 'items' && lifecycle === 'materials' && categoryGroup === 'fabric') {
+    empty = null;
   } else if (section === 'items') {
     empty = (
       <EmptyState
@@ -1180,6 +1215,7 @@ export function InventorySignatureHome({
           }
         }}
         onEndReachedThreshold={0.4}
+        extraData={`${lifecycle}:${section}:${semiOrigin}:${fgOrigin}`}
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         ListFooterComponent={
@@ -1442,6 +1478,7 @@ export function InventorySignatureHome({
           const body = {
             inventoryItemId: input.inventoryItemId,
             warehouseId: input.warehouseId,
+            locationId: input.locationId,
             quantity: input.quantity,
             notes: input.notes,
             idempotencyKey: `mobile-${move.mode}-${input.inventoryItemId}-${Date.now()}`,
@@ -1506,6 +1543,7 @@ export function InventorySignatureHome({
           setFgFilter(next.fgFilter);
           setFgHistoryFrom(next.historyFrom);
           setFgHistoryTo(next.historyTo);
+          setFgOrigin(next.origin);
           setFgFilterSheetOpen(false);
         }}
         onApply={() => {
@@ -1514,6 +1552,7 @@ export function InventorySignatureHome({
           setFgFilter(fgFilterDraft.fgFilter);
           setFgHistoryFrom(fgFilterDraft.historyFrom);
           setFgHistoryTo(fgFilterDraft.historyTo);
+          setFgOrigin(fgFilterDraft.origin);
           setFgFilterSheetOpen(false);
         }}
       />
@@ -1532,6 +1571,7 @@ export function InventorySignatureHome({
           setSemiWarehouseId(next.warehouseId);
           setSemiHistoryFrom(next.historyFrom);
           setSemiHistoryTo(next.historyTo);
+          setSemiOrigin(next.origin);
           setSemiFilterSheetOpen(false);
         }}
         onApply={() => {
@@ -1539,6 +1579,7 @@ export function InventorySignatureHome({
           setSemiWarehouseId(semiFilterDraft.warehouseId);
           setSemiHistoryFrom(semiFilterDraft.historyFrom);
           setSemiHistoryTo(semiFilterDraft.historyTo);
+          setSemiOrigin(semiFilterDraft.origin);
           setSemiFilterSheetOpen(false);
         }}
       />
@@ -1578,6 +1619,21 @@ export function InventorySignatureHome({
               });
             },
           });
+        }}
+      />
+      <BinContentsSheet
+        open={Boolean(inspectBin)}
+        bin={inspectBin}
+        onClose={() => setInspectBin(null)}
+        onScanAgain={() => {
+          setInspectBin(null);
+          requestAnimationFrame(() => {
+            void runIdentifyScan();
+          });
+        }}
+        onViewItem={(inventoryItemId) => {
+          setInspectBin(null);
+          router.push(`/(app)/(admin)/inventory/items/${inventoryItemId}` as Href);
         }}
       />
       <InventoryScanResultSheet

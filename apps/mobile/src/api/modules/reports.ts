@@ -231,6 +231,7 @@ export type DealerHomePayload = {
   outstandingBalance: string;
   balanceDueInDays: number | null;
   unreadNotifications: number;
+  pendingReturns: number;
   recentOrders: DealerHomeOrder[];
   recentInvoices: DealerHomeInvoice[];
   generatedAt: string;
@@ -242,6 +243,7 @@ export async function getDealerHome(): Promise<DealerHomePayload> {
 
 export type WorkerHomeTask = {
   id: string;
+  productionOrderId?: string | null;
   number: string;
   name: string;
   nameEn?: string | null;
@@ -372,4 +374,50 @@ export async function getProductionReport(
 
 export async function getFinancialReport(): Promise<FinancialReportPayload> {
   return apiGet<FinancialReportPayload>('/reports/financial');
+}
+
+export type CostOrderRow = {
+  id: string;
+  number: string;
+  status: string;
+  productSummary: string;
+  actualCost: number | null;
+  saleValue: number | null;
+  grossMargin: number | null;
+  coverage: 'FINAL' | 'PARTIAL' | 'UNPRICED';
+  workerEffortMinutes: number;
+};
+
+export type CostOrderDossier = {
+  id: string;
+  number: string;
+  summary: {
+    saleValue: number | null;
+    actualProductionCost: number | null;
+    grossMargin: number | null;
+    coverage: string;
+    averageCostPerUnit: number | null;
+  };
+  time: {
+    workerEffortMinutes: number;
+    wallClockMinutes: number | null;
+    reworkEffortMinutes: number;
+    labor: { enabled: boolean; total: number | null; note: string | null };
+  };
+  lifetime: {
+    originalProductionCost: number | null;
+    afterSaleReturnCost: number | null;
+    lifetimeCost: number | null;
+    recoveredValue: number | null;
+    disposedValue: number | null;
+  };
+};
+
+export async function getCostOrders(query: ReportsPeriodQuery) {
+  const qs = toSearchParams({ from: query.from, to: query.to, pageSize: 50 });
+  return apiGet<{ data: CostOrderRow[] }>(`/reports/cost/orders${qs}`);
+}
+
+export async function getCostOrderDossier(id: string) {
+  return apiGet<CostOrderDossier>(`/reports/cost/orders/${encodeURIComponent(id)}`);
 }

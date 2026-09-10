@@ -12,6 +12,7 @@ import {
   validateTerminalChain,
 } from './terminal-chain';
 import { validateOpeningChain } from './opening-chain';
+import { isQualityGateStage } from '../../../scheduling/domain/milestone';
 
 export type Applicability = 'INHERIT' | 'REQUIRED' | 'OPTIONAL' | 'EXCLUDED';
 
@@ -167,6 +168,11 @@ export function compileWorkflow(input: {
    * publish/snapshot paths must leave this true (or omit).
    */
   enforceTerminalChain?: boolean;
+  /**
+   * STRICT by default. Return-scoped workflows omit Material Prep;
+   * pass false so the finishing trio can still be enforced.
+   */
+  enforceOpeningChain?: boolean;
 }): CompiledProductionWorkflow {
   const productByNode = new Map<string, CompilerProductOverride>();
   const productByStage = new Map<string, CompilerProductOverride>();
@@ -193,6 +199,10 @@ export function compileWorkflow(input: {
     const estimateFromNode = node.defaultEstimatedMinutes ?? null;
     const estimateFromStage = hoursToMinutes(node.stage.estimatedHours);
 
+    const qualityGate = isQualityGateStage({
+      code: node.stage.code,
+      executionKind: node.stage.executionKind,
+    });
     let estimatedMinutes =
       estimateFromOrder ??
       estimateFromProductOverride ??
@@ -201,8 +211,11 @@ export function compileWorkflow(input: {
       estimateFromStage ??
       null;
 
-    const estimateReviewRequired = estimatedMinutes == null || estimatedMinutes <= 0;
-    if (estimateReviewRequired) estimatedMinutes = null;
+    const estimateReviewRequired = qualityGate
+      ? false
+      : estimatedMinutes == null || estimatedMinutes <= 0;
+    if (qualityGate) estimatedMinutes = 0;
+    else if (estimateReviewRequired) estimatedMinutes = null;
 
     const compiled: CompiledNode = {
       sourceWorkflowNodeId: node.id,
@@ -395,19 +408,21 @@ export function compileWorkflow(input: {
   const validation = validateWorkflowGraph(validationNodes, validationEdges);
   const issues: WorkflowValidationIssue[] = [...validation.issues];
 
+  const chainNodes = included.map((n) => ({
+    id: n.nodeKey,
+    nodeKey: n.nodeKey,
+    stageCode: n.stageCode,
+    isRequired: n.isRequired,
+    isSkipped: n.isSkipped,
+  }));
+  const chainEdges = reducedEdges.map((e) => ({
+    fromNodeId: e.fromNodeKey,
+    toNodeId: e.toNodeKey,
+  }));
   if (input.enforceTerminalChain !== false) {
-    const chainNodes = included.map((n) => ({
-      id: n.nodeKey,
-      nodeKey: n.nodeKey,
-      stageCode: n.stageCode,
-      isRequired: n.isRequired,
-      isSkipped: n.isSkipped,
-    }));
-    const chainEdges = reducedEdges.map((e) => ({
-      fromNodeId: e.fromNodeKey,
-      toNodeId: e.toNodeKey,
-    }));
     issues.push(...validateTerminalChain(chainNodes, chainEdges));
+  }
+  if (input.enforceOpeningChain !== false) {
     issues.push(...validateOpeningChain(chainNodes, chainEdges));
   }
 

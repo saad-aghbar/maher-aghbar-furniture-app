@@ -74,6 +74,47 @@ describe('ProductionReworkService', () => {
     expect(originalTask.actualCompletion).toEqual(new Date('2026-01-01'));
   });
 
+  it('createForReturn routes to the return work order when no sales order is linked', async () => {
+    const tx = {
+      reworkRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'rw-new', productionOrderId: 'rw-po' }),
+      },
+      productionOrder: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'rw-po' }),
+        update: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaService;
+    const service = new ProductionReworkService(
+      prisma,
+      { next: jest.fn().mockResolvedValue('RW-9') } as unknown as SequenceService,
+    );
+
+    await service.createForReturn({
+      returnId: 'ret-1',
+      salesOrderId: null,
+      description: 'return rework',
+      userId: 'admin-1',
+    });
+
+    expect(tx.productionOrder.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          returnRequestId: 'ret-1',
+          originType: { in: ['RETURN_WORK', 'REPLACEMENT'] },
+        }),
+      }),
+    );
+    expect(tx.reworkRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ productionOrderId: 'rw-po', returnRequestId: 'ret-1' }),
+      }),
+    );
+  });
+
   it('enqueues targeted REPLAN after a new rework task and does not generate on the request path', async () => {
     const tx = {
       reworkRequest: {
@@ -175,6 +216,9 @@ describe('ProductionReworkService', () => {
             id: 'rw-1',
             productionOrderId: 'po-1',
             status: 'IN_PROGRESS',
+            inspectionId: 'qc-1',
+            inspectionItemId: null,
+            inspection: { id: 'qc-1', items: [] },
             tasks: [{ id: 'rw-task', status: 'COMPLETED' }],
           })
           .mockResolvedValueOnce({
@@ -203,6 +247,11 @@ describe('ProductionReworkService', () => {
       },
       productionTask: { update: jest.fn() },
       productionOrder: { update: jest.fn() },
+      qualityInspectionItem: {
+        updateMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      qualityInspection: { update: jest.fn() },
       auditEvent: { create: jest.fn() },
     };
     const prisma = {
@@ -262,6 +311,93 @@ describe('ProductionReworkService', () => {
         }),
       }),
     );
-    expect(scheduling.enqueueTargetedReplan).toHaveBeenCalledWith('po-1', 'rework-complete');
+    expect(scheduling.enqueueTargetedReplan).not.toHaveBeenCalled();
+  });
+
+  it('completeRework clears only the failed piece and keeps PARTIAL when others passed', async () => {
+    const inspTask = {
+      id: 'insp-task-1',
+      isRework: false,
+      status: 'COMPLETED',
+    };
+    const tx = {
+      reworkRequest: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'rw-1',
+            productionOrderId: 'po-1',
+            status: 'IN_PROGRESS',
+            inspectionId: 'qc-1',
+            inspectionItemId: 'item-fail',
+            inspection: { id: 'qc-1', items: [] },
+            tasks: [{ id: 'rw-task', status: 'COMPLETED' }],
+          })
+          .mockResolvedValueOnce({
+            id: 'rw-1',
+            productionOrderId: 'po-1',
+            status: 'COMPLETED',
+            inspection: null,
+            tasks: [{ id: 'rw-task', status: 'COMPLETED' }],
+          }),
+        update: jest.fn(),
+      },
+      productionStageInstance: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'insp-1',
+            status: 'COMPLETED',
+            stageDefinition: { code: 'INSPECTION' },
+            tasks: [inspTask],
+          })
+          .mockResolvedValueOnce({
+            id: 'pack-1',
+            status: 'READY',
+          }),
+        update: jest.fn(),
+      },
+      productionTask: { update: jest.fn() },
+      productionOrder: { update: jest.fn() },
+      qualityInspectionItem: {
+        updateMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'item-pass', result: 'PASS' },
+          { id: 'item-fail', result: null },
+        ]),
+      },
+      qualityInspection: { update: jest.fn() },
+      auditEvent: { create: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaService;
+    const service = new ProductionReworkService(
+      prisma,
+      { next: jest.fn() } as unknown as SequenceService,
+    );
+
+    await service.completeRework('rw-1', 'admin-1');
+
+    expect(tx.qualityInspectionItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 'item-fail' },
+      data: { result: null, note: null },
+    });
+    expect(tx.productionStageInstance.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'insp-1' },
+        data: expect.objectContaining({
+          status: 'READY',
+          inspectionStatus: 'PARTIAL',
+          progressPercent: 50,
+        }),
+      }),
+    );
+    expect(tx.productionStageInstance.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'pack-1' },
+        data: expect.objectContaining({ status: 'PENDING', progressPercent: 0 }),
+      }),
+    );
   });
 });

@@ -25,6 +25,9 @@ export type DayMeta = {
   /** Dealer delivery calendar — not color-only. */
   markers?: Array<'confirmed' | 'proposed' | 'attention'>;
   count?: number;
+  loadPercent?: number | null;
+  overtime?: boolean;
+  conflict?: boolean;
 };
 
 export function todayYmd(now: Date = new Date()): string {

@@ -1,18 +1,12 @@
 import { useState } from 'react';
-import {
-  Image,
-  Pressable,
-  ScrollView,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Image, ScrollView, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 type Props = {
@@ -156,8 +150,9 @@ export function ReturnPhotoGallery({
           }}
         >
           {resolved.map((uri, index) => (
-            <Pressable
+            <AnimatedPressable
               key={`${uri}-${index}`}
+              variant="button"
               accessibilityRole="imagebutton"
               accessibilityLabel={`${title} ${index + 1}`}
               onPress={() => {
@@ -190,7 +185,7 @@ export function ReturnPhotoGallery({
                   {`${index + 1}/${resolved.length}`}
                 </AppText>
               </View>
-            </Pressable>
+            </AnimatedPressable>
           ))}
         </ScrollView>
       )}

@@ -6,8 +6,10 @@
  * Ready to start → In production = first real executable task actual start.
  * Ready for delivery = packaging/FIN ready (SO READY_FOR_DELIVERY or delivery PLANNED/READY).
  * Shipped = truck departed (OUT_FOR_DELIVERY).
- * Delivered = dealer confirm (DELIVERED).
+ * Delivered = dealer confirm (DELIVERED). COMPLETED is a legacy synonym.
  */
+
+import { isDeliveredSalesOrderStatus } from '@maher/types';
 
 export const ADMIN_ORDER_JOURNEY_BUCKETS = [
   'preparing',
@@ -111,7 +113,7 @@ export function classifyAdminOrderJourneyBucket(
   const released = isReleasedToFactoryFromPos(pos);
   const started = isExecutionStartedFromPos(pos) || so === 'IN_PRODUCTION';
 
-  if (so === 'DELIVERED' || so === 'COMPLETED' || del === 'DELIVERED') {
+  if (isDeliveredSalesOrderStatus(so) || del === 'DELIVERED') {
     return 'delivered';
   }
   if (del === 'OUT_FOR_DELIVERY') {

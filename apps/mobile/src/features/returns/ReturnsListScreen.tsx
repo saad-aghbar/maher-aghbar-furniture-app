@@ -3,7 +3,7 @@ import { FlatList, RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { can } from '@maher/permissions';
+import { canAny } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { listCustomers } from '@/api/modules/customers';
 import { useAuth } from '@/auth/AuthProvider';
@@ -27,6 +27,7 @@ import { ReturnsDealerSheet } from './components/ReturnsDealerSheet';
 import { ReturnsFilterTriggers } from './components/ReturnsFilterTriggers';
 import { ReturnsStatusFilterSheet } from './components/ReturnsStatusFilterSheet';
 import { ReturnsStatusRail } from './components/ReturnsStatusRail';
+import { returnCtaStyle } from './components/returnFloorCta';
 import {
   isReturnStatusFilterActive,
   type ReturnStatusFilter,
@@ -113,7 +114,7 @@ export function ReturnsListScreen({
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const params = useLocalSearchParams<{ chip?: string; physical?: string }>();
-  const allowed = can(user, 'sales-order.read');
+  const allowed = canAny(user, ['return.read', 'sales-order.read']);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dealerSurface = !adminControls;
 
@@ -291,7 +292,7 @@ export function ReturnsListScreen({
                   void haptics.selection();
                   router.push(createHref);
                 }}
-                style={{ borderRadius: theme.radius.xl }}
+                style={returnCtaStyle(theme)}
               />
             ) : null}
 

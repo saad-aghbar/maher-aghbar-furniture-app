@@ -6,18 +6,20 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { honestJourneyCount } from '../honestJourneyCount';
 
-export type OrderTypeFocus = 'all' | 'standard' | 'modified' | 'custom';
+export type OrderTypeFocus = 'all' | 'standard' | 'modified' | 'custom' | 'returned';
 
 export const ORDER_TYPE_LENS_CELLS: Array<Exclude<OrderTypeFocus, 'all'>> = [
   'standard',
   'modified',
   'custom',
+  'returned',
 ];
 
 export type OrderTypeCounts = {
   standard: number;
   modified: number;
   custom: number;
+  returned?: number;
 };
 
 export function nextOrderTypeFocus(
@@ -31,16 +33,27 @@ type Props = {
   value: OrderTypeFocus;
   counts?: OrderTypeCounts | null;
   onChange: (next: OrderTypeFocus) => void;
+  /** 4th Returned cell — orders desk only. Requests stay Standard/Modified/Custom. */
+  includeReturned?: boolean;
 };
 
 /**
- * Standard / Modified / Custom lens — three equal parchment cells.
+ * Standard / Modified / Custom / Returned lens — equal parchment cells.
+ * Returned is a separate axis (`returned=true`), not a 4th orderType.
  * Orthogonal to Order Journey / Factory Review. Compact, not giant tabs.
  */
-export function OrderTypeLensBar({ value, counts, onChange }: Props) {
+export function OrderTypeLensBar({
+  value,
+  counts,
+  onChange,
+  includeReturned = true,
+}: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const cells = includeReturned
+    ? ORDER_TYPE_LENS_CELLS
+    : ORDER_TYPE_LENS_CELLS.filter((key) => key !== 'returned');
 
   return (
     <View
@@ -49,7 +62,7 @@ export function OrderTypeLensBar({ value, counts, onChange }: Props) {
         gap: theme.spacing.sm,
       }}
     >
-      {ORDER_TYPE_LENS_CELLS.map((key) => {
+      {cells.map((key) => {
         const selected = value === key;
         const label = t(`mobile.orders.journey.kind.${key}`);
         const count = counts?.[key] ?? 0;

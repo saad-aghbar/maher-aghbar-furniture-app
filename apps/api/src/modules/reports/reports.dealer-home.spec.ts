@@ -67,6 +67,7 @@ describe('ReportsService.dealerHome', () => {
       },
     ]);
     const notificationCount = jest.fn().mockResolvedValue(1);
+    const returnRequestCount = jest.fn().mockResolvedValue(2);
 
     const prisma = {
       factoryCalendar: {
@@ -82,6 +83,7 @@ describe('ReportsService.dealerHome', () => {
         findMany: invoiceFindMany,
       },
       notification: { count: notificationCount },
+      returnRequest: { count: returnRequestCount },
     };
 
     return {
@@ -159,6 +161,7 @@ describe('ReportsService.dealerHome', () => {
     ]);
 
     const result = await service.dealerHome(dealerA);
+    expect(result.pendingReturns).toBe(2);
     expect(result.outstandingBalance).toBeDefined();
     expect(result.recentOrders[0]!.progressPercent).toBe(40);
     expect(result.recentOrders[0]!.progressLabel).toBe('In progress');
@@ -169,13 +172,14 @@ describe('ReportsService.dealerHome', () => {
 
   it('counts nearing from calendarDate (committed), not a slipped projection', async () => {
     const { service, salesOrderFindMany } = makeService();
-    const committed = new Date('2026-08-19T00:00:00.000Z');
-    const slipped = new Date('2026-08-28T00:00:00.000Z');
-    salesOrderFindMany.mockResolvedValueOnce([
+    const committed = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const slipped = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000);
+    salesOrderFindMany.mockResolvedValue([
       {
         status: 'IN_PRODUCTION',
         requiredDeliveryDate: committed,
         quotation: { request: null },
+        lines: [],
         productionOrders: [
           {
             status: 'IN_PROGRESS',

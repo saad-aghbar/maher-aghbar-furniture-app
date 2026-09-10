@@ -38,8 +38,8 @@ export function useLabelVerifyScan(currentId: string | undefined) {
     setBusy(false);
   }, [clear]);
 
-  const run = useCallback(async () => {
-    const id = currentIdRef.current;
+  const run = useCallback(async (overrideId?: string) => {
+    const id = overrideId ?? currentIdRef.current;
     if (!id || busyRef.current) return;
     clear();
     busyRef.current = true;
@@ -53,13 +53,14 @@ export function useLabelVerifyScan(currentId: string | undefined) {
         code,
         currentId: id,
       });
-      if (!outcome) return;
+      if (!outcome) return null;
       setKind(outcome.kind);
       setScanned(outcome.scanned);
       setFabric(outcome.fabric ?? null);
       qrLog(0, `VERIFY inline result state committed kind=${outcome.kind}`);
       if (outcome.kind === 'MATCH') void haptics.confirmLight();
       else void haptics.error();
+      return outcome;
     } finally {
       busyRef.current = false;
       setBusy(false);

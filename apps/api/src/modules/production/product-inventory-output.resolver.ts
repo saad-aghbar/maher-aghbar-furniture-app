@@ -59,6 +59,15 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+export function warnProductOutputMiss(detail: {
+  reason: 'rotated_node' | 'no_match';
+  sourceWorkflowNodeId?: string | null;
+  stageDefinitionId?: string | null;
+  matchedOutputId?: string | null;
+}) {
+  console.warn('[product-output] stage match miss', detail);
+}
+
 function pickProductOutput(
   node: CompiledInventoryNode,
   rows: ProductStageOutputRow[],
@@ -67,10 +76,34 @@ function pickProductOutput(
     ? rows.find((row) => row.workflowNodeId === node.sourceWorkflowNodeId)
     : undefined;
   if (byNode) return byNode;
-  const byStage = node.stageDefinitionId
+  const unboundStage = node.stageDefinitionId
     ? rows.find((row) => !row.workflowNodeId && row.stageDefinitionId === node.stageDefinitionId)
     : undefined;
-  return byStage ?? null;
+  if (unboundStage) {
+    if (node.sourceWorkflowNodeId) {
+      warnProductOutputMiss({
+        reason: 'rotated_node',
+        sourceWorkflowNodeId: node.sourceWorkflowNodeId,
+        stageDefinitionId: node.stageDefinitionId,
+        matchedOutputId: unboundStage.id,
+      });
+    }
+    return unboundStage;
+  }
+  // Workflow node ids rotate on republish; stage-definition is the durable match.
+  const boundStage = node.stageDefinitionId
+    ? rows.find((row) => row.stageDefinitionId === node.stageDefinitionId)
+    : undefined;
+  if (boundStage) {
+    warnProductOutputMiss({
+      reason: 'rotated_node',
+      sourceWorkflowNodeId: node.sourceWorkflowNodeId,
+      stageDefinitionId: node.stageDefinitionId,
+      matchedOutputId: boundStage.id,
+    });
+    return boundStage;
+  }
+  return null;
 }
 
 /**

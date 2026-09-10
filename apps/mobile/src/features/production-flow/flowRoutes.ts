@@ -15,3 +15,11 @@ export function dealerOrderFlowHref(orderId: string): Href {
 export function adminProductionFlowHref(productionOrderId: string): Href {
   return `/(app)/(admin)/production/${productionOrderId}/flow` as Href;
 }
+
+export function adminProductionPlanHref(
+  productionOrderId: string,
+  taskId?: string | null,
+): Href {
+  const base = `/(app)/(admin)/production/${productionOrderId}/plan`;
+  return (taskId ? `${base}?task=${encodeURIComponent(taskId)}` : base) as Href;
+}

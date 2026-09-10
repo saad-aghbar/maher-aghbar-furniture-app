@@ -14,7 +14,7 @@ export async function seedDemoCalendar(prisma: PrismaClient) {
       deliveryBufferWorkingDays: 1,
       maxProductionEarlyWorkingDays: 10,
       targetFactoryUtilizationPercent: 85,
-      breaks: [{ start: '12:00', end: '13:00' }] as unknown as Prisma.InputJsonValue,
+      breaks: [{ start: '12:00', end: '12:30' }] as unknown as Prisma.InputJsonValue,
       overtimeConfig: { eveningEnd: '20:00' } as unknown as Prisma.InputJsonValue,
       isDefault: true,
     },

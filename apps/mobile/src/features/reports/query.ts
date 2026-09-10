@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
 import {
+  getCostOrders,
   getDashboardReport,
   getFinancialReport,
   getProductionReport,
@@ -36,6 +37,14 @@ export function useFinancialReportQuery(enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.reports.financial(),
     queryFn: getFinancialReport,
+    enabled,
+  });
+}
+
+export function useCostOrdersQuery(range: ReportsDateRange, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.reports.costOrders(`${range.from}|${range.to}`),
+    queryFn: () => getCostOrders(range),
     enabled,
   });
 }

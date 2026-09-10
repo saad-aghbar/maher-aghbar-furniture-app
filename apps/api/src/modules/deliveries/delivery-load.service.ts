@@ -18,12 +18,14 @@ import { InventoryService } from '../inventory/inventory.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { InvoicesService } from '../invoices/invoices.service';
+import { invoiceOnFactoryExit } from './invoice-on-depart';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import {
   packLabelForPieceIndex,
   pieceLabelsFromMetadata,
   type PieceLabel,
 } from '../production/piece-labels';
+import { deliveryDealerWarehouseClauses } from './delivery-list-filter';
 
 type Tx = Prisma.TransactionClient;
 
@@ -32,6 +34,26 @@ const HISTORY_STATUSES: DeliveryStatus[] = [
   DeliveryStatus.OUT_FOR_DELIVERY,
   DeliveryStatus.DELIVERED,
 ];
+
+/** Open driver list: packed outbound orders, plus return reships even without a sales order. */
+export function openDriverDeliveryScope(): Prisma.DeliveryWhereInput {
+  return {
+    OR: [
+      {
+        salesOrderId: { not: null },
+        salesOrder: {
+          inventoryLots: {
+            some: {
+              status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
+              inventoryItem: { itemClass: InventoryItemClass.FINISHED_GOOD, archivedAt: null },
+            },
+          },
+        },
+      },
+      { purpose: 'RETURN_RESHIP' },
+    ],
+  };
+}
 
 @Injectable()
 export class DeliveryLoadService {
@@ -75,6 +97,8 @@ export class DeliveryLoadService {
         status: true,
         driverId: true,
         salesOrderId: true,
+        purpose: true,
+        returnRequestId: true,
         customerId: true,
         deliveryAddress: true,
         deliveryDate: true,
@@ -101,21 +125,57 @@ export class DeliveryLoadService {
    */
   async materializeLoadPieces(deliveryId: string, salesOrderId: string | null, tx?: Tx) {
     const db = tx ?? this.prisma;
-    if (!salesOrderId) return [];
-
-    const lots = await db.inventoryLot.findMany({
-      where: {
-        salesOrderId,
-        status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
-        inventoryItem: { itemClass: InventoryItemClass.FINISHED_GOOD, archivedAt: null },
-      },
-      select: {
-        id: true,
-        quantity: true,
-        productionOrderId: true,
-        stageInstanceId: true,
-      },
+    const delivery = await db.delivery.findUnique({
+      where: { id: deliveryId },
+      select: { purpose: true, returnRequestId: true, salesOrderId: true },
     });
+    const isReship = delivery?.purpose === 'RETURN_RESHIP';
+    const soId = salesOrderId ?? delivery?.salesOrderId ?? null;
+
+    const lots = isReship
+      ? await (async () => {
+          const workIds = delivery?.returnRequestId
+            ? (
+                await db.productionOrder.findMany({
+                  where: {
+                    returnRequestId: delivery.returnRequestId,
+                    originType: { in: ['RETURN_WORK', 'REPLACEMENT'] },
+                  },
+                  select: { id: true },
+                })
+              ).map((p) => p.id)
+            : [];
+          if (!workIds.length) return [];
+          return db.inventoryLot.findMany({
+            where: {
+              productionOrderId: { in: workIds },
+              status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
+              inventoryItem: { itemClass: InventoryItemClass.FINISHED_GOOD, archivedAt: null },
+            },
+            select: {
+              id: true,
+              quantity: true,
+              productionOrderId: true,
+              stageInstanceId: true,
+            },
+          });
+        })()
+      : soId
+        ? await db.inventoryLot.findMany({
+            where: {
+              salesOrderId: soId,
+              status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
+              inventoryItem: { itemClass: InventoryItemClass.FINISHED_GOOD, archivedAt: null },
+            },
+            select: {
+              id: true,
+              quantity: true,
+              productionOrderId: true,
+              stageInstanceId: true,
+            },
+          })
+        : [];
+    if (!lots.length) return [];
 
     const stageInstanceIds = [
       ...new Set(lots.map((l) => l.stageInstanceId).filter((id): id is string => Boolean(id))),
@@ -226,6 +286,8 @@ export class DeliveryLoadService {
       scope?: 'open' | 'completed' | 'all';
       status?: string;
       q?: string;
+      dealerId?: string;
+      warehouseId?: string;
     },
   ) {
     const scope = query.scope ?? 'open';
@@ -237,6 +299,11 @@ export class DeliveryLoadService {
           : scope === 'completed'
             ? { status: { in: HISTORY_STATUSES } }
             : {};
+
+    const filterClauses = deliveryDealerWarehouseClauses({
+      dealerId: query.dealerId,
+      warehouseId: query.warehouseId,
+    });
 
     const where: Prisma.DeliveryWhereInput = {
       driverId: user.id,
@@ -252,19 +319,9 @@ export class DeliveryLoadService {
             ],
           }
         : {}),
-      // Hide until packaging produced FG (same "don't show locked work" rule).
-      ...(scope === 'open'
-        ? {
-            salesOrderId: { not: null },
-            salesOrder: {
-              inventoryLots: {
-                some: {
-                  status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
-                  inventoryItem: { itemClass: InventoryItemClass.FINISHED_GOOD, archivedAt: null },
-                },
-              },
-            },
-          }
+      // Hide outbound work until packaging produced FG. Return reships are always visible.
+      ...(scope === 'open' || filterClauses.length
+        ? { AND: [...(scope === 'open' ? [openDriverDeliveryScope()] : []), ...filterClauses] }
         : {}),
     };
 
@@ -677,7 +734,7 @@ export class DeliveryLoadService {
     await this.materializeLoadPieces(deliveryId, existing.salesOrderId);
     const pieces = await this.prisma.deliveryLoadPiece.findMany({
       where: { deliveryId },
-      select: { id: true, loadedAt: true },
+      select: { id: true, loadedAt: true, inventoryLotId: true },
     });
     if (pieces.length === 0) {
       throw new BadRequestException({
@@ -709,7 +766,12 @@ export class DeliveryLoadService {
         },
       });
 
-      if (existing.salesOrderId) {
+      const lotIds = [...new Set(pieces.map((p) => p.inventoryLotId))];
+      if (existing.purpose === 'RETURN_RESHIP') {
+        if (lotIds.length) {
+          await this.inventory.issueForDelivery(deliveryId, null, user.id, tx, lotIds);
+        }
+      } else if (existing.salesOrderId) {
         await this.inventory.issueForDelivery(deliveryId, existing.salesOrderId, user.id, tx);
       }
 
@@ -750,12 +812,15 @@ export class DeliveryLoadService {
       .catch(() => undefined);
 
     // Order invoice is created when the truck leaves the factory (shipped),
-    // not when the dealer confirms delivery.
-    if (existing.salesOrderId) {
-      await this.invoices
-        .ensureFromSalesOrder(existing.salesOrderId, user.id)
-        .catch(() => undefined);
-    }
+    // not when the dealer confirms delivery. Return reship invoices follow
+    // the same exit — never create a sales-order invoice for a reship.
+    await invoiceOnFactoryExit({
+      purpose: existing.purpose,
+      returnRequestId: existing.returnRequestId,
+      salesOrderId: existing.salesOrderId,
+      userId: user.id,
+      invoices: this.invoices,
+    }).catch(() => undefined);
 
     return this.getLoadSheet(deliveryId, user);
   }

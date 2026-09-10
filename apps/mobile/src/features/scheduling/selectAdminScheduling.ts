@@ -15,7 +15,7 @@ import {
 } from '@/components/calendar';
 
 export type AdminScheduleStat = {
-  key: 'today' | 'week' | 'awaitingApproval' | 'atRisk' | 'conflicts';
+  key: 'today' | 'week' | 'unscheduled' | 'atRisk' | 'conflicts' | 'overtime';
   value: number;
   tone: 'neutral' | 'warning' | 'danger';
 };
@@ -30,25 +30,37 @@ export function selectConflictBarCount(
   return uniqueConflicts?.length ?? 0;
 }
 
-/** Stat chips for the top of the admin scheduling dashboard. */
+/** Six factory-tower cells. Counts come from GET /scheduling/summary only. */
 export function selectDashboardStats(
-  dashboard: SchedulingDashboard | undefined,
-  opts?: { atRiskCount?: number; conflictCount?: number; awaitingApprovalCount?: number },
+  summary:
+    | {
+        today: number;
+        thisWeek: number;
+        unscheduled: number;
+        atRisk: number;
+        conflicts: number;
+        overtime: number;
+      }
+    | SchedulingDashboard
+    | undefined,
 ): AdminScheduleStat[] {
-  if (!dashboard) return [];
-  const atRisk = opts?.atRiskCount ?? dashboard.atRisk;
-  const conflicts = opts?.conflictCount ?? dashboard.conflicts;
-  const awaiting = opts?.awaitingApprovalCount ?? dashboard.awaitingApproval;
+  if (!summary) return [];
+  const today = 'today' in summary && typeof (summary as { today?: number }).today === 'number'
+    ? (summary as { today: number }).today
+    : (summary as SchedulingDashboard).todayCount;
+  const week =
+    'thisWeek' in summary && typeof (summary as { thisWeek?: number }).thisWeek === 'number'
+      ? (summary as { thisWeek: number }).thisWeek
+      : (summary as SchedulingDashboard).weekCount;
+  const unscheduled = 'unscheduled' in summary ? (summary as { unscheduled: number }).unscheduled : 0;
+  const overtime = 'overtime' in summary ? (summary as { overtime: number }).overtime : 0;
   return [
-    { key: 'today', value: dashboard.todayCount, tone: 'neutral' },
-    { key: 'week', value: dashboard.weekCount, tone: 'neutral' },
-    {
-      key: 'awaitingApproval',
-      value: awaiting,
-      tone: awaiting > 0 ? 'warning' : 'neutral',
-    },
-    { key: 'atRisk', value: atRisk, tone: atRisk > 0 ? 'danger' : 'neutral' },
-    { key: 'conflicts', value: conflicts, tone: conflicts > 0 ? 'danger' : 'neutral' },
+    { key: 'today', value: today, tone: 'neutral' },
+    { key: 'week', value: week, tone: 'neutral' },
+    { key: 'unscheduled', value: unscheduled, tone: unscheduled > 0 ? 'warning' : 'neutral' },
+    { key: 'atRisk', value: summary.atRisk, tone: summary.atRisk > 0 ? 'danger' : 'neutral' },
+    { key: 'conflicts', value: summary.conflicts, tone: summary.conflicts > 0 ? 'danger' : 'neutral' },
+    { key: 'overtime', value: overtime, tone: overtime > 0 ? 'warning' : 'neutral' },
   ];
 }
 
@@ -65,6 +77,12 @@ export function weekRangeFromYmd(anchorYmd: string): { from: string; to: string 
     from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
     to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
   };
+}
+
+/** Sunday–Saturday dates for the factory week that contains `anchorYmd`. */
+export function factoryWeekDates(anchorYmd: string): string[] {
+  const { from } = weekRangeFromYmd(anchorYmd);
+  return Array.from({ length: 7 }, (_, i) => addDaysToYmd(from, i));
 }
 
 /** Shift a YMD date by `delta` local calendar days. */
@@ -175,6 +193,12 @@ export function selectMonthDayMeta(
         tone,
         density: adminFactoryLoadDensity(loadPercent, day.isWorking),
         disabled: !day.isWorking,
+        loadPercent,
+        overtime: (loadPercent ?? 0) > 100,
+        conflict: Boolean(
+          orders?.some((o) => o.hasConflict && orderIntersectsDay(o, ymd)),
+        ),
+        count: orderCount,
       },
     };
   }

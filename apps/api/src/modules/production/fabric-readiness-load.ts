@@ -8,21 +8,14 @@ import {
 
 type Db = Prisma.TransactionClient;
 
-export async function loadFabricReadinessForSalesOrder(
+type ReadinessRow = Prisma.FabricProcurementGetPayload<{
+  include: { requirement: true; lots: true };
+}>;
+
+async function mapReadinessRows(
   db: Db,
-  salesOrderId: string | null | undefined,
+  rows: ReadinessRow[],
 ): Promise<{ items: FabricReadinessResult[]; block: FabricReadinessBlock }> {
-  if (!salesOrderId) {
-    const block = summarizeFabricReadiness([]);
-    return { items: [], block };
-  }
-  const rows = await db.fabricProcurement.findMany({
-    where: { salesOrderId },
-    include: {
-      requirement: true,
-      lots: true,
-    },
-  });
   const lotIds = rows.flatMap((r) => r.lots.map((l) => l.id));
   const usageRows = lotIds.length
     ? await db.productionTaskMaterialUsage.findMany({
@@ -39,6 +32,7 @@ export async function loadFabricReadinessForSalesOrder(
       requirement: {
         id: row.requirementId,
         salesOrderId: row.salesOrderId,
+        productionOrderId: row.productionOrderId,
         label:
           row.requirement.requestedFabricLabel ||
           row.requirement.displayName ||
@@ -64,6 +58,7 @@ export async function loadFabricReadinessForSalesOrder(
         status: l.status,
         allocationMode: l.allocationMode,
         salesOrderId: l.salesOrderId,
+        productionOrderId: l.productionOrderId,
         locationId: l.locationId,
         inventoryItemId: l.inventoryItemId,
       })),
@@ -71,4 +66,40 @@ export async function loadFabricReadinessForSalesOrder(
     }),
   );
   return { items, block: summarizeFabricReadiness(items) };
+}
+
+export async function loadFabricReadinessForProductionOrder(
+  db: Db,
+  productionOrderId: string | null | undefined,
+): Promise<{ items: FabricReadinessResult[]; block: FabricReadinessBlock }> {
+  if (!productionOrderId) {
+    const block = summarizeFabricReadiness([]);
+    return { items: [], block };
+  }
+  const rows = await db.fabricProcurement.findMany({
+    where: { productionOrderId },
+    include: {
+      requirement: true,
+      lots: true,
+    },
+  });
+  return mapReadinessRows(db, rows);
+}
+
+export async function loadFabricReadinessForSalesOrder(
+  db: Db,
+  salesOrderId: string | null | undefined,
+): Promise<{ items: FabricReadinessResult[]; block: FabricReadinessBlock }> {
+  if (!salesOrderId) {
+    const block = summarizeFabricReadiness([]);
+    return { items: [], block };
+  }
+  const rows = await db.fabricProcurement.findMany({
+    where: { salesOrderId },
+    include: {
+      requirement: true,
+      lots: true,
+    },
+  });
+  return mapReadinessRows(db, rows);
 }

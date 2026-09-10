@@ -6,6 +6,10 @@ import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '@maher/types';
+import {
+  mergePurchasingWhatsAppSettings,
+  PURCHASING_WHATSAPP_DEFAULTS,
+} from '../../common/helpers/purchase-whatsapp-template';
 
 class UpsertSettingDto {
   @IsObject()
@@ -20,6 +24,10 @@ class PatchSettingsDto {
   @IsOptional()
   @IsObject()
   integrations?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  purchasingWhatsApp?: Record<string, unknown>;
 }
 
 const COMPANY_DEFAULTS = {
@@ -45,9 +53,6 @@ const INTEGRATION_DEFAULTS = {
   smsProvider: process.env.SMS_PROVIDER ?? 'console',
   aiProvider: process.env.AI_PROVIDER ?? 'mock',
   ocrProvider: process.env.OCR_PROVIDER ?? 'mock',
-  jofotaraConfigured: Boolean(
-    process.env.JOFOTARA_CLIENT_ID?.trim() && process.env.JOFOTARA_SECRET_KEY?.trim(),
-  ),
   smtpConfigured: Boolean(
     process.env.SMTP_URL?.trim() || process.env.RESEND_API_KEY?.trim(),
   ),
@@ -88,9 +93,16 @@ const SECRET_KEYS = new Set([
   'secretKey',
   'whatsappToken',
   'openaiKey',
-  'jofotaraSecretKey',
   'clientSecret',
 ]);
+
+const DEAD_INTEGRATION_KEYS = ['jofotaraConfigured', 'jofotaraBaseUrl', 'jofotaraSecretKey'] as const;
+
+function omitDeadIntegrationKeys(value: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...value };
+  for (const key of DEAD_INTEGRATION_KEYS) delete out[key];
+  return out;
+}
 
 @ApiTags('settings')
 @Controller('settings')
@@ -104,6 +116,7 @@ export class SettingsController {
     const map: Record<string, unknown> = {
       company: COMPANY_DEFAULTS,
       integrations: INTEGRATION_DEFAULTS,
+      purchasingWhatsApp: PURCHASING_WHATSAPP_DEFAULTS,
     };
     for (const row of rows) {
       map[row.key] = this.sanitize(row.value);
@@ -116,8 +129,12 @@ export class SettingsController {
     if (!map.integrations || typeof map.integrations !== 'object') {
       map.integrations = INTEGRATION_DEFAULTS;
     } else {
-      map.integrations = { ...INTEGRATION_DEFAULTS, ...(map.integrations as object) };
+      map.integrations = omitDeadIntegrationKeys({
+        ...INTEGRATION_DEFAULTS,
+        ...(map.integrations as object),
+      });
     }
+    map.purchasingWhatsApp = mergePurchasingWhatsAppSettings(map.purchasingWhatsApp);
     return map;
   }
 
@@ -131,6 +148,9 @@ export class SettingsController {
     }
     if (dto.integrations && typeof dto.integrations === 'object') {
       updates.push({ key: 'integrations', value: dto.integrations });
+    }
+    if (dto.purchasingWhatsApp && typeof dto.purchasingWhatsApp === 'object') {
+      updates.push({ key: 'purchasingWhatsApp', value: dto.purchasingWhatsApp });
     }
 
     if (updates.length === 0) {
@@ -148,7 +168,10 @@ export class SettingsController {
         Object.assign(merged, { ...COMPANY_DEFAULTS, ...merged });
       }
       if (key === 'integrations') {
-        Object.assign(merged, { ...INTEGRATION_DEFAULTS, ...merged });
+        Object.assign(merged, omitDeadIntegrationKeys({ ...INTEGRATION_DEFAULTS, ...merged }));
+      }
+      if (key === 'purchasingWhatsApp') {
+        Object.assign(merged, mergePurchasingWhatsAppSettings(merged));
       }
 
       const row = await this.prisma.systemSetting.upsert({
@@ -182,7 +205,19 @@ export class SettingsController {
       const row = await this.prisma.systemSetting.findUnique({ where: { key: 'integrations' } });
       return {
         key: 'integrations',
-        value: { ...INTEGRATION_DEFAULTS, ...((row?.value as object) ?? {}) },
+        value: omitDeadIntegrationKeys({
+          ...INTEGRATION_DEFAULTS,
+          ...((row?.value as object) ?? {}),
+        }),
+      };
+    }
+    if (key === 'purchasingWhatsApp') {
+      const row = await this.prisma.systemSetting.findUnique({
+        where: { key: 'purchasingWhatsApp' },
+      });
+      return {
+        key: 'purchasingWhatsApp',
+        value: mergePurchasingWhatsAppSettings(row?.value),
       };
     }
     const row = await this.prisma.systemSetting.findUnique({ where: { key } });
@@ -218,6 +253,7 @@ export class SettingsController {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (DEAD_INTEGRATION_KEYS.includes(k as (typeof DEAD_INTEGRATION_KEYS)[number])) continue;
       out[k] = SECRET_KEYS.has(k) ? undefined : v;
     }
     return out;
@@ -227,6 +263,7 @@ export class SettingsController {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
       if (SECRET_KEYS.has(k)) continue;
+      if (DEAD_INTEGRATION_KEYS.includes(k as (typeof DEAD_INTEGRATION_KEYS)[number])) continue;
       out[k] = v;
     }
     return out;

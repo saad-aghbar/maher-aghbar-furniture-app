@@ -16,7 +16,7 @@ function emptyDeletes() {
 
 describe('deleteStageDefinition', () => {
   it('rejects locked opening and finishing stages', async () => {
-    for (const code of ['MATERIAL_PREP', 'INSPECTION', 'PACKAGING', 'DELIVERY']) {
+    for (const code of ['MATERIAL_PREP', 'INSPECTION', 'PACKAGING', 'DELIVERY', 'DISMANTLE_RECOVER']) {
       const tx = {
         productionStageDefinition: {
           findUnique: jest.fn().mockResolvedValue({ id: 's1', code }),

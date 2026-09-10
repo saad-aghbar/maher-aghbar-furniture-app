@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
@@ -37,6 +38,17 @@ import { isOwnOrderSchedule } from '@/api/modules/scheduling';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { useToast } from '@/components/feedback/Toast';
+import { adminProductionPlanHref } from './flowRoutes';
+import { stageNeedsTimeApproval } from '@/features/workflow/productionSetupBehavior';
+
+const STAGE_STARTED = new Set([
+  'IN_PROGRESS',
+  'COMPLETED',
+  'PAUSED',
+  'READY_FOR_INSPECTION',
+  'BLOCKED',
+  'SKIPPED',
+]);
 
 type Props = {
   role: ProductionFlowRole;
@@ -50,8 +62,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const router = useRouter();
   const [selected, setSelected] = useState<ProductionFlowStage | null>(null);
   const [durationStage, setDurationStage] = useState<ProductionFlowStage | null>(null);
+  const durationHandoffRef = useRef<ProductionFlowStage | null>(null);
+  const assignHandoffRef = useRef<{ productionOrderId: string; taskId: string } | null>(null);
 
   const salesQuery = useSalesOrderQuery(id, source === 'sales-order');
   const productionQuery = useProductionOrderQuery(id, source === 'production-order');
@@ -72,12 +87,18 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     Boolean(productionOrderId) && role === 'admin',
   );
   const customizeMinutes = useCustomizeOrderWorkflowMinutesMutation(productionOrderId ?? '');
+  const planEditable = workflowQuery.data?.planEditable !== false;
+  const stageTimeEditable = (s: ProductionFlowStage) =>
+    role === 'admin' &&
+    planEditable &&
+    Boolean(s.snapshotNodeId) &&
+    !STAGE_STARTED.has(String(s.status ?? '').toUpperCase());
   const flowScrollBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
 
   const awaitingTimeApproval = useMemo(() => {
     if (role !== 'admin') return false;
     const graph = workflowQuery.data;
-    if (graph?.stages?.some((s) => s.estimateReviewRequired || !(s.estimatedMinutes && s.estimatedMinutes > 0))) {
+    if (graph?.stages?.some((s) => stageNeedsTimeApproval(s))) {
       return true;
     }
     const sched = scheduleQuery.data;
@@ -223,7 +244,18 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
             {t('mobile.productionFlow.title')}
           </AppText>
           {role === 'admin' && productionOrderId ? (
-            <AssignOrderWorkflowCard productionOrderId={productionOrderId} />
+            <AssignOrderWorkflowCard
+              productionOrderId={productionOrderId}
+              preferredScope={
+                source === 'production-order' &&
+                (productionQuery.data as { originType?: string } | undefined)?.originType &&
+                ['RETURN_WORK', 'REPLACEMENT'].includes(
+                  String((productionQuery.data as { originType?: string }).originType),
+                )
+                  ? 'RETURN'
+                  : 'STANDARD'
+              }
+            />
           ) : (
             <EmptyState
               title={t('mobile.production.workflow.needsWorkflowTitle')}
@@ -434,8 +466,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               onStagePress={(stage) => {
                 if (
                   role === 'admin' &&
-                  (stage.estimateReviewRequired ||
-                    !(stage.estimatedMinutes && stage.estimatedMinutes > 0)) &&
+                  stageNeedsTimeApproval(stage) &&
                   stage.snapshotNodeId
                 ) {
                   setDurationStage(stage);
@@ -579,8 +610,36 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
         <AdminStageDrillSheet
           open={Boolean(selected)}
           onClose={() => setSelected(null)}
+          onClosed={() => {
+            if (durationHandoffRef.current) {
+              setDurationStage(durationHandoffRef.current);
+              durationHandoffRef.current = null;
+              return;
+            }
+            const assign = assignHandoffRef.current;
+            if (assign) {
+              assignHandoffRef.current = null;
+              router.push(adminProductionPlanHref(assign.productionOrderId, assign.taskId));
+            }
+          }}
           stage={selected}
           flow={model}
+          canEditTime={selected ? stageTimeEditable(selected) : false}
+          onChangeTime={() => {
+            if (!selected) return;
+            durationHandoffRef.current = selected;
+            assignHandoffRef.current = null;
+            setSelected(null);
+          }}
+          onAssignWorker={() => {
+            if (!productionOrderId || !selected?.taskId) return;
+            assignHandoffRef.current = {
+              productionOrderId,
+              taskId: selected.taskId,
+            };
+            durationHandoffRef.current = null;
+            setSelected(null);
+          }}
         />
       ) : (
         <DealerStageSheet
@@ -597,9 +656,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           onClose={() => setDurationStage(null)}
           stageName={durationStage?.name ?? ''}
           initialMinutes={durationStage?.estimatedMinutes}
+          assignedWorkerName={durationStage?.assignees[0]?.name ?? null}
           saving={customizeMinutes.isPending}
           onSave={async (minutes) => {
             if (!durationStage?.snapshotNodeId) return;
+            const workerName = durationStage.assignees[0]?.name?.trim() ?? '';
             try {
               await customizeMinutes.mutateAsync({
                 snapshotNodeId: durationStage.snapshotNodeId,
@@ -607,7 +668,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               });
               showToast({
                 variant: 'success',
-                message: t('mobile.production.workflow.stageDurationSaved'),
+                message: workerName
+                  ? t('mobile.production.workflow.stageTimeSavedWorkerRemoved', {
+                      worker: workerName,
+                    })
+                  : t('mobile.production.workflow.stageDurationSaved'),
               });
               setDurationStage(null);
               void workflowQuery.refetch();

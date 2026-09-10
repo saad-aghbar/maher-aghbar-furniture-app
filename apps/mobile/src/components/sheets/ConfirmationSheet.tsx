@@ -48,7 +48,11 @@ export function ConfirmationSheet({
   const withReason = Boolean(reasonLabel);
   const trimmed = reason.trim();
   const missingRequired = reasonRequired && withReason && !trimmed;
-  const pill = { borderRadius: theme.radius.xl } as const;
+  const pill = {
+    borderRadius: theme.radius.full,
+    minHeight: theme.sizes.touch.min,
+    paddingVertical: 0,
+  } as const;
 
   useEffect(() => {
     if (!open) {

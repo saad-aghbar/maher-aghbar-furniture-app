@@ -6,17 +6,19 @@ import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, API_URL } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { buildReceivePayload, isFabricCategory } from '@/lib/purchase-order-payload';
 import {
   Alert,
   Button,
   Card,
   EmptyState,
   ErrorState,
-  Input,
   Modal,
+  NumberStepper,
   Select,
   Skeleton,
   StatusBadge,
+  TextArea,
   Table,
   TableBody,
   TableCell,
@@ -35,11 +37,13 @@ interface PoDetail {
   id: string;
   number: string;
   status: string;
+  origin?: string | null;
   total?: string | number;
   subtotal?: string | number;
   taxAmount?: string | number;
   notes?: string | null;
   warehouseId?: string | null;
+  warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
   supplier?: { id: string; name: string; nameAr?: string; nameEn?: string; code?: string };
   presentation?: {
     phase: string;
@@ -64,12 +68,17 @@ interface PoDetail {
     inventoryItemId?: string | null;
     receivedQty?: number | string;
     remainingQty?: number | string;
+    warehouseId?: string | null;
+    locationId?: string | null;
+    warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
+    location?: { id: string; code: string; name?: string | null } | null;
     inventoryItem?: {
       id: string;
       sku?: string;
       nameEn?: string;
       nameAr?: string;
       unit?: string | null;
+      category?: string | null;
       imageUrl?: string | null;
     } | null;
   }>;
@@ -78,11 +87,13 @@ interface PoDetail {
     number: string;
     createdAt?: string;
     notes?: string | null;
+    warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
     lines?: Array<{
       id?: string;
       receivedQty?: number | string;
       rejectedQty?: number | string | null;
       unitCost?: number | string | null;
+      location?: { id: string; code: string; name?: string | null } | null;
       inventoryItem?: { sku?: string; nameEn?: string; nameAr?: string } | null;
     }>;
   }>;
@@ -111,6 +122,25 @@ interface Warehouse {
   nameEn: string;
   nameAr?: string;
   type?: string;
+  locations?: Array<{
+    id: string;
+    code: string;
+    name?: string | null;
+    isDefault?: boolean;
+    isActive?: boolean;
+  }>;
+}
+
+function locationsForWarehouse(warehouses: Warehouse[], warehouseId?: string) {
+  return (warehouses.find((w) => w.id === warehouseId)?.locations ?? []).filter(
+    (loc) => loc.isActive !== false,
+  );
+}
+
+function defaultLocationId(warehouses: Warehouse[], warehouseId?: string, current?: string) {
+  const locs = locationsForWarehouse(warehouses, warehouseId);
+  if (current && locs.some((loc) => loc.id === current)) return current;
+  return locs.find((loc) => loc.isDefault)?.id ?? locs[0]?.id ?? '';
 }
 
 function phaseFallback(labelKey: string | undefined, phase: string | undefined): string {
@@ -139,11 +169,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const [error, setError] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [whatsappDraftTo, setWhatsappDraftTo] = useState<string | null>(null);
+  const [whatsappDraftBody, setWhatsappDraftBody] = useState('');
+  const [whatsappTemplateBody, setWhatsappTemplateBody] = useState('');
   const [whatsappBody, setWhatsappBody] = useState<string | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [warehouseId, setWarehouseId] = useState('');
+  const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
+  const [lineWarehouses, setLineWarehouses] = useState<Record<string, string>>({});
+  const [lineLocations, setLineLocations] = useState<Record<string, string>>({});
   const [receivedQtys, setReceivedQtys] = useState<Record<string, string>>({});
-  const [unitCosts, setUnitCosts] = useState<Record<string, string>>({});
   const [rejectedQtys, setRejectedQtys] = useState<Record<string, string>>({});
 
   const detailQuery = useQuery({
@@ -174,9 +209,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       apiFetch<{
         purchaseOrder: { id: string };
         whatsapp: { ok: boolean; to: string | null; body: string };
-      }>(`/api/v1/purchase-orders/${params.id}/send`, { method: 'POST' }),
+      }>(`/api/v1/purchase-orders/${params.id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ body: whatsappDraftBody || undefined }),
+      }),
     onSuccess: async (result) => {
       setSendOpen(false);
+      setSendConfirmOpen(false);
       setWhatsappBody(result.whatsapp.body);
       if (result.whatsapp.ok && result.whatsapp.to) {
         setBanner(tc('whatsappSentOk', { to: result.whatsapp.to }));
@@ -195,43 +234,37 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
     mutationFn: async () => {
       const po = detailQuery.data;
       if (!po) throw new Error('missing');
-      const wh = warehouseId || po.warehouseId;
-      if (!wh) throw new Error(tc('selectWarehouseRequired'));
-      const lines = (po.lines ?? [])
-        .filter((line) => line.inventoryItemId)
-        .map((line) => {
-          const remaining =
-            line.remainingQty != null
-              ? Number(line.remainingQty)
-              : Math.max(0, Number(line.quantity) - Number(line.receivedQty ?? 0));
-          const qty = Number(receivedQtys[line.id] ?? remaining) || 0;
-          const unitCost =
-            Number(unitCosts[line.id] ?? line.unitPrice) || Number(line.unitPrice) || 0;
-          const rejectedQty = Number(rejectedQtys[line.id] ?? 0) || 0;
-          return {
+      const payload = buildReceivePayload(
+        (po.lines ?? [])
+          .filter((line) => line.inventoryItemId)
+          .map((line) => ({
             inventoryItemId: line.inventoryItemId!,
             orderedQty: Number(line.quantity),
-            receivedQty: qty,
-            unitCost,
-            ...(rejectedQty > 0 ? { rejectedQty } : {}),
-          };
-        })
-        .filter((line) => line.receivedQty > 0);
-      if (lines.length === 0) throw new Error(tc('selectInventoryItemRequired'));
+            receiveNow: receivedQtys[line.id] ?? '0',
+            rejectedQty: rejectedQtys[line.id] ?? '0',
+            warehouseId: lineWarehouses[line.id] || po.warehouseId || undefined,
+            locationId: lineLocations[line.id] || undefined,
+          })),
+      );
+      if (payload.lines.length === 0) throw new Error(tc('selectInventoryItemRequired'));
+      const fallbackWarehouse =
+        payload.lines[0]?.warehouseId || po.warehouseId || warehousesQuery.data?.[0]?.id;
+      if (!fallbackWarehouse) throw new Error(tc('selectWarehouseRequired'));
       return apiFetch(`/api/v1/purchase-orders/${params.id}/goods-receipts`, {
         method: 'POST',
         body: JSON.stringify({
-          warehouseId: wh,
+          warehouseId: fallbackWarehouse,
           idempotencyKey:
             typeof crypto !== 'undefined' && 'randomUUID' in crypto
               ? crypto.randomUUID()
               : `grn-${params.id}-${Date.now()}`,
-          lines,
+          ...payload,
         }),
       });
     },
     onSuccess: async () => {
       setReceiveOpen(false);
+      setReceiveConfirmOpen(false);
       setBanner(tc('goodsReceiptPosted'));
       await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
@@ -341,6 +374,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
             ) : (
               <StatusBadge status={po.status} />
             )}
+            {po.origin && po.origin !== 'MANUAL' ? <StatusBadge status={po.origin} /> : null}
             <Button
               variant="ghost"
               size="sm"
@@ -362,7 +396,23 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Button onClick={() => setApproveOpen(true)}>{tc('approve')}</Button>
             ) : null}
             {canSend ? (
-              <Button variant="secondary" onClick={() => setSendOpen(true)}>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    const draft = await apiFetch<{ to: string | null; body: string }>(
+                      `/api/v1/purchase-orders/${params.id}/whatsapp-draft`,
+                      { method: 'POST' },
+                    );
+                    setWhatsappDraftTo(draft.to);
+                    setWhatsappDraftBody(draft.body);
+                    setWhatsappTemplateBody(draft.body);
+                    setSendOpen(true);
+                  } catch (err) {
+                    setError(mutationErrorMessage(err));
+                  }
+                }}
+              >
                 {po.status === 'SENT' ? tc('resendWhatsapp') : tc('sendPurchaseOrder')}
               </Button>
             ) : null}
@@ -370,7 +420,30 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Button
                 variant="secondary"
                 onClick={() => {
-                  setWarehouseId(po.warehouseId ?? warehousesQuery.data?.[0]?.id ?? '');
+                  setLineWarehouses(
+                    Object.fromEntries(
+                      lines.map((line) => [
+                        line.id,
+                        line.warehouseId ?? po.warehouseId ?? warehousesQuery.data?.[0]?.id ?? '',
+                      ]),
+                    ),
+                  );
+                  setLineLocations(
+                    Object.fromEntries(
+                      lines.map((line) => {
+                        const warehouseId =
+                          line.warehouseId ?? po.warehouseId ?? warehousesQuery.data?.[0]?.id ?? '';
+                        return [
+                          line.id,
+                          defaultLocationId(
+                            warehousesQuery.data ?? [],
+                            warehouseId,
+                            line.locationId ?? '',
+                          ),
+                        ];
+                      }),
+                    ),
+                  );
                   setReceivedQtys(
                     Object.fromEntries(
                       lines.map((line) => {
@@ -383,11 +456,6 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                               );
                         return [line.id, String(remaining)];
                       }),
-                    ),
-                  );
-                  setUnitCosts(
-                    Object.fromEntries(
-                      lines.map((line) => [line.id, String(Number(line.unitPrice) || 0)]),
                     ),
                   );
                   setRejectedQtys(
@@ -431,17 +499,40 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
           <pre className="mt-2 whitespace-pre-wrap text-sm" dir="ltr">
             {whatsappBody || po.whatsappLastBody}
           </pre>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="mt-2"
-            onClick={() => {
-              void navigator.clipboard.writeText(whatsappBody || po.whatsappLastBody || '');
-              setBanner(tc('copyWhatsapp'));
-            }}
-          >
-            {tc('copyWhatsapp')}
-          </Button>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                void navigator.clipboard.writeText(whatsappBody || po.whatsappLastBody || '');
+                setBanner(tc('copyWhatsapp'));
+              }}
+            >
+              {tc('copyWhatsapp')}
+            </Button>
+            {canSend ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  try {
+                    const draft = await apiFetch<{ to: string | null; body: string }>(
+                      `/api/v1/purchase-orders/${params.id}/whatsapp-draft`,
+                      { method: 'POST' },
+                    );
+                    setWhatsappDraftTo(draft.to);
+                    setWhatsappDraftBody(po.whatsappLastBody || draft.body);
+                    setWhatsappTemplateBody(draft.body);
+                    setSendOpen(true);
+                  } catch (err) {
+                    setError(mutationErrorMessage(err));
+                  }
+                }}
+              >
+                {tc('resendWhatsapp')}
+              </Button>
+            ) : null}
+          </div>
         </Alert>
       ) : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
@@ -510,6 +601,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
             <TableHead>
               <TableRow>
                 <TableHeaderCell>{tc('material')}</TableHeaderCell>
+                <TableHeaderCell>{tPurchasing('destination')}</TableHeaderCell>
                 <TableHeaderCell>{tc('qty')}</TableHeaderCell>
                 <TableHeaderCell>{tc('receivedQty')}</TableHeaderCell>
                 <TableHeaderCell>{tc('remainingQty')}</TableHeaderCell>
@@ -540,6 +632,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                         />
                         <span>{name}</span>
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const warehouse = line.warehouse ?? po.warehouse;
+                        if (!warehouse) return '—';
+                        return `${warehouse.code}${line.location ? ` · ${line.location.code}` : ''}`;
+                      })()}
                     </TableCell>
                     <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
                     <TableNumericCell>{received}</TableNumericCell>
@@ -572,6 +671,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 <div className="flex justify-between gap-3">
                   <span className="font-medium" dir="ltr">
                     {grn.number}
+                    {grn.warehouse ? ` · ${grn.warehouse.code}` : ''}
                   </span>
                   <span className="text-text-secondary" dir="ltr">
                     {grn.createdAt?.slice(0, 10) ?? '—'}
@@ -585,6 +685,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                           ? localizedName(locale, gl.inventoryItem)
                           : '') || '—'}{' '}
                         × {Number(gl.receivedQty ?? 0)}
+                        {gl.location?.code ? ` · ${gl.location.code}` : ''}
                         {Number(gl.rejectedQty ?? 0) > 0
                           ? ` (−${Number(gl.rejectedQty)} ${tc('rejectedQty')})`
                           : ''}
@@ -660,39 +761,64 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         onClose={() => setApproveOpen(false)}
       />
 
-      <ConfirmDialog
+      <Modal
         open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        title={tPurchasing('whatsappPreview')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setWhatsappDraftBody(whatsappTemplateBody)}>
+              {tPurchasing('resetTemplate')}
+            </Button>
+            <Button variant="secondary" onClick={() => setSendOpen(false)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button onClick={() => setSendConfirmOpen(true)}>{tc('sendWhatsApp')}</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {whatsappDraftTo ? (
+            <p className="text-sm text-text-secondary" dir="ltr">
+              {whatsappDraftTo}
+            </p>
+          ) : (
+            <p className="text-sm text-text-secondary">{tc('whatsappNoPhone')}</p>
+          )}
+          <TextArea
+            label={tc('whatsappMessage')}
+            value={whatsappDraftBody}
+            onChange={(e) => setWhatsappDraftBody(e.target.value)}
+          />
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={sendConfirmOpen}
         title={tc('sendPurchaseOrder')}
         description={tc('sendPurchaseOrderConfirm')}
         confirmLabel={tc('sendPurchaseOrder')}
         loading={sendMutation.isPending}
         error={error}
         onConfirm={() => sendMutation.mutate()}
-        onClose={() => setSendOpen(false)}
+        onClose={() => setSendConfirmOpen(false)}
       />
 
       <Modal
         open={receiveOpen}
         onClose={() => setReceiveOpen(false)}
         title={tc('goodsReceipts')}
+        className="max-w-3xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
               {tCommon('cancel')}
             </Button>
-            <Button loading={receiveMutation.isPending} onClick={() => receiveMutation.mutate()}>
-              {tCommon('save')}
-            </Button>
+            <Button onClick={() => setReceiveConfirmOpen(true)}>{tCommon('save')}</Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Select
-            label={tc('warehouses')}
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-            options={warehouseOptions}
-          />
           {lines
             .filter((line) => line.inventoryItemId)
             .map((line) => {
@@ -700,53 +826,92 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 line.remainingQty != null
                   ? Number(line.remainingQty)
                   : Math.max(0, Number(line.quantity) - Number(line.receivedQty ?? 0));
+              const fabric = isFabricCategory(line.inventoryItem?.category);
+              const warehouseId = lineWarehouses[line.id] ?? '';
+              const locations = locationsForWarehouse(warehousesQuery.data ?? [], warehouseId);
               return (
-                <div key={line.id} className="flex flex-wrap items-start gap-3">
-                  <InventoryItemThumb
-                    src={line.inventoryItem?.imageUrl}
-                    alt={line.description}
-                    size={36}
-                    className="mt-6"
-                  />
-                  <div className="min-w-[140px] flex-1 space-y-1">
-                    <p className="text-sm font-medium">{line.description}</p>
-                    <p className="text-xs text-text-secondary" dir="ltr">
-                      {tc('receivedQty')}: {Number(line.receivedQty ?? 0)} · {tc('remainingQty')}:{' '}
-                      {remaining}
-                    </p>
+                <div key={line.id} className="space-y-3 rounded-xl border border-border p-3">
+                  <div className="flex items-start gap-3">
+                    <InventoryItemThumb
+                      src={line.inventoryItem?.imageUrl}
+                      alt={line.description}
+                      size={36}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{line.description}</p>
+                      <p className="text-xs text-text-secondary" dir="ltr">
+                        {tc('receivedQty')}: {Number(line.receivedQty ?? 0)} · {tc('remainingQty')}:{' '}
+                        {remaining}
+                      </p>
+                    </div>
                   </div>
-                  <Input
-                    label={`${tc('qty')}`}
-                    type="number"
-                    value={receivedQtys[line.id] ?? ''}
-                    onChange={(e) =>
-                      setReceivedQtys((prev) => ({ ...prev, [line.id]: e.target.value }))
-                    }
-                    className="w-28"
-                  />
-                  <Input
-                    label={tc('unitCost')}
-                    type="number"
-                    value={unitCosts[line.id] ?? ''}
-                    onChange={(e) =>
-                      setUnitCosts((prev) => ({ ...prev, [line.id]: e.target.value }))
-                    }
-                    className="w-32"
-                  />
-                  <Input
-                    label={tc('rejectedQty')}
-                    type="number"
-                    value={rejectedQtys[line.id] ?? ''}
-                    onChange={(e) =>
-                      setRejectedQtys((prev) => ({ ...prev, [line.id]: e.target.value }))
-                    }
-                    className="w-28"
-                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <NumberStepper
+                      label={tc('qty')}
+                      value={receivedQtys[line.id] ?? ''}
+                      min={0}
+                      max={remaining}
+                      onChange={(value) =>
+                        setReceivedQtys((prev) => ({ ...prev, [line.id]: value }))
+                      }
+                    />
+                    <div className="space-y-1">
+                      <p className="text-xs text-text-secondary">{tc('unitCost')}</p>
+                      <p className="text-sm" dir="ltr">
+                        {Number(line.unitPrice).toFixed(2)}
+                      </p>
+                    </div>
+                    <NumberStepper
+                      label={tc('rejectedQty')}
+                      value={rejectedQtys[line.id] ?? ''}
+                      min={0}
+                      onChange={(value) =>
+                        setRejectedQtys((prev) => ({ ...prev, [line.id]: value }))
+                      }
+                    />
+                    <Select
+                      label={tPurchasing('destination')}
+                      value={warehouseId}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setLineWarehouses((prev) => ({ ...prev, [line.id]: next }));
+                        setLineLocations((prev) => ({
+                          ...prev,
+                          [line.id]: defaultLocationId(warehousesQuery.data ?? [], next),
+                        }));
+                      }}
+                      options={warehouseOptions}
+                    />
+                    <Select
+                      label={fabric ? tPurchasing('holdingLocation') : tPurchasing('bin')}
+                      value={lineLocations[line.id] ?? ''}
+                      onChange={(e) =>
+                        setLineLocations((prev) => ({ ...prev, [line.id]: e.target.value }))
+                      }
+                    >
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.code}
+                          {loc.name ? ` — ${loc.name}` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               );
             })}
         </div>
       </Modal>
+      <ConfirmDialog
+        open={receiveConfirmOpen}
+        title={tc('goodsReceipts')}
+        description={tc('goodsReceiptPosted')}
+        confirmLabel={tCommon('save')}
+        loading={receiveMutation.isPending}
+        error={error}
+        onConfirm={() => receiveMutation.mutate()}
+        onClose={() => setReceiveConfirmOpen(false)}
+      />
     </div>
   );
 }

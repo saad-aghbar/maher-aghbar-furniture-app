@@ -43,6 +43,14 @@ const order: ProductionOrderDetail = {
       sortOrder: 3,
       status: 'PENDING',
       dependsOnCodes: ['ASM'],
+      backForRework: true,
+    },
+    {
+      code: 'INSPECTION',
+      nameEn: 'Inspection',
+      sortOrder: 4,
+      status: 'IN_PROGRESS',
+      dependsOnCodes: ['UPH'],
     },
   ],
   tasks: [],
@@ -51,12 +59,14 @@ const order: ProductionOrderDetail = {
 describe('selectProductionJourney / whereNow', () => {
   it('builds journey stages with workers and bookends from API', () => {
     const journey = selectProductionJourney(order, 'en');
-    expect(journey).toHaveLength(3);
+    expect(journey).toHaveLength(4);
     expect(journey[0]?.name).toBe('Cutting');
     expect(journey[0]?.assigneeName).toBe('Ahmad');
     expect(journey[0]?.timing).toBe('on_time');
     expect(journey[1]?.status).toBe('IN_PROGRESS');
     expect(journey[2]?.status).toBe('PENDING');
+    expect(journey[2]?.backForRework).toBe(true);
+    expect(journey[3]?.inspectionProgress ?? null).toBeNull();
   });
 
   it('answers where-now from current stage and workers', () => {

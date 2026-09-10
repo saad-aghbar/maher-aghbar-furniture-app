@@ -72,7 +72,7 @@ export function resolveSalesOrderCancelPhase(params: {
   if (
     shippedOrDelivered ||
     status === 'DELIVERED' ||
-    status === 'COMPLETED'
+    status === 'COMPLETED' // legacy synonym of DELIVERED — runtime writes DELIVERED only
   ) {
     return 5;
   }

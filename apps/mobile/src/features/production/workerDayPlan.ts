@@ -1,6 +1,7 @@
 /**
  * Time-based worker-day plan for assign UX.
- * Capacity is hours, not “one order per day”. Nothing moves automatically.
+ * Capacity is hours, not “one order per day”. Planning stays manual;
+ * pause/leftover execution facts update occupancy immediately.
  */
 
 export type WorkerDayBusyBlock = {
@@ -9,6 +10,7 @@ export type WorkerDayBusyBlock = {
   label: string;
   salesOrderNumber?: string | null;
   stage?: string | null;
+  kind?: 'work' | 'stopped';
 };
 
 export type WorkerDayTimelineBlock =
@@ -19,6 +21,12 @@ export type WorkerDayTimelineBlock =
       label: string;
       salesOrderNumber?: string | null;
       stage?: string | null;
+      durationMinutes: number;
+    }
+  | {
+      kind: 'stopped';
+      startMs: number;
+      endMs: number;
       durationMinutes: number;
     }
   | {
@@ -94,7 +102,10 @@ export function buildWorkerDayPlan(input: BuildWorkerDayPlanInput): WorkerDayPla
 
   clipped.sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
 
-  const plannedMinutes = clipped.reduce(
+  const occupying = clipped.filter((b) => b.kind !== 'stopped');
+  const stopped = clipped.filter((b) => b.kind === 'stopped');
+
+  const plannedMinutes = occupying.reduce(
     (sum, b) => sum + minutesBetween(b.startMs, b.endMs),
     0,
   );
@@ -107,7 +118,7 @@ export function buildWorkerDayPlan(input: BuildWorkerDayPlanInput): WorkerDayPla
 
   const freeWindows: WorkerDayPlan['freeWindows'] = [];
   let cursor = dayStart;
-  for (const b of clipped) {
+  for (const b of occupying) {
     if (b.startMs > cursor) {
       freeWindows.push({
         startMs: cursor,
@@ -130,14 +141,14 @@ export function buildWorkerDayPlan(input: BuildWorkerDayPlanInput): WorkerDayPla
     : null;
   const proposedConflicts =
     proposedClip != null &&
-    clipped.some((b) =>
+    occupying.some((b) =>
       overlaps(proposedClip.start, proposedClip.end, b.startMs, b.endMs),
     );
 
   // Timeline = free windows + busy, with proposed overlaid as its own block when set.
   const blocks: WorkerDayTimelineBlock[] = [];
   cursor = dayStart;
-  for (const b of clipped) {
+  for (const b of occupying) {
     if (b.startMs > cursor) {
       pushGapWithProposed(blocks, cursor, b.startMs, proposedClip, proposedConflicts);
     }
@@ -172,13 +183,23 @@ export function buildWorkerDayPlan(input: BuildWorkerDayPlanInput): WorkerDayPla
     blocks.sort((a, b) => a.startMs - b.startMs);
   }
 
+  for (const b of stopped) {
+    blocks.push({
+      kind: 'stopped',
+      startMs: b.startMs,
+      endMs: b.endMs,
+      durationMinutes: minutesBetween(b.startMs, b.endMs),
+    });
+  }
+  blocks.sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+
   return {
     capacityMinutes,
     plannedMinutes,
     availableMinutes,
     loadPercent,
     overCapacity,
-    taskCount: clipped.length,
+    taskCount: occupying.length,
     blocks: blocks.filter((b) => b.endMs > b.startMs),
     freeWindows: freeWindows.filter((w) => w.durationMinutes > 0),
   };
@@ -262,9 +283,10 @@ export function windowFromFreeBlock(
   if (!(endMs > startMs)) return null;
   const need = Math.max(1, Math.round(durationMinutes || 1)) * 60_000;
   const span = endMs - startMs;
+  if (span < need) return null;
   return {
     startMs,
-    endMs: startMs + Math.min(need, span),
+    endMs: startMs + need,
   };
 }
 
@@ -307,13 +329,17 @@ export function buildDayPickTimeline(
     (b): b is Extract<WorkerDayTimelineBlock, { kind: 'busy' }> =>
       b.kind === 'busy',
   );
+  const stopped = plan.blocks.filter(
+    (b): b is Extract<WorkerDayTimelineBlock, { kind: 'stopped' }> =>
+      b.kind === 'stopped',
+  );
   const available: WorkerDayTimelineBlock[] = picks.map((p) => ({
     kind: 'available',
     startMs: p.startMs,
     endMs: p.endMs,
     durationMinutes: p.durationMinutes,
   }));
-  return [...busy, ...available].sort(
+  return [...busy, ...stopped, ...available].sort(
     (a, b) => a.startMs - b.startMs || a.endMs - b.endMs,
   );
 }
@@ -337,14 +363,16 @@ export function localDayBounds(
   ymd: string,
   startHour = 8,
   endHour = 16,
+  startMinute = 0,
+  endMinute = 0,
 ): { dayStartMs: number; dayEndMs: number } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
   if (!m) return null;
   const y = Number(m[1]);
   const mo = Number(m[2]) - 1;
   const d = Number(m[3]);
-  const dayStartMs = new Date(y, mo, d, startHour, 0, 0, 0).getTime();
-  const dayEndMs = new Date(y, mo, d, endHour, 0, 0, 0).getTime();
+  const dayStartMs = new Date(y, mo, d, startHour, startMinute, 0, 0).getTime();
+  const dayEndMs = new Date(y, mo, d, endHour, endMinute, 0, 0).getTime();
   if (!Number.isFinite(dayStartMs) || !Number.isFinite(dayEndMs)) return null;
   return { dayStartMs, dayEndMs };
 }

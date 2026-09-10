@@ -1,5 +1,10 @@
 import {
+  BIN_QR_PREFIX,
+  binScanPayload,
+  defaultBinCode,
+  formatBinQrCode,
   inventoryScanPayload,
+  parseBinScanCode,
   parseWipScanCode,
   printableScanCode,
   WIP_KIT_QR_PREFIX,
@@ -55,5 +60,32 @@ describe('parseWipScanCode', () => {
       kind: 'unknown',
       idOrCode: 'WIP-PO-1-CARPENTRY',
     });
+  });
+});
+
+describe('bin scan payloads', () => {
+  it('formats a unique shelf code from warehouse + bin', () => {
+    expect(defaultBinCode('RAW')).toBe('RAW-MAIN');
+    expect(formatBinQrCode('RAW', 'A1')).toBe('BIN-RAW-A1');
+  });
+
+  it('parses BIN: id fallback and BIN- printed codes', () => {
+    expect(parseBinScanCode(`${BIN_QR_PREFIX}loc-1`)).toEqual({
+      kind: 'bin',
+      idOrCode: 'loc-1',
+    });
+    expect(parseBinScanCode('BIN-RAW-MAIN')).toEqual({
+      kind: 'bin',
+      idOrCode: 'BIN-RAW-MAIN',
+    });
+    expect(parseBinScanCode('RAW-A1')).toEqual({
+      kind: 'unknown',
+      idOrCode: 'RAW-A1',
+    });
+  });
+
+  it('prefers stored qrCode on the payload', () => {
+    expect(binScanPayload({ qrCode: 'BIN-RAW-MAIN', id: 'loc-1' })).toBe('BIN-RAW-MAIN');
+    expect(binScanPayload({ qrCode: null, id: 'loc-1' })).toBe(`${BIN_QR_PREFIX}loc-1`);
   });
 });

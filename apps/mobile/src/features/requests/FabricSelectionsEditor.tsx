@@ -1,5 +1,6 @@
 import { Pressable, View } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -110,11 +111,13 @@ export function FabricSelectionsEditor({ value, onChange }: Props) {
             onChangeText={(role) => patch(index, { role })}
             placeholder={t('mobile.newOrder.fabricRolePlaceholder')}
           />
-          <TextField
+          <QtyStepperField
             label={t('mobile.newOrder.fabricQty')}
             value={row.quantity}
             onChangeText={(quantity) => patch(index, { quantity })}
-            keyboardType="decimal-pad"
+            min={0}
+            step={0.5}
+            unit="m"
             placeholder={t('mobile.newOrder.fabricQtyPlaceholder')}
           />
         </View>

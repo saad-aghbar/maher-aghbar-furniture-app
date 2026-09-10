@@ -35,6 +35,8 @@ import {
   useFinishedLotsInfiniteQuery,
   useWarehousesQuery,
 } from './query';
+import { finishedLotMatchesOrderId } from './finishedOrderDetailMatch';
+import { locationPickerLabel } from './pickDefaultLocation';
 import { selectFinishedOrders } from './selectFinishedOrders';
 import { warehousesForLifecycle } from './preferWarehouseForReceive';
 import { transferableQty } from './selectInventoryPick';
@@ -358,7 +360,7 @@ export function InventoryFinishedOrderScreen() {
     const hist = flattenFinishedLotsPages(historyQuery.data);
     const byId = new Map<string, FinishedLot>();
     for (const lot of [...live, ...hist]) {
-      if (lot.salesOrder?.id === salesOrderId || lot.salesOrderNumber === salesOrderId) {
+      if (finishedLotMatchesOrderId(lot, salesOrderId)) {
         byId.set(lot.id, lot);
       }
     }
@@ -824,9 +826,9 @@ export function InventoryFinishedOrderScreen() {
                     <AppText style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
                       {t('mobile.inventory.qtyOnHand', { qty: Number(lot.quantity) || 0 })}
                     </AppText>
-                    {lot.location?.code ? (
+                    {locationPickerLabel(lot.location) ? (
                       <AppText variant="caption" color="muted" dir="ltr">
-                        {lot.location.code}
+                        {locationPickerLabel(lot.location)}
                       </AppText>
                     ) : null}
                     {lot.qrCode ? (

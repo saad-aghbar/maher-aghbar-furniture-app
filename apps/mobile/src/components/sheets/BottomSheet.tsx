@@ -455,7 +455,11 @@ export function BottomSheet({
       visible={sheetModalVisible}
       transparent
       animationType="none"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        // Yielding the host Modal (overlay / scanner) must not dismiss the host.
+        if (hostBlocked) return;
+        onClose();
+      }}
       statusBarTranslucent
       presentationStyle="overFullScreen"
     >

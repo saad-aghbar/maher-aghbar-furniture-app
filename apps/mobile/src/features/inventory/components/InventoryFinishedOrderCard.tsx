@@ -160,6 +160,29 @@ export function InventoryFinishedOrderCard({
                 {order.salesOrderNumber}
               </AppText>
             </View>
+            {order.originKind ? (
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: theme.radius.full,
+                  backgroundColor: colors.brandSoft,
+                  borderWidth: 1,
+                  borderColor: colors.brand,
+                }}
+              >
+                <AppText
+                  variant="caption"
+                  weight="semibold"
+                  numberOfLines={1}
+                  style={{ color: colors.brand, fontSize: 10 }}
+                >
+                  {order.originKind === 'REPLACEMENT'
+                    ? t('mobile.production.origin.replacement')
+                    : t('mobile.production.origin.returned')}
+                </AppText>
+              </View>
+            ) : null}
             {poLine ? (
               <AppText
                 variant="caption"

@@ -10,6 +10,9 @@ export const INVENTORY_CATEGORY_GROUPS: Record<InventoryCategoryGroup, Inventory
     InventoryCategory.METAL_ACCESSORY,
     InventoryCategory.DECORATIVE_ACCESSORY,
     InventoryCategory.PACKAGING,
+    InventoryCategory.PAINT,
+    InventoryCategory.ADHESIVE,
+    InventoryCategory.OTHER,
   ],
 };
 

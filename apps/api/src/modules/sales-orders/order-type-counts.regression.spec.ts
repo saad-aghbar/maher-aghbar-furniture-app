@@ -171,4 +171,23 @@ describe('COUNT=DATASET orderTypeCounts regression', () => {
     expect(modifiedPreparing.journeyCounts).toEqual(modified.journeyCounts);
     expect(modifiedPreparing.scopedIds.length).toBe(modified.journeyCounts.preparing);
   });
+
+  it('returned axis keeps the 3-key orderTypeCounts and filters scoped ids', () => {
+    const withReturn: OrderFacetRow[] = [
+      ...DATASET,
+      row({
+        id: 'ret-1',
+        status: 'DELIVERED',
+        hasReturn: true,
+        lines: [{ manufacturingComplexity: 'STANDARD', productId: 'p1' }],
+      }),
+    ];
+    const all = crossFilterOrderFacets(withReturn, {});
+    expect(all.orderTypeCounts.standard).toBeGreaterThan(0);
+    expect(all.returned).toBe(1);
+    const returnedOnly = crossFilterOrderFacets(withReturn, { returned: true });
+    expect(returnedOnly.scopedIds).toEqual(['ret-1']);
+    expect(returnedOnly.orderTypeCounts.standard).toBe(1);
+    expect(returnedOnly.returned).toBe(all.returned);
+  });
 });

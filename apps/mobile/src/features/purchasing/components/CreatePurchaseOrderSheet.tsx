@@ -8,6 +8,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { WarehousePickList } from '@/features/inventory/components/WarehousePickList';
@@ -61,7 +62,7 @@ export function CreatePurchaseOrderSheet({
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [materialOpen, setMaterialOpen] = useState(false);
 
-  const suppliersQuery = useSuppliersQuery(open);
+  const suppliersQuery = useSuppliersQuery(open, { status: 'ACTIVE' });
   const warehousesQuery = useQuery({
     queryKey: ['warehouses-po-create'],
     queryFn: listWarehouses,
@@ -95,16 +96,13 @@ export function CreatePurchaseOrderSheet({
   const totals = useMemo(() => grandTotal(lines), [lines]);
 
   const supplierOptions: PurchasingSupplierOption[] = useMemo(() => {
-    return (suppliersQuery.data?.data ?? [])
-      .filter((s) => s.isCertified !== false)
-      .map((s) => {
+    return (suppliersQuery.data?.data ?? []).map((s) => {
         const name = localizedNamed(locale, s);
         return {
           id: s.id,
           name,
           code: s.code,
           searchText: [s.name, s.nameEn, s.nameAr, s.nameHe, s.code].filter(Boolean).join(' '),
-          isCertified: s.isCertified,
         };
       });
   }, [suppliersQuery.data?.data, locale]);
@@ -291,7 +289,7 @@ export function CreatePurchaseOrderSheet({
                     }}
                   >
                     <View style={{ flex: 1 }}>
-                      <TextField
+                      <QtyStepperField
                         label={t('mobile.purchasing.quantity')}
                         value={line.quantity}
                         onChangeText={(v) =>
@@ -299,20 +297,18 @@ export function CreatePurchaseOrderSheet({
                             prev.map((l) => (l.key === line.key ? { ...l, quantity: v } : l)),
                           )
                         }
-                        keyboardType="decimal-pad"
                       />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <TextField
-                        label={t('mobile.purchasing.unitCost')}
-                        value={line.unitCost}
-                        onChangeText={(v) =>
-                          setLines((prev) =>
-                            prev.map((l) => (l.key === line.key ? { ...l, unitCost: v } : l)),
-                          )
-                        }
-                        keyboardType="decimal-pad"
-                      />
+                    <View style={{ flex: 1, justifyContent: 'center', gap: 2 }}>
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.purchasing.unitCost')}
+                      </AppText>
+                      <AppText weight="medium" dir="ltr">
+                        {formatCurrency(Number(line.unitCost) || 0)}
+                      </AppText>
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.purchasing.unitCostFromInventory')}
+                      </AppText>
                     </View>
                   </View>
                   <View
@@ -381,6 +377,7 @@ export function CreatePurchaseOrderSheet({
         suppliers={supplierOptions}
         selectedId={supplierId}
         overlay
+        allowNone={false}
         onConfirm={(s) => {
           setSupplierId(s?.id ?? null);
           setSupplierName(s?.name ?? null);

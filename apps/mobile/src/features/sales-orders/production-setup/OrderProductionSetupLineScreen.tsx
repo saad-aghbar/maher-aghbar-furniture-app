@@ -979,6 +979,7 @@ export function OrderProductionSetupLineScreen({
           setFabricPickerOpen(false);
         }}
         existingSkus={existingSkus}
+        allowCreate
         onPick={(picked) => {
           if (fabricPickerOpen) {
             setMaterials((prev) => {

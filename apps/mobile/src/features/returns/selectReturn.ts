@@ -40,10 +40,12 @@ export type ReturnCardModel = {
   issuePhotoUrls: string[];
   isPending: boolean;
   needsInfo: boolean;
+  pieceTotal: number;
+  pieceReady: number;
+  pieceInProgress: number;
 };
 
-export const RETURN_FATE_OPTIONS: Exclude<ReturnInventoryFate, 'PENDING'>[] = [
-  'RETURN_TO_STOCK',
+export const RETURN_FATE_OPTIONS: Exclude<ReturnInventoryFate, 'PENDING' | 'RETURN_TO_STOCK'>[] = [
   'REWORK',
   'DAMAGED',
   'SCRAP',
@@ -232,6 +234,9 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
     issuePhotoUrls,
     isPending: approvalStatus === 'PENDING' || approvalStatus === 'NEED_INFO',
     needsInfo: approvalStatus === 'NEED_INFO',
+    pieceTotal: Number(row.pieceSummary?.total ?? 0),
+    pieceReady: Number(row.pieceSummary?.readyToReturn ?? 0),
+    pieceInProgress: Number(row.pieceSummary?.inProgress ?? 0),
   };
 }
 
@@ -270,6 +275,27 @@ export function returnMatchesStatusChip(
     );
   }
   return approval === chip;
+}
+
+const FLOOR_STARTED = new Set([
+  'IN_PROGRESS',
+  'ON_HOLD',
+  'QUALITY_CHECK',
+  'READY_FOR_PACKAGING',
+  'READY_FOR_DELIVERY',
+  'COMPLETED',
+]);
+
+/** Unreleased return work opens the plan desk; released work opens production detail. */
+export function returnWorkOrderHref(wo: {
+  id: string;
+  status?: string | null;
+  releasedToFactoryAt?: string | null;
+}): string {
+  const status = String(wo.status ?? '').toUpperCase();
+  const released = Boolean(wo.releasedToFactoryAt) || FLOOR_STARTED.has(status);
+  if (!released) return `/(app)/(admin)/production/${wo.id}/plan`;
+  return `/(app)/(admin)/production/${wo.id}`;
 }
 
 export type { ReturnReason };

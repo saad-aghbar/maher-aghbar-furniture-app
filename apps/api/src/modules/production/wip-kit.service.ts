@@ -13,19 +13,29 @@ import {
   canConsumeQty,
   custodyFilterForKit,
   incomingWorkStatus,
+  incomingProducerSnapshotIds,
+  isQualityPassthroughStage,
   kitFeedsConsumerNode,
+  nextHopsSkippingQuality,
+  passthroughSnapshotNodeIds,
   remainingReceivable,
   type IncomingWorkStatusKey,
   type WipCustodyFilter,
 } from './workflow/domain/wip-handoff';
-import { labelForPieceIndex, pieceLabelsFromMetadata } from './piece-labels';
+import {
+  fillPieceLabelsToCount,
+  labelForPieceIndex,
+  pieceLabelsFromMetadata,
+} from './piece-labels';
+import { outputQtyForOrder } from './product-inventory-output.resolver';
 import {
   classifyFloorTaskPhase,
   groupIncomingByPredecessorStage,
   isWipDiscrepancyCategory,
-  presentCustody,
   type WipDiscrepancyCategory,
 } from './floor-execution';
+import { productionOriginWhere } from './production-origin';
+import { allocateBinQrCode } from '../inventory/bin-resolve';
 
 type Tx = Prisma.TransactionClient;
 
@@ -37,6 +47,7 @@ const kitInclude = {
       productDescription: true,
       quantity: true,
       status: true,
+      originType: true,
       product: {
         select: { id: true, nameEn: true, nameAr: true, nameHe: true, sku: true, imageUrl: true },
       },
@@ -201,6 +212,7 @@ export class WipKitService {
     to?: string;
     warehouseId?: string;
     q?: string;
+    origin?: 'normal' | 'returned';
   }) {
     // Existing SEMI lots (pre-kit era) → READY kits so the floor board is never empty for real stock.
     await this.backfillKitsFromOpenLots();
@@ -238,11 +250,13 @@ export class WipKitService {
         : { in: [WipKitStatus.OPEN, WipKitStatus.READY, WipKitStatus.CLAIMED, WipKitStatus.CONSUMED] };
 
     const q = String(query?.q ?? '').trim();
+    const originWhere = productionOriginWhere(query?.origin);
     const kits = await this.prisma.wipKit.findMany({
       where: {
         status: statusFilter,
         productionOrderId: query?.productionOrderId,
         warehouseId: query?.warehouseId || undefined,
+        ...(originWhere ? { productionOrder: originWhere } : {}),
         stageInstance: query?.stageCode
           ? { stageDefinition: { code: query.stageCode } }
           : undefined,
@@ -315,7 +329,6 @@ export class WipKitService {
         },
       },
       orderBy: [{ updatedAt: 'desc' }],
-      take: 500,
     });
 
     const custody = String(query?.custody ?? '')
@@ -451,12 +464,7 @@ export class WipKitService {
         select: { id: true, snapshotId: true, metadata: true, expectedPieceCount: true },
       });
       const nextSnapshotNodeIds = snapNode
-        ? (
-            await this.prisma.productionOrderWorkflowSnapshotEdge.findMany({
-              where: { fromSnapshotNodeId: snapNode.id },
-              select: { toSnapshotNodeId: true },
-            })
-          ).map((e) => e.toSnapshotNodeId)
+        ? await this.nextSnapshotHops(this.prisma, snapNode.snapshotId, snapNode.id)
         : [];
 
       const qrCode =
@@ -782,10 +790,7 @@ export class WipKitService {
     });
     if (!snap?.consumesSemiFinished) return;
 
-    const edges = await params.tx.productionOrderWorkflowSnapshotEdge.findMany({
-      where: { snapshotId: snap.snapshotId },
-      select: { fromSnapshotNodeId: true, toSnapshotNodeId: true },
-    });
+    const graph = await this.snapshotHandoffGraph(params.tx, snap.snapshotId);
 
     const kits = await params.tx.wipKit.findMany({
       where: {
@@ -800,7 +805,8 @@ export class WipKitService {
           nextSnapshotNodeIds: kit.nextSnapshotNodeIds,
           snapshotNodeId: kit.snapshotNodeId,
           consumerSnapshotNodeId: snap.id,
-          edges,
+          edges: graph.edges,
+          passthroughNodeIds: graph.passthroughNodeIds,
         })
       ) {
         continue;
@@ -862,9 +868,10 @@ export class WipKitService {
         nameArSnapshot: true,
         nameHeSnapshot: true,
         stageCode: true,
+        executionKind: true,
       },
     });
-    if (!snap?.consumesSemiFinished) {
+    if (!snap?.consumesSemiFinished || isQualityPassthroughStage(snap)) {
       return {
         required: false,
         allReceived: true,
@@ -873,13 +880,13 @@ export class WipKitService {
       };
     }
 
-    const edges = await this.prisma.productionOrderWorkflowSnapshotEdge.findMany({
-      where: { snapshotId: snap.snapshotId },
-      select: { fromSnapshotNodeId: true, toSnapshotNodeId: true },
-    });
-    const predecessorIds = edges
-      .filter((e) => e.toSnapshotNodeId === snap.id)
-      .map((e) => e.fromSnapshotNodeId);
+    const graph = await this.snapshotHandoffGraph(this.prisma, snap.snapshotId);
+    const edges = graph.edges;
+    const predecessorIds = incomingProducerSnapshotIds(
+      snap.id,
+      edges,
+      graph.passthroughNodeIds,
+    );
 
     const predecessorNodes =
       predecessorIds.length > 0
@@ -919,6 +926,7 @@ export class WipKitService {
         snapshotNodeId: k.snapshotNodeId,
         consumerSnapshotNodeId: snap.id,
         edges,
+        passthroughNodeIds: graph.passthroughNodeIds,
       }),
     );
 
@@ -1336,10 +1344,11 @@ export class WipKitService {
         consumesSemiFinished: true,
         snapshotId: true,
         stageCode: true,
+        executionKind: true,
         nameEnSnapshot: true,
       },
     });
-    if (!snap?.consumesSemiFinished) {
+    if (!snap?.consumesSemiFinished || isQualityPassthroughStage(snap)) {
       throw new BadRequestException({
         code: 'WIP_RECEIVE_NOT_APPLICABLE',
         message: 'This stage does not receive semi-finished work.',
@@ -1416,16 +1425,14 @@ export class WipKitService {
       });
     }
 
-    const edges = await this.prisma.productionOrderWorkflowSnapshotEdge.findMany({
-      where: { snapshotId: snap.snapshotId },
-      select: { fromSnapshotNodeId: true, toSnapshotNodeId: true },
-    });
+    const graph = await this.snapshotHandoffGraph(this.prisma, snap.snapshotId);
     if (
       !kitFeedsConsumerNode({
         nextSnapshotNodeIds: kit.nextSnapshotNodeIds,
         snapshotNodeId: kit.snapshotNodeId,
         consumerSnapshotNodeId: snap.id,
-        edges,
+        edges: graph.edges,
+        passthroughNodeIds: graph.passthroughNodeIds,
       })
     ) {
       throw new BadRequestException({
@@ -1654,6 +1661,41 @@ export class WipKitService {
     }
   }
 
+  private async snapshotHandoffGraph(
+    db: Prisma.TransactionClient | PrismaService,
+    snapshotId: string,
+  ) {
+    const [edges, nodes] = await Promise.all([
+      db.productionOrderWorkflowSnapshotEdge.findMany({
+        where: { snapshotId },
+        select: { fromSnapshotNodeId: true, toSnapshotNodeId: true },
+      }),
+      db.productionOrderWorkflowSnapshotNode.findMany({
+        where: { snapshotId },
+        select: { id: true, stageCode: true, executionKind: true },
+      }),
+    ]);
+    return {
+      edges,
+      nodes,
+      passthroughNodeIds: passthroughSnapshotNodeIds(nodes),
+    };
+  }
+
+  private async nextSnapshotHops(
+    db: Prisma.TransactionClient | PrismaService,
+    snapshotId: string,
+    fromSnapshotNodeId: string,
+  ): Promise<string[]> {
+    if (!snapshotId) return [];
+    const graph = await this.snapshotHandoffGraph(db, snapshotId);
+    return nextHopsSkippingQuality({
+      fromSnapshotNodeId,
+      edges: graph.edges,
+      nodes: graph.nodes,
+    });
+  }
+
   private async kitProducedQty(kitId: string): Promise<number> {
     const pieces = await this.prisma.wipPiece.findMany({
       where: { kitId },
@@ -1713,7 +1755,12 @@ export class WipKitService {
     });
     if (!snap) return true;
 
-    const consumers = snap.nodes.filter((n) => n.consumesSemiFinished && !n.isSkipped);
+    const consumers = snap.nodes.filter(
+      (n) =>
+        n.consumesSemiFinished &&
+        !n.isSkipped &&
+        !isQualityPassthroughStage(n),
+    );
     if (!consumers.length) return true;
 
     for (const consumer of consumers) {
@@ -1736,6 +1783,7 @@ export class WipKitService {
             snapshotNodeId: kit.snapshotNodeId ?? producer.id,
             consumerSnapshotNodeId: consumer.id,
             edges: snap.edges,
+            passthroughNodeIds: passthroughSnapshotNodeIds(snap.nodes),
           })
         ) {
           continue;
@@ -1798,14 +1846,26 @@ export class WipKitService {
         },
       });
       if (existing) {
-        created.push(existing);
+        if (!existing.qrCode) {
+          const qrCode = await allocateBinQrCode(this.prisma, warehouse.code, existing.code);
+          created.push(
+            await this.prisma.warehouseLocation.update({
+              where: { id: existing.id },
+              data: { qrCode },
+            }),
+          );
+        } else {
+          created.push(existing);
+        }
         continue;
       }
+      const qrCode = await allocateBinQrCode(this.prisma, warehouse.code, code);
       const row = await this.prisma.warehouseLocation.create({
         data: {
           warehouseId: warehouse.id,
           code,
           name: `${stage.nameEn} bin`,
+          qrCode,
         },
       });
       created.push(row);
@@ -1909,6 +1969,8 @@ export class WipKitService {
     return {
       producesSemiFinished: true,
       expectedPieceCount: ctx.expectedPieceCount,
+      expectedKitCount: ctx.expectedKitCount,
+      piecesPerKit: ctx.pieceLabels.length,
       requiresPhotos: ctx.requiresPhotos,
       kitId: kit?.id ?? null,
       qrCode: kit?.qrCode ?? null,
@@ -1936,6 +1998,13 @@ export class WipKitService {
         photoDocumentId: p.photoDocumentId,
         photoDocument: p.photoDocument,
       })),
+      expectedPieces: ctx.pieceLabels.map((label, index) => ({
+        index,
+        label: label.nameEn,
+        nameEn: label.nameEn,
+        nameAr: label.nameAr,
+        nameHe: label.nameHe,
+      })),
     };
   }
 
@@ -1944,6 +2013,7 @@ export class WipKitService {
     userId: string;
     photoDocumentId: string;
     label?: string | null;
+    expectedIndex?: number | null;
   }) {
     const ctx = await this.resolveProduceSemiTask(params.taskId);
     const doc = await this.prisma.document.findFirst({
@@ -1970,7 +2040,10 @@ export class WipKitService {
       where: { kitId: kit.id },
       _max: { sortOrder: true },
     });
-    const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+    const sortOrder =
+      params.expectedIndex != null && Number.isFinite(params.expectedIndex)
+        ? Math.max(0, Math.floor(params.expectedIndex))
+        : (maxSort._max.sortOrder ?? -1) + 1;
     const pieceQr =
       sortOrder > 0
         ? `${kit.qrCode}-P${String(sortOrder + 1).padStart(2, '0')}`
@@ -2105,6 +2178,7 @@ export class WipKitService {
         inventoryTracking: true,
         requiresPhotos: true,
         expectedPieceCount: true,
+        outputQtyPerUnit: true,
         metadata: true,
       },
     });
@@ -2114,18 +2188,31 @@ export class WipKitService {
         message: 'This stage does not produce semi-finished kits.',
       });
     }
+    const order = await this.prisma.productionOrder.findUnique({
+      where: { id: task.productionOrderId },
+      select: { quantity: true },
+    });
     const expectedPieceCount =
       Number(snap.expectedPieceCount) > 0
         ? Math.floor(Number(snap.expectedPieceCount))
         : 1;
+    const pieceLabels = fillPieceLabelsToCount(
+      pieceLabelsFromMetadata(snap.metadata),
+      expectedPieceCount,
+    );
+    const expectedKitCount = Math.max(
+      1,
+      Math.round(outputQtyForOrder(Number(snap.outputQtyPerUnit), Number(order?.quantity))),
+    );
     return {
       taskId: task.id,
       productionOrderId: task.productionOrderId,
       stageInstanceId: task.stageInstanceId,
       snapshotNodeId: snap.id,
-      expectedPieceCount,
+      expectedPieceCount: pieceLabels.length,
+      expectedKitCount,
       requiresPhotos: Boolean(snap.requiresPhotos),
-      pieceLabels: pieceLabelsFromMetadata(snap.metadata),
+      pieceLabels,
     };
   }
 
@@ -2162,12 +2249,16 @@ export class WipKitService {
       include: { stageDefinition: { select: { code: true, nameEn: true } } },
     });
     const nextSnapshotNodeIds = ctx.snapshotNodeId
-      ? (
-          await this.prisma.productionOrderWorkflowSnapshotEdge.findMany({
-            where: { fromSnapshotNodeId: ctx.snapshotNodeId },
-            select: { toSnapshotNodeId: true },
-          })
-        ).map((e) => e.toSnapshotNodeId)
+      ? await this.nextSnapshotHops(
+          this.prisma,
+          (
+            await this.prisma.productionOrderWorkflowSnapshotNode.findUnique({
+              where: { id: ctx.snapshotNodeId },
+              select: { snapshotId: true },
+            })
+          )?.snapshotId ?? '',
+          ctx.snapshotNodeId,
+        )
       : [];
     const semiWh = await this.prisma.warehouse.findFirst({
       where: { type: 'SEMI_FINISHED', isActive: true },
@@ -2216,12 +2307,28 @@ export class WipKitService {
     const existing = await tx.warehouseLocation.findUnique({
       where: { warehouseId_code: { warehouseId, code } },
     });
-    if (existing) return existing.id;
+    if (existing) {
+      if (!existing.qrCode) {
+        const warehouse = await tx.warehouse.findUnique({
+          where: { id: warehouseId },
+          select: { code: true },
+        });
+        const qrCode = await allocateBinQrCode(tx, warehouse?.code ?? 'SEMI', existing.code);
+        await tx.warehouseLocation.update({ where: { id: existing.id }, data: { qrCode } });
+      }
+      return existing.id;
+    }
+    const warehouse = await tx.warehouse.findUnique({
+      where: { id: warehouseId },
+      select: { code: true },
+    });
+    const qrCode = await allocateBinQrCode(tx, warehouse?.code ?? 'SEMI', code);
     const row = await tx.warehouseLocation.create({
       data: {
         warehouseId,
         code,
         name: stageNameEn ? `${stageNameEn} bin` : `${code} bin`,
+        qrCode,
       },
     });
     return row.id;

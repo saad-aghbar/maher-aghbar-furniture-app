@@ -197,6 +197,8 @@ function DeliveriesPageInner() {
   const [notes, setNotes] = useState('');
   const [driverId, setDriverId] = useState('');
   const [search, setSearch] = useState('');
+  const [dealerId, setDealerId] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
   const [section, setSection] = useState<DeliverySection>(() =>
     parseDeliverySection(searchParams.get('section')),
   );
@@ -221,8 +223,10 @@ function DeliveriesPageInner() {
       params.set('status', SECTION_STATUS[section]!);
     }
     if (search.trim()) params.set('q', search.trim());
+    if (dealerId) params.set('dealerId', dealerId);
+    if (warehouseId) params.set('warehouseId', warehouseId);
     return params.toString();
-  }, [search, section]);
+  }, [dealerId, search, section, warehouseId]);
 
   const listQuery = useQuery({
     queryKey: ['deliveries', listParams],
@@ -260,6 +264,20 @@ function DeliveriesPageInner() {
         '/api/v1/sales-orders?pageSize=100&status=READY_FOR_DELIVERY',
       ).then((r) => r.data),
     enabled: createOpen,
+  });
+  const dealersQuery = useQuery({
+    queryKey: ['delivery-filter-dealers'],
+    queryFn: () =>
+      apiFetch<{ data: Array<{ id: string; name: string; nameEn?: string | null; nameAr?: string | null; nameHe?: string | null }> }>(
+        '/api/v1/customers?pageSize=100',
+      ),
+  });
+  const warehousesQuery = useQuery({
+    queryKey: ['delivery-filter-warehouses'],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; code: string; nameEn: string; nameAr?: string | null; nameHe?: string | null }>>(
+        '/api/v1/inventory/warehouses',
+      ),
   });
 
   const rows = listQuery.data?.data ?? [];
@@ -380,6 +398,30 @@ function DeliveriesPageInner() {
           withSearchIcon
           className="max-w-xs"
         />
+        <Select
+          label={tc('customer')}
+          value={dealerId}
+          onChange={(e) => setDealerId(e.target.value)}
+        >
+          <option value="">{tCommon('all')}</option>
+          {(dealersQuery.data?.data ?? []).map((d) => (
+            <option key={d.id} value={d.id}>
+              {localizedName(locale, d, d.name)}
+            </option>
+          ))}
+        </Select>
+        <Select
+          label={tl('returns.warehouse')}
+          value={warehouseId}
+          onChange={(e) => setWarehouseId(e.target.value)}
+        >
+          <option value="">{tCommon('all')}</option>
+          {(warehousesQuery.data ?? []).map((w) => (
+            <option key={w.id} value={w.id}>
+              {localizedName(locale, w, w.code)}
+            </option>
+          ))}
+        </Select>
         <Select
           label={tc('defaultDriver')}
           value={driverId}

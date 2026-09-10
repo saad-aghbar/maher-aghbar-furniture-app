@@ -25,6 +25,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { defaultBinIdForWarehouse, ensureDefaultWarehouseBin } from '../seed/warehouse-bins';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -265,6 +266,7 @@ export async function seedPiece10FinishedOutboundExamples(
         branchId: finWh.branchId,
       },
     });
+    await ensureDefaultWarehouseBin(prisma, { id: finWhAlt.id, code: finWhAlt.code });
   }
 
   const fabricItem = await prisma.inventoryItem.findFirst({
@@ -304,6 +306,9 @@ export async function seedPiece10FinishedOutboundExamples(
         inventoryTracking: InventoryTracking.PRODUCES_FINISHED,
         consumesSemiFinished: true,
       };
+    }
+    if (code === 'INSPECTION') {
+      return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: true };
     }
     return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: false };
   }
@@ -910,6 +915,7 @@ export async function seedPiece10FinishedOutboundExamples(
         type: InventoryTxType.FINISHED_GOODS_RECEIPT,
         inventoryItemId: fgItem.id,
         warehouseId: args.warehouseId,
+        locationId: await defaultBinIdForWarehouse(prisma, args.warehouseId),
         quantity: money(qty),
         createdById: opts.adminUserId,
         createdAt: asOf,
@@ -923,6 +929,7 @@ export async function seedPiece10FinishedOutboundExamples(
       data: {
         inventoryItemId: fgItem.id,
         warehouseId: args.warehouseId,
+        locationId: await defaultBinIdForWarehouse(prisma, args.warehouseId),
         quantity: qty,
         status: args.status,
         allocationMode: InventoryAllocationMode.ORDER_ALLOCATED,
@@ -1011,6 +1018,7 @@ export async function seedPiece10FinishedOutboundExamples(
         type: InventoryTxType.DELIVERY_ISSUE,
         inventoryItemId: args.lot.inventoryItemId,
         warehouseId: args.lot.warehouseId,
+        locationId: await defaultBinIdForWarehouse(prisma, args.lot.warehouseId),
         quantity: money(-qty),
         createdById: opts.adminUserId,
         createdAt: args.at ?? asOf,
@@ -1034,6 +1042,7 @@ export async function seedPiece10FinishedOutboundExamples(
         type: InventoryTxType.DELIVERY_RESTORE,
         inventoryItemId: args.lot.inventoryItemId,
         warehouseId: args.lot.warehouseId,
+        locationId: await defaultBinIdForWarehouse(prisma, args.lot.warehouseId),
         quantity: money(qty),
         createdById: opts.adminUserId,
         createdAt: asOf,
@@ -1115,7 +1124,7 @@ export async function seedPiece10FinishedOutboundExamples(
       dealer: nile,
       projectName: 'P10-D Overdue leave date',
       factoryNotes: 'P10-D: leave date overdue vs as-of',
-      deliveryStatus: DeliveryStatus.PLANNED,
+      deliveryStatus: DeliveryStatus.READY,
       deliveryDate: addDays(asOf, -3),
       pieceCount: 1,
       loadedCount: 0,

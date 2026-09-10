@@ -41,7 +41,6 @@ describe('translate', () => {
   it('resolves accounting invoice keys used by mobile', () => {
     expect(translate('en', 'accounting.outstanding')).toBe('Outstanding');
     expect(translate('en', 'accounting.createFromSalesOrder')).toMatch(/sales order/i);
-    expect(translate('en', 'accounting.jofotara')).toMatch(/JoFotara/i);
     expect(translate('en', 'accounting.paymentHistory')).toMatch(/Payment/i);
     expect(translate('en', 'accounting.methodBANK_TRANSFER')).toMatch(/Bank/i);
     expect(translate('en', 'accounting.searchPlaceholder')).toBe('Search invoices');

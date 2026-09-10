@@ -15,10 +15,15 @@ export type PurchaseCardModel = {
   number: string;
   supplierName: string;
   status: string;
+  origin?: string | null;
   totalLabel: string;
   expectedLabel: string | null;
   lineCount: number;
   warehouseLabel: string | null;
+  warehouseCount?: number;
+  runId?: string | null;
+  runNumber?: string | null;
+  runSupplierCount?: number | null;
   phaseLabelKey: string | null;
   progress: number;
   attentionReason: string | null;
@@ -176,6 +181,20 @@ export function resolvePurchaseRequestSupplier(
   return '—';
 }
 
+export function purchaseWarehouseNames(po: PurchaseOrder, locale: string): string[] {
+  const names = new Set<string>();
+  if (po.warehouse) {
+    const label = localizedNamed(locale, po.warehouse);
+    if (label && label !== '—') names.add(label);
+  }
+  for (const line of po.lines ?? []) {
+    if (!line.warehouse) continue;
+    const label = localizedNamed(locale, line.warehouse);
+    if (label && label !== '—') names.add(label);
+  }
+  return [...names];
+}
+
 export function selectPurchaseCard(
   po: PurchaseOrder,
   locale: string,
@@ -184,17 +203,25 @@ export function selectPurchaseCard(
   const typed = asLocale(locale);
   const total = toNum(po.total);
   const presentation = po.presentation;
+  const names = purchaseWarehouseNames(po, locale);
+  const warehouseLabel =
+    warehouseName?.trim() || (names.length === 1 ? names[0]! : null);
   return {
     id: po.id,
     number: po.number,
     supplierName: localizedNamed(locale, po.supplier),
     status: po.status,
+    origin: po.origin ?? null,
     totalLabel: moneyLabel(locale, total),
     expectedLabel: po.expectedDeliveryDate
       ? formatDate(typed, po.expectedDeliveryDate)
       : null,
     lineCount: po.lines?.length ?? 0,
-    warehouseLabel: warehouseName?.trim() || null,
+    warehouseLabel,
+    warehouseCount: names.length,
+    runId: po.runId ?? po.purchaseRunId ?? null,
+    runNumber: po.runNumber ?? null,
+    runSupplierCount: po.runSupplierCount ?? null,
     phaseLabelKey: presentation?.labelKey ?? null,
     progress: Number(presentation?.progress) || 0,
     attentionReason: presentation?.attentionReason ?? null,
@@ -422,6 +449,11 @@ export type PurchaseDetailLineModel = {
   lineTotal: number;
   receivedQty: number;
   remainingQty: number;
+  fabricProcurementId: string | null;
+  warehouseId?: string | null;
+  locationId?: string | null;
+  warehouse?: NamedRef | null;
+  location?: { id: string; code?: string | null; name?: string | null } | null;
 };
 
 export type PurchaseDetailReceiptModel = {
@@ -509,6 +541,11 @@ export function selectPurchaseDetail(po: PurchaseOrder, locale: string): Purchas
       lineTotal: quantity * unitPrice,
       receivedQty: received,
       remainingQty: remaining,
+      fabricProcurementId: line.fabricProcurementId ?? null,
+      warehouseId: line.warehouseId ?? null,
+      locationId: line.locationId ?? null,
+      warehouse: line.warehouse ?? null,
+      location: line.location ?? null,
     });
   }
 

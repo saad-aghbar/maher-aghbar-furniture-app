@@ -6,6 +6,7 @@ import { useLocale } from '@/i18n';
 import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { FG_FILTERS, fgFilterLabel, type FgFilter } from '../fgFilters';
+import type { OriginFocus } from '@/features/production/components/OriginFocusBar';
 import type { FinishedBoardScope } from '../selectFinishedOrders';
 import type { InventoryWarehouseOption } from './InventoryWarehousePickerControl';
 import {
@@ -21,6 +22,7 @@ export type FinishedFilterDraft = {
   fgFilter: FgFilter;
   historyFrom: string;
   historyTo: string;
+  origin: OriginFocus;
 };
 
 export type FinishedFilterDefaults = {
@@ -48,6 +50,7 @@ export function defaultFinishedFilterDraft(
     fgFilter: 'all',
     historyFrom: defaults.historyFrom,
     historyTo: defaults.historyTo,
+    origin: 'all',
   };
 }
 
@@ -57,6 +60,7 @@ export function countActiveFinishedFilters(
 ): number {
   let n = 0;
   if (draft.scope !== 'inWarehouse') n += 1;
+  if (draft.origin && draft.origin !== 'all') n += 1;
   if (draft.warehouseId) n += 1;
   if (draft.scope === 'inWarehouse' && draft.fgFilter !== 'all') n += 1;
   if (
@@ -145,6 +149,28 @@ export function InventoryFinishedFilterSheet({
                   onChange({ ...draft, scope: 'history', fgFilter: 'all' });
                 }}
               />
+            </View>
+          </InventoryFilterSection>
+
+          <InventoryFilterSection
+            index={nextIndex()}
+            reduce={reduce}
+            icon="return-down-back-outline"
+            title={t('mobile.inventory.filterOrigin')}
+            accent={draft.origin !== 'all' ? colors.brand : undefined}
+          >
+            <View style={chipRow}>
+              {(['all', 'normal', 'returned'] as const).map((key) => (
+                <InventoryFloorChip
+                  key={key}
+                  label={t(`mobile.production.origin.${key}`)}
+                  active={draft.origin === key}
+                  onPress={() => {
+                    void haptics.selection();
+                    onChange({ ...draft, origin: key });
+                  }}
+                />
+              ))}
             </View>
           </InventoryFilterSection>
 

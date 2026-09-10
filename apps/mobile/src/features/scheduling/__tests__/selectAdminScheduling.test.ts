@@ -21,6 +21,7 @@ import {
   selectOrdersInRange,
   selectWeekStrip,
   weekRangeFromYmd,
+  factoryWeekDates,
   filterScheduleCards,
   type AdminScheduleCardModel,
 } from '../selectAdminScheduling';
@@ -61,30 +62,38 @@ describe('selectDashboardStats', () => {
     expect(selectDashboardStats(undefined)).toEqual([]);
   });
 
-  it('maps counts to stat chips with warning/danger tones', () => {
-    const stats = selectDashboardStats(dashboard);
-    expect(stats).toHaveLength(5);
+  it('maps summary counts to the six factory-tower cells', () => {
+    const stats = selectDashboardStats({
+      today: 4,
+      thisWeek: 20,
+      unscheduled: 3,
+      atRisk: 2,
+      conflicts: 0,
+      overtime: 1,
+    });
+    expect(stats).toHaveLength(6);
     expect(stats.find((s) => s.key === 'today')).toMatchObject({ value: 4, tone: 'neutral' });
-    expect(stats.find((s) => s.key === 'awaitingApproval')).toMatchObject({
+    expect(stats.find((s) => s.key === 'unscheduled')).toMatchObject({
       value: 3,
       tone: 'warning',
     });
     expect(stats.find((s) => s.key === 'atRisk')).toMatchObject({ value: 2, tone: 'danger' });
     expect(stats.find((s) => s.key === 'conflicts')).toMatchObject({ value: 0, tone: 'neutral' });
+    expect(stats.find((s) => s.key === 'overtime')).toMatchObject({ value: 1, tone: 'warning' });
   });
 
-  it('prefers at-risk, conflict, and awaiting-approval list lengths for chip counts', () => {
-    const stats = selectDashboardStats(dashboard, {
-      atRiskCount: 4,
-      conflictCount: 3,
-      awaitingApprovalCount: 23,
+  it('reads server summary only — no client list-length overrides', () => {
+    const stats = selectDashboardStats({
+      today: 4,
+      thisWeek: 20,
+      unscheduled: 3,
+      atRisk: 2,
+      conflicts: 5,
+      overtime: 0,
     });
-    expect(stats.find((s) => s.key === 'atRisk')).toMatchObject({ value: 4, tone: 'danger' });
-    expect(stats.find((s) => s.key === 'conflicts')).toMatchObject({ value: 3, tone: 'danger' });
-    expect(stats.find((s) => s.key === 'awaitingApproval')).toMatchObject({
-      value: 23,
-      tone: 'warning',
-    });
+    expect(stats.find((s) => s.key === 'atRisk')).toMatchObject({ value: 2, tone: 'danger' });
+    expect(stats.find((s) => s.key === 'conflicts')).toMatchObject({ value: 5, tone: 'danger' });
+    expect(stats.find((s) => s.key === 'unscheduled')).toMatchObject({ value: 3 });
   });
 
   it('counts unique active conflicts only — never orders plus pairs', () => {
@@ -232,6 +241,20 @@ describe('weekRangeFromYmd', () => {
   it('returns Sunday–Saturday for a midweek anchor', () => {
     // 2026-08-12 is Wednesday
     expect(weekRangeFromYmd('2026-08-12')).toEqual({ from: '2026-08-09', to: '2026-08-15' });
+  });
+});
+
+describe('factoryWeekDates', () => {
+  it('lists Sunday–Saturday around a Thursday', () => {
+    expect(factoryWeekDates('2026-09-10')).toEqual([
+      '2026-09-06',
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+      '2026-09-12',
+    ]);
   });
 });
 
@@ -581,6 +604,8 @@ describe('schedule cache invalidation', () => {
     const serialized = keys.map((key) => key.join(':'));
     expect(serialized.some((key) => key.includes('at-risk'))).toBe(true);
     expect(serialized.some((key) => key.includes('dashboard'))).toBe(true);
+    expect(serialized.some((key) => key.includes('summary'))).toBe(true);
+    expect(serialized.some((key) => key.includes('planSetup') || key.includes('plan-setup'))).toBe(true);
     expect(serialized.some((key) => key.includes('scheduling'))).toBe(true);
     expect(serialized.some((key) => key.includes('po-59'))).toBe(true);
   });

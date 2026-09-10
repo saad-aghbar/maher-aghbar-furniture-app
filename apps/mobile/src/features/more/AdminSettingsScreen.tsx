@@ -353,22 +353,6 @@ export function AdminSettingsScreen() {
             </AppText>
 
             <IntegrationBlock
-              title={t('catalog.integrationJoFotara')}
-              status={configuredLabel(integrations.jofotaraConfigured)}
-              isRTL={isRTL}
-              titleWeight={titleWeight}
-            >
-              <TextField
-                label={t('catalog.jofotaraBaseUrl')}
-                value={integrations.jofotaraBaseUrl ?? ''}
-                onChangeText={(v) =>
-                  setIntegrations({ ...integrations, jofotaraBaseUrl: v })
-                }
-                autoCapitalize="none"
-              />
-            </IntegrationBlock>
-
-            <IntegrationBlock
               title={t('catalog.integrationWhatsApp')}
               status={configuredLabel(integrations.whatsappLiveConfigured)}
               isRTL={isRTL}

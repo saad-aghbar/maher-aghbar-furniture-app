@@ -25,6 +25,7 @@ export type SemiOrderGroup = {
     used: number;
     cancelled: number;
   };
+  originKind?: 'RETURN_WORK' | 'REPLACEMENT' | null;
 };
 
 export function isSemiKitActive(status: string): boolean {
@@ -50,6 +51,7 @@ export function boardParamsForSemiFilter(
     to?: string;
     warehouseId?: string;
     q?: string;
+    origin?: 'normal' | 'returned';
   } = {},
 ): {
   scope?: 'active' | 'history';
@@ -57,6 +59,7 @@ export function boardParamsForSemiFilter(
   to?: string;
   warehouseId?: string;
   q?: string;
+  origin?: 'normal' | 'returned';
 } {
   if (filter === 'history') {
     return {
@@ -65,12 +68,14 @@ export function boardParamsForSemiFilter(
       to: extras.to,
       warehouseId: extras.warehouseId,
       q: extras.q,
+      origin: extras.origin,
     };
   }
   return {
     scope: 'active',
     warehouseId: extras.warehouseId,
     q: extras.q,
+    origin: extras.origin,
   };
 }
 
@@ -146,6 +151,12 @@ export function selectSemiOrdersFromBoard(
           product: kit.productionOrder.product ?? null,
           kits: [],
           counts: emptyCounts(),
+          originKind:
+            kit.productionOrder.originType === 'REPLACEMENT'
+              ? 'REPLACEMENT'
+              : kit.productionOrder.originType === 'RETURN_WORK'
+                ? 'RETURN_WORK'
+                : null,
         };
         byOrder.set(orderId, group);
         orderSeq.push(orderId);

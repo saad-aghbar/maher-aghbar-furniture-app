@@ -45,6 +45,12 @@
   "FABRIC_NOT_READY": "Required fabric is not ready for this stage.",
   "FABRIC_WRONG_ORDER": "This fabric belongs to another order.",
   "FABRIC_WRONG_RECEIVED": "This is not the fabric required for this task.",
+  "FABRIC_ITEM_REQUIRED": "Choose a fabric before confirming arrival.",
+  "FABRIC_COST_REQUIRED": "A unit price is required before fabric can be received.",
+  "OVER_RECEIPT": "Cannot receive more than the remaining ordered quantity.",
+  "ITEM_CATEGORY_FORBIDDEN": "Production setup can only add fabric items.",
+  "FABRIC_REPLACE_FORBIDDEN": "Replacing a fabric requires the fabric override permission.",
+  "REASON_REQUIRED": "Enter a reason of at least 3 characters.",
   "FABRIC_ALREADY_ISSUED": "This fabric bundle is not available to take in.",
   "FABRIC_WRONG_STAGE": "This fabric is for a different production stage.",
   "INSUFFICIENT_SEMI_FINISHED_STOCK": "Required semi-finished stock is not ready for this task.",
@@ -57,10 +63,14 @@
   "LOCATION_EXISTS": "Location code already exists in this warehouse.",
   "LOCATION_HAS_STOCK": "Location still has stock and cannot be removed.",
 
+  "RETURN_CHARGE_NOT_CONFIRMED": "Confirm the dealer charge before starting factory work.",
+  "RETURN_CHARGE_LOCKED": "The return invoice already exists — the charge cannot be edited.",
+  "RETURN_CHARGE_NOT_DRAFT": "Save a dealer amount before sending it for confirmation.",
+  "RETURN_CHARGE_NOT_AWAITING": "This return is not waiting for a dealer confirmation.",
+  "RETURN_NOT_CHARGEABLE": "Confirm the dealer amount before creating a return invoice.",
   "INVOICE_EXISTS": "An invoice already exists for this sales order.",
   "SUPPLIER_INVOICE_EXISTS": "A supplier invoice already exists for this purchase order.",
   "PAYMENT_EXCEEDS_OUTSTANDING": "Payment amount exceeds the outstanding balance.",
-  "JOFOTARA_FAILED": "Electronic invoice submission failed.",
 
   "SUPPLIER_NOT_CERTIFIED": "Supplier must be certified before creating a purchase order.",
   "ORDER_LOCKED": "This order is locked and can no longer be edited.",
@@ -118,6 +128,8 @@
   "WORKFLOW_VERSION_STALE": "This draft changed elsewhere. Refresh the page and try again.",
   "WORKFLOW_STAGE_IN_USE": "This stage is in use and cannot be deleted.",
   "ORDER_WORKFLOW_LOCKED": "The production flow cannot be changed after work on the order has started.",
+  "STAGE_TIME_LOCKED": "Stage times are locked after the production plan is confirmed.",
+  "WORKFLOW_SCOPE_MISMATCH": "A return workflow cannot be assigned to a regular sales order.",
 
   "AI_CHAT_DISABLED": "The assistant is not available right now.",
   "AI_CHAT_RATE_LIMIT": "Too many requests. Please wait and try again.",
@@ -164,6 +176,7 @@
   "SETUP_DELIVERY_MUST_NOT_PRODUCE": "Delivery checks packages onto the truck and must not create stocked inventory.",
   "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "Packaging must produce the finished product with ship packages.",
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "Packaging must take the upstream semi-finished kit.",
-  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection must take the upstream semi-finished kit to confirm.",
+  "SETUP_INSPECTION_MUST_NOT_CONSUME": "Inspection confirms quality only and must not take kits or materials.",
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection confirms quality only and must not take kits or materials.",
   "DELIVERY_DATE_TOO_SOON": "Choose a delivery date at least 4 days from today."
 }

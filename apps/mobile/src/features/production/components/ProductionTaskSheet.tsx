@@ -8,7 +8,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { InlineDateCalendar } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
@@ -18,6 +17,7 @@ import {
   defaultAssignWindowParts,
   parseScheduleConflicts,
   parseSuggestedWindow,
+  todayYmd,
 } from '../assignWindow';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -30,12 +30,18 @@ import type { AssignScheduleConflict } from '../assignTypes';
 import { AssignConflictBoard } from './AssignConflictBoard';
 import { WorkerDayBoard } from './WorkerDayBoard';
 import { PriorityTouchBar } from './PriorityTouchBar';
-import { HoursMinutesRow } from './HoursMinutesRow';
+import {
+  addDaysYmd,
+  calendarShiftForYmd,
+  daysBetweenYmd,
+  workingWindowsFromCalendar,
+} from '../assignOvertime';
+import { useSchedulingCalendarQuery } from '@/features/scheduling/query';
 import {
   buildDueIso,
   formatMinutesDuration,
-  hoursMinutesToTotalMinutes,
 } from '@/features/tasks/formatDuration';
+import { localDayBounds } from '../workerDayPlan';
 
 type SheetMode = 'detail' | 'workers' | 'block';
 
@@ -72,12 +78,28 @@ type ProductionTaskSheetProps = {
     priority: string;
     plannedStart?: string;
     plannedCompletion?: string;
-    estimatedMinutes?: number;
+    overtime?: boolean;
     overrideConflict?: boolean;
+    acknowledge?: boolean;
+    reason?: string;
   }) => void;
   onSaveNotes: (notes: string) => void;
   onHold: () => void;
   onBlock: (reason: string) => void;
+  /** Opens the order path chart so the admin can set this stage’s time. */
+  onOpenStageTimes?: () => void;
+  freeWindows?: Array<{ start: string; end: string; durationMinutes?: number }>;
+  history?: Array<{
+    id: string;
+    kind?: string;
+    reason?: string | null;
+    createdAt: string;
+    oldStart?: string | null;
+    newStart?: string | null;
+  }>;
+  hardBlocks?: string[];
+  /** Stack on another sheet without iOS nested-Modal freeze. */
+  overlay?: boolean;
 };
 
 function priorityLabel(priority: string, t: (key: string) => string): string {
@@ -171,6 +193,38 @@ function PillButton({
   );
 }
 
+function StageTimeMissingBoard({
+  titleWeight,
+  onOpen,
+}: {
+  titleWeight: 'medium' | 'semibold';
+  onOpen?: () => void;
+}) {
+  const { t, isRTL } = useLocale();
+  const { theme } = useTheme();
+  return (
+    <DealerBoard title={t('mobile.production.stageTimeMissingTitle')} titleWeight={titleWeight}>
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {t('mobile.production.stageTimeMissingBody')}
+      </AppText>
+      {onOpen ? (
+        <View style={{ marginTop: theme.spacing.xs }}>
+          <PillButton
+            label={t('mobile.production.openStageTimes')}
+            variant="primary"
+            icon="git-network-outline"
+            onPress={onOpen}
+          />
+        </View>
+      ) : null}
+    </DealerBoard>
+  );
+}
+
 export function ProductionTaskSheet({
   open,
   onClose,
@@ -194,6 +248,11 @@ export function ProductionTaskSheet({
   onSaveNotes,
   onHold,
   onBlock,
+  onOpenStageTimes,
+  freeWindows,
+  history,
+  hardBlocks,
+  overlay = false,
 }: ProductionTaskSheetProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -213,9 +272,9 @@ export function ProductionTaskSheet({
   const [dueDate, setDueDate] = useState(defaultAssignWindowParts().due.ymd);
   const [dueHour, setDueHour] = useState('10');
   const [dueMinute, setDueMinute] = useState('00');
-  const [estHours, setEstHours] = useState('');
-  const [estMinutes, setEstMinutes] = useState('');
+  const [overtime, setOvertime] = useState(false);
   const [overrideConflict, setOverrideConflict] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState('');
 
   useEffect(() => {
     if (!open || !task) return;
@@ -226,6 +285,7 @@ export function ProductionTaskSheet({
     setWorkerQ('');
     setBlockReason('');
     setOverrideConflict(false);
+    setRescheduleReason('');
     onClearScheduleConflict?.();
     const parts = defaultAssignWindowParts({
       plannedStart: task.plannedStart,
@@ -239,8 +299,7 @@ export function ProductionTaskSheet({
     setDueDate(parts.due.ymd);
     setDueHour(parts.due.hour);
     setDueMinute(parts.due.minute);
-    setEstHours(parts.estHours);
-    setEstMinutes(parts.estMinutes);
+    setOvertime(false);
     // Only reset when the sheet opens or a different task is shown — not when the
     // same task refreshes after assign/notes (that was kicking users back to detail).
   }, [open, task?.id, orderPlannedStartDate]);
@@ -314,9 +373,44 @@ export function ProductionTaskSheet({
     draftWorker?.suggestedWindow ??
     null;
 
+  const calendarTo = addDaysYmd(startDate.trim() || todayYmd(), 14);
+  const calendarQuery = useSchedulingCalendarQuery(
+    startDate.trim()
+      ? { from: startDate.trim(), to: calendarTo, view: 'week' }
+      : null,
+    open,
+  );
+  const calendarMeta = calendarQuery.data?.calendar as
+    | {
+        shiftStart?: string;
+        shiftEnd?: string;
+        exceptions?: Array<{
+          date?: string;
+          type?: string;
+          shiftStart?: string | null;
+          shiftEnd?: string | null;
+        }>;
+      }
+    | undefined;
+  const workingDays = useMemo(
+    () =>
+      workingWindowsFromCalendar(
+        calendarQuery.data?.days ?? [],
+        calendarMeta ?? null,
+        localDayBounds,
+      ),
+    [calendarQuery.data?.days, calendarMeta],
+  );
+  const dayShift = calendarShiftForYmd(startDate.trim(), calendarMeta);
+  const isWorkingYmd = (ymd: string) => {
+    const day = calendarQuery.data?.days?.find((d) => d.date.slice(0, 10) === ymd);
+    return day ? day.isWorking : true;
+  };
+
   const applyAssignWindow = (window: {
     plannedStart: string;
     plannedCompletion: string;
+    overtime?: boolean;
   }) => {
     const parts = defaultAssignWindowParts({
       plannedStart: window.plannedStart,
@@ -328,6 +422,16 @@ export function ProductionTaskSheet({
     setDueDate(parts.due.ymd);
     setDueHour(parts.due.hour);
     setDueMinute(parts.due.minute);
+    setOvertime(Boolean(window.overtime));
+    setOverrideConflict(false);
+    onClearScheduleConflict?.();
+  };
+
+  const shiftAssignDay = (ymd: string) => {
+    const delta = daysBetweenYmd(startDate.trim(), ymd);
+    setStartDate(ymd);
+    setDueDate(addDaysYmd(dueDate.trim() || ymd, delta));
+    setOvertime(false);
     setOverrideConflict(false);
     onClearScheduleConflict?.();
   };
@@ -348,6 +452,7 @@ export function ProductionTaskSheet({
       <BottomSheet
         open={open}
         onClose={onClose}
+        overlay={overlay}
         title={t('mobile.production.taskDetail')}
         sheetHeight={pageSheetHeight}
       >
@@ -358,6 +463,8 @@ export function ProductionTaskSheet({
 
   const pct = Math.max(0, Math.min(100, Math.round(task.progressPercent || 0)));
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const hasStageTime =
+    task.estimatedMinutes != null && task.estimatedMinutes > 0;
   const showAssign =
     (intent === 'plan' || intent === 'manage') && canAssign && Boolean(task?.canAssign);
   const showManageEntry =
@@ -380,11 +487,16 @@ export function ProductionTaskSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
+      overlay={overlay}
       title={sheetTitle}
       sheetHeight={pageSheetHeight}
     >
       {mode === 'workers' ? (
         <View style={{ gap: theme.spacing.md, paddingBottom: bottomPad, flex: 1, minHeight: 0 }}>
+          {!hasStageTime ? (
+            <StageTimeMissingBoard titleWeight={titleWeight} onOpen={onOpenStageTimes} />
+          ) : (
+            <>
           <AppText variant="caption" color="muted">
             {task.responsibleDepartment
               ? t('mobile.production.workersForStage')
@@ -562,6 +674,10 @@ export function ProductionTaskSheet({
                       'stage' in w
                         ? (w as { stage?: string | null }).stage
                         : null,
+                    kind:
+                      'kind' in w && (w as { kind?: 'work' | 'stopped' }).kind === 'stopped'
+                        ? 'stopped'
+                        : 'work',
                   }),
                 )}
                 proposed={(() => {
@@ -581,19 +697,25 @@ export function ProductionTaskSheet({
                     endMs: new Date(endIso).getTime(),
                   };
                 })()}
-                estimatedMinutes={hoursMinutesToTotalMinutes(
-                  Number(estHours) || 0,
-                  Number(estMinutes) || 0,
-                )}
+                estimatedMinutes={task?.estimatedMinutes}
                 onApplySuggestedWindow={applyAssignWindow}
                 onPickWindow={applyAssignWindow}
+                onDayChange={shiftAssignDay}
+                isWorkingYmd={isWorkingYmd}
+                workingDays={workingDays}
+                shiftStartHour={dayShift.startHour}
+                shiftEndHour={dayShift.endHour}
+                shiftStartMinute={dayShift.startMinute}
+                shiftEndMinute={dayShift.endMinute}
               />
             ) : null}
           </ScrollView>
+            </>
+          )}
 
           <DealerFormFooter
             confirmLabel={t('mobile.production.confirm')}
-            disabled={!selectedWorkerId}
+            disabled={!hasStageTime || !selectedWorkerId}
             onConfirm={() => {
               if (!selectedWorkerId) return;
               void haptics.selection();
@@ -787,7 +909,11 @@ export function ProductionTaskSheet({
                     </View>
                   ) : !task.isCompleted ? (
                     <AppText variant="caption" color="muted">
-                      {t('mobile.production.stageAssignLocked')}
+                      {!task.canAssign
+                        ? t('mobile.adminScheduling.sheets.assignLockedStarted')
+                        : task.estimatedMinutes == null || task.estimatedMinutes <= 0
+                          ? t('mobile.adminScheduling.sheets.assignLockedNoStageTime')
+                          : t('mobile.production.stageAssignLocked')}
                     </AppText>
                   ) : null}
                   {showManageEntry ? (
@@ -802,57 +928,85 @@ export function ProductionTaskSheet({
                 </View>
               )}
 
-              {showAssign ? (
+              {showAssign && hasStageTime ? (
                 <View style={{ gap: theme.spacing.xs }}>
                   <AppText variant="caption" color="muted">
                     {t('mobile.production.priorityLabel')}
                   </AppText>
                   <PriorityTouchBar value={priority} onChange={setPriority} />
                   <AppText variant="caption" color="muted" style={{ marginTop: theme.spacing.sm }}>
-                    {t('mobile.production.taskWindowHint')}
+                    {t('mobile.production.plannedWindowLabel')}
                   </AppText>
-                  <AppText variant="caption" weight={titleWeight} color="secondary">
-                    {t('mobile.production.startDate')}
+                  <AppText variant="body" weight={titleWeight} dir="ltr">
+                    {(() => {
+                      const hm = {
+                        hour: t('mobile.workerHome.durationHour'),
+                        minute: t('mobile.workerHome.durationMinute'),
+                      };
+                      const durationLabel =
+                        task.estimatedMinutes && task.estimatedMinutes > 0
+                          ? formatMinutesDuration(task.estimatedMinutes, hm)
+                          : '';
+                      const startHm = `${String(Number(startHour) || 0).padStart(2, '0')}:${startMinute}`;
+                      const dueHm = `${String(Number(dueHour) || 0).padStart(2, '0')}:${dueMinute}`;
+                      if (startDate.trim() !== dueDate.trim()) {
+                        return t('mobile.production.plannedWindowCrossDay', {
+                          start: `${startDate} ${startHm}`,
+                          end: `${dueDate} ${dueHm}`,
+                          duration: durationLabel,
+                        });
+                      }
+                      const window = `${startDate} · ${startHm}–${dueHm}${durationLabel ? ` · ${durationLabel}` : ''}`;
+                      return overtime
+                        ? t('mobile.production.plannedWindowOvertime', {
+                            window,
+                            overtime: durationLabel,
+                          })
+                        : window;
+                    })()}
                   </AppText>
-                  <InlineDateCalendar
-                    value={startDate}
-                    onSelect={setStartDate}
-                    resetKey={`${open}-start`}
-                  />
-                  <HoursMinutesRow
-                    sectionLabel={t('mobile.production.startTime')}
-                    hours={startHour}
-                    minutes={startMinute}
-                    onHoursChange={setStartHour}
-                    onMinutesChange={setStartMinute}
-                    hoursLabel={t('mobile.production.dueHour')}
-                    minutesLabel={t('mobile.production.dueMinute')}
-                  />
-                  <AppText variant="caption" weight={titleWeight} color="secondary">
-                    {t('mobile.production.dueDate')}
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.production.plannedWindowHint')}
                   </AppText>
-                  <InlineDateCalendar value={dueDate} onSelect={setDueDate} resetKey={open} />
-                  <HoursMinutesRow
-                    sectionLabel={t('mobile.production.dueTime')}
-                    hours={dueHour}
-                    minutes={dueMinute}
-                    onHoursChange={setDueHour}
-                    onMinutesChange={setDueMinute}
-                    hoursLabel={t('mobile.production.dueHour')}
-                    minutesLabel={t('mobile.production.dueMinute')}
-                  />
-                  <HoursMinutesRow
-                    sectionLabel={t('mobile.production.estimateDuration')}
-                    hours={estHours}
-                    minutes={estMinutes}
-                    onHoursChange={setEstHours}
-                    onMinutesChange={setEstMinutes}
-                    hoursLabel={t('mobile.production.estimateHours')}
-                    minutesLabel={t('mobile.production.estimateMinutes')}
-                  />
                 </View>
               ) : null}
             </DealerBoard>
+
+            {showAssign && !hasStageTime ? (
+              <StageTimeMissingBoard titleWeight={titleWeight} onOpen={onOpenStageTimes} />
+            ) : null}
+
+            {hardBlocks && hardBlocks.length > 0 ? (
+              <DealerBoard
+                title={t('mobile.adminScheduling.taskSheet.hardBlock')}
+                titleWeight={titleWeight}
+                accentColor={colors.error}
+              >
+                {hardBlocks.map((code) => (
+                  <AppText key={code} color="error">
+                    {t(`mobile.adminScheduling.taskSheet.block.${code}`, { defaultValue: code })}
+                  </AppText>
+                ))}
+              </DealerBoard>
+            ) : null}
+
+            {showAssign && (freeWindows?.length ?? 0) > 0 ? (
+              <DealerBoard title={t('mobile.adminScheduling.taskSheet.freeWindows')} titleWeight={titleWeight}>
+                {freeWindows!.slice(0, 4).map((window) => (
+                  <AppText key={`${window.start}-${window.end}`} dir="ltr" color="secondary">
+                    {`${new Date(window.start).toLocaleTimeString(locale, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    })}–${new Date(window.end).toLocaleTimeString(locale, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    })}`}
+                  </AppText>
+                ))}
+              </DealerBoard>
+            ) : null}
 
             {showAssign && showConflictPanel ? (
               <AssignConflictBoard
@@ -876,6 +1030,47 @@ export function ProductionTaskSheet({
                   setMode('workers');
                 }}
               />
+            ) : null}
+
+            {showAssign ? (
+              <DealerBoard title={t('mobile.adminScheduling.taskSheet.reason')} titleWeight={titleWeight}>
+                <TextField
+                  value={rescheduleReason}
+                  onChangeText={setRescheduleReason}
+                  placeholder={t('mobile.adminScheduling.sheets.reasonPlaceholder')}
+                />
+              </DealerBoard>
+            ) : null}
+
+            {task.estimatedMinutes != null || task.elapsedMinutes > 0 ? (
+              <DealerBoard title={t('mobile.adminScheduling.plannedActual.title')} titleWeight={titleWeight}>
+                <AppText color="secondary">
+                  {t('mobile.adminScheduling.plannedActual.planned', {
+                    hours: formatMinutesDuration(task.estimatedMinutes ?? 0, {
+                      hour: t('mobile.workerHome.durationHour'),
+                      minute: t('mobile.workerHome.durationMinute'),
+                    }),
+                  })}
+                </AppText>
+                <AppText color="secondary">
+                  {t('mobile.adminScheduling.plannedActual.actual', {
+                    hours: formatMinutesDuration(task.elapsedMinutes, {
+                      hour: t('mobile.workerHome.durationHour'),
+                      minute: t('mobile.workerHome.durationMinute'),
+                    }),
+                  })}
+                </AppText>
+              </DealerBoard>
+            ) : null}
+
+            {(history?.length ?? 0) > 0 ? (
+              <DealerBoard title={t('mobile.adminScheduling.taskSheet.history')} titleWeight={titleWeight}>
+                {history!.slice(0, 6).map((row) => (
+                  <AppText key={row.id} variant="caption" color="secondary">
+                    {`${new Date(row.createdAt).toLocaleString(locale)} · ${row.reason ?? row.kind ?? ''}`}
+                  </AppText>
+                ))}
+              </DealerBoard>
             ) : null}
 
             <DealerBoard title={t('mobile.production.workerInstructions')} titleWeight={titleWeight}>
@@ -912,9 +1107,16 @@ export function ProductionTaskSheet({
                 }
                 variant="primary"
                 loading={assignLoading}
-                disabled={Boolean(selectedWorkerId) && conflictBlocksAssign}
+                disabled={
+                  !hasStageTime || (Boolean(selectedWorkerId) && conflictBlocksAssign)
+                }
                 icon="person-add-outline"
                 onPress={() => {
+                  if (!hasStageTime) {
+                    void haptics.error();
+                    onOpenStageTimes?.();
+                    return;
+                  }
                   if (!selectedWorkerId) {
                     setMode('workers');
                     return;
@@ -938,26 +1140,16 @@ export function ProductionTaskSheet({
                     return;
                   }
                   void haptics.confirmMedium();
-                  const eh = Number(estHours);
-                  const em = Number(estMinutes);
-                  const estimatedMinutes =
-                    Number.isFinite(eh) || Number.isFinite(em)
-                      ? hoursMinutesToTotalMinutes(
-                          Number.isFinite(eh) ? eh : 0,
-                          Number.isFinite(em) ? em : 0,
-                        )
-                      : undefined;
                   onAssign({
                     employeeId: selectedWorkerId,
                     priority,
                     plannedStart,
                     plannedCompletion,
-                    ...(estimatedMinutes != null && estimatedMinutes > 0
-                      ? { estimatedMinutes }
-                      : {}),
+                    ...(overtime ? { overtime: true } : {}),
                     ...(selectedIsConflict && overrideConflict
-                      ? { overrideConflict: true }
+                      ? { overrideConflict: true, acknowledge: true }
                       : {}),
+                    ...(rescheduleReason.trim() ? { reason: rescheduleReason.trim() } : {}),
                   });
                 }}
               />

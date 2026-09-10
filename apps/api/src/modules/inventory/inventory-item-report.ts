@@ -187,8 +187,6 @@ export function mapInventoryTxType(
     case 'PRODUCTION_RETURN':
     case 'DELIVERY_RESTORE':
       return 'RETURN';
-    case 'SCRAP':
-      return 'ISSUE';
     default:
       return 'OTHER';
   }

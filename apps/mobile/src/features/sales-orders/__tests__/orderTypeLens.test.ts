@@ -77,5 +77,7 @@ describe('OrderTypeLensBar selection', () => {
     expect(nextOrderTypeFocus('all', 'modified')).toBe('modified');
     expect(nextOrderTypeFocus('modified', 'modified')).toBe('all');
     expect(nextOrderTypeFocus('modified', 'custom')).toBe('custom');
+    expect(nextOrderTypeFocus('all', 'returned')).toBe('returned');
+    expect(nextOrderTypeFocus('returned', 'returned')).toBe('all');
   });
 });

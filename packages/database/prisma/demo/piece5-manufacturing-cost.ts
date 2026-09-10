@@ -15,6 +15,7 @@ import {
   SalesOrderStatus,
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
+import { attachMinimalWorkflowSnapshot } from './workflow-snapshot';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -423,6 +424,7 @@ export async function seedPiece5ManufacturingCostExamples(
           },
         });
       }
+      await attachMinimalWorkflowSnapshot(prisma, po.id, `p5-${args.letter}`);
       return po;
     }
 

@@ -1,5 +1,6 @@
 import type { StageInventoryBehavior } from '../../common/helpers/inventory-stage-behavior.util';
 import { behaviorProduces } from '../../common/helpers/inventory-stage-behavior.util';
+import { inspectionTakesInventory } from './inspection-gate';
 import {
   isDeliveryStageCode,
   isInspectionStageCode,
@@ -76,7 +77,7 @@ const INVALID_CODES = new Set([
   'SETUP_DELIVERY_MUST_NOT_PRODUCE',
   'SETUP_PACKAGING_MUST_PRODUCE_FINISHED',
   'SETUP_PACKAGING_MUST_CONSUME_SEMI',
-  'SETUP_INSPECTION_MUST_CONSUME_SEMI',
+  'SETUP_INSPECTION_MUST_NOT_CONSUME',
 ]);
 
 export function validateProductionSetup(input: SetupValidatorInput): {
@@ -241,13 +242,13 @@ export function validateProductionSetup(input: SetupValidatorInput): {
       }
     }
 
-    if (isInspection && hasUpstreamSemiKits && !consumesSemi) {
+    if (isInspection && inspectionTakesInventory(stage, stage.stageCode)) {
       issues.push({
-        code: 'SETUP_INSPECTION_MUST_CONSUME_SEMI',
+        code: 'SETUP_INSPECTION_MUST_NOT_CONSUME',
         severity: 'error',
         workflowNodeId: stage.workflowNodeId,
         nodeKey: stage.nodeKey ?? null,
-        message: 'Inspection must take the upstream semi-finished kit to confirm.',
+        message: 'Inspection confirms quality only and must not take kits or materials.',
       });
     }
 

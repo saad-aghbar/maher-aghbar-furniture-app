@@ -24,6 +24,8 @@ type Props = {
   /** Purchasing shows the supplier on the child row. */
   showSupplier?: boolean;
   surface?: FabricStatusSurface;
+  /** Already-in-general-stock caption for a line still waiting on supply. */
+  stockHint?: string | null;
 };
 
 /**
@@ -37,6 +39,7 @@ export function FabricRowBody({
   disclose = false,
   showSupplier = false,
   surface = 'ops',
+  stockHint = null,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -152,6 +155,11 @@ export function FabricRowBody({
         {row.overridden ? (
           <AppText variant="caption" style={{ color: colors.warning }}>
             {t('mobile.purchasing.fabricOverriddenNote')}
+          </AppText>
+        ) : null}
+        {stockHint ? (
+          <AppText variant="caption" style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}>
+            {stockHint}
           </AppText>
         ) : null}
       </View>

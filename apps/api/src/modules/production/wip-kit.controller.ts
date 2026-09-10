@@ -35,6 +35,7 @@ export class WipKitController {
     @Query('to') to?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('q') q?: string,
+    @Query('origin') origin?: string,
   ) {
     const statuses = status
       ? (status.split(',').map((s) => s.trim()) as WipKitStatus[])
@@ -49,6 +50,7 @@ export class WipKitController {
       to,
       warehouseId,
       q,
+      origin: origin === 'normal' || origin === 'returned' ? origin : undefined,
     });
   }
 
@@ -188,13 +190,14 @@ export class WipKitController {
   addWipPiece(
     @Param('taskId') taskId: string,
     @CurrentUser() user: AuthUser,
-    @Body() body: { photoDocumentId: string; label?: string | null },
+    @Body() body: { photoDocumentId: string; label?: string | null; expectedIndex?: number | null },
   ) {
     return this.wipKits.addTaskWipPiece({
       taskId,
       userId: user.id,
       photoDocumentId: body.photoDocumentId,
       label: body.label,
+      expectedIndex: body.expectedIndex,
     });
   }
 

@@ -1,5 +1,5 @@
 import { Image, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { BrandMark } from '@/components/BrandMark';
@@ -14,6 +14,7 @@ import {
   formatEstimatedDuration,
   localizedWorkerProductTitle,
   localizedWorkerStageName,
+  workerHomeLaneHref,
 } from '../selectWorkerHome';
 
 const CREAM = '#F7F4EF';
@@ -48,7 +49,7 @@ export function WorkerCurrentTaskHero({ task }: Props) {
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
   const reduce = useReducedMotion();
-  const href = `/(app)/(employee)/tasks/${task.id}` as Href;
+  const href = workerHomeLaneHref(task);
   const high = isHighPriority(task.priority);
   const inProgress = String(task.status).toUpperCase() === 'IN_PROGRESS';
   const stageName = localizedWorkerStageName(task, locale);

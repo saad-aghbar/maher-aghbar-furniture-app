@@ -11,6 +11,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { locationPickerLabel } from '../pickDefaultLocation';
 import { semiKitFloorStatus, type SemiKitFloorStatus } from '../selectSemiOrders';
 
 type Props = {
@@ -71,7 +72,7 @@ export function InventorySemiOrderCard({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const name = localizedProduct(kit, locale);
   const stageName = localizedStage(kit, locale);
-  const bin = kit.location?.name?.trim() || kit.location?.code || null;
+  const bin = locationPickerLabel(kit.location) || null;
   const warehouseName = kit.warehouse
     ? localizedName(locale, kit.warehouse, kit.warehouse.code)
     : null;
@@ -130,12 +131,6 @@ export function InventorySemiOrderCard({
   const accent = statusStamp.ink;
   const borderColor =
     floor === 'received' ? colors.warning : colors.borderStrong;
-  const placeLine = [warehouseName, bin ? t('mobile.inventory.semiFloorBin', { bin }) : null]
-    .filter(Boolean)
-    .join(' · ');
-  const custodyLine = placeLine
-    ? t('mobile.inventory.semiCustodyLine', { place: placeLine })
-    : null;
   const fadeBottom = colorScheme === 'dark' ? 0.72 : 0.58;
   const makerEmp = kit.producingTask?.assignedEmployee;
   const makerName = makerEmp
@@ -313,7 +308,7 @@ export function InventorySemiOrderCard({
                 {name}
               </AppText>
 
-              {(custodyLine || qty != null || hasWorkers) ? (
+              {(warehouseName || bin || qty != null || hasWorkers) ? (
                 <View
                   style={{
                     borderRadius: theme.radius.md,
@@ -325,14 +320,25 @@ export function InventorySemiOrderCard({
                     gap: 3,
                   }}
                 >
-                  {custodyLine ? (
+                  {warehouseName ? (
                     <AppText
                       variant="caption"
                       color="secondary"
                       numberOfLines={1}
                       style={{ textAlign: isRTL ? 'right' : 'left' }}
                     >
-                      {custodyLine}
+                      {t('mobile.inventory.semiCustodyLine', { place: warehouseName })}
+                    </AppText>
+                  ) : null}
+                  {bin ? (
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      dir="ltr"
+                      numberOfLines={1}
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t('mobile.inventory.semiFloorBin', { bin })}
                     </AppText>
                   ) : null}
                   {qty != null ? (
@@ -582,14 +588,25 @@ export function InventorySemiOrderCard({
           >
             {name}
           </AppText>
-          {custodyLine ? (
+          {warehouseName ? (
             <AppText
               variant="caption"
               color="secondary"
               numberOfLines={1}
               style={{ textAlign: isRTL ? 'right' : 'left' }}
             >
-              {custodyLine}
+              {t('mobile.inventory.semiCustodyLine', { place: warehouseName })}
+            </AppText>
+          ) : null}
+          {bin ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              dir="ltr"
+              numberOfLines={1}
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {t('mobile.inventory.semiFloorBin', { bin })}
             </AppText>
           ) : null}
           {qty != null ? (

@@ -41,6 +41,7 @@ export type WorkflowVersion = {
   revision: number;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  scope?: 'STANDARD' | 'RETURN' | null;
 };
 
 export type WorkflowDetail = {
@@ -50,6 +51,7 @@ export type WorkflowDetail = {
   nameEn: string;
   nameHe?: string | null;
   status: string;
+  scope?: 'STANDARD' | 'RETURN' | null;
   activeVersion?: WorkflowVersion | null;
   versions: Array<{ id: string; versionNumber: number; status: string }>;
 };

@@ -52,4 +52,12 @@ describe('activeTabFromPath', () => {
     expect(activeTabFromPath('customer', '/(app)/(customer)/quotations/q-1')).toBe('orders');
     expect(activeTabFromPath('customer', '/schedule')).toBe('account');
   });
+
+  it('maps employee lane and leftover orders onto tasks', () => {
+    expect(activeTabFromPath('employee', '/(app)/(employee)/lane/po-1')).toBe('tasks');
+    expect(activeTabFromPath('employee', '/(app)/(employee)/orders/po-1')).toBe('tasks');
+    expect(activeTabFromPath('employee', '/(app)/(employee)/tasks/task-1')).toBe('tasks');
+    expect(activeTabFromPath('employee', '/(app)/(employee)/tasks/task-1/take-in')).toBe('tasks');
+    expect(activeTabFromPath('employee', '/take-in')).toBe('tasks');
+  });
 });

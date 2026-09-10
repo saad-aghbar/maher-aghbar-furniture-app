@@ -4,6 +4,7 @@ import type { WorkflowNode, WorkflowVersion } from '@/api/modules/workflow';
 import type { ProductionFlowStage } from '@/features/production-flow/selectProductionFlow';
 import { asLocale } from './trilingualNames';
 import { toDomainGraph } from './toDomainGraph';
+import { isDeliverySetupStage, isQualityGateSetupStage } from './productionSetupBehavior';
 
 type NamedStageDef = {
   id: string;
@@ -28,17 +29,18 @@ function toPreviewStage(
   dependsOnCodes: string[],
   sortOrder: number,
 ): ProductionFlowStage {
+  const milestone = isQualityGateSetupStage(def.code) || isDeliverySetupStage(def.code);
   const timed = Boolean(estimatedMinutes && estimatedMinutes > 0);
   return {
     code: def.code,
     name: localizedName(locale, def, def.code),
-    status: timed ? 'READY' : 'PENDING',
+    status: timed || milestone ? 'READY' : 'PENDING',
     progressPercent: 0,
     dependsOnCodes,
     sortOrder,
     stageDefinitionId: def.id,
-    estimatedMinutes,
-    estimateReviewRequired: !timed,
+    estimatedMinutes: isQualityGateSetupStage(def.code) ? 0 : estimatedMinutes,
+    estimateReviewRequired: milestone ? false : !timed,
     assignees: [],
     actualStart: null,
     actualEnd: null,
@@ -68,20 +70,25 @@ export function selectProductionFlowFromWorkflowVersion(
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((node, index) => {
       const stageCode = node.stageDefinition.code;
-      const isDelivery = stageCode.toUpperCase() === 'DELIVERY';
+      const isDelivery = isDeliverySetupStage(stageCode);
+      const qualityGate = isQualityGateSetupStage(stageCode);
       const estimatedMinutes = isDelivery
         ? null
-        : (estimatesByStageDefId?.get(node.stageDefinition.id) ?? null);
+        : qualityGate
+          ? 0
+          : (estimatesByStageDefId?.get(node.stageDefinition.id) ?? null);
+      const milestone = isDelivery || qualityGate;
+      const timed = Boolean(estimatedMinutes && estimatedMinutes > 0);
       return {
         code: node.id,
         name: localizedName(loc, node.stageDefinition, stageCode),
-        status: estimatedMinutes && estimatedMinutes > 0 ? 'READY' : 'PENDING',
+        status: timed || milestone ? 'READY' : 'PENDING',
         progressPercent: 0,
         dependsOnCodes: [...(graph.predecessorsByNode[node.id] ?? [])],
         sortOrder: index,
         stageDefinitionId: node.stageDefinition.id,
         estimatedMinutes,
-        estimateReviewRequired: !(estimatedMinutes && estimatedMinutes > 0),
+        estimateReviewRequired: milestone ? false : !timed,
         assignees: [],
         actualStart: null,
         actualEnd: null,

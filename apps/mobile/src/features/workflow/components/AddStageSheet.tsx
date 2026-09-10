@@ -18,7 +18,13 @@ import {
   useApplyWorkflowVersionCache,
 } from '../commitWorkflowGraph';
 import { useStageLibraryQuery } from '../query';
-import { isLockedAnchorStageCode } from '@maher/types';
+import {
+  isLockedAnchorStageCodeForScope,
+  isRecoveryStageCode,
+  isReturnWorkflowScope,
+  type ProductionWorkflowScope,
+} from '@maher/types';
+import { formatWorkflowDomainIssues } from '../workflowIssueText';
 import {
   clampParallelReferenceIds,
   clampPredecessorIds,
@@ -49,6 +55,7 @@ type Props = {
   onClose: () => void;
   workflowId: string;
   version: WorkflowVersion;
+  scope?: ProductionWorkflowScope | null;
   onDirty?: () => void;
 };
 
@@ -78,15 +85,19 @@ function sheetErrorMessage(
   }
   if (err && typeof err === 'object' && 'code' in err) {
     const code = String((err as { code: string }).code);
-    if (code === 'WORKFLOW_VALIDATION' && err instanceof Error && err.message) {
-      return err.message;
+    if (code === 'WORKFLOW_VALIDATION') {
+      const issues = (err as { issues?: Array<{ code: string; message: string }> }).issues;
+      if (issues?.length) return formatWorkflowDomainIssues(issues, t);
+      return err instanceof Error && err.message
+        ? err.message
+        : t('mobile.production.workflow.addStageError');
     }
   }
   if (err instanceof Error && err.message.trim()) return err.message;
   return t('mobile.production.workflow.addStageError');
 }
 
-export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: Props) {
+export function AddStageSheet({ open, onClose, workflowId, version, scope, onDirty }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showToast } = useToast();
@@ -127,9 +138,13 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
   const availableStages = useMemo(
     () =>
       (libraryQuery.data ?? []).filter(
-        (s) => s.isActive && !usedCodes.has(s.code) && !isLockedAnchorStageCode(s.code),
+        (s) =>
+          s.isActive &&
+          !usedCodes.has(s.code) &&
+          !isLockedAnchorStageCodeForScope(s.code, scope) &&
+          (isReturnWorkflowScope(scope) || !isRecoveryStageCode(s.code)),
       ),
-    [libraryQuery.data, usedCodes],
+    [libraryQuery.data, usedCodes, scope],
   );
 
   const sortedNodes = useMemo(
@@ -138,7 +153,10 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
   );
 
   const editableNodes = useMemo(() => middleProductionNodes(sortedNodes), [sortedNodes]);
-  const lockedIds = useMemo(() => lockedAnchorNodeIds(sortedNodes), [sortedNodes]);
+  const lockedIds = useMemo(
+    () => lockedAnchorNodeIds(sortedNodes, scope),
+    [sortedNodes, scope],
+  );
   const domain = useMemo(() => toDomainGraph(version), [version]);
 
   const afterPoolNodes = useMemo(() => {
@@ -527,7 +545,11 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
           </View>
           <PlacementModeHint>
             {placement === 'start'
-              ? t('mobile.production.workflow.placementStartHint')
+              ? t(
+                  isReturnWorkflowScope(scope)
+                    ? 'mobile.production.workflow.placementStartHintReturn'
+                    : 'mobile.production.workflow.placementStartHint',
+                )
               : placement === 'after'
                 ? t('mobile.production.workflow.placementAfterHint')
                 : t('mobile.production.workflow.placementParallelHint')}

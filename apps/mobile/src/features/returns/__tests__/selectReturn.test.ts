@@ -2,10 +2,12 @@ import {
   filterDealersByQuery,
   isReturnStatusFilterActive,
 } from '../returnFilters';
+import { dealerPieceJourneyKey, defaultReturnWorkflowId } from '../returnPiece';
 import {
   mapReturnLifecyclePhase,
   returnMatchesStatusChip,
   returnReasonLabelKey,
+  returnWorkOrderHref,
   selectReturnCard,
 } from '../selectReturn';
 import type { ReturnRequest } from '../api';
@@ -155,5 +157,50 @@ describe('selectReturnCard', () => {
     const legacy = selectReturnCard(row, 'en');
     expect(legacy.reasonPhotoUrls).toEqual(['/uploads/r.jpg']);
     expect(legacy.issuePhotoUrls).toEqual([]);
+  });
+});
+
+describe('dealerPieceJourneyKey', () => {
+  it('maps factory work to dealer-safe copy', () => {
+    expect(dealerPieceJourneyKey({ decision: 'REPAIR', state: 'IN_PROGRESS' })).toBe(
+      'mobile.returns.pieceJourney.repairing',
+    );
+    expect(dealerPieceJourneyKey({ decision: 'REPLACEMENT', state: 'IN_PROGRESS' })).toBe(
+      'mobile.returns.pieceJourney.replacing',
+    );
+    expect(dealerPieceJourneyKey({ decision: 'SCRAP_RECOVERY', state: 'RECOVERED' })).toBe(
+      'mobile.returns.pieceJourney.resolved',
+    );
+  });
+});
+
+describe('defaultReturnWorkflowId', () => {
+  const workflows = [
+    { id: 'as', code: 'AS', scope: 'RETURN', activeVersion: { id: 'v1' } },
+    { id: 'rc', code: 'RETURN_RECOVERY', scope: 'RETURN', activeVersion: { id: 'v2' } },
+  ];
+
+  it('defaults scrap to the dismantle workflow and repair to the other return path', () => {
+    expect(defaultReturnWorkflowId('SCRAP_RECOVERY', workflows)).toBe('rc');
+    expect(defaultReturnWorkflowId('REPAIR', workflows)).toBe('as');
+    expect(defaultReturnWorkflowId('REPLACEMENT', workflows)).toBe('as');
+  });
+});
+
+describe('returnWorkOrderHref', () => {
+  it('opens the plan desk for unreleased return work', () => {
+    expect(
+      returnWorkOrderHref({ id: 'po-rw', status: 'PLANNED', releasedToFactoryAt: null }),
+    ).toBe('/(app)/(admin)/production/po-rw/plan');
+  });
+
+  it('opens production detail after factory release', () => {
+    expect(
+      returnWorkOrderHref({
+        id: 'po-rw',
+        status: 'IN_PROGRESS',
+        releasedToFactoryAt: '2026-09-01T00:00:00.000Z',
+      }),
+    ).toBe('/(app)/(admin)/production/po-rw');
   });
 });

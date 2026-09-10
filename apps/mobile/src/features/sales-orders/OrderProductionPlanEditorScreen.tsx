@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  InteractionManager,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import type { Href } from 'expo-router';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import { can, canAny } from '@maher/permissions';
@@ -26,6 +28,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { BomFloorRow } from '@/features/catalog/components/BomFloorRow';
 import { BomMaterialPickerSheet } from '@/features/catalog/components/BomMaterialPickerSheet';
@@ -40,6 +43,11 @@ import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { FabricTrackerBoard } from '@/features/fabric/FabricTrackerBoard';
 import { fabricRowHref, selectFabricTrackerRows } from '@/features/fabric/selectFabricTracker';
 import { useFabricTrackerQuery } from '@/features/purchasing/query';
+import {
+  ProductionOriginChip,
+  productionOriginTraceLine,
+} from '@/features/production/components/ProductionOriginChip';
+import { selectProductionOrigin } from '@/features/production/selectProduction';
 import { WorkflowPickerSheet } from '@/features/sales-orders/production-setup/components/WorkflowPickerSheet';
 import { ProductionTaskSheet } from '@/features/production/components/ProductionTaskSheet';
 import { todayYmd } from '@/features/production/assignWindow';
@@ -49,6 +57,7 @@ import {
   useEnsurePlanTasksMutation,
   useOrderPlanSetupQuery,
   usePutOrderPlanSetupMutation,
+  useResyncOrderPlanSetupMutation,
   useStartProductionMutation,
   useSuggestPlanScheduleMutation,
   useUpdateTaskNotesMutation,
@@ -71,11 +80,10 @@ import {
 import { useAssignOrderWorkflowMutation } from '@/features/workflow/query';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 
 const MATERIALS_COLLAPSED = 5;
-const DOCK_SCROLL_EXTRA = 132;
 
 function planTaskToRow(
   task: OrderPlanSetupTask,
@@ -114,7 +122,7 @@ function planTaskToRow(
     isCompleted: false,
     openBlockerCount: 0,
     elapsedMinutes: 0,
-    estimatedMinutes: null,
+    estimatedMinutes: task.estimatedMinutes ?? null,
     timingStatus: null,
     plannedStart: task.plannedStart ?? null,
     plannedCompletion: task.plannedCompletion ?? null,
@@ -141,7 +149,8 @@ type BomDraft = {
 
 type Props = {
   productionOrderId: string;
-  salesOrderId: string;
+  salesOrderId?: string | null;
+  initialAssignTaskId?: string | null;
 };
 
 function stageConfigured(stage: ProductionSetupStage): boolean {
@@ -220,7 +229,7 @@ function StageRow({
         stage.behavior === 'USES_MATERIALS' ||
         (stage.materialInputs?.length ?? 0) > 0;
   const takesSemi =
-    mode === 'delivery'
+    mode === 'delivery' || mode === 'inspection'
       ? false
       : setupUsesSemi(stage.behavior) ||
         stage.consumesSemiFinished ||
@@ -602,12 +611,14 @@ function PlanTaskRow({
 export function OrderProductionPlanEditorScreen({
   productionOrderId,
   salesOrderId,
+  initialAssignTaskId,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL, formatCurrency, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const matsMaxHeight = Math.round(height * 0.45);
@@ -626,20 +637,21 @@ export function OrderProductionPlanEditorScreen({
 
   const query = useOrderPlanSetupQuery(productionOrderId, Boolean(productionOrderId));
   const putMutation = usePutOrderPlanSetupMutation(productionOrderId);
+  const resyncMutation = useResyncOrderPlanSetupMutation(productionOrderId);
   const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false);
   const [workflowChangeOpen, setWorkflowChangeOpen] = useState(false);
   const catalogLineId = query.data?.salesOrderLineId ?? undefined;
   const catalogPreviewQuery = useCatalogSeedPreviewQuery(
-    salesOrderId,
+    salesOrderId ?? undefined,
     catalogLineId,
-    catalogPreviewOpen && Boolean(catalogLineId),
+    catalogPreviewOpen && Boolean(catalogLineId && salesOrderId),
   );
   const seedFromCatalogMutation = useSeedFromCatalogMutation(
-    salesOrderId,
+    salesOrderId ?? '',
     productionOrderId,
   );
   const markMaterialsReviewedMutation = useMarkPlanMaterialsReviewedMutation(
-    salesOrderId,
+    salesOrderId ?? '',
     productionOrderId,
   );
   const assignWorkflowMutation = useAssignOrderWorkflowMutation(productionOrderId);
@@ -659,6 +671,7 @@ export function OrderProductionPlanEditorScreen({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [productionStartYmd, setProductionStartYmd] = useState(todayYmd());
   const [assignTaskId, setAssignTaskId] = useState<string | null>(null);
+  const seededAssignTaskRef = useRef(false);
   const [assignWindow, setAssignWindow] = useState<{
     plannedStart?: string;
     plannedCompletion?: string;
@@ -670,7 +683,10 @@ export function OrderProductionPlanEditorScreen({
 
   const canOverrideConflict = can(user, 'schedule.override');
   const canFabricRead = can(user, 'fabric.procurement.read');
-  const fabricTrackerQuery = useFabricTrackerQuery(salesOrderId, canFabricRead);
+  const fabricTrackerQuery = useFabricTrackerQuery(
+    salesOrderId ?? undefined,
+    canFabricRead && Boolean(salesOrderId),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -722,6 +738,19 @@ export function OrderProductionPlanEditorScreen({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once when a workflow exists without tasks
   }, [query.data?.planEditable, query.data?.tasks?.length, query.data?.readiness?.hasWorkflow]);
+
+  useEffect(() => {
+    if (seededAssignTaskRef.current) return;
+    if (!initialAssignTaskId || !query.data) return;
+    const exists = (query.data.tasks ?? []).some((t) => t.id === initialAssignTaskId);
+    if (!exists) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (seededAssignTaskRef.current) return;
+      seededAssignTaskRef.current = true;
+      setAssignTaskId(initialAssignTaskId);
+    });
+    return () => handle.cancel();
+  }, [initialAssignTaskId, query.data]);
 
   const planEditable = Boolean(query.data?.planEditable && canEdit);
   const stages = useMemo(() => {
@@ -858,8 +887,17 @@ export function OrderProductionPlanEditorScreen({
           });
           // Ready-to-start desk — avoid opening detail immediately (same-day
           // start would lazy-promote into In production on that read).
-          seedOrdersDeskChip('ready_to_start');
-          router.replace('/(app)/(admin)/orders' as Href);
+          const returnId = query.data?.returnRequest?.id;
+          if (
+            (query.data?.originType === 'RETURN_WORK' ||
+              query.data?.originType === 'REPLACEMENT') &&
+            returnId
+          ) {
+            router.replace(`/(app)/(admin)/returns/${returnId}` as Href);
+          } else {
+            seedOrdersDeskChip('ready_to_start');
+            router.replace('/(app)/(admin)/orders' as Href);
+          }
         },
         onError: (err) => {
           void haptics.error();
@@ -897,12 +935,23 @@ export function OrderProductionPlanEditorScreen({
   }
 
   const data = query.data;
-  const dealerName = data.salesOrder?.customer
-    ? localizedName(locale, data.salesOrder.customer, data.salesOrder.customer.name ?? '—')
+  const planOrigin = selectProductionOrigin({
+    number: data.number ?? data.productionOrderId,
+    originType: data.originType,
+    returnRequest: data.returnRequest,
+  });
+  const isReturnOrigin =
+    data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT';
+  const headingNumber = data.salesOrder?.number
+    ?? (planOrigin ? productionOriginTraceLine(planOrigin, t) : data.number)
+    ?? '—';
+  const dealerSource = data.salesOrder?.customer ?? data.customer ?? null;
+  const dealerName = dealerSource
+    ? localizedName(locale, dealerSource, dealerSource.name ?? '—')
     : '—';
   const productName = data.product
     ? localizedName(locale, data.product, data.product.sku ?? '—')
-    : '—';
+    : (data.productDescription?.trim() || '—');
   const workflowName = data.workflow
     ? localizedName(locale, data.workflow, data.workflow.code ?? '—')
     : t('mobile.productionSetup.noWorkflowSelected');
@@ -988,10 +1037,13 @@ export function OrderProductionPlanEditorScreen({
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.md,
-          paddingBottom: SURFACE_TAB_BAR_CLEARANCE + DOCK_SCROLL_EXTRA,
+          paddingBottom: data.planEditable
+            ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 148
+            : surfaceTabBarStackInset(insets.bottom, theme.spacing.md),
           gap: theme.spacing.md,
         }}
         refreshControl={
@@ -1005,7 +1057,52 @@ export function OrderProductionPlanEditorScreen({
           />
         }
       >
-        {data.catalogTemplate?.showBoard ? (
+        {data.planDrift?.drifted ? (
+          <ListItemEnter index={0}>
+            <DealerBoard title={t('mobile.productionSetup.planDriftTitle')} titleWeight={titleWeight}>
+              <AppText variant="body" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('mobile.productionSetup.planDriftBody')}
+              </AppText>
+              {(data.planDrift.issues ?? []).slice(0, 4).map((issue) => (
+                <AppText
+                  key={`${issue.snapshotNodeId}-${issue.field}`}
+                  variant="caption"
+                  color="muted"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {issue.stageCode} · {issue.field}
+                </AppText>
+              ))}
+              <PrimaryButton
+                label={t('mobile.productionSetup.planResync')}
+                loading={resyncMutation.isPending}
+                onPress={() => {
+                  resyncMutation.mutate(undefined, {
+                    onSuccess: () => {
+                      void haptics.confirmLight();
+                      showToast({
+                        variant: 'success',
+                        message: t('mobile.productionSetup.planResynced'),
+                      });
+                      void query.refetch();
+                    },
+                    onError: (err) => {
+                      void haptics.error();
+                      showToast({
+                        variant: 'error',
+                        message: isApiError(err)
+                          ? toastMessageForError(err)
+                          : t('mobile.productionSetup.actionFailed'),
+                      });
+                    },
+                  });
+                }}
+              />
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
+        {data.catalogTemplate?.showBoard && !isReturnOrigin ? (
           <ListItemEnter index={0}>
             <StandardProductPlanBoard
               catalogTemplate={data.catalogTemplate}
@@ -1077,8 +1174,9 @@ export function OrderProductionPlanEditorScreen({
                 gap: theme.spacing.xs,
               }}
             >
-              <AppText variant="label" weight={titleWeight}>
-                {data.salesOrder?.number ?? '—'}
+              {planOrigin ? <ProductionOriginChip origin={planOrigin} compact /> : null}
+              <AppText variant="label" weight={titleWeight} dir="ltr">
+                {headingNumber}
               </AppText>
               <AppText variant="caption" color="muted">
                 {dealerName}
@@ -1170,6 +1268,11 @@ export function OrderProductionPlanEditorScreen({
               <AppText variant="caption" color="muted">
                 {t('mobile.productionSetup.stageCount', { n: stages.length })}
               </AppText>
+              {isReturnOrigin && !data.readiness.hasWorkflow ? (
+                <AppText variant="caption" color="muted">
+                  {t('mobile.productionSetup.reworkPathHint')}
+                </AppText>
+              ) : null}
             </View>
 
             <FloorActionRow
@@ -1182,7 +1285,11 @@ export function OrderProductionPlanEditorScreen({
             {planEditable ? (
               <>
                 <FloorActionRow
-                  label={t('mobile.productionSetup.changeWorkflowCta')}
+                  label={
+                    isReturnOrigin && !data.readiness.hasWorkflow
+                      ? t('mobile.productionSetup.chooseReworkPath')
+                      : t('mobile.productionSetup.changeWorkflowCta')
+                  }
                   disabled={assignWorkflowMutation.isPending}
                   onPress={() => setWorkflowOpen(true)}
                 />
@@ -1231,8 +1338,16 @@ export function OrderProductionPlanEditorScreen({
             </AppText>
             {bomDraft.length === 0 ? (
               <EmptyState
-                title={t('mobile.productionSetup.noMaterials')}
-                description={t('mobile.productionSetup.orderBomEmpty')}
+                title={
+                  isReturnOrigin
+                    ? t('mobile.productionSetup.reworkNoMaterials')
+                    : t('mobile.productionSetup.noMaterials')
+                }
+                description={
+                  isReturnOrigin
+                    ? t('mobile.productionSetup.reworkBomEmpty')
+                    : t('mobile.productionSetup.orderBomEmpty')
+                }
               />
             ) : (
               <>
@@ -1446,6 +1561,7 @@ export function OrderProductionPlanEditorScreen({
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         existingSkus={bomDraft.map((b) => b.sku)}
+        allowCreate
         onPick={(row) => {
           setBomDraft((prev) => {
             if (prev.some((b) => b.sku === row.sku)) return prev;
@@ -1473,6 +1589,11 @@ export function OrderProductionPlanEditorScreen({
         open={workflowOpen}
         onClose={() => setWorkflowOpen(false)}
         selectedId={data.workflow?.id ?? null}
+        preferredScope={
+          data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT'
+            ? 'RETURN'
+            : 'STANDARD'
+        }
         onPick={(wf) => {
           setWorkflowOpen(false);
           if (wf.id === data.workflow?.id) return;
@@ -1566,6 +1687,12 @@ export function OrderProductionPlanEditorScreen({
         scheduleConflict={scheduleConflict}
         onClearScheduleConflict={() => setScheduleConflict(null)}
         onWindowChange={setAssignWindow}
+        onOpenStageTimes={() => {
+          setAssignTaskId(null);
+          setAssignWindow({});
+          setScheduleConflict(null);
+          router.push(adminProductionFlowHref(productionOrderId));
+        }}
         onAssign={(payload) => {
           if (!sheetTask) return;
           assignMutation.mutate(
@@ -1575,8 +1702,10 @@ export function OrderProductionPlanEditorScreen({
               priority: payload.priority,
               plannedStart: payload.plannedStart,
               plannedCompletion: payload.plannedCompletion,
-              estimatedMinutes: payload.estimatedMinutes,
+              overtime: payload.overtime,
               overrideConflict: payload.overrideConflict,
+              acknowledge: payload.acknowledge,
+              reason: payload.reason,
             },
             {
               onSuccess: () => {
@@ -1592,6 +1721,13 @@ export function OrderProductionPlanEditorScreen({
               },
               onError: (err) => {
                 void haptics.error();
+                if (isApiError(err) && err.code === 'STAGE_TIME_REQUIRED') {
+                  showToast({
+                    variant: 'error',
+                    message: t('mobile.production.stageTimeMissingBody'),
+                  });
+                  return;
+                }
                 if (isApiError(err) && err.code === 'WORKER_SCHEDULE_CONFLICT') {
                   setScheduleConflict({
                     conflicts: Array.isArray(err.details.conflicts)

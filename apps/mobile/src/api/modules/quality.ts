@@ -25,6 +25,14 @@ export type QualityChecklistItem = {
   label: string;
   result?: string | null;
   note?: string | null;
+  wipPieceId?: string | null;
+  reentryStageInstanceIds?: string[];
+  voiceDocumentId?: string | null;
+  photoDocumentIds?: string[];
+  kitId?: string | null;
+  kitLabel?: string | null;
+  kitLabelAr?: string | null;
+  kitLabelHe?: string | null;
 };
 
 export type QualityDefect = {
@@ -81,17 +89,88 @@ export type ExpectedPackage = {
 export type ItemUnderInspection = {
   stageCode: string;
   stageNameEn: string;
+  stageNameAr?: string | null;
+  stageNameHe?: string | null;
   completedAt?: string | null;
   workerName?: string | null;
 };
 
 export type ManufacturingSpec = {
-  complexity?: string;
+  complexity?: string | null;
   orderDimensions?: Record<string, unknown> | null;
-  measurements?: unknown;
+  catalogDimensions?: Record<string, unknown> | null;
+  measurements?:
+    | Array<{
+        key: string;
+        label: string;
+        value: string;
+        unit?: string | null;
+        catalogValue?: string | null;
+      }>
+    | unknown;
   factoryNotes?: string | null;
   requestedFabricLabel?: string | null;
   manufacturingName?: string | null;
+  color?: string | null;
+  fabric?: {
+    sku?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    color?: string | null;
+  } | null;
+  wood?: { sku?: string | null; nameEn?: string | null; nameAr?: string | null; nameHe?: string | null } | null;
+  foam?: { sku?: string | null; nameEn?: string | null; nameAr?: string | null; nameHe?: string | null } | null;
+  bom?: Array<{
+    sku: string;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    qty: number;
+    unit?: string | null;
+    category?: string | null;
+    fabricRole?: string | null;
+  }>;
+  lineSpec?: unknown;
+  changesFromCatalog?: Array<{
+    field: string;
+    label: string;
+    from: unknown;
+    to: unknown;
+    delta?: number | null;
+  }>;
+};
+
+export type InspectionDealerFabric = {
+  type?: string | null;
+  color?: string | null;
+  code?: string | null;
+  role?: string | null;
+};
+
+export type InspectionDealerDetails = {
+  projectName?: string | null;
+  dealerNotes?: string | null;
+  imageUrls?: string[];
+  photoDocumentIds?: string[];
+  productName?: string | null;
+  quantity?: string | null;
+  width?: string | null;
+  height?: string | null;
+  depth?: string | null;
+  seatHeight?: string | null;
+  fabricType?: string | null;
+  fabricColor?: string | null;
+  fabricCode?: string | null;
+  fabrics?: InspectionDealerFabric[];
+  foamDensity?: string | null;
+  woodType?: string | null;
+  woodColor?: string | null;
+  material?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
+  lineNotes?: string | null;
+  description?: string | null;
 };
 
 export type QualityFloorContext = {
@@ -99,18 +178,32 @@ export type QualityFloorContext = {
   productionOrderNumber: string;
   salesOrderNumber?: string | null;
   dealerName?: string | null;
+  dealerNameAr?: string | null;
+  dealerNameHe?: string | null;
+  productId?: string | null;
   productName?: string | null;
+  productNameAr?: string | null;
+  productNameHe?: string | null;
   productImageUrl?: string | null;
+  composition?: string | null;
   quantity: number;
   orderStatus: string;
   currentStageCode?: string | null;
   itemUnderInspection: ItemUnderInspection | null;
   manufacturingSpec: ManufacturingSpec | null;
+  dealerDetails?: InspectionDealerDetails | null;
   latestInspection: QualityInspection | null;
   inspections: QualityInspection[];
   openRework: ReworkRequestSummary | null;
   expectedPackages: ExpectedPackage[];
   packagingUnlocked: boolean;
+  inspectionProgress?: {
+    passed: number;
+    failed: number;
+    pending: number;
+    total: number;
+  };
+  pieceChecklist?: QualityChecklistItem[];
   lightAnalytics: {
     inspectionAttempts: number;
     reworkCount: number;
@@ -149,7 +242,7 @@ export type CreateInspectionBody = {
 };
 
 export type SubmitInspectionBody = {
-  result: QualityResult;
+  result?: QualityResult;
   notes?: string;
   defectDescription?: string;
   defectCategory?: string;
@@ -157,8 +250,17 @@ export type SubmitInspectionBody = {
   severity?: string;
   reentryStageInstanceId?: string;
   idempotencyKey?: string;
-  checklistResults?: Array<{ checklistCode: string; result: string; note?: string }>;
+  checklistResults?: Array<{
+    checklistCode: string;
+    result: string;
+    note?: string;
+    reentryStageInstanceIds?: string[];
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
+    defectDescription?: string;
+  }>;
   photoDocumentIds?: string[];
+  voiceDocumentId?: string;
 };
 
 export async function createInspection(body: CreateInspectionBody) {

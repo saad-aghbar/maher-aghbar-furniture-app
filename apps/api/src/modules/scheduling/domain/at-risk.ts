@@ -166,7 +166,6 @@ function hasValidPlan(input: ClassifyScheduleRiskInput): boolean {
 export function classifyScheduleRisk(input: ClassifyScheduleRiskInput): ScheduleRiskClassification {
   const now = input.now ?? new Date();
   const committed = input.committedDeliveryDate ?? null;
-  const requested = input.requestedDeliveryDate ?? null;
   const projected = input.projectedCompletion ?? null;
   const unschedulable = mapUnschedulableReason(input.unschedulableReason);
   const estimateReview = Boolean(input.requiresAdminEstimateReview);

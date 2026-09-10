@@ -93,6 +93,8 @@ export function mapRequestItemCreate(
 }
 
 export async function loadCatalogMap(
+  // Prisma `findMany` overloads are not expressible as a single call signature.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   prisma: { product: { findMany: Function } },
   items: Array<{ productId?: string | null }>,
 ): Promise<Map<string, CatalogProductDims>> {

@@ -47,7 +47,7 @@ type Props = {
   onRefresh: () => void;
   onEndReached: () => void;
   isFetchingNextPage: boolean;
-  onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPressItem: (id: string, kind?: 'order' | 'rfq' | 'returnWork') => void;
   banner?: ReactNode;
 };
 

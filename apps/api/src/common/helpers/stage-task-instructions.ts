@@ -80,6 +80,14 @@ export function buildStageTaskInstructions(opts: {
         'Report any transit damage immediately.',
       ].join('\n');
 
+    case 'DISMANTLE_RECOVER':
+      return [
+        `Dismantle and recover: ${productLine}.${specsBlock}`,
+        'Strip usable parts, hardware, and leftover materials from the returned piece.',
+        'Log every recovered, disposed, or damaged part as a recovery line.',
+        'Post every line before finishing — nothing leaves this stage unrecorded.',
+      ].join('\n');
+
     default:
       return [
         `${opts.stageNameEn} for: ${productLine}.${specsBlock}`,

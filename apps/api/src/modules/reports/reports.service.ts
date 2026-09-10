@@ -26,6 +26,8 @@ import {
 import { ymdInTimezone } from '../scheduling/domain/factory-replan';
 import { paymentUnallocated, money as dealerMoney } from '../payments/dealer-finance';
 import { productionBoardBucketCountWhere } from '../production/production-board-buckets';
+import { productionOriginWhere, type ProductionOriginFilter } from '../production/production-origin';
+import { managementReturnTileWheres, pendingReturnsWhere } from './return-counts';
 import {
   buildFactoryFlow,
   capAttentionCards,
@@ -218,16 +220,7 @@ export class ReportsService {
         where: { archivedAt: null, status: 'ACTIVE' },
       }),
       this.prisma.returnRequest.count({
-        where: {
-          OR: [
-            { approvalStatus: { in: ['PENDING', 'NEED_INFO'] } },
-            { physicalStatus: 'WAITING_RETURN' },
-            {
-              physicalStatus: { in: ['RETURNED', 'INSPECTING'] },
-              inventoryFate: 'PENDING',
-            },
-          ],
-        },
+        where: pendingReturnsWhere,
       }),
       this.prisma.inventoryItem.findMany({
         where: { archivedAt: null },
@@ -608,6 +601,7 @@ export class ReportsService {
       outstandingAgg,
       dueInvoice,
       unreadNotifications,
+      pendingReturns,
       recentSalesOrders,
       recentInvoiceRows,
     ] = await Promise.all([
@@ -675,6 +669,9 @@ export class ReportsService {
             where: { userId: user.id, readAt: null },
           })
         : Promise.resolve(0),
+      this.prisma.returnRequest.count({
+        where: { customerId, ...pendingReturnsWhere },
+      }),
       this.prisma.salesOrder.findMany({
         where: { ...baseSo, status: { notIn: [SalesOrderStatus.CANCELLED] } },
         orderBy: { createdAt: 'desc' },
@@ -819,6 +816,7 @@ export class ReportsService {
       outstandingBalance: roundMoney(outstandingBalance),
       balanceDueInDays,
       unreadNotifications,
+      pendingReturns,
       recentOrders,
       recentInvoices: recentInvoiceRows.map((inv) => ({
         id: inv.id,
@@ -920,7 +918,7 @@ export class ReportsService {
     endOfDay.setHours(23, 59, 59, 999);
 
     const mine: Prisma.ProductionTaskWhereInput = { assignedEmployeeId: assigneeId };
-    /** Same floor eligibility as Tasks tab — hide unreleased Preparing work. */
+    /** Home is startable floor work only. My Tasks lists remaining assigned orders. */
     const openMine: Prisma.ProductionTaskWhereInput = workerFloorOpenTasksWhere(assigneeId);
     const canNotifications = hasPermission(user.permissions ?? [], 'notification.read');
     const rawLang = String(localeOverride || user.preferredLanguage || 'en').toLowerCase();
@@ -951,6 +949,7 @@ export class ReportsService {
       },
       productionOrder: {
         select: {
+          id: true,
           number: true,
           productDescription: true,
           salesOrder: { select: { number: true } },
@@ -1042,6 +1041,7 @@ export class ReportsService {
       });
       return {
         id: t.id,
+        productionOrderId: t.productionOrder.id,
         number: t.number,
         /** Localized stage label (legacy). Prefer nameEn/Ar/He on the client. */
         name: stageName,
@@ -1240,6 +1240,7 @@ export class ReportsService {
     const requiredDeliveryDate = dateRange(filters.from, filters.to);
     const baseWhere: Prisma.ProductionOrderWhereInput = {
       archivedAt: null,
+      originType: 'SALES_ORDER',
       ...(filters.customerId ? { salesOrder: { customerId: filters.customerId } } : {}),
     };
 
@@ -1713,8 +1714,9 @@ export class ReportsService {
     };
   }
 
-  async productionSummary() {
+  async productionSummary(origin?: ProductionOriginFilter) {
     const now = new Date();
+    const originWhere = productionOriginWhere(origin);
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
     const startOfWeek = new Date(now);
@@ -1726,6 +1728,8 @@ export class ReportsService {
       archivedAt: null,
       status: ProductionOrderStatus.COMPLETED,
     } as const;
+    const scoped = (where: Prisma.ProductionOrderWhereInput): Prisma.ProductionOrderWhereInput =>
+      originWhere ? { AND: [where, originWhere] } : where;
 
     const [
       completedToday,
@@ -1742,45 +1746,45 @@ export class ReportsService {
       inspectionPackaging,
     ] = await Promise.all([
       this.prisma.productionOrder.count({
-        where: { ...completedFilter, actualCompletionDate: { gte: startOfDay } },
+        where: scoped({ ...completedFilter, actualCompletionDate: { gte: startOfDay } }),
       }),
       this.prisma.productionOrder.count({
-        where: { ...completedFilter, actualCompletionDate: { gte: startOfWeek } },
+        where: scoped({ ...completedFilter, actualCompletionDate: { gte: startOfWeek } }),
       }),
       this.prisma.productionOrder.count({
-        where: { ...completedFilter, actualCompletionDate: { gte: startOfMonth } },
+        where: scoped({ ...completedFilter, actualCompletionDate: { gte: startOfMonth } }),
       }),
-      this.prisma.productionOrder.count({ where: completedFilter }),
+      this.prisma.productionOrder.count({ where: scoped(completedFilter) }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('on_floor', now),
+        where: scoped(productionBoardBucketCountWhere('on_floor', now)),
       }),
       this.prisma.productionOrder.count({
-        where: {
+        where: scoped({
           archivedAt: null,
           requiredDeliveryDate: { lt: now },
           status: {
             notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
           },
-        },
+        }),
       }),
       this.prisma.productionOrder.aggregate({
-        where: productionBoardBucketCountWhere('on_floor', now),
+        where: scoped(productionBoardBucketCountWhere('on_floor', now)),
         _avg: { progressPercent: true },
       }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('needs_setup', now),
+        where: scoped(productionBoardBucketCountWhere('needs_setup', now)),
       }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('ready_to_start', now),
+        where: scoped(productionBoardBucketCountWhere('ready_to_start', now)),
       }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('on_floor', now),
+        where: scoped(productionBoardBucketCountWhere('on_floor', now)),
       }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('blocked', now),
+        where: scoped(productionBoardBucketCountWhere('blocked', now)),
       }),
       this.prisma.productionOrder.count({
-        where: productionBoardBucketCountWhere('inspection_packaging', now),
+        where: scoped(productionBoardBucketCountWhere('inspection_packaging', now)),
       }),
     ]);
 
@@ -2011,7 +2015,25 @@ export class ReportsService {
     const orderWhere = this.salesOrderWhere(filters);
     const invoiceDate = dateRange(filters.from, filters.to);
 
-    const [orders, arInvoices, supplierInvoices, timeEntries] = await Promise.all([
+    const returnOriginWhere = (originType: 'RETURN_WORK' | 'REPLACEMENT') => ({
+      productionOrder: {
+        archivedAt: null,
+        originType,
+        ...(filters.customerId
+          ? {
+              OR: [
+                { customerId: filters.customerId },
+                { returnRequest: { customerId: filters.customerId } },
+              ],
+            }
+          : {}),
+      },
+      ...(dateRange(filters.from, filters.to)
+        ? { createdAt: dateRange(filters.from, filters.to) }
+        : {}),
+    });
+
+    const [orders, arInvoices, supplierInvoices, timeEntries, reworkOrders, replacementOrders, writeOffs] = await Promise.all([
       this.prisma.salesOrder.findMany({
         where: orderWhere,
         select: {
@@ -2047,10 +2069,37 @@ export class ReportsService {
         select: { minutes: true, startedAt: true, endedAt: true },
         take: 2000,
       }),
+      this.prisma.productionTaskMaterialUsage.aggregate({
+        where: returnOriginWhere('RETURN_WORK'),
+        _sum: { extendedCost: true },
+      }),
+      this.prisma.productionTaskMaterialUsage.aggregate({
+        where: returnOriginWhere('REPLACEMENT'),
+        _sum: { extendedCost: true },
+      }),
+      this.prisma.returnRecoveryLine.findMany({
+        where: {
+          postedAt: { not: null },
+          ...(dateRange(filters.from, filters.to)
+            ? { postedAt: dateRange(filters.from, filters.to) }
+            : {}),
+        },
+        select: { outcome: true, quantity: true, unitCost: true },
+      }),
     ]);
 
     const revenueOrders = orders.reduce((s, o) => s + Number(o.total), 0);
     const materialCogs = orders.reduce((s, o) => s + Number(o.manufacturingCost ?? 0), 0);
+    const reworkCost = Number(reworkOrders._sum.extendedCost ?? 0);
+    const replacementCost = Number(replacementOrders._sum.extendedCost ?? 0);
+    let recoveredValue = 0;
+    let scrapValue = 0;
+    for (const line of writeOffs) {
+      const value = Number(line.quantity ?? 0) * Number(line.unitCost ?? 0);
+      if (String(line.outcome) === 'RECOVER_TO_INVENTORY') recoveredValue += value;
+      else scrapValue += value;
+    }
+    const returnWriteOff = scrapValue - recoveredValue;
     const revenueInvoiced = Number(arInvoices._sum.total ?? 0);
     const supplierSpend = Number(supplierInvoices._sum.total ?? 0);
 
@@ -2083,6 +2132,11 @@ export class ReportsService {
         revenueOrders: roundMoney(revenueOrders),
         revenueInvoiced: roundMoney(revenueInvoiced),
         materialCogs: roundMoney(materialCogs),
+        reworkCost: roundMoney(reworkCost),
+        replacementCost: roundMoney(replacementCost),
+        recoveredValue: roundMoney(recoveredValue),
+        scrapValue: roundMoney(scrapValue),
+        returnWriteOff: roundMoney(returnWriteOff),
         supplierSpend: roundMoney(supplierSpend),
         laborMinutes,
         laborHours: roundMoney(laborMinutes / 60),
@@ -2196,7 +2250,11 @@ export class ReportsService {
       this.prisma.goodsReceipt.findMany({
         orderBy: { createdAt: 'desc' },
         take: 20,
-        include: { purchaseOrder: true, warehouse: true },
+        include: {
+          purchaseOrder: true,
+          warehouse: true,
+          lines: { include: { location: { select: { code: true } } } },
+        },
       }),
     ]);
     return { purchaseOrdersByStatus: pos, purchaseRequestsByStatus: prs, recentReceipts: receipts };
@@ -2520,16 +2578,13 @@ export class ReportsService {
         },
       }),
       this.prisma.returnRequest.count({
-        where: { approvalStatus: { in: ['PENDING', 'NEED_INFO'] } },
+        where: managementReturnTileWheres.approvalOpen,
       }),
       this.prisma.returnRequest.count({
-        where: { physicalStatus: 'WAITING_RETURN' },
+        where: managementReturnTileWheres.waitingReturn,
       }),
       this.prisma.returnRequest.count({
-        where: {
-          physicalStatus: { in: ['RETURNED', 'INSPECTING'] },
-          inventoryFate: 'PENDING',
-        },
+        where: managementReturnTileWheres.waitingInspection,
       }),
       this.prisma.inventoryLot.count({
         where: {
@@ -2939,7 +2994,13 @@ export class ReportsService {
       this.prisma.salesOrder.findMany({
         where: {
           archivedAt: null,
-          status: { notIn: [SalesOrderStatus.CANCELLED, SalesOrderStatus.COMPLETED] },
+          status: {
+            notIn: [
+              SalesOrderStatus.CANCELLED,
+              SalesOrderStatus.COMPLETED,
+              SalesOrderStatus.DELIVERED,
+            ],
+          },
           productionSetup: { status: 'SETUP_REQUIRED' },
         },
         orderBy: { updatedAt: 'desc' },

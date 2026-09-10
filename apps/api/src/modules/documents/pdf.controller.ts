@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
@@ -11,13 +10,14 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { inventoryScanPayload, wipKitScanPayload, wipPieceScanPayload } from '@maher/types';
+import { inventoryScanPayload, wipKitScanPayload, wipPieceScanPayload, binScanPayload } from '@maher/types';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import {
+  buildBinLabelSheetPdf,
   buildInventoryItemReportPdf,
   buildInventoryLabelPdf,
   buildSimplePdf,
@@ -27,6 +27,11 @@ import {
   sendPdf,
 } from '../../common/helpers/pdf.util';
 import { localizedName, localizedQuotationStatus, pdfMessages } from '../../common/helpers/pdf-i18n';
+import {
+  goodsReceiptPdfColumns,
+  goodsReceiptPdfRow,
+  hasPresentUnitCost,
+} from './goods-receipt-pdf';
 import { roundMoney } from '../../common/helpers/money.util';
 import { isDealerVisibleQuotationStatus } from '../quotations/quotation-visibility';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
@@ -34,6 +39,10 @@ import { InventoryItemReportService } from '../inventory/inventory-item-report.s
 import { mapInventoryItemReportToPdfSpec } from '../inventory/inventory-item-report-pdf';
 import { RawMaterialsReportService } from '../inventory/raw-materials-report.service';
 import { buildRawMaterialsReportPdf } from '../inventory/raw-materials-report-pdf';
+import {
+  buildSupplierStatementLedger,
+  parseStatementBound,
+} from '../purchasing/supplier-statement';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 
 @ApiTags('pdf')
@@ -154,15 +163,22 @@ export class PdfController {
         message: 'Not your invoice.',
       });
     }
+    const meta = [
+      `${m.customer}: ${localizedName(locale, inv.customer)}`,
+      `${m.status}: ${inv.status}`,
+    ];
+    if (inv.invoiceDate) {
+      meta.push(`${m.invoiceDate}: ${inv.invoiceDate.toISOString().slice(0, 10)}`);
+    }
+    if (inv.dueDate) {
+      meta.push(`${m.dueDate}: ${inv.dueDate.toISOString().slice(0, 10)}`);
+    }
     const buffer = await buildSimplePdf({
       locale,
       theme: pdfTheme,
       title: m.invoice,
       subtitle: inv.number,
-      meta: [
-        `${m.customer}: ${localizedName(locale, inv.customer)}`,
-        `${m.status}: ${inv.status}`,
-      ],
+      meta,
       columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
       rows: inv.lines.map((l) => [
         l.description,
@@ -171,7 +187,10 @@ export class PdfController {
         String(l.lineTotal),
       ]),
       footerLines: [
+        `${m.subtotal}: ${inv.subtotal} ${inv.currency}`,
+        `${m.tax}: ${inv.taxTotal} ${inv.currency}`,
         `${m.total}: ${inv.total} ${inv.currency}`,
+        `${m.paid}: ${inv.paidAmount} ${inv.currency}`,
         `${m.outstanding}: ${inv.outstandingAmount} ${inv.currency}`,
       ],
     });
@@ -233,6 +252,60 @@ export class PdfController {
     sendPdf(res, `${payment.number}.pdf`, buffer);
   }
 
+  @Get('supplier-payments/:id/pdf')
+  @RequireAnyPermissions('supplier-invoice.read', 'supplier-payment.record')
+  async supplierPaymentPdf(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Supplier payment PDF is staff-only.',
+      });
+    }
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const payment = await this.prisma.supplierPayment.findUniqueOrThrow({
+      where: { id },
+      include: {
+        supplier: true,
+        supplierInvoice: { select: { id: true, number: true, total: true } },
+      },
+    });
+    const buffer = await buildSimplePdf({
+      locale,
+      theme: pdfTheme,
+      title: m.paymentReceipt,
+      subtitle: payment.number,
+      meta: [
+        `${m.supplier}: ${localizedName(locale, payment.supplier)}`,
+        `${m.date}: ${payment.paymentDate.toISOString().slice(0, 10)}`,
+        `${m.method}: ${payment.method}`,
+      ],
+      columns: [m.field, m.value],
+      rows: [
+        [m.paymentNumber, payment.number],
+        [m.amount, `${payment.amount} ${payment.currency}`],
+        [m.method, payment.method],
+        [m.invoiceRef, payment.supplierInvoice?.number ?? '—'],
+        [m.reference, payment.referenceNumber ?? '—'],
+        [m.notes, payment.notes ?? '—'],
+      ],
+      footerLines: [
+        payment.supplierInvoice
+          ? `${m.appliedToInvoice} ${payment.supplierInvoice.number}`
+          : m.unallocatedPayment,
+        `${m.generated} ${new Date().toISOString().slice(0, 10)}`,
+      ],
+    });
+    sendPdf(res, `${payment.number}.pdf`, buffer);
+  }
+
   @Get('contracts/:id/pdf')
   @RequirePermissions('contract.read')
   async contractPdf(
@@ -281,20 +354,68 @@ export class PdfController {
     sendPdf(res, `${c.number}.pdf`, buffer);
   }
 
-  /**
-   * GRN PDF — not implemented as a dealer-facing document.
-   * Internal receipt detail lives on PO API (`goodsReceipts` + unitCost).
-   * Never expose purchase unit costs on dealer PDFs.
-   */
+  /** Staff GRN PDF — never dealer-facing; unit cost only when the receipt stored one. */
   @Get('purchasing/goods-receipts/:id/pdf')
   @RequirePermissions('purchase-order.read')
-  goodsReceiptPdf(@Param('id') id: string) {
-    throw new BadRequestException({
-      code: 'GRN_PDF_NOT_AVAILABLE',
-      message:
-        'Goods receipt PDF is not available. Use the purchase order PDF for expected costs, or PO detail goodsReceipts for internal actual unit costs. GRN PDFs are never dealer-facing.',
-      goodsReceiptId: id,
+  async goodsReceiptPdf(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Goods receipt PDF is staff-only.',
+      });
+    }
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const grn = await this.prisma.goodsReceipt.findUniqueOrThrow({
+      where: { id },
+      include: {
+        warehouse: true,
+        purchaseOrder: { include: { supplier: true } },
+        lines: { include: { inventoryItem: true } },
+      },
     });
+    const showCost = grn.lines.some((line) => hasPresentUnitCost(line.unitCost));
+    const buffer = await buildSimplePdf({
+      locale,
+      theme: pdfTheme,
+      title: m.goodsReceipt,
+      subtitle: grn.number,
+      meta: [
+        `${m.supplier}: ${localizedName(locale, grn.purchaseOrder.supplier)}`,
+        `${m.purchaseOrder}: ${grn.purchaseOrder.number}`,
+        `${m.warehouse}: ${grn.warehouse?.code ?? '—'}`,
+        `${m.date}: ${grn.receiptDate.toISOString().slice(0, 10)}`,
+        grn.deliveryDocRef ? `${m.reference}: ${grn.deliveryDocRef}` : '',
+      ].filter(Boolean),
+      columns: goodsReceiptPdfColumns(m, grn.lines),
+      rows: grn.lines.map((line) =>
+        goodsReceiptPdfRow(
+          {
+            item: localizedName(locale, {
+              ...line.inventoryItem,
+              name: line.inventoryItem.sku,
+            }),
+            orderedQty: line.orderedQty,
+            receivedQty: line.receivedQty,
+            rejectedQty: line.rejectedQty,
+            unitCost: line.unitCost,
+          },
+          showCost,
+        ),
+      ),
+      footerLines: [
+        `${m.purchaseOrder}: ${grn.purchaseOrder.number}`,
+        `${m.generated} ${new Date().toISOString().slice(0, 10)}`,
+      ],
+    });
+    sendPdf(res, `${grn.number}.pdf`, buffer);
   }
 
   @Get('purchasing/orders/:id/pdf')
@@ -322,6 +443,7 @@ export class PdfController {
         `${m.status}: ${po.status}`,
         `${m.warehouse}: ${po.warehouse?.code ?? '—'}`,
         `${m.orderDate}: ${po.orderDate.toISOString().slice(0, 10)}`,
+        `${m.paymentTerms}: ${po.paymentTermsDays}`,
       ],
       columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
       rows: po.lines.map((l) => [
@@ -346,6 +468,8 @@ export class PdfController {
     @Param('id') id: string,
     @Query('lang') lang: string | undefined,
     @Query('theme') theme: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
     @Res() res: Response,
   ) {
@@ -367,14 +491,7 @@ export class PdfController {
       orderBy: { paymentDate: 'asc' },
     });
 
-    type Entry = {
-      date: Date;
-      reference: string;
-      debit: number;
-      credit: number;
-      description: string;
-    };
-    const entries: Entry[] = [
+    const rawEntries = [
       ...invoices.map((inv) => ({
         date: inv.invoiceDate,
         reference: inv.number,
@@ -389,30 +506,49 @@ export class PdfController {
         credit: Number(pay.amount),
         description: `${m.paymentReceipt} ${pay.number}`,
       })),
-    ].sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    let balance = 0;
-    const rows = entries.map((e) => {
-      balance += e.debit - e.credit;
-      return [
-        e.date.toISOString().slice(0, 10),
-        e.reference,
-        e.description,
-        roundMoney(e.debit),
-        roundMoney(e.credit),
-        roundMoney(balance),
-      ];
+    ];
+    const fromDate = parseStatementBound(from);
+    const toDate = parseStatementBound(to, true);
+    const ledger = buildSupplierStatementLedger({
+      entries: rawEntries,
+      from: fromDate,
+      to: toDate,
     });
+
+    let balance = ledger.openingBalance;
+    const rows = [
+      ...(fromDate
+        ? [[
+            fromDate.toISOString().slice(0, 10),
+            '—',
+            m.opening,
+            '',
+            '',
+            roundMoney(ledger.openingBalance),
+          ]]
+        : []),
+      ...ledger.entries.map((e) => {
+        balance += e.debit - e.credit;
+        return [
+          e.date.toISOString().slice(0, 10),
+          e.reference,
+          e.description,
+          roundMoney(e.debit),
+          roundMoney(e.credit),
+          roundMoney(balance),
+        ];
+      }),
+    ];
 
     const buffer = await buildSimplePdf({
       locale,
       theme: pdfTheme,
       title: m.supplierStatement,
       subtitle: `${localizedName(locale, supplier)} (${supplier.code})`,
-      meta: [`${m.closingAp}: ${roundMoney(balance)} ILS`],
+      meta: [`${m.closingAp}: ${roundMoney(ledger.closingBalance)} ILS`],
       columns: [m.date, m.ref, m.description, m.debit, m.credit, m.balance],
       rows,
-      footerLines: [`${m.closing}: ${roundMoney(balance)} ILS`],
+      footerLines: [`${m.closing}: ${roundMoney(ledger.closingBalance)} ILS`],
     });
     sendPdf(res, `SOA-SUP-${supplier.code}.pdf`, buffer);
   }
@@ -451,12 +587,18 @@ export class PdfController {
     @Query('period') period: string | undefined,
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
+    @Query('sections') sections: string | string[] | undefined,
     @Query('lang') lang: string | undefined,
     @Query('theme') theme: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
     @Res() res: Response,
   ) {
-    return this.sendRawMaterialsPdf(user, { period, from, to, lang, theme }, acceptLanguage, res);
+    return this.sendRawMaterialsPdf(
+      user,
+      { period, from, to, sections, lang, theme },
+      acceptLanguage,
+      res,
+    );
   }
 
   /** Plan path — PdfController has no `/documents` prefix, so this is the literal URL. */
@@ -467,17 +609,30 @@ export class PdfController {
     @Query('period') period: string | undefined,
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
+    @Query('sections') sections: string | string[] | undefined,
     @Query('lang') lang: string | undefined,
     @Query('theme') theme: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
     @Res() res: Response,
   ) {
-    return this.sendRawMaterialsPdf(user, { period, from, to, lang, theme }, acceptLanguage, res);
+    return this.sendRawMaterialsPdf(
+      user,
+      { period, from, to, sections, lang, theme },
+      acceptLanguage,
+      res,
+    );
   }
 
   private async sendRawMaterialsPdf(
     user: AuthUser,
-    query: { period?: string; from?: string; to?: string; lang?: string; theme?: string },
+    query: {
+      period?: string;
+      from?: string;
+      to?: string;
+      sections?: string | string[];
+      lang?: string;
+      theme?: string;
+    },
     acceptLanguage: string | undefined,
     res: Response,
   ) {
@@ -486,11 +641,17 @@ export class PdfController {
       period: query.period,
       from: query.from,
       to: query.to,
+      sections: query.sections,
       locale,
       user,
     });
     const buffer = await buildRawMaterialsReportPdf(payload, pdfTheme);
-    sendPdf(res, `raw-materials-${payload.period.fromYmd}-${payload.period.toYmd}.pdf`, buffer);
+    const sectionSlug = payload.allSections ? 'all' : payload.sections.join('-');
+    sendPdf(
+      res,
+      `materials-${sectionSlug}-${payload.period.fromYmd}-${payload.period.toYmd}.pdf`,
+      buffer,
+    );
   }
 
   /** Warehouse print sheet — centered photo + large QR (not the item report). */
@@ -731,7 +892,7 @@ export class PdfController {
   }
 
   @Get('inventory/lots/:id/qr-label')
-  @RequirePermissions('inventory.read')
+  @RequireAnyPermissions('inventory.read', 'fabric.procurement.read')
   async fabricLotQrLabel(
     @Param('id') id: string,
     @Query('lang') lang: string | undefined,
@@ -772,7 +933,10 @@ export class PdfController {
     if (lot.fabricProcurement?.requirement.fabricRole) {
       details.push({ label: 'Placement', value: lot.fabricProcurement.requirement.fabricRole });
     }
-    if (lot.location?.code) details.push({ label: 'Location', value: lot.location.code });
+    if (lot.location) {
+      const value = lot.location.name?.trim() || lot.location.code;
+      if (value) details.push({ label: 'Location', value });
+    }
     const buffer = await buildInventoryLabelPdf({
       locale,
       theme: pdfTheme,
@@ -784,6 +948,78 @@ export class PdfController {
       hint: m.labelScanHint,
     });
     sendPdf(res, `fabric-lot-${lot.qrCode || lot.id}.pdf`, buffer);
+  }
+
+  @Get('warehouses/:id/locations/:locationId/qr-label')
+  @RequireAnyPermissions('warehouse.read', 'warehouse.manage', 'inventory.read')
+  async warehouseLocationQrLabel(
+    @Param('id') warehouseId: string,
+    @Param('locationId') locationId: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const loc = await this.prisma.warehouseLocation.findFirst({
+      where: { id: locationId, warehouseId },
+      include: {
+        warehouse: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
+      },
+    });
+    if (!loc) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Bin not found.' });
+    const warehouseName =
+      locale === 'ar'
+        ? loc.warehouse.nameAr || loc.warehouse.nameEn
+        : loc.warehouse.nameEn || loc.warehouse.nameAr;
+    const title = loc.name?.trim() || loc.code;
+    const scanCode = binScanPayload(loc);
+    const buffer = await buildInventoryLabelPdf({
+      locale,
+      theme: pdfTheme,
+      title,
+      subtitle: warehouseName,
+      sku: loc.code,
+      scanCode,
+      details: [
+        { label: m.warehouse, value: `${loc.warehouse.code} · ${warehouseName}` },
+        { label: m.bin, value: loc.code },
+      ],
+      hint: m.labelScanHint,
+    });
+    sendPdf(res, `bin-${loc.warehouse.code}-${loc.code}.pdf`, buffer);
+  }
+
+  @Get('warehouses/:id/locations/label-sheet')
+  @RequireAnyPermissions('warehouse.read', 'warehouse.manage', 'inventory.read')
+  async warehouseLocationLabelSheet(
+    @Param('id') warehouseId: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const warehouse = await this.prisma.warehouse.findUnique({
+      where: { id: warehouseId },
+      include: { locations: { where: { isActive: true }, orderBy: { code: 'asc' } } },
+    });
+    if (!warehouse) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Warehouse not found.' });
+    const warehouseName =
+      locale === 'ar' ? warehouse.nameAr || warehouse.nameEn : warehouse.nameEn || warehouse.nameAr;
+    const buffer = await buildBinLabelSheetPdf({
+      locale,
+      theme: pdfTheme,
+      title: warehouseName,
+      items: warehouse.locations.map((loc) => ({
+        title: loc.name?.trim() || loc.code,
+        scanCode: binScanPayload(loc),
+        warehouse: warehouseName,
+        bin: loc.code,
+      })),
+    });
+    sendPdf(res, `bins-${warehouse.code}.pdf`, buffer);
   }
 
   private async bufferFromStorageKey(key: string | null | undefined): Promise<Buffer | null> {

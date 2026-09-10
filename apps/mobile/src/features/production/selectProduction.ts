@@ -71,8 +71,18 @@ export type ProductionCardModel = {
    * Never implies lifecycle change.
    */
   startDueHint: 'due_today' | 'planned_start_passed' | null;
+  origin: ProductionOriginModel | null;
   /** Explicitly never expose a stages list on cards */
   showStages: false;
+};
+
+export type ProductionOriginKind = 'RETURN_WORK' | 'REPLACEMENT';
+
+export type ProductionOriginModel = {
+  kind: ProductionOriginKind;
+  number: string;
+  originalOrderNumber: string | null;
+  returnNumber: string | null;
 };
 
 export type ProductionTaskRow = {
@@ -181,6 +191,27 @@ export function productionStartDueHint(
   return 'planned_start_passed';
 }
 
+export function selectProductionOrigin(
+  item: Pick<
+    ProductionOrderListItem,
+    'number' | 'originType' | 'returnRequest'
+  >,
+): ProductionOriginModel | null {
+  const kind =
+    item.originType === 'REPLACEMENT'
+      ? 'REPLACEMENT'
+      : item.originType === 'RETURN_WORK'
+        ? 'RETURN_WORK'
+        : null;
+  if (!kind) return null;
+  return {
+    kind,
+    number: item.number,
+    originalOrderNumber: item.returnRequest?.salesOrder?.number?.trim() || null,
+    returnNumber: item.returnRequest?.number?.trim() || null,
+  };
+}
+
 export function selectProductionCard(
   item: ProductionOrderListItem,
   locale: string,
@@ -213,6 +244,7 @@ export function selectProductionCard(
     actualStartDate: item.actualStartDate ?? null,
     releasedToFactoryAt: item.releasedToFactoryAt ?? null,
     startDueHint: productionStartDueHint(item),
+    origin: selectProductionOrigin(item),
     showStages: false,
   };
 }

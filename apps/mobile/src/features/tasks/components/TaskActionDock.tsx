@@ -51,7 +51,7 @@ export function TaskActionDock({ actions, bottomOffset, onHeight }: Props) {
 
   if (actions.length === 0) return null;
 
-  const cells = actions.slice(0, 4);
+  const cells = actions.slice(0, 6);
   const rows = chunkPairs(cells);
 
   const reportHeight = (e: LayoutChangeEvent) => {

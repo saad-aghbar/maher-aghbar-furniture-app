@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { InventorySearchField } from '@/features/inventory/components/InventorySearchField';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -30,13 +31,23 @@ type Props = {
   counts: FabricDeskBucketCount[];
   active: FabricDeskBucket | null;
   onSelect: (bucket: FabricDeskBucket | null) => void;
+  search?: string;
+  onChangeSearch?: (value: string) => void;
+  searchPlaceholder?: string;
 };
 
 /**
  * Compact fabric desk summary — two-row period cells, not a sideways pill rail.
  * Tap a cell to keep ORDER grouping and show only matching fabrics.
  */
-export function FabricDeskSummary({ counts, active, onSelect }: Props) {
+export function FabricDeskSummary({
+  counts,
+  active,
+  onSelect,
+  search,
+  onChangeSearch,
+  searchPlaceholder,
+}: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -99,6 +110,13 @@ export function FabricDeskSummary({ counts, active, onSelect }: Props) {
             : { paddingLeft: theme.spacing.sm + 6 }),
         }}
       >
+        {onChangeSearch ? (
+          <InventorySearchField
+            value={search ?? ''}
+            onChangeText={onChangeSearch}
+            placeholder={searchPlaceholder ?? ''}
+          />
+        ) : null}
         {ROWS.map((row) => (
           <View
             key={row.join('-')}

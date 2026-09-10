@@ -28,7 +28,9 @@ export type OpeningChainEdge = {
 export function validateOpeningChain(
   nodes: OpeningChainNode[],
   edges: OpeningChainEdge[],
+  options?: { enforce?: boolean },
 ): WorkflowValidationIssue[] {
+  if (options?.enforce === false) return [];
   const issues: WorkflowValidationIssue[] = [];
   if (nodes.length === 0) return issues;
 

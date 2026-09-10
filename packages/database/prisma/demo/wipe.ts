@@ -104,7 +104,7 @@ export const DEMO_WIPE_TABLES = [
 ] as const;
 
 const CANONICAL_WAREHOUSE_CODES = ['RAW', 'SEMI', 'FIN'] as const;
-const LEFTOVER_WAREHOUSE_CODES = ['RAW-2', 'SEMI-2', 'FIN-2', 'TEST', 'TEST-2', 'SA'];
+const LEFTOVER_WAREHOUSE_CODES = ['RAW-2', 'SEMI-2', 'FIN-2', 'TEST', 'TEST-2', 'SA', 'TERS', 'WH'];
 const LEFTOVER_WAREHOUSE_NAME = /\b(TEST|UAT|DRUAT|SAMPLE|MOCK)\b/i;
 
 export async function wipeOperationalData(prisma: PrismaClient): Promise<void> {

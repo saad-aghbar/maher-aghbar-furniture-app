@@ -143,7 +143,7 @@ describe('parallel safe placement', () => {
       { id: 'carp', sortOrder: 1, stageDefinition: { code: 'CARPENTRY' } },
       { id: 'foam', sortOrder: 2, stageDefinition: { code: 'FOAM' } },
       { id: 'insp', sortOrder: 3, stageDefinition: { code: 'INSPECTION' } },
-    ];
+    ] as unknown as Parameters<typeof resolvePlacementStart>[0];
     const e = [
       { fromNodeId: 'prep', toNodeId: 'carp' },
       { fromNodeId: 'prep', toNodeId: 'foam' },

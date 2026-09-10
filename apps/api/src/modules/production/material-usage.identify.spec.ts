@@ -42,6 +42,18 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     inventoryBalance: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    warehouse: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'wh-raw',
+          code: 'RAW',
+          nameEn: 'Raw',
+          nameAr: 'خام',
+          nameHe: null,
+          isDefault: true,
+        },
+      ]),
+    },
     ...prismaOverrides,
   } as unknown as PrismaService;
   const inventory = {} as InventoryService;
@@ -82,6 +94,8 @@ describe('MaterialUsageService.identifyScan', () => {
     if (result.status === 'MATCH') {
       expect(result.sku).toBe('MAT-PLY');
       expect(result.expectedQty).toBe(4);
+      expect(result.suggestedWarehouseId).toBe('wh-raw');
+      expect(result.warehouses).toHaveLength(1);
     }
     expect(prisma.inventoryItem.findFirst).toHaveBeenCalled();
   });
@@ -116,6 +130,8 @@ describe('MaterialUsageService.identifyScan', () => {
     if (result.status === 'EXTRA') {
       expect(result.sku).toBe('MAT-FOAM-HD');
       expect(result.inventoryItemId).toBe('item-foam');
+      expect(result.suggestedWarehouseId).toBe('wh-raw');
+      expect(result.warehouses[0]?.id).toBe('wh-raw');
     }
   });
 

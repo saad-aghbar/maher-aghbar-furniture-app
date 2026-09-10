@@ -165,7 +165,7 @@ export class ManufacturingCostService {
       this.loadUsagesForPo(po.id),
       po.salesOrderLineId
         ? this.loadPlannedForSoLine(po.salesOrderLineId)
-        : Promise.resolve([] as PlannedRow[]),
+        : this.loadPlannedForProductionOrder(po.id),
     ]);
 
     return this.hydrateEstimated(
@@ -324,6 +324,92 @@ export class ManufacturingCostService {
     } catch {
       return null;
     }
+  }
+
+  async summaryForReturn(returnId: string, user?: AuthUser) {
+    if (user?.customerId || !can(user, 'inventory.cost.read')) return null;
+    const ret = await this.prisma.returnRequest.findUnique({
+      where: { id: returnId },
+      select: { chargeAmount: true },
+    });
+    const workOrders = await this.prisma.productionOrder.findMany({
+      where: { returnRequestId: returnId, archivedAt: null },
+      select: { id: true, originType: true, returnPieceId: true },
+    });
+    if (!workOrders.length) {
+      return {
+        status: 'ESTIMATED_ONLY' as const,
+        estimatedTotal: null,
+        actualTotal: null,
+        laborCost: null,
+        repairCost: null,
+        replacementCost: null,
+        recoveryCost: null,
+        recoveredValue: null,
+        disposedValue: null,
+        factoryAbsorbed: null,
+      };
+    }
+    const summaries = await Promise.all(
+      workOrders.map(async (po) => ({
+        po,
+        summary: await this.summaryForProductionOrder(po.id, user),
+      })),
+    );
+    const present = summaries.filter((row): row is typeof row & { summary: NonNullable<typeof row.summary> } =>
+      Boolean(row.summary),
+    );
+    if (!present.length) return null;
+    const estimated = present.reduce((sum, row) => sum + (Number(row.summary.estimatedTotal) || 0), 0);
+    const actual = present.reduce((sum, row) => sum + (Number(row.summary.actualTotal) || 0), 0);
+    const byOrigin = { repair: 0, replacement: 0, recovery: 0 };
+    for (const row of present) {
+      const amount = Number(row.summary.actualTotal) || 0;
+      if (row.po.originType === 'RETURN_WORK') byOrigin.repair += amount;
+      else if (row.po.originType === 'REPLACEMENT') byOrigin.replacement += amount;
+      else if (row.po.originType === 'RETURN_RECOVERY') byOrigin.recovery += amount;
+    }
+    const recoveries = await this.prisma.returnRecoveryLine.findMany({
+      where: { returnPiece: { returnRequestId: returnId }, postedAt: { not: null } },
+      select: { outcome: true, quantity: true, unitCost: true, postedAt: true },
+    });
+    let recoveredValue = 0;
+    let disposedValue = 0;
+    let recoveredAny = false;
+    let disposedAny = false;
+    for (const line of recoveries) {
+      const qty = Math.abs(Number(line.quantity) || 0);
+      const cost = Number(line.unitCost);
+      if (!(cost > 0)) continue;
+      if (String(line.outcome) === 'RECOVER_TO_INVENTORY') {
+        recoveredValue += qty * cost;
+        recoveredAny = true;
+      } else if (String(line.outcome) === 'DISPOSE' || String(line.outcome) === 'DAMAGED') {
+        disposedValue += qty * cost;
+        disposedAny = true;
+      }
+    }
+    const statuses = present.map((row) => row.summary.status);
+    const status = statuses.includes('INCOMPLETE')
+      ? 'INCOMPLETE'
+      : statuses.includes('IN_PROGRESS')
+        ? 'IN_PROGRESS'
+        : statuses.every((s) => s === 'FINAL')
+          ? 'FINAL'
+          : 'ESTIMATED_ONLY';
+    return {
+      status,
+      estimatedTotal: estimated > 0 ? estimated : null,
+      actualTotal: actual > 0 ? money(actual) : null,
+      laborCost: null,
+      repairCost: byOrigin.repair > 0 ? money(byOrigin.repair) : null,
+      replacementCost: byOrigin.replacement > 0 ? money(byOrigin.replacement) : null,
+      recoveryCost: byOrigin.recovery > 0 ? money(byOrigin.recovery) : null,
+      recoveredValue: recoveredAny ? money(recoveredValue) : null,
+      disposedValue: disposedAny ? money(disposedValue) : null,
+      factoryAbsorbed:
+        actual > 0 ? money(actual - Number(ret?.chargeAmount ?? 0)) : null,
+    };
   }
 
   /** Slim summary for embedding on detail responses (same numbers as full API). */
@@ -629,6 +715,7 @@ export class ManufacturingCostService {
             },
           },
         },
+        productionOrder: { select: { originType: true } },
       },
     });
     return rows.map((r) => ({
@@ -643,7 +730,8 @@ export class ManufacturingCostService {
       unitCost: r.unitCost,
       extendedCost: r.extendedCost,
       finalizedAt: r.finalizedAt,
-      isRework: Boolean(r.task?.isRework),
+      isRework:
+        Boolean(r.task?.isRework) || r.productionOrder?.originType === 'RETURN_WORK',
       stageCode: r.task?.stageDefinition?.code ?? null,
       workerName: r.task?.assignedEmployee
         ? [r.task.assignedEmployee.firstName, r.task.assignedEmployee.lastName]
@@ -683,6 +771,34 @@ export class ManufacturingCostService {
           displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
           category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,
           plannedQty: expected * lineQty,
+        };
+      })
+      .filter((x): x is PlannedRow => Boolean(x));
+  }
+
+  private async loadPlannedForProductionOrder(productionOrderId: string): Promise<PlannedRow[]> {
+    const rows = await this.prisma.salesOrderLineMaterialRequirement.findMany({
+      where: { productionOrderId },
+      select: {
+        sku: true,
+        displayName: true,
+        category: true,
+        expectedQty: true,
+        inventoryItem: { select: { sku: true, nameEn: true, category: true } },
+      },
+    });
+    return rows
+      .map((m) => {
+        const sku = m.sku ?? m.inventoryItem?.sku;
+        if (!sku) return null;
+        const expected = m.expectedQty == null ? null : Number(m.expectedQty);
+        if (expected == null) return null;
+        return {
+          salesOrderLineId: productionOrderId,
+          sku,
+          displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
+          category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,
+          plannedQty: expected,
         };
       })
       .filter((x): x is PlannedRow => Boolean(x));

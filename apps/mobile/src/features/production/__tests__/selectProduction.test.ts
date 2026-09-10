@@ -3,6 +3,7 @@ import {
   productionStartDueHint,
   selectProductionCard,
   selectProductionDetail,
+  selectProductionOrigin,
   workersForStage,
 } from '../selectProduction';
 import type { ProductionOrderDetail, ProductionOrderListItem } from '../api';
@@ -118,6 +119,39 @@ describe('selectProduction', () => {
     expect(card.showStages).toBe(false);
     expect(card.startDueHint).toBeNull();
     expect(card.salesOrderId).toBeNull();
+    expect(card.origin).toBeNull();
+  });
+
+  it('maps return-work origin and the original sales order number', () => {
+    const origin = selectProductionOrigin({
+      number: 'RW-2026-0017',
+      originType: 'RETURN_WORK',
+      returnRequest: {
+        id: 'ret-1',
+        number: 'RT-1042',
+        salesOrder: { id: 'so-1', number: 'SO-1042' },
+      },
+    });
+    expect(origin).toEqual({
+      kind: 'RETURN_WORK',
+      number: 'RW-2026-0017',
+      originalOrderNumber: 'SO-1042',
+      returnNumber: 'RT-1042',
+    });
+    const card = selectProductionCard(
+      {
+        ...listItem,
+        number: 'RW-2026-0017',
+        originType: 'RETURN_WORK',
+        returnRequest: {
+          id: 'ret-1',
+          number: 'RT-1042',
+          salesOrder: { id: 'so-1', number: 'SO-1042' },
+        },
+      },
+      'en',
+    );
+    expect(card.origin?.originalOrderNumber).toBe('SO-1042');
   });
 
   it('surfaces startDueHint only for Ready released orders (presentation)', () => {

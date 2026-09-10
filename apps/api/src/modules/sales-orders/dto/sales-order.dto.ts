@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { SalesOrderStatus } from '@maher/database';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsNumber,
@@ -92,6 +93,26 @@ export class ListSalesOrdersDto extends PaginationDto {
   })
   @IsIn(['STANDARD', 'MODIFIED', 'CUSTOM'])
   orderType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+
+  /** Separate axis from orderType — sales orders that have a return request. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value == null || value === '') return undefined;
+    if (value === true || value === 'true' || value === '1') return true;
+    if (value === false || value === 'false' || value === '0') return false;
+    return value;
+  })
+  @IsBoolean()
+  returned?: boolean;
+}
+
+/** Admin Orders desk — return-work / replacement production orders. */
+export class ListReturnWorkDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }
 
 export class UpdateSalesOrderDto {

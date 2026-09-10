@@ -1,6 +1,11 @@
+import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
+import { listCustomers } from '@/api/modules/customers';
+import { listWarehouses } from '@/api/modules/inventory';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -8,10 +13,17 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { OrdersFilterButton } from '@/features/sales-orders/components/OrdersFilterButton';
+import { OrdersSearchBar } from '@/features/sales-orders/components/OrdersSearchBar';
 import { useLocale } from '@/i18n';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { DeliveryFloorOrderCard } from './components/DeliveryFloorOrderCard';
+import {
+  countDeliveryFilters,
+  DeliveryFilterSheet,
+  type DeliveryFilterDraft,
+} from './components/DeliveryFilterSheet';
 import { deliverySectionLabelStyle } from './deliveryFloorStyle';
 import { useMyDeliveriesQuery } from './query';
 
@@ -20,6 +32,8 @@ export type DeliveryOrdersListVariant = 'open' | 'completed';
 type Props = {
   variant: DeliveryOrdersListVariant;
 };
+
+const EMPTY_FILTER: DeliveryFilterDraft = { dealerId: '', warehouseId: '', status: '' };
 
 export function DeliveryOrdersListScreen({ variant }: Props) {
   const { user } = useAuth();
@@ -30,13 +44,57 @@ export function DeliveryOrdersListScreen({ variant }: Props) {
   const isCompleted = variant === 'completed';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  const [q, setQ] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<DeliveryFilterDraft>(EMPTY_FILTER);
+  const [draft, setDraft] = useState<DeliveryFilterDraft>(EMPTY_FILTER);
 
   const query = useMyDeliveriesQuery(
-    { scope: isCompleted ? 'completed' : 'open', pageSize: 50 },
+    {
+      scope: isCompleted ? 'completed' : 'open',
+      pageSize: 50,
+      q: q.trim() || undefined,
+      dealerId: filters.dealerId || undefined,
+      warehouseId: filters.warehouseId || undefined,
+      status: filters.status || undefined,
+    },
     allowed,
   );
+  const dealersQuery = useQuery({
+    queryKey: ['delivery-filter-dealers'],
+    queryFn: () => listCustomers({ pageSize: 100 }),
+    enabled: allowed,
+  });
+  const warehousesQuery = useQuery({
+    queryKey: ['delivery-filter-warehouses'],
+    queryFn: listWarehouses,
+    enabled: allowed,
+  });
 
   const rows = query.data?.data ?? [];
+  const filterCount = countDeliveryFilters(filters);
+  const dealers = useMemo(
+    () =>
+      (dealersQuery.data?.data ?? []).map((c) => ({
+        id: c.id,
+        label: localizedName(locale, c, c.name),
+      })),
+    [dealersQuery.data?.data, locale],
+  );
+  const warehouses = useMemo(
+    () =>
+      (warehousesQuery.data ?? []).map((w) => ({
+        id: w.id,
+        label: localizedName(locale, w, w.code),
+      })),
+    [warehousesQuery.data, locale],
+  );
+  const statuses = [
+    { id: 'PLANNED', label: t('mobile.deliveryLoad.statusPlanned') },
+    { id: 'READY', label: t('mobile.deliveryLoad.statusReady') },
+    { id: 'OUT_FOR_DELIVERY', label: t('mobile.deliveryLoad.statusShipped') },
+    { id: 'DELIVERED', label: t('mobile.deliveryLoad.statusDelivered') },
+  ];
 
   if (!allowed) {
     return (
@@ -96,29 +154,43 @@ export function DeliveryOrdersListScreen({ variant }: Props) {
           />
         }
         ListHeaderComponent={
-          <View style={{ marginBottom: theme.spacing.lg, gap: theme.spacing.xs }}>
-            <AppText
-              variant="caption"
-              weight="semibold"
-              style={{
-                ...deliverySectionLabelStyle(locale, colors.brand),
-                textAlign: isRTL ? 'right' : 'left',
+          <View style={{ marginBottom: theme.spacing.lg, gap: theme.spacing.md }}>
+            <View style={{ gap: theme.spacing.xs }}>
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{
+                  ...deliverySectionLabelStyle(locale, colors.brand),
+                  textAlign: isRTL ? 'right' : 'left',
+                }}
+              >
+                {isCompleted
+                  ? t('mobile.deliveryLoad.completedEyebrow')
+                  : t('mobile.deliveryLoad.openEyebrow')}
+              </AppText>
+              <AppText variant="title" weight={titleWeight} align="start">
+                {isCompleted
+                  ? t('mobile.deliveryLoad.completedTitle')
+                  : t('mobile.deliveryLoad.openTitle')}
+              </AppText>
+              <AppText variant="body" color="secondary" align="start">
+                {isCompleted
+                  ? t('mobile.deliveryLoad.completedCaption')
+                  : t('mobile.deliveryLoad.openCaption')}
+              </AppText>
+            </View>
+            <OrdersSearchBar
+              value={q}
+              onChangeText={setQ}
+              placeholder={t('mobile.deliveryLoad.searchPlaceholder')}
+            />
+            <OrdersFilterButton
+              onPress={() => {
+                setDraft(filters);
+                setFilterOpen(true);
               }}
-            >
-              {isCompleted
-                ? t('mobile.deliveryLoad.completedEyebrow')
-                : t('mobile.deliveryLoad.openEyebrow')}
-            </AppText>
-            <AppText variant="title" weight={titleWeight} align="start">
-              {isCompleted
-                ? t('mobile.deliveryLoad.completedTitle')
-                : t('mobile.deliveryLoad.openTitle')}
-            </AppText>
-            <AppText variant="body" color="secondary" align="start">
-              {isCompleted
-                ? t('mobile.deliveryLoad.completedCaption')
-                : t('mobile.deliveryLoad.openCaption')}
-            </AppText>
+              activeCount={filterCount}
+            />
           </View>
         }
         ListEmptyComponent={
@@ -184,6 +256,24 @@ export function DeliveryOrdersListScreen({ variant }: Props) {
         renderItem={({ item, index }) => (
           <DeliveryFloorOrderCard item={item} index={index} completed={isCompleted} />
         )}
+      />
+      <DeliveryFilterSheet
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        draft={draft}
+        onChange={setDraft}
+        dealers={dealers}
+        warehouses={warehouses}
+        statuses={statuses}
+        onApply={() => {
+          setFilters(draft);
+          setFilterOpen(false);
+        }}
+        onReset={() => {
+          setDraft(EMPTY_FILTER);
+          setFilters(EMPTY_FILTER);
+          setFilterOpen(false);
+        }}
       />
     </AppScreen>
   );

@@ -2,6 +2,8 @@
  * Service-wiring evidence for the capacity audit. Mocked Prisma only.
  * Does not change production scheduling behavior.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { SchedulingService } from '../scheduling.service';
 import { zonedLocalToUtc } from '../domain/working-calendar';
 
@@ -31,7 +33,11 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
   const prisma = {
     product: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
-    scheduleAllocation: { findMany: jest.fn().mockResolvedValue([]) },
+    scheduleAllocation: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest.fn().mockResolvedValue({}),
+    },
     factoryCalendar: {
       findFirst: jest.fn().mockResolvedValue({
         id: 'cal-1',
@@ -144,7 +150,7 @@ describe('scheduling capacity wiring', () => {
   });
 
   it('availability PlannerOrderInput includes requestedDeliveryDate and materialReadyAt', async () => {
-    const { service, prisma } = makeService();
+    const { prisma } = makeService();
     prisma.product.findMany.mockResolvedValue([
       {
         id: 'prod-1',
@@ -167,10 +173,10 @@ describe('scheduling capacity wiring', () => {
       },
     ]);
 
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../scheduling.service.ts'),
+    const src = readFileSync(
+      join(__dirname, '../scheduling.service.ts'),
       'utf8',
-    ) as string;
+    );
     const availabilityBlock = src.slice(src.indexOf('async availability'), src.indexOf('private buildAlternativeDates'));
     expect(availabilityBlock).toContain('requestedDeliveryDate');
     expect(availabilityBlock).toMatch(/materialReadyAt:/);
@@ -180,10 +186,10 @@ describe('scheduling capacity wiring', () => {
   });
 
   it('calendar cards, order snapshot, and at-risk pass through schedule dates without planner changes', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../scheduling.service.ts'),
+    const src = readFileSync(
+      join(__dirname, '../scheduling.service.ts'),
       'utf8',
-    ) as string;
+    );
     const cards = src.slice(src.indexOf('private async buildOrderCards'), src.indexOf('async getProductionProfile'));
     expect(cards).toContain('requestedDeliveryDate');
     expect(cards).toContain('suggestedDeliveryDate');

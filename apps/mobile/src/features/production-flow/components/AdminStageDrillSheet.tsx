@@ -6,7 +6,7 @@ import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { ProgressBar } from '@/motion';
+import { AnimatedPressable, ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
 import {
   formatElapsedClock,
@@ -24,8 +24,12 @@ import { isStageStatusComplete, StageWorkPhotos } from './StageWorkPhotos';
 type Props = {
   open: boolean;
   onClose: () => void;
+  onClosed?: () => void;
   stage: ProductionFlowStage | null;
   flow: ProductionFlowModel;
+  canEditTime?: boolean;
+  onChangeTime?: () => void;
+  onAssignWorker?: () => void;
 };
 
 type Assignee = ProductionFlowStage['assignees'][number];
@@ -260,9 +264,22 @@ function StageLifetimeBlock({
 /**
  * Admin stage drill-in — production floor aesthetic (soft cards, progress, badges).
  */
-export function AdminStageDrillSheet({ open, onClose, stage, flow }: Props) {
+export function AdminStageDrillSheet({
+  open,
+  onClose,
+  onClosed,
+  stage,
+  flow,
+  canEditTime = false,
+  onChangeTime,
+  onAssignWorker,
+}: Props) {
   const { t, formatDate, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const hm = {
+    hour: t('mobile.workerHome.durationHour'),
+    minute: t('mobile.workerHome.durationMinute'),
+  };
   const insets = useSafeAreaInsets();
   const upNext = stage ? nextStageAfter(flow.stages, stage.code) : null;
   const completed = stage ? isStageStatusComplete(stage.status) : false;
@@ -302,6 +319,7 @@ export function AdminStageDrillSheet({ open, onClose, stage, flow }: Props) {
     <BottomSheet
       open={open && Boolean(stage)}
       onClose={onClose}
+      onClosed={onClosed}
       title={stage?.name ?? t('mobile.productionFlow.stageDetails')}
       fitContent
     >
@@ -400,6 +418,45 @@ export function AdminStageDrillSheet({ open, onClose, stage, flow }: Props) {
           </SectionCard>
 
           <SectionCard
+            icon="time-outline"
+            label={t('mobile.productionFlow.stageTime')}
+          >
+            <View style={{ gap: theme.spacing.sm }}>
+              <AppText variant="body" weight={titleWeight} dir="ltr">
+                {stage.estimatedMinutes && stage.estimatedMinutes > 0
+                  ? formatMinutesDuration(stage.estimatedMinutes, hm)
+                  : t('mobile.production.stageTimeMissingTitle')}
+              </AppText>
+              {canEditTime && onChangeTime ? (
+                <AnimatedPressable
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('mobile.production.changeTime')}
+                  onPress={onChangeTime}
+                  style={{
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.brand,
+                    backgroundColor: colors.surface,
+                    paddingHorizontal: theme.spacing.md,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="label" weight={titleWeight} color="brand">
+                    {t('mobile.production.changeTime')}
+                  </AppText>
+                </AnimatedPressable>
+              ) : (
+                <AppText variant="caption" color="muted">
+                  {t('mobile.productionFlow.stageTimeLocked')}
+                </AppText>
+              )}
+            </View>
+          </SectionCard>
+
+          <SectionCard
             icon="people-outline"
             label={t('mobile.productionFlow.workers')}
             accent={stage.assignees.length ? colors.brand : undefined}
@@ -415,9 +472,33 @@ export function AdminStageDrillSheet({ open, onClose, stage, flow }: Props) {
                 ))}
               </View>
             ) : (
-              <AppText variant="body" weight={titleWeight}>
-                {t('mobile.productionFlow.unassigned')}
-              </AppText>
+              <View style={{ gap: theme.spacing.sm }}>
+                <AppText variant="body" weight={titleWeight}>
+                  {t('mobile.productionFlow.unassigned')}
+                </AppText>
+                {canEditTime && onAssignWorker ? (
+                  <AnimatedPressable
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.productionFlow.assignWorker')}
+                    onPress={onAssignWorker}
+                    style={{
+                      minHeight: theme.sizes.touch.min,
+                      borderRadius: theme.radius.lg,
+                      borderWidth: 1,
+                      borderColor: colors.brand,
+                      backgroundColor: colors.surface,
+                      paddingHorizontal: theme.spacing.md,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <AppText variant="label" weight={titleWeight} color="brand">
+                      {t('mobile.productionFlow.assignWorker')}
+                    </AppText>
+                  </AnimatedPressable>
+                ) : null}
+              </View>
             )}
           </SectionCard>
 

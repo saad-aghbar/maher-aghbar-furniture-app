@@ -6,7 +6,7 @@ const componentsDir = join(inventoryDir, 'components');
 
 type MatrixRow = {
   trigger: string;
-  mode: 'IDENTIFY' | 'SELECT' | 'VERIFY' | 'SUPPLIER_BARCODE';
+  mode: 'IDENTIFY' | 'SELECT' | 'VERIFY';
   resolver: string;
   successUi: string;
 };
@@ -40,12 +40,6 @@ const REQUIRED: MatrixRow[] = [
     mode: 'SELECT',
     resolver: 'resolveInventoryScan',
     successUi: 'InventoryScanSelectInline',
-  },
-  {
-    trigger: 'Create/EditInventoryItemSheet CodeField',
-    mode: 'SUPPLIER_BARCODE',
-    resolver: 'none (barcode field only)',
-    successUi: 'fills barcode — not inventory identify',
   },
 ];
 
@@ -121,6 +115,7 @@ describe('inventory QR complete interaction matrix', () => {
     expect(home).toContain('FOUND_KIT');
     expect(home).toContain('InventorySemiOrderDetailSheet');
     expect(home).toContain('FOUND_LOT');
+    expect(home).toContain('FOUND_BIN');
     expect(home).not.toContain('getInventoryItemByCode');
   });
 
@@ -147,6 +142,7 @@ describe('inventory QR complete interaction matrix', () => {
     expect(sheet).toContain('!isScanning');
     // Inert opacity hack alone is not enough — host must yield.
     expect(sheet).not.toContain('opacity: isScanning ? 0 : 1');
+    expect(sheet).toContain('if (hostBlocked) return');
   });
 
   it('no inventory openScanner call site is left without a result path', () => {
@@ -166,6 +162,8 @@ describe('inventory QR complete interaction matrix', () => {
         file.src.includes('resolveInventoryScan') ||
         file.src.includes('runInventoryLabelVerify') ||
         file.src.includes('getInventoryItemByCode') ||
+        file.src.includes('getWarehouseLocationByCode') ||
+        file.src.includes('parseBinScanCode') ||
         file.src.includes('setScanResult') ||
         file.src.includes('classifyLabelScan') ||
         file.src.includes('onScanned');

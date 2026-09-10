@@ -1,0 +1,75 @@
+{
+  "failed": 0,
+  "steps": [
+    {
+      "name": "admin login",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "seed sales order",
+      "ok": true,
+      "detail": "SO-2026-00001"
+    },
+    {
+      "name": "create return with items[]",
+      "ok": true,
+      "detail": "status=201 id=eeee37da-0041-4db0-8df5-02ae5fd1eecf code= body={\"id\":\"eeee37da-0041-4db0-8df5-02ae5fd1eecf\",\"number\":\"RET-2026-00010\",\"customerId\":\"0a42ba40-57aa-47f0-bbb3-db62344f8d9c\",\"salesOrderId\":\"75b902f9-7aa1-42d4-b246-2a2a55ab7089\",\"salesOrderLineId\":\"7be58af9-fe17-43d1-ba5d-03321958314a\",\"productId\":\"ea1a36ee-52b6-4716-a44a-c0e772efa2a0\",\"sourceProductionOrderId\":\"41f3dd73-aa12-4be4-a980-4a9c2d5ca678\",\"deliveryId\":null,\"productDesc\":\"3-Seater Sofa St"
+    },
+    {
+      "name": "approve return",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "receive pieces",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "materialized two pieces",
+      "ok": true,
+      "detail": "count=2"
+    },
+    {
+      "name": "re-receive does not duplicate custody",
+      "ok": true,
+      "detail": "lots=2b3d9097-a0a5-48c6-abc5-4cb43e4796b1,73e0547a-5a4a-4da9-8f31-65ef410d8118"
+    },
+    {
+      "name": "legacy RESTOCK route is gone",
+      "ok": true,
+      "detail": "status=404 code=Not Found"
+    },
+    {
+      "name": "piece decisions create factory work",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "repair has RW and scrap has recovery",
+      "ok": true,
+      "detail": "[{\"decision\":\"REPAIR\",\"productionOrderId\":\"46092976-5aaa-4473-8fb8-186a0884b01f\",\"recoveryOrderId\":null},{\"decision\":\"SCRAP_RECOVERY\",\"productionOrderId\":null,\"recoveryOrderId\":\"4d1383e7-dc44-4203-8e6e-f3f64dd74daa\"}]"
+    },
+    {
+      "name": "second different decision rejected",
+      "ok": true,
+      "detail": "status=400 code=RETURN_PIECE_ALREADY_DECIDED"
+    },
+    {
+      "name": "record recovery line",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "recovery post is idempotent",
+      "ok": true,
+      "detail": "first=201 second=201 moves=1 code="
+    },
+    {
+      "name": "returned-cases lists the case",
+      "ok": true,
+      "detail": "status=200 rows=16"
+    }
+  ]
+}

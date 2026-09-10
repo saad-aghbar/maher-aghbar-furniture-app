@@ -2,12 +2,14 @@ import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { softFadeDown, useReducedMotion } from '@/motion';
+import { ProgressBar, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import {
   formatElapsedClock,
   formatMinutesDuration,
+  minutesBetween,
 } from '../formatDuration';
+import { liveTaskProgressPercent } from '../liveTaskProgressPercent';
 import { useLiveTaskTimer } from '../useLiveTaskTimer';
 
 type Props = {
@@ -49,6 +51,31 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
     minute: t('mobile.workerHome.durationMinute'),
   };
 
+  const overrunByEstimate =
+    timing.estimatedMinutes != null
+      ? Math.max(0, elapsedMinutes - timing.estimatedMinutes)
+      : 0;
+  const overrunByDeadline = timing.plannedCompletion
+    ? minutesBetween(timing.plannedCompletion, new Date())
+    : 0;
+  const overrunMinutes = Math.max(overrunByEstimate, overrunByDeadline);
+  const overrun = overrunMinutes > 0 && timing.status !== 'done';
+  const rail = overrun ? colors.warning : colors.brand;
+  const progressStatus =
+    timing.status === 'done'
+      ? 'COMPLETED'
+      : timing.status === 'running'
+        ? 'IN_PROGRESS'
+        : timing.status === 'stopped'
+          ? 'PAUSED'
+          : 'NOT_STARTED';
+  const progressPercent = liveTaskProgressPercent({
+    status: progressStatus,
+    elapsedMinutes,
+    estimatedMinutes: timing.estimatedMinutes,
+  });
+  const waitingToFinish = progressPercent >= 100 && timing.status !== 'done';
+
   return (
     <Animated.View
       entering={reduce ? undefined : softFadeDown(40)}
@@ -56,12 +83,12 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
         backgroundColor: colors.surface,
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.borderStrong,
+        borderColor: overrun ? colors.warning : colors.borderStrong,
         overflow: 'hidden',
         ...theme.elevation.card,
       }}
     >
-      <View style={{ height: 3, backgroundColor: colors.brand, opacity: 0.35 }} />
+      <View style={{ height: 3, backgroundColor: rail, opacity: overrun ? 0.85 : 0.35 }} />
       <View style={{ padding: theme.spacing.md, gap: theme.spacing.md }}>
         <View
           style={{
@@ -76,7 +103,7 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
               variant="caption"
               weight="semibold"
               style={{
-                color: colors.brand,
+                color: rail,
                 letterSpacing: locale === 'ar' ? 0 : 1.4,
                 textTransform: locale === 'ar' ? 'none' : 'uppercase',
               }}
@@ -88,20 +115,43 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
               weight="semibold"
               style={{
                 fontVariant: ['tabular-nums'],
-                color: running ? colors.brand : colors.textPrimary,
+                color: overrun ? colors.warning : running ? colors.brand : colors.textPrimary,
               }}
             >
               {formatElapsedClock(elapsedSeconds)}
             </AppText>
             <AppText variant="caption" color="secondary">
-              {running
-                ? t('mobile.tasks.timerLive')
-                : timing.status === 'done'
-                  ? t('mobile.tasks.timerDone')
-                  : t('mobile.tasks.timerElapsed')}
+              {waitingToFinish
+                ? t('mobile.tasks.timerProgressWaiting')
+                : overrun
+                  ? t('mobile.tasks.overrunBy', {
+                      duration: formatMinutesDuration(overrunMinutes, hm),
+                    })
+                  : running
+                    ? t('mobile.tasks.timerLive')
+                    : timing.status === 'done'
+                      ? t('mobile.tasks.timerDone')
+                      : t('mobile.tasks.timerElapsed')}
             </AppText>
           </View>
-          {running ? (
+          {overrun ? (
+            <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: theme.radius.full,
+                backgroundColor: colors.warningSoft,
+                borderWidth: 1,
+                borderColor: colors.warning,
+              }}
+            >
+              <AppText variant="caption" weight="semibold" style={{ color: colors.warning }}>
+                {t('mobile.tasks.overrunBy', {
+                  duration: formatMinutesDuration(overrunMinutes, hm),
+                })}
+              </AppText>
+            </View>
+          ) : running ? (
             <View
               style={{
                 paddingHorizontal: 10,
@@ -134,6 +184,22 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
           ) : null}
         </View>
 
+        <View style={{ gap: 6 }}>
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{
+              color: waitingToFinish ? colors.brand : colors.textSecondary,
+              writingDirection: 'ltr',
+            }}
+          >
+            {waitingToFinish
+              ? t('mobile.tasks.timerProgressWaiting')
+              : t('mobile.tasks.timerProgress', { percent: progressPercent })}
+          </AppText>
+          <ProgressBar progress={progressPercent / 100} height={6} />
+        </View>
+
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -155,7 +221,7 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
             <AppText variant="caption" color="muted">
               {t('mobile.tasks.timerEstimated')}
             </AppText>
-            <AppText variant="label" weight="semibold">
+            <AppText variant="label" weight="semibold" style={{ writingDirection: 'ltr' }}>
               {timing.estimatedMinutes != null
                 ? formatMinutesDuration(timing.estimatedMinutes, hm)
                 : '—'}
@@ -184,6 +250,15 @@ export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Pro
           </View>
         </View>
 
+        <AppText variant="caption" color="muted" align="start" style={{ writingDirection: 'ltr' }}>
+          {t('mobile.tasks.plannedVsActual', {
+            planned:
+              timing.estimatedMinutes != null
+                ? formatMinutesDuration(timing.estimatedMinutes, hm)
+                : '—',
+            actual: formatMinutesDuration(elapsedMinutes, hm),
+          })}
+        </AppText>
         <AppText variant="caption" color="muted" align="start">
           {t('mobile.tasks.timerAccumulated', {
             duration: formatMinutesDuration(elapsedMinutes, hm),

@@ -8,7 +8,9 @@ import {
   createInventoryItem,
   createInventoryStockCount,
   createWarehouse,
+  createWarehouseLocation,
   createWarehouseTransfer,
+  deleteWarehouseLocation,
   completeWarehouseTransfer,
   getInventoryItem,
   getInventoryOverview,
@@ -17,6 +19,7 @@ import {
   listFinishedLots,
   listInventoryGroups,
   listInventoryItems,
+  listLowStock,
   listInventoryOpenReceipts,
   listInventoryStockCounts,
   listInventoryTransactions,
@@ -27,9 +30,12 @@ import {
   receiveStock,
   syncInventoryFromMaterials,
   updateInventoryItem,
+  updateWarehouseLocation,
   type CreateInventoryItemInput,
   type CreateInventoryStockCountInput,
   type CreateWarehouseInput,
+  type CreateWarehouseLocationInput,
+  type UpdateWarehouseLocationInput,
   type CreateWarehouseTransferInput,
   type InventoryCategoryGroup,
   type StockIssueInput,
@@ -48,6 +54,15 @@ export function useInventoryGroupsQuery(enabled: boolean) {
     queryFn: listInventoryGroups,
     enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useLowStockQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.inventory.lowStock(),
+    queryFn: listLowStock,
+    enabled,
+    staleTime: 15_000,
   });
 }
 
@@ -273,6 +288,40 @@ export function useCreateWarehouseMutation() {
   });
 }
 
+function invalidateWarehouses(qc: ReturnType<typeof useQueryClient>) {
+  return qc.invalidateQueries({ queryKey: queryKeys.inventory.warehouses() });
+}
+
+export function useCreateWarehouseLocationMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { warehouseId: string; body: CreateWarehouseLocationInput }) =>
+      createWarehouseLocation(input.warehouseId, input.body),
+    onSuccess: () => invalidateWarehouses(qc),
+  });
+}
+
+export function useUpdateWarehouseLocationMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      warehouseId: string;
+      locationId: string;
+      body: UpdateWarehouseLocationInput;
+    }) => updateWarehouseLocation(input.warehouseId, input.locationId, input.body),
+    onSuccess: () => invalidateWarehouses(qc),
+  });
+}
+
+export function useDeleteWarehouseLocationMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { warehouseId: string; locationId: string }) =>
+      deleteWarehouseLocation(input.warehouseId, input.locationId),
+    onSuccess: () => invalidateWarehouses(qc),
+  });
+}
+
 export function useCreateInventoryItemMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -411,6 +460,7 @@ export function useFinishedLotsInfiniteQuery(
     scope?: 'inWarehouse' | 'history';
     from?: string;
     to?: string;
+    origin?: 'normal' | 'returned';
     pageSize?: number;
   },
   enabled: boolean,
@@ -426,6 +476,7 @@ export function useFinishedLotsInfiniteQuery(
         scope: filters.scope,
         from: filters.from,
         to: filters.to,
+        origin: filters.origin,
       }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,

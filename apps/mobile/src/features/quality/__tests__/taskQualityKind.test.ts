@@ -3,6 +3,7 @@ import {
   countPriorFails,
   isLastStageQualityFloor,
   isQcFailResult,
+  isRecoveryFinishBlocked,
   resolveTaskQualityKind,
 } from '../taskQualityKind';
 
@@ -61,6 +62,13 @@ describe('classifyTaskQualityKind', () => {
 
   it('falls back to production for middle stages', () => {
     expect(classifyTaskQualityKind({ stageCode: 'CARPENTRY' })).toBe('production');
+  });
+
+  it('marks dismantle & recover as recovery', () => {
+    expect(classifyTaskQualityKind({ stageCode: 'DISMANTLE_RECOVER' })).toBe('recovery');
+    expect(isRecoveryFinishBlocked([])).toBe(true);
+    expect(isRecoveryFinishBlocked([{ postedAt: null }])).toBe(true);
+    expect(isRecoveryFinishBlocked([{ postedAt: '2026-01-01T00:00:00.000Z' }])).toBe(false);
   });
 });
 

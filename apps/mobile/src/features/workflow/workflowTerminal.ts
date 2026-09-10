@@ -2,8 +2,10 @@ import {
   OPENING_STAGE_CODE,
   TERMINAL_STAGE_CODES,
   isLockedAnchorStageCode,
+  isLockedAnchorStageCodeForScope,
   isOpeningStageCode,
   isTerminalStageCode,
+  type ProductionWorkflowScope,
   type TerminalStageCode,
 } from '@maher/types';
 import type { WorkflowNode } from '@/api/modules/workflow';
@@ -28,9 +30,12 @@ export function isOpeningNode(node: Pick<WorkflowNode, 'stageDefinition'>): bool
   return code ? isOpeningStageCode(code) : false;
 }
 
-export function isLockedAnchorNode(node: Pick<WorkflowNode, 'stageDefinition'>): boolean {
+export function isLockedAnchorNode(
+  node: Pick<WorkflowNode, 'stageDefinition'>,
+  scope?: ProductionWorkflowScope | string | null,
+): boolean {
   const code = node.stageDefinition?.code;
-  return code ? isLockedAnchorStageCode(code) : false;
+  return code ? isLockedAnchorStageCodeForScope(code, scope) : false;
 }
 
 export function getInspectionNodeId(nodes: Pick<WorkflowNode, 'id' | 'stageDefinition'>[]): string | null {
@@ -194,8 +199,9 @@ export function filterSiblingLiftPatches<
 >(
   patches: T[],
   nodes: Pick<WorkflowNode, 'id' | 'stageDefinition'>[],
+  scope?: ProductionWorkflowScope | string | null,
 ): T[] {
-  const locked = lockedAnchorNodeIds(nodes);
+  const locked = lockedAnchorNodeIds(nodes, scope);
   const inspectionId = getInspectionNodeId(nodes);
   return patches.filter((p) => {
     if (locked.has(p.nodeId) && p.nodeId !== inspectionId) return false;
@@ -213,8 +219,9 @@ export function terminalNodeIds(
 
 export function lockedAnchorNodeIds(
   nodes: Pick<WorkflowNode, 'id' | 'stageDefinition'>[],
+  scope?: ProductionWorkflowScope | string | null,
 ): Set<string> {
-  return new Set(nodes.filter(isLockedAnchorNode).map((n) => n.id));
+  return new Set(nodes.filter((n) => isLockedAnchorNode(n, scope)).map((n) => n.id));
 }
 
 export function partitionWorkflowNodes<T extends Pick<WorkflowNode, 'id' | 'sortOrder' | 'stageDefinition'>>(

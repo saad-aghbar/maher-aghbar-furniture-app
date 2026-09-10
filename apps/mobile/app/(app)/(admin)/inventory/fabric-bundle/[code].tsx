@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
-import { FabricBundleDetailScreen } from '@/features/inventory/FabricBundleDetailScreen';
+import { FabricDetailScreen } from '@/features/fabric/FabricDetailScreen';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
 export default function AdminFabricBundleRoute() {
@@ -8,7 +8,7 @@ export default function AdminFabricBundleRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="inventory.read" mode="all">
-      <FabricBundleDetailScreen code={String(code ?? '')} />
+      <FabricDetailScreen code={String(code ?? '')} />
     </PermissionGate>
   );
 }

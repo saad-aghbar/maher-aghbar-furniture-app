@@ -713,3 +713,23 @@ describe('After / Parallel placement candidates', () => {
     expect(allowed).not.toContain('carp');
   });
 });
+
+describe('recovery-shaped graphs', () => {
+  it('allows a single DISMANTLE_RECOVER node without the finishing trio', () => {
+    const g = fromRawGraph(
+      [N('rec', 'DISMANTLE_RECOVER', 0)],
+      [],
+      { requiresOpeningChain: false, requiresTerminalChain: false },
+    );
+    const v = validateCanonicalWorkflowGraph(g);
+    expect(v.ok).toBe(true);
+    expect(v.issues.map((i) => i.code)).not.toContain('TERMINAL_MISSING');
+  });
+
+  it('still requires the finishing trio when terminal chain is on', () => {
+    const g = fromRawGraph([N('rec', 'DISMANTLE_RECOVER', 0)], []);
+    const v = validateCanonicalWorkflowGraph(g);
+    expect(v.ok).toBe(false);
+    expect(v.issues.some((i) => i.code === 'TERMINAL_MISSING')).toBe(true);
+  });
+});

@@ -15,21 +15,26 @@ import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/cu
 import { ListProductionOrdersDto, UpdateProductionOrderDto, type ProductionListBucket } from './dto/production.dto';
 import { StagePipelineService } from './stage-pipeline.service';
 import {
+  decorateInspectionJourneyFields,
   mapWorkflowStageAdmin,
   mapWorkflowStageSafe,
 } from '../../common/helpers/production-workflow-stages.util';
-import { buildTaskTimingSummary, closedSecondsFromTimeEntries } from '../../common/helpers/task-timing.util';
+import {
+  livePercentFromTaskRow,
+  liveTimingFromTaskRow,
+  liveWorkflowProgressPercent,
+} from '../../common/helpers/live-task-progress';
 import {
   assessProductionReadiness,
   productionNotReadyException,
   type ExecutableTaskInput,
 } from './production-readiness';
 import { modifiedMaterialsReviewRequired } from './catalog-seed-preview';
-import { loadFabricReadinessForSalesOrder } from './fabric-readiness-load';
 import {
-  HAS_EXECUTABLE,
-  UNASSIGNED_EXECUTABLE,
-  UNDATED_EXECUTABLE,
+  loadFabricReadinessForProductionOrder,
+  loadFabricReadinessForSalesOrder,
+} from './fabric-readiness-load';
+import {
   productionBoardBucketWhere,
   type ProductionBoardBucketKey,
 } from './production-board-buckets';
@@ -38,7 +43,11 @@ import {
   DEFAULT_FACTORY_TIMEZONE,
   assertValidOnDate,
   intervalOverlapsFactoryDay,
+  lateMissedTasksWhere,
   plannedTasksOverlapDayWhere,
+  productionDayLensAtRiskWhere,
+  productionDayLensFocusWhere,
+  productionDayLensLateMissedWhere,
   productionDayLensWhere,
   resolveFactoryDayBounds,
   type FactoryDayBounds,
@@ -50,8 +59,15 @@ import {
   sortRecommendedWorkers,
 } from './worker-recommend';
 import { listMissingExecutableTaskSpecs } from './ensure-executable-tasks';
+import { isQualityGateStage } from '../scheduling/domain/milestone';
 import { ManufacturingCostService } from './manufacturing-cost.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { clipLiveOccupancy, pauseVisualWindow } from '../scheduling/domain/occupancy-clip';
+import {
+  PRODUCTION_RETURN_REQUEST_SELECT,
+  productionOriginLabel,
+  productionOriginWhere,
+} from './production-origin';
 
 @Injectable()
 export class ProductionService {
@@ -105,9 +121,20 @@ export class ProductionService {
     );
     if (missing.length === 0) return { created: 0 };
 
+    const snapNodes = await this.prisma.productionOrderWorkflowSnapshotNode.findMany({
+      where: { stageInstanceId: { in: missing.map((s) => s.stageInstanceId) } },
+      select: { stageInstanceId: true, estimatedMinutes: true },
+    });
+    const minutesByInstance = new Map(
+      snapNodes
+        .filter((n) => n.stageInstanceId)
+        .map((n) => [n.stageInstanceId as string, n.estimatedMinutes]),
+    );
+
     let created = 0;
     for (const spec of missing) {
       const taskNumber = await this.sequences.next('TASK', 'TSK');
+      const snapMinutes = minutesByInstance.get(spec.stageInstanceId);
       await this.prisma.productionTask.create({
         data: {
           number: taskNumber,
@@ -118,7 +145,14 @@ export class ProductionService {
           description: spec.description,
           status: 'NOT_STARTED',
           progressPercent: 0,
-          estimatedMinutes: 120,
+          estimatedMinutes: isQualityGateStage({
+            code: spec.stageCode,
+            executionKind: spec.executionKind,
+          })
+            ? 0
+            : snapMinutes != null && snapMinutes > 0
+              ? snapMinutes
+              : undefined,
           targetQty: order.quantity,
           completedQty: 0,
         },
@@ -144,6 +178,7 @@ export class ProductionService {
       actualStart: true,
       actualCompletion: true,
       estimatedMinutes: true,
+      actualMinutes: true,
       name: true,
       number: true,
       assignedEmployee: {
@@ -163,6 +198,10 @@ export class ProductionService {
       blockers: {
         where: { resolvedAt: null },
         select: { id: true, category: true, reason: true, resolvedAt: true },
+      },
+      timeEntries: {
+        orderBy: { startedAt: 'desc' as const },
+        select: { startedAt: true, endedAt: true },
       },
     } as const;
 
@@ -214,6 +253,7 @@ export class ProductionService {
               },
             },
           },
+          returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
           // Lightweight stage refs for currentStage only — not a stages UI payload
           stages: {
             include: { stageDefinition: true },
@@ -280,6 +320,15 @@ export class ProductionService {
         row.salesOrder?.customer ??
         (row.customerId ? orphanById.get(row.customerId) ?? null : null);
       const { stages: _stages, tasks, _count, ...rest } = row;
+      const liveProgressPercent = user?.customerId
+        ? rest.progressPercent
+        : liveWorkflowProgressPercent(
+            tasks.map((t) => ({
+              status: t.status,
+              progressPercent: livePercentFromTaskRow(t),
+              estimatedMinutes: t.estimatedMinutes,
+            })),
+          );
       const due = row.requiredDeliveryDate ? new Date(row.requiredDeliveryDate).getTime() : null;
       const isLate =
         due != null &&
@@ -351,6 +400,8 @@ export class ProductionService {
 
       return {
         ...rest,
+        progressPercent: liveProgressPercent,
+        originLabel: productionOriginLabel(row.originType),
         customer,
         imageUrl,
         isLate,
@@ -366,8 +417,8 @@ export class ProductionService {
           : row.currentStageCode
             ? {
                 code: row.currentStageCode,
-                nameEn: row.currentStageCode,
-                nameAr: row.currentStageCode,
+                nameEn: '',
+                nameAr: '',
                 nameHe: null,
               }
             : null,
@@ -401,6 +452,8 @@ export class ProductionService {
       dateMode?: ProductionDateMode;
       bucket?: ProductionListBucket;
       customerId?: string;
+      origin?: 'normal' | 'returned';
+      dayFocus?: 'late_missed' | 'at_risk';
     },
     user?: AuthUser,
   ) {
@@ -426,6 +479,7 @@ export class ProductionService {
         pageSize: 1,
         bucket: query.bucket,
         customerId: query.customerId,
+        origin: query.origin,
       } as ListProductionOrdersDto,
       user,
       now,
@@ -439,6 +493,8 @@ export class ProductionService {
         page: 1,
         pageSize: 1,
         customerId: query.customerId,
+        origin: query.origin,
+        dayFocus: query.dayFocus,
       } as ListProductionOrdersDto,
       user,
       now,
@@ -469,6 +525,7 @@ export class ProductionService {
       actualOrders,
       plannedTaskRows,
       lateMissed,
+      lateMissedTasks,
       atRisk,
       needsSetup,
       readyToStart,
@@ -492,37 +549,30 @@ export class ProductionService {
         select: {
           id: true,
           stageDefinition: {
-            select: { code: true, nameEn: true, nameAr: true, responsibleDepartment: true },
+            select: {
+              code: true,
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              responsibleDepartment: true,
+            },
           },
-        },
-      }),
-      this.prisma.productionTask.count({
-        where: {
-          ...plannedTaskWhere,
-          productionOrder: plannedWhere,
-          actualStart: null,
-          status: { notIn: ['COMPLETED', 'CANCELLED'] },
-          plannedCompletion: { lt: now, not: null },
         },
       }),
       this.prisma.productionOrder.count({
         where: {
-          AND: [
-            plannedWhere,
-            {
-              OR: [
-                {
-                  requiredDeliveryDate: { lt: now },
-                  status: { notIn: ['COMPLETED', 'CANCELLED'] },
-                },
-                {
-                  tasks: {
-                    some: { blockers: { some: { resolvedAt: null } } },
-                  },
-                },
-              ],
-            },
-          ],
+          AND: [plannedWhere, productionDayLensLateMissedWhere(bounds, now)],
+        },
+      }),
+      this.prisma.productionTask.count({
+        where: {
+          ...lateMissedTasksWhere(bounds, now),
+          productionOrder: plannedWhere,
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          AND: [plannedWhere, productionDayLensAtRiskWhere(now)],
         },
       }),
       ...boardKeys.map((key) =>
@@ -549,16 +599,29 @@ export class ProductionService {
       }),
     ]);
 
-    const byDepartment = new Map<string, { code: string; nameEn: string; taskCount: number }>();
+    const byDepartment = new Map<
+      string,
+      { code: string; nameEn: string; nameAr: string | null; nameHe: string | null; taskCount: number }
+    >();
     for (const row of plannedTaskRows) {
       const code =
         row.stageDefinition?.responsibleDepartment ||
         row.stageDefinition?.code ||
         'OTHER';
-      const nameEn = row.stageDefinition?.nameEn || code;
       const prev = byDepartment.get(code);
-      if (prev) prev.taskCount += 1;
-      else byDepartment.set(code, { code, nameEn, taskCount: 1 });
+      if (prev) {
+        prev.taskCount += 1;
+        if (!prev.nameAr && row.stageDefinition?.nameAr) prev.nameAr = row.stageDefinition.nameAr;
+        if (!prev.nameHe && row.stageDefinition?.nameHe) prev.nameHe = row.stageDefinition.nameHe;
+      } else {
+        byDepartment.set(code, {
+          code,
+          nameEn: row.stageDefinition?.nameEn || '',
+          nameAr: row.stageDefinition?.nameAr ?? null,
+          nameHe: row.stageDefinition?.nameHe ?? null,
+          taskCount: 1,
+        });
+      }
     }
 
     return {
@@ -578,6 +641,7 @@ export class ProductionService {
         taskEvents: actualStarts + actualCompletions,
       },
       lateMissed,
+      lateMissedTasks,
       atRisk,
       board: {
         needsSetup,
@@ -629,6 +693,8 @@ export class ProductionService {
   ): Promise<Prisma.ProductionOrderWhereInput> {
     const q = query.q?.trim();
     const and: Prisma.ProductionOrderWhereInput[] = [];
+    const originWhere = productionOriginWhere(query.origin);
+    if (originWhere) and.push(originWhere);
     if (query.customerId) {
       and.push({
         OR: [
@@ -710,6 +776,10 @@ export class ProductionService {
     if (dayBounds && dateMode) {
       and.push(productionDayLensWhere(dayBounds, dateMode));
     }
+    const focusWhere = dayBounds
+      ? productionDayLensFocusWhere(dayBounds, query.dayFocus, now)
+      : null;
+    if (focusWhere) and.push(focusWhere);
 
     return {
       archivedAt: null,
@@ -777,7 +847,7 @@ export class ProductionService {
           createdAt: true,
           task: {
             select: {
-              stageDefinition: { select: { nameEn: true, code: true } },
+              stageDefinition: { select: { nameEn: true, nameAr: true, nameHe: true, code: true } },
               assignedEmployee: { select: { firstName: true, lastName: true } },
             },
           },
@@ -792,7 +862,7 @@ export class ProductionService {
           productionOrderId: true,
           createdAt: true,
           stageInstance: {
-            select: { stageDefinition: { select: { nameEn: true, code: true } } },
+            select: { stageDefinition: { select: { nameEn: true, nameAr: true, nameHe: true, code: true } } },
           },
           producingTask: {
             select: {
@@ -813,7 +883,7 @@ export class ProductionService {
           kit: {
             select: {
               stageInstance: {
-                select: { stageDefinition: { select: { nameEn: true, code: true } } },
+                select: { stageDefinition: { select: { nameEn: true, nameAr: true, nameHe: true, code: true } } },
               },
             },
           },
@@ -827,7 +897,7 @@ export class ProductionService {
         select: {
           productionOrderId: true,
           producedAt: true,
-          inventoryItem: { select: { sku: true, nameEn: true, itemClass: true } },
+          inventoryItem: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true, itemClass: true } },
         },
       }),
       this.prisma.qualityInspection.findMany({
@@ -850,8 +920,21 @@ export class ProductionService {
       map.set(orderId, list);
     };
 
+    const stageFields = (
+      def?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null } | null,
+      fallback?: string | null,
+    ) => {
+      const nameEn = def?.nameEn || fallback || null;
+      return {
+        stage: nameEn,
+        stageNameEn: nameEn,
+        stageNameAr: def?.nameAr ?? null,
+        stageNameHe: def?.nameHe ?? null,
+      };
+    };
+
     for (const t of tasks) {
-      const stage = t.stageDefinition?.nameEn ?? t.name;
+      const names = stageFields(t.stageDefinition, t.name);
       const worker = t.assignedEmployee
         ? `${t.assignedEmployee.firstName} ${t.assignedEmployee.lastName}`.trim()
         : null;
@@ -863,7 +946,7 @@ export class ProductionService {
         push(t.productionOrderId, {
           kind: 'task_started',
           at: t.actualStart.toISOString(),
-          stage,
+          ...names,
           worker,
         });
       }
@@ -875,7 +958,7 @@ export class ProductionService {
         push(t.productionOrderId, {
           kind: 'task_completed',
           at: t.actualCompletion.toISOString(),
-          stage,
+          ...names,
           worker,
         });
       }
@@ -883,16 +966,16 @@ export class ProductionService {
 
     for (const m of materials) {
       const at = (m.finalizedAt ?? m.createdAt).toISOString();
-      const stage = m.task?.stageDefinition?.nameEn ?? null;
+      const names = stageFields(m.task?.stageDefinition);
       const worker = m.task?.assignedEmployee
         ? `${m.task.assignedEmployee.firstName} ${m.task.assignedEmployee.lastName}`.trim()
         : null;
       if (Number(m.scrapQty) > 0) {
-        push(m.productionOrderId, { kind: 'material_scrap', at, sku: m.sku, stage, worker });
+        push(m.productionOrderId, { kind: 'material_scrap', at, sku: m.sku, ...names, worker });
       } else if (Number(m.returnedQty) > 0) {
-        push(m.productionOrderId, { kind: 'material_returned', at, sku: m.sku, stage, worker });
+        push(m.productionOrderId, { kind: 'material_returned', at, sku: m.sku, ...names, worker });
       } else if (m.actualQty != null) {
-        push(m.productionOrderId, { kind: 'material_used', at, sku: m.sku, stage, worker });
+        push(m.productionOrderId, { kind: 'material_used', at, sku: m.sku, ...names, worker });
       }
     }
 
@@ -903,7 +986,7 @@ export class ProductionService {
       push(k.productionOrderId, {
         kind: 'semi_produced',
         at: k.createdAt.toISOString(),
-        stage: k.stageInstance.stageDefinition.nameEn,
+        ...stageFields(k.stageInstance?.stageDefinition),
         worker,
       });
     }
@@ -912,7 +995,7 @@ export class ProductionService {
       push(h.productionOrderId, {
         kind: 'semi_received',
         at: h.receivedAt.toISOString(),
-        stage: h.kit.stageInstance.stageDefinition.nameEn,
+        ...stageFields(h.kit.stageInstance?.stageDefinition),
         worker: `${h.receivedBy.firstName} ${h.receivedBy.lastName}`.trim(),
       });
     }
@@ -924,6 +1007,8 @@ export class ProductionService {
         at: lot.producedAt.toISOString(),
         sku: lot.inventoryItem?.sku ?? null,
         name: lot.inventoryItem?.nameEn ?? null,
+        nameAr: lot.inventoryItem?.nameAr ?? null,
+        nameHe: lot.inventoryItem?.nameHe ?? null,
       });
     }
 
@@ -932,7 +1017,6 @@ export class ProductionService {
       push(insp.productionOrderId, {
         kind: result === 'FAIL' || result === 'FAILED' ? 'inspection_failed' : 'inspection_passed',
         at: insp.inspectedAt.toISOString(),
-        stage: insp.stageCode,
       });
     }
 
@@ -1065,6 +1149,7 @@ export class ProductionService {
             createdAt: true,
           },
         },
+        returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
       },
     });
     let order = await loadOrder();
@@ -1133,10 +1218,12 @@ export class ProductionService {
       materialsReviewedAt: lineSetup?.materialsReviewedAt ?? null,
       materialsNeedReview: (lineSetup?.materialRequirements ?? []).some((m) => m.needsReview),
     });
-    const fabric = await loadFabricReadinessForSalesOrder(
-      this.prisma,
-      order.salesOrderId ?? order.salesOrderLine?.salesOrderId ?? null,
-    );
+    const fabric = order.salesOrderId ?? order.salesOrderLine?.salesOrderId
+      ? await loadFabricReadinessForSalesOrder(
+          this.prisma,
+          order.salesOrderId ?? order.salesOrderLine?.salesOrderId ?? null,
+        )
+      : await loadFabricReadinessForProductionOrder(this.prisma, order.id);
     const readiness = assessProductionReadiness({
       status: order.status,
       currentStageCode: order.currentStageCode,
@@ -1177,9 +1264,25 @@ export class ProductionService {
         }
       : null;
 
+    let customer = order.salesOrder?.customer ?? null;
+    if (!customer && order.customerId) {
+      customer = await this.prisma.customer.findUnique({
+        where: { id: order.customerId },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          nameAr: true,
+          nameEn: true,
+          nameHe: true,
+        },
+      });
+    }
+
     const base = {
       ...order,
-      customer: order.salesOrder?.customer ?? null,
+      originLabel: productionOriginLabel(order.originType),
+      customer,
       imageUrl,
       isLate,
       openBlockers,
@@ -1188,15 +1291,48 @@ export class ProductionService {
       workerAssignmentRequired: scheduleCount === 0 && order.status !== 'CANCELLED',
     };
 
+    const taskPhotos = (order.documents ?? []).filter((d) =>
+      (d.category ?? '').startsWith('TASK_PHOTO:'),
+    );
+    const latestInspection = await this.prisma.qualityInspection.findFirst({
+      where: { productionOrderId: id },
+      include: {
+        items: { select: { result: true } },
+        rework: {
+          include: {
+            reentryStageInstance: { include: { stageDefinition: { select: { code: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const inspectionOverlay = {
+      passed: (latestInspection?.items ?? []).filter(
+        (i) => String(i.result ?? '').toUpperCase() === 'PASS',
+      ).length,
+      total: latestInspection?.items.length ?? 0,
+      reworkBackCodes: [
+        ...new Set(
+          (latestInspection?.rework ?? [])
+            .filter((r) => r.status !== 'COMPLETED')
+            .map((r) => r.reentryStageInstance?.stageDefinition?.code)
+            .filter((c): c is string => Boolean(c)),
+        ),
+      ],
+    };
+
     // Dealers see sanitized stage DAG + completed-stage work photos only.
     if (user?.customerId) {
-      const taskPhotos = (order.documents ?? []).filter((d) =>
-        (d.category ?? '').startsWith('TASK_PHOTO:'),
-      );
       const { stages: _s, tasks: _t, openBlockers: _b, documents: _d, ...rest } = base;
       return {
         ...rest,
-        stages: (order.stages ?? []).map((s) => mapWorkflowStageSafe(s, taskPhotos)),
+        stages: (order.stages ?? []).map((s) =>
+          decorateInspectionJourneyFields(
+            mapWorkflowStageSafe(s, taskPhotos),
+            { inspectionStatus: (s as { inspectionStatus?: string | null }).inspectionStatus },
+            inspectionOverlay,
+          ),
+        ),
         tasks: [],
         openBlockers: [],
         documents: [],
@@ -1204,59 +1340,68 @@ export class ProductionService {
       };
     }
 
-    const taskPhotos = (order.documents ?? []).filter((d) =>
-      (d.category ?? '').startsWith('TASK_PHOTO:'),
-    );
     const tasksWithTiming = (order.tasks ?? []).map((task) => {
-      const open = task.timeEntries?.find((e) => !e.endedAt);
-      const hasClosed = (task.timeEntries ?? []).some((e) => e.endedAt != null);
       const { timeEntries: _te, ...rest } = task;
+      const timing = liveTimingFromTaskRow(task);
       return {
         ...rest,
-        timing: buildTaskTimingSummary({
-          status: task.status,
-          actualMinutes: task.actualMinutes,
-          actualSeconds: hasClosed
-            ? closedSecondsFromTimeEntries(task.timeEntries)
-            : undefined,
-          estimatedMinutes: task.estimatedMinutes,
-          plannedCompletion: task.plannedCompletion,
-          openStartedAt: open?.startedAt ?? null,
-        }),
+        progressPercent: livePercentFromTaskRow(task),
+        timing,
       };
     });
     const manufacturingCosting = await this.manufacturingCost.summaryForProductionOrder(
       id,
       user,
     );
-    return {
-      ...base,
-      tasks: tasksWithTiming,
-      manufacturingCosting,
-      stages: (order.stages ?? []).map((s) => ({
+    const stages = (order.stages ?? []).map((s) => {
+      const mapped = mapWorkflowStageAdmin(s, taskPhotos);
+      const decorated = decorateInspectionJourneyFields(
+        mapped,
+        { inspectionStatus: (s as { inspectionStatus?: string | null }).inspectionStatus },
+        inspectionOverlay,
+      );
+      return {
         ...s,
-        ...mapWorkflowStageAdmin(s, taskPhotos),
+        ...decorated,
         tasks: (s.tasks ?? []).map((task) => {
-          const entries = (task as { timeEntries?: Array<{ startedAt: Date; endedAt?: Date | null }> })
-            .timeEntries;
-          const open = entries?.find((e) => !e.endedAt);
-          const hasClosed = (entries ?? []).some((e) => e.endedAt != null);
           const { timeEntries: _te, ...rest } = task as typeof task & {
             timeEntries?: unknown;
           };
+          const timing = liveTimingFromTaskRow(task);
           return {
             ...rest,
-            timing: buildTaskTimingSummary({
+            progressPercent: livePercentFromTaskRow({
+              ...task,
               status: (task as { status?: string }).status ?? s.status,
-              actualMinutes: (task as { actualMinutes?: number | null }).actualMinutes,
-              actualSeconds: hasClosed ? closedSecondsFromTimeEntries(entries) : undefined,
-              estimatedMinutes: (task as { estimatedMinutes?: number | null }).estimatedMinutes,
-              plannedCompletion: (task as { plannedCompletion?: Date | null }).plannedCompletion,
-              openStartedAt: open?.startedAt ?? null,
             }),
+            timing,
           };
         }),
-      })),
+      };
+    });
+    return {
+      ...base,
+      progressPercent: liveWorkflowProgressPercent(
+        stages.map((s) => ({
+          status: s.status,
+          progressPercent: s.progressPercent,
+          estimatedMinutes:
+            (s.tasks ?? []).reduce(
+              (sum, t) =>
+                sum +
+                Number(
+                  (t as { estimatedMinutes?: number | null }).estimatedMinutes ??
+                    (t as { timing?: { estimatedMinutes?: number | null } }).timing?.estimatedMinutes ??
+                    0,
+                ),
+              0,
+            ) || null,
+          isSkipped: s.status === 'SKIPPED',
+        })),
+      ),
+      tasks: tasksWithTiming,
+      manufacturingCosting,
+      stages,
     };
   }
 
@@ -1337,6 +1482,15 @@ export class ProductionService {
       !Number.isNaN(windowStart.getTime()) &&
       !Number.isNaN(windowEnd.getTime());
 
+    const assignTaskId = opts?.taskId?.trim() || undefined;
+    const assignTask = assignTaskId
+      ? await this.prisma.productionTask.findUnique({
+          where: { id: assignTaskId },
+          select: { estimatedMinutes: true },
+        })
+      : null;
+    const taskEstimatedMinutes = assignTask?.estimatedMinutes ?? null;
+
     const overlapByWorker = new Set<string>();
     const overlapWindowsByWorker = new Map<
       string,
@@ -1351,6 +1505,7 @@ export class ProductionService {
         label: string;
         salesOrderNumber: string | null;
         stage: string | null;
+        kind?: 'work' | 'stopped';
       }>
     >();
     if (windowOk && ids.length > 0) {
@@ -1387,8 +1542,15 @@ export class ProductionService {
         select: {
           assignedEmployeeId: true,
           name: true,
+          status: true,
           plannedStart: true,
           plannedCompletion: true,
+          timeEntries: {
+            where: { endedAt: { not: null } },
+            orderBy: { endedAt: 'desc' },
+            take: 1,
+            select: { endedAt: true },
+          },
           productionOrder: {
             select: {
               number: true,
@@ -1397,27 +1559,57 @@ export class ProductionService {
           },
         },
       });
+      const now = new Date();
       for (const t of dayTasks) {
         if (!t.assignedEmployeeId || !t.plannedCompletion) continue;
         const oStart = t.plannedStart ?? new Date(t.plannedCompletion.getTime() - 3600_000);
         const soNumber = t.productionOrder?.salesOrder?.number ?? t.productionOrder?.number ?? null;
         const label = `${soNumber ?? ''} · ${t.name}`.trim();
-        const dayList = dayWindowsByWorker.get(t.assignedEmployeeId) ?? [];
-        dayList.push({
-          start: oStart.toISOString(),
-          end: t.plannedCompletion.toISOString(),
-          label,
-          salesOrderNumber: soNumber,
-          stage: t.name,
+        const pauseAt = t.timeEntries?.[0]?.endedAt ?? null;
+        const work = clipLiveOccupancy({
+          start: oStart,
+          end: t.plannedCompletion,
+          now,
+          taskStatus: t.status,
+          pauseAt,
         });
+        const stopped = pauseVisualWindow({
+          plannedEnd: t.plannedCompletion,
+          now,
+          taskStatus: t.status,
+          pauseAt,
+        });
+        const dayList = dayWindowsByWorker.get(t.assignedEmployeeId) ?? [];
+        if (work) {
+          dayList.push({
+            start: work.start.toISOString(),
+            end: work.end.toISOString(),
+            label,
+            salesOrderNumber: soNumber,
+            stage: t.name,
+            kind: 'work',
+          });
+        }
+        if (stopped) {
+          dayList.push({
+            start: stopped.start.toISOString(),
+            end: stopped.end.toISOString(),
+            label,
+            salesOrderNumber: soNumber,
+            stage: t.name,
+            kind: 'stopped',
+          });
+        }
         dayWindowsByWorker.set(t.assignedEmployeeId, dayList);
 
-        if (intervalsOverlap(windowStart!, windowEnd!, oStart, t.plannedCompletion)) {
+        const occupyStart = work?.start ?? oStart;
+        const occupyEnd = work?.end ?? t.plannedCompletion;
+        if (work && intervalsOverlap(windowStart!, windowEnd!, occupyStart, occupyEnd)) {
           overlapByWorker.add(t.assignedEmployeeId);
           const list = overlapWindowsByWorker.get(t.assignedEmployeeId) ?? [];
           list.push({
-            start: oStart.toISOString(),
-            end: t.plannedCompletion.toISOString(),
+            start: occupyStart.toISOString(),
+            end: occupyEnd.toISOString(),
             label,
           });
           overlapWindowsByWorker.set(t.assignedEmployeeId, list);
@@ -1434,7 +1626,9 @@ export class ProductionService {
     const durationMs =
       windowOk && windowStart && windowEnd
         ? Math.max(30 * 60_000, windowEnd.getTime() - windowStart.getTime())
-        : 2 * 60 * 60_000;
+        : taskEstimatedMinutes != null && taskEstimatedMinutes > 0
+          ? taskEstimatedMinutes * 60_000
+          : null;
 
     const enriched = workers.map((w) => {
       const activeTaskCount = countById.get(w.id) ?? 0;
@@ -1449,7 +1643,7 @@ export class ProductionService {
       });
       let suggestedWindow: { plannedStart: string; plannedCompletion: string } | null =
         null;
-      if (overlapWindows.length > 0) {
+      if (overlapWindows.length > 0 && durationMs != null) {
         const latestEndMs = Math.max(
           ...overlapWindows.map((o) => new Date(o.end).getTime()),
         );

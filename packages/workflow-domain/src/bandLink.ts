@@ -161,6 +161,8 @@ export function applyParallelBandLink(
   return canonicalizeWorkflowGraph({
     nodes: graph.nodes,
     edges: edgesFromPredMap(preds),
+    requiresOpeningChain: graph.requiresOpeningChain,
+    requiresTerminalChain: graph.requiresTerminalChain,
   });
 }
 

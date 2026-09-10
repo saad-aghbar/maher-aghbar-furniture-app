@@ -15,6 +15,7 @@ export type FlowMapStage = {
   estimatedMinutes?: number | null;
   optional?: boolean;
   hasError?: boolean;
+  libraryCode?: string | null;
 };
 
 type Props = {

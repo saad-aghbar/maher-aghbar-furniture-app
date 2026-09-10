@@ -109,6 +109,15 @@ describe('commit guards (locked rewire)', () => {
     expect(isLockedRewireTarget(version, 'foam')).toBe(false);
     expect(isLockedRewireTarget(version, 'insp')).toBe(false);
   });
+
+  it('unlocks opening and finishing rewire on return and recovery workflows', () => {
+    for (const scope of ['RETURN', 'RECOVERY'] as const) {
+      const scoped = { ...version, scope };
+      expect(isLockedRewireTarget(scoped, 'prep')).toBe(false);
+      expect(isLockedRewireTarget(scoped, 'pack')).toBe(false);
+      expect(isLockedRewireTarget(scoped, 'del')).toBe(false);
+    }
+  });
 });
 
 describe('one edge source: list = map', () => {

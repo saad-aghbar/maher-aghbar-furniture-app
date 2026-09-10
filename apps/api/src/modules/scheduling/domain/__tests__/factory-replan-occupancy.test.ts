@@ -147,7 +147,6 @@ describe('factory replan sequential occupancy', () => {
   });
 
   it('validate-before-accept skips persist when the candidate still collides', () => {
-    const w1 = worker('w1', [STG.carpentry]);
     const booked = occupancyFromGeneratedAllocations('po-seed', [
       {
         id: 'seed',

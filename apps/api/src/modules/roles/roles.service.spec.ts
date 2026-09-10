@@ -204,6 +204,7 @@ describe('RolesService.ensureSystemStaffPresets', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
+      $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
     } as unknown as PrismaService;
     const service = new RolesService(prisma);
     await service.ensureSystemStaffPresets();

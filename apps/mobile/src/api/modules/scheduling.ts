@@ -129,12 +129,17 @@ export type ProductionScheduleDetail = {
     committedDeliveryDate?: string | null;
     priority?: string | null;
     customerId?: string | null;
+    releasedToFactoryAt?: string | null;
+    actualStartDate?: string | null;
   };
   /** Order-level promise state, computed even when no schedule exists yet. */
   promiseState: SchedulePromiseState | string;
   riskStatus?: CanonicalRiskStatus | string;
   stillAtRisk?: boolean;
   planUnchanged?: boolean;
+  executionStarted?: boolean;
+  canApprove?: boolean;
+  canUnapprove?: boolean;
   schedule: ProductionScheduleSnapshot | null;
 };
 
@@ -237,6 +242,26 @@ export async function getOrderSchedule(
   return apiGet(`/scheduling/orders/${encodeURIComponent(productionOrderId)}`);
 }
 
+export async function pinAllocation(
+  productionOrderId: string,
+  body: { allocationId?: string; taskId?: string; version: number },
+) {
+  return apiPost(`/scheduling/orders/${encodeURIComponent(productionOrderId)}/pin`, {
+    ...body,
+    pin: true,
+  });
+}
+
+export async function unpinAllocation(
+  productionOrderId: string,
+  body: { allocationId?: string; taskId?: string; version: number },
+) {
+  return apiPost(`/scheduling/orders/${encodeURIComponent(productionOrderId)}/unpin`, {
+    ...body,
+    pin: false,
+  });
+}
+
 /** True when the response is the dealer-safe shape (no factory internals). */
 export function isOwnOrderSchedule(
   value: ProductionScheduleDetail | OwnOrderSchedule,
@@ -250,6 +275,16 @@ export async function approveSchedule(
 ): Promise<ProductionScheduleDetail> {
   return apiPost<ProductionScheduleDetail>(
     `/scheduling/orders/${encodeURIComponent(productionOrderId)}/approve`,
+    body,
+  );
+}
+
+export async function unapproveSchedule(
+  productionOrderId: string,
+  body: { version: number; idempotencyKey?: string },
+): Promise<ProductionScheduleDetail> {
+  return apiPost<ProductionScheduleDetail>(
+    `/scheduling/orders/${encodeURIComponent(productionOrderId)}/unapprove`,
     body,
   );
 }
@@ -336,6 +371,177 @@ export type SchedulingDashboard = {
 
 export async function getDashboard(): Promise<SchedulingDashboard> {
   return apiGet<SchedulingDashboard>('/scheduling/dashboard');
+}
+
+export type PlanningState =
+  | 'NEEDS_PLANNING'
+  | 'READY_TO_SCHEDULE'
+  | 'PARTIALLY_SCHEDULED'
+  | 'SCHEDULED'
+  | 'IN_PRODUCTION';
+
+export type SchedulingSummary = {
+  today: number;
+  thisWeek: number;
+  unscheduled: number;
+  atRisk: number;
+  conflicts: number;
+  overtime: number;
+  timezone: string;
+  todayYmd: string;
+  weekFrom: string;
+  weekTo: string;
+};
+
+export async function getSchedulingSummary(): Promise<SchedulingSummary> {
+  return apiGet<SchedulingSummary>('/scheduling/summary');
+}
+
+export type FactoryDayWorkerBusy = {
+  id: string;
+  productionTaskId: string | null;
+  productionOrderId: string | null;
+  orderNumber: string | null;
+  salesOrderNumber: string | null;
+  stageCode: string | null;
+  stageName: string | null;
+  start: string;
+  end: string;
+  attentionCode: string | null;
+  isPinned?: boolean | null;
+  actualMinutes?: number | null;
+  elapsedMinutes?: number | null;
+  estimatedMinutes?: number | null;
+  scheduleVersion?: number | null;
+  kind?: 'work' | 'stopped';
+};
+
+export type FactoryDayWorker = {
+  employeeId: string;
+  firstName: string | null;
+  lastName: string | null;
+  name: string;
+  availableMinutes: number;
+  scheduledMinutes: number;
+  freeMinutes: number;
+  loadPercent: number;
+  overtime: boolean;
+  overtimeAfter: string | null;
+  closed: boolean;
+  intervals: Array<{ start: string; end: string }>;
+  busy: FactoryDayWorkerBusy[];
+  freeWindows: Array<{ start: string; end: string; durationMinutes: number }>;
+};
+
+export type UnscheduledDemandStage = {
+  stageDefinitionId: string | null;
+  code: string | null;
+  nameEn: string | null;
+  minutes: number;
+};
+
+export type FactoryDayResponse = {
+  date: string;
+  timezone: string;
+  closed: boolean;
+  overtime: boolean;
+  load: {
+    factoryLoadPercent: number;
+    plannedMinutes: number;
+    normalCapacityMinutes: number;
+    overtime: boolean;
+    closed: boolean;
+  };
+  availableWorkerMinutes: number;
+  plannedMinutes: number;
+  overtimeMinutes: number;
+  conflicts: unknown[];
+  conflictCount: number;
+  atRiskCount: number;
+  orders: ScheduleOrderCard[];
+  stages: CapacityRow[];
+  workers: FactoryDayWorker[];
+  unscheduledDemand: { from: string; to: string; stages: UnscheduledDemandStage[] };
+};
+
+export async function getFactoryDay(params: {
+  date: string;
+  dealerId?: string;
+  stageId?: string;
+}): Promise<FactoryDayResponse> {
+  return apiGet<FactoryDayResponse>(`/scheduling/day${toSearchParams(params)}`);
+}
+
+export type UnscheduledOrderCard = {
+  id: string;
+  number: string;
+  status: string;
+  productDescription: string;
+  requiredDeliveryDate?: string | null;
+  committedDeliveryDate?: string | null;
+  plannedStartDate?: string | null;
+  plannedCompletionDate?: string | null;
+  priority?: string | null;
+  planningState: PlanningState;
+  planningStatus?: PlanningState | string;
+  dealerName?: string | null;
+  salesOrderNumber?: string | null;
+  product?: {
+    id: string;
+    sku?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    imageUrl?: string | null;
+  } | null;
+  stages: Array<{
+    taskId: string;
+    stageDefinitionId: string | null;
+    code: string | null;
+    nameEn: string | null;
+    nameAr: string | null;
+    nameHe?: string | null;
+    estimatedMinutes: number | null;
+    plannedStart: string | null;
+    plannedCompletion: string | null;
+    assignedEmployeeId: string | null;
+    assignedName: string | null;
+    placed: boolean;
+  }>;
+  workflowReady: boolean;
+  durationsReady: boolean;
+};
+
+export async function getUnscheduledOrders(): Promise<UnscheduledOrderCard[]> {
+  return apiGet<UnscheduledOrderCard[]>('/scheduling/unscheduled');
+}
+
+export async function getDayExceptionImpact(date: string): Promise<{
+  date: string;
+  taskCount: number;
+  orderCount: number;
+  workerCount: number;
+  committedDeliveryCount: number;
+}> {
+  return apiGet(`/scheduling/calendar-settings/exceptions/${encodeURIComponent(date)}/impact`);
+}
+
+export async function getScheduleHistory(productionOrderId: string): Promise<
+  Array<{
+    id: string;
+    kind: string;
+    oldEmployeeId?: string | null;
+    newEmployeeId?: string | null;
+    oldStart?: string | null;
+    newStart?: string | null;
+    oldEnd?: string | null;
+    newEnd?: string | null;
+    actorId?: string | null;
+    reason?: string | null;
+    createdAt: string;
+  }>
+> {
+  return apiGet(`/scheduling/orders/${encodeURIComponent(productionOrderId)}/history`);
 }
 
 export type AtRiskRecommendedAction =
@@ -655,7 +861,8 @@ export type CalendarResponse = {
     productDescription: string;
     requiredDeliveryDate?: string | null;
     committedDeliveryDate?: string | null;
-    planningStatus?: 'UNSCHEDULED';
+    planningStatus?: string;
+    planningState?: PlanningState;
     priority?: string | null;
   }>;
 };
@@ -677,6 +884,8 @@ export type CalendarExceptionInput = {
   shiftStart?: string;
   shiftEnd?: string;
   note?: string;
+  overtimeEmployeeIds?: string[];
+  confirmImpact?: boolean;
 };
 
 export type CalendarExceptionResult = {
@@ -763,41 +972,6 @@ export async function getReplanRun(id: string): Promise<ReplanRun> {
   return apiGet<ReplanRun>(`/scheduling/replan-runs/${encodeURIComponent(id)}`, {
     timeoutMs: 15_000,
   });
-}
-
-export type ManualSyncEnqueueResult = {
-  replanQueued: boolean;
-  replanJobId: string;
-  alreadyInProgress: boolean;
-  status?: ReplanRunStatus | string;
-};
-
-/** Admin factory reconciliation — repair only stale/invalid/unscheduled/at-risk work. */
-export async function postFactorySync(): Promise<ManualSyncEnqueueResult> {
-  return apiPost<ManualSyncEnqueueResult>('/scheduling/sync', {}, { timeoutMs: 30_000 });
-}
-
-export async function getLatestManualSyncRun(): Promise<ReplanRun | null> {
-  const run = await apiGet<ReplanRun | null>('/scheduling/replan-runs/latest', {
-    timeoutMs: 15_000,
-  });
-  return run ?? null;
-}
-
-/** Admin capacity optimize — fill idle days without changing dealer dates. */
-export async function postCapacityOptimizePreview(): Promise<ManualSyncEnqueueResult> {
-  return apiPost<ManualSyncEnqueueResult>('/scheduling/optimize/preview', {}, { timeoutMs: 30_000 });
-}
-
-export async function postCapacityOptimizeApply(): Promise<ManualSyncEnqueueResult> {
-  return apiPost<ManualSyncEnqueueResult>('/scheduling/optimize/apply', {}, { timeoutMs: 30_000 });
-}
-
-export async function getLatestCapacityOptimizeRun(): Promise<ReplanRun | null> {
-  const run = await apiGet<ReplanRun | null>('/scheduling/replan-runs/latest-optimize', {
-    timeoutMs: 15_000,
-  });
-  return run ?? null;
 }
 
 export type QuantityScalingMode =

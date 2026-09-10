@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InventoryTxType, Prisma, WarehouseType } from '@maher/database';
+import { InventoryCategory, InventoryTxType, Prisma, WarehouseType } from '@maher/database';
 import { DEFAULT_CURRENCY } from '@maher/types';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import { categoriesForGroup } from '../../common/helpers/inventory-category.util';
 import { localizedName } from '../../common/helpers/pdf-i18n';
 import type { PdfLocale } from '../../common/helpers/pdf.util';
 import { buildMaterialCostMap } from '../../common/helpers/order-costing.util';
@@ -11,6 +12,7 @@ import { ymdInTimezone } from '../scheduling/domain/factory-replan';
 import { factoryCalendarForTimezone } from '../production/production-day-lens';
 import { PurchasingService } from '../purchasing/purchasing.service';
 import {
+  ALL_CATEGORY_GROUPS,
   RAW_LEDGER_ROW_CAP,
   RAW_MATERIALS_COST_BASIS_ID,
   ReportRangeError,
@@ -23,6 +25,7 @@ import {
   humanScrapReason,
   humanTxType,
   moneyOrNull,
+  normalizeReportSections,
   periodNetFromBuckets,
   reconcileItem,
   resolveReportPeriod,
@@ -77,6 +80,7 @@ export class RawMaterialsReportService {
     period?: string | null;
     from?: string | null;
     to?: string | null;
+    sections?: string | string[] | null;
     locale: PdfLocale;
     user: AuthUser;
   }): Promise<RawMaterialsReportPayload> {
@@ -88,6 +92,7 @@ export class RawMaterialsReportService {
     const timezone = tzRow?.timezone?.trim() || DEFAULT_FACTORY_TIMEZONE;
     const todayYmd = ymdInTimezone(new Date(), timezone);
     let resolved;
+    let sections: CategoryGroupKey[];
     try {
       resolved = resolveReportPeriod({
         preset: args.period,
@@ -95,12 +100,17 @@ export class RawMaterialsReportService {
         to: args.to,
         todayYmd,
       });
+      sections = normalizeReportSections(args.sections);
     } catch (err) {
       if (err instanceof ReportRangeError) {
         throw new BadRequestException({ code: err.code, message: err.message });
       }
       throw err;
     }
+    const allSections = sections.length === ALL_CATEGORY_GROUPS.length;
+    const categories = allSections
+      ? undefined
+      : sections.flatMap((group) => categoriesForGroup(group) ?? []);
     const cal = factoryCalendarForTimezone(timezone);
     const { start, endExclusive } = cal.localRangeBounds(resolved.fromYmd, resolved.toYmd);
 
@@ -112,7 +122,11 @@ export class RawMaterialsReportService {
     const whById = new Map(warehouses.map((w) => [w.id, w]));
 
     const items = await this.prisma.inventoryItem.findMany({
-      where: { itemClass: 'RAW_MATERIAL', archivedAt: null },
+      where: {
+        itemClass: 'RAW_MATERIAL',
+        archivedAt: null,
+        ...(categories ? { category: { in: categories } } : {}),
+      },
       select: {
         id: true,
         sku: true,
@@ -139,7 +153,10 @@ export class RawMaterialsReportService {
         ? Promise.resolve([])
         : this.prisma.inventoryBalance.groupBy({
             by: ['inventoryItemId', 'warehouseId'],
-            where: { warehouseId: { in: rawWarehouseIds } },
+            where: {
+              warehouseId: { in: rawWarehouseIds },
+              ...(categories ? { inventoryItemId: { in: itemIds } } : {}),
+            },
             _sum: { availableQty: true, reservedQty: true },
           }),
       emptyWhIds || emptyItems
@@ -153,7 +170,9 @@ export class RawMaterialsReportService {
             },
             _sum: { quantity: true },
           }),
-      emptyWhIds ? Promise.resolve([] as MoneyAggRow[]) : this.moneyAgg(start, endExclusive, rawWarehouseIds),
+      emptyWhIds
+        ? Promise.resolve([] as MoneyAggRow[])
+        : this.moneyAgg(start, endExclusive, rawWarehouseIds, categories),
       this.prisma.inventoryItem.findMany({
         where: { itemClass: 'RAW_MATERIAL', archivedAt: null },
         select: { sku: true, standardCost: true },
@@ -317,7 +336,7 @@ export class RawMaterialsReportService {
         units: Set<string>;
       }
     >();
-    for (const g of ['fabric', 'foam', 'wood', 'accessories'] as const) {
+    for (const g of sections) {
       catAcc.set(g, {
         skuCount: 0,
         lowStockCount: 0,
@@ -478,6 +497,7 @@ export class RawMaterialsReportService {
           nameOf,
           costs,
           whById,
+          categories,
         });
 
     const scrapBySku = new Map<string, number>();
@@ -535,6 +555,11 @@ export class RawMaterialsReportService {
 
     const demandRows: RawMaterialsReportPayload['demand'] = demand
       .filter((d) => d.status === 'SHORTAGE' || d.status === 'NO_ETA' || d.status === 'AT_RISK')
+      .filter((d) =>
+        allSections
+          ? true
+          : sections.includes(categoryGroupFromInventoryCategory(d.category)),
+      )
       .slice(0, 40)
       .map((d) => ({
         sku: d.sku,
@@ -692,6 +717,8 @@ export class RawMaterialsReportService {
       costBasisId: RAW_MATERIALS_COST_BASIS_ID,
       costBasisLabel: costBasisLabel(locale),
       period: resolved,
+      sections,
+      allSections,
       summary: {
         skuCount: items.length,
         lowStockCount: lowStockFixed.length,
@@ -708,7 +735,7 @@ export class RawMaterialsReportService {
         incompleteValuationSkuCount: incompleteValuation.length,
         incompleteValuationMovementCount: uncostedMovementCount,
       },
-      categories: (['fabric', 'foam', 'wood', 'accessories'] as const).map((group) => {
+      categories: sections.map((group) => {
         const c = catAcc.get(group)!;
         return {
           group,
@@ -750,7 +777,16 @@ export class RawMaterialsReportService {
     return Number(Math.abs(v).toFixed(3));
   }
 
-  private async moneyAgg(start: Date, endExclusive: Date, warehouseIds: string[]): Promise<MoneyAggRow[]> {
+  private async moneyAgg(
+    start: Date,
+    endExclusive: Date,
+    warehouseIds: string[],
+    categories?: InventoryCategory[],
+  ): Promise<MoneyAggRow[]> {
+    const categoryFilter =
+      categories && categories.length
+        ? Prisma.sql`AND ii."category" IN (${Prisma.join(categories)})`
+        : Prisma.empty;
     return this.prisma.$queryRaw<MoneyAggRow[]>(Prisma.sql`
       SELECT it."inventoryItemId", it."type", it."warehouseId", it."referenceType",
              SUM(it."quantity") AS qty,
@@ -764,6 +800,7 @@ export class RawMaterialsReportService {
         AND it."createdAt" < ${endExclusive}
         AND ii."itemClass" = 'RAW_MATERIAL'
         AND it."warehouseId" IN (${Prisma.join(warehouseIds)})
+        ${categoryFilter}
       GROUP BY 1, 2, 3, 4,
                CASE WHEN it."quantity" < 0 THEN -1 ELSE 1 END
     `);
@@ -778,13 +815,20 @@ export class RawMaterialsReportService {
     nameOf: (item: { nameEn: string; nameAr: string; nameHe: string | null }) => string;
     costs: Map<string, number>;
     whById: Map<string, { id: string; code: string; nameEn: string; nameAr: string; nameHe: string | null }>;
+    categories?: InventoryCategory[];
   }) {
-    const { start, endExclusive, rawWarehouseIds, locale, itemById, nameOf, costs, whById } = args;
+    const { start, endExclusive, rawWarehouseIds, locale, itemById, nameOf, costs, whById, categories } =
+      args;
+    const itemFilter: Prisma.InventoryItemWhereInput = {
+      itemClass: 'RAW_MATERIAL',
+      ...(categories ? { category: { in: categories } } : {}),
+    };
     const txWhere: Prisma.InventoryTransactionWhereInput = {
       createdAt: { gte: start, lt: endExclusive },
       warehouseId: { in: rawWarehouseIds },
-      inventoryItem: { itemClass: 'RAW_MATERIAL' },
+      inventoryItem: itemFilter,
     };
+    const selectedSkus = new Set([...itemById.values()].map((item) => item.sku));
 
     const [periodTxs, ledgerTotal] = await Promise.all([
       this.prisma.inventoryTransaction.findMany({
@@ -803,6 +847,7 @@ export class RawMaterialsReportService {
           notes: true,
           inventoryItemId: true,
           warehouseId: true,
+          locationId: true,
         },
       }),
       this.prisma.inventoryTransaction.count({ where: txWhere }),
@@ -895,7 +940,7 @@ export class RawMaterialsReportService {
 
     const usages = await this.prisma.productionTaskMaterialUsage.findMany({
       where: {
-        inventoryItem: { itemClass: 'RAW_MATERIAL' },
+        inventoryItem: itemFilter,
         finalizedAt: { gte: start, lt: endExclusive },
       },
       select: {
@@ -971,6 +1016,16 @@ export class RawMaterialsReportService {
       for (const u of extraUsers) userById.set(u.id, personName(u));
     }
 
+    const locIds = [
+      ...new Set(periodTxs.map((t) => t.locationId).filter((id): id is string => Boolean(id))),
+    ];
+    const locations = locIds.length
+      ? await this.prisma.warehouseLocation.findMany({
+          where: { id: { in: locIds } },
+          select: { id: true, code: true },
+        })
+      : [];
+    const locById = new Map(locations.map((l) => [l.id, l]));
     const purchases: RawMaterialsReportPayload['purchases'] = [];
     const consumption: RawMaterialsReportPayload['consumption'] = [];
     const returns: RawMaterialsReportPayload['returns'] = [];
@@ -998,6 +1053,7 @@ export class RawMaterialsReportService {
           material: nameOf(item),
           category: categoryGroupFromInventoryCategory(item.category),
           warehouseCode: wh?.code ?? '—',
+          locationCode: tx.locationId ? locById.get(tx.locationId)?.code ?? null : null,
           qty: roundQty(Math.abs(qty)),
           unit: item.unit,
           unitCost: unitCost != null && unitCost > 0 ? unitCost : null,
@@ -1157,8 +1213,11 @@ export class RawMaterialsReportService {
     });
 
     const countPayload: RawMaterialsReportPayload['counts'] = counts.map((c) => {
+      const scopedLines = categories
+        ? c.lines.filter((l) => selectedSkus.has(l.inventoryItem.sku))
+        : c.lines;
       const wh = whById.get(c.warehouseId);
-      const diffs = c.lines.filter((l) => n(l.varianceQty) !== 0);
+      const diffs = scopedLines.filter((l) => n(l.varianceQty) !== 0);
       const matched = c.lines.length - diffs.length;
       let pos = 0;
       let neg = 0;
@@ -1186,7 +1245,7 @@ export class RawMaterialsReportService {
         date: (c.countedAt ?? c.createdAt).toISOString(),
         warehouseCode: wh?.code ?? '—',
         warehouseName: wh ? localizedName(locale, wh) : '—',
-        itemsCounted: c.lines.length,
+        itemsCounted: scopedLines.length,
         matched,
         differences: diffs.length,
         positiveVarianceQty: roundQty(pos),

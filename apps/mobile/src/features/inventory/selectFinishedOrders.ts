@@ -36,6 +36,8 @@ export type FinishedOrderGroup = {
   leftAt: string | null;
   /** Operational leave rank for sort (lower = sooner / more urgent). */
   leaveSortKey: number;
+  originKind?: 'RETURN_WORK' | 'REPLACEMENT' | 'QUARANTINE' | null;
+  returnNumber?: string | null;
 };
 
 function productNames(lot: FinishedLot) {
@@ -47,6 +49,28 @@ function productNames(lot: FinishedLot) {
     productNameHe: product?.nameHe || item.nameHe || null,
     productImageUrl: product?.imageUrl ?? null,
   };
+}
+
+function groupOriginKind(
+  lots: FinishedLot[],
+): FinishedOrderGroup['originKind'] {
+  for (const lot of lots) {
+    const ot = lot.productionOrder?.originType;
+    if (ot === 'REPLACEMENT') return 'REPLACEMENT';
+    if (ot === 'RETURN_WORK') return 'RETURN_WORK';
+    if (lot.returnRequest || String(lot.sourceKey ?? '').startsWith('return-quarantine:')) {
+      return 'QUARANTINE';
+    }
+  }
+  return null;
+}
+
+function groupReturnNumber(lots: FinishedLot[]): string | null {
+  for (const lot of lots) {
+    const n = lot.returnRequest?.number;
+    if (n) return n;
+  }
+  return null;
 }
 
 function leaveSortKey(lot: FinishedLot, now = Date.now()): number {
@@ -75,7 +99,12 @@ export function selectFinishedOrders(
 
   const bySo = new Map<string, FinishedLot[]>();
   for (const lot of filtered) {
-    const key = lot.salesOrder?.id || lot.salesOrderNumber || `lot:${lot.id}`;
+    const key =
+      lot.salesOrder?.id ||
+      lot.salesOrderNumber ||
+      lot.productionOrder?.id ||
+      lot.productionOrderNumber ||
+      `lot:${lot.id}`;
     const list = bySo.get(key) ?? [];
     list.push(lot);
     bySo.set(key, list);
@@ -129,7 +158,11 @@ export function selectFinishedOrders(
     groups.push({
       salesOrderId: primary.salesOrder?.id || key,
       salesOrderNumber:
-        primary.salesOrderNumber || primary.salesOrder?.number || '—',
+        primary.salesOrderNumber ||
+        primary.salesOrder?.number ||
+        primary.productionOrder?.number ||
+        primary.productionOrderNumber ||
+        '—',
       projectName: primary.projectName ?? primary.salesOrder?.projectName ?? null,
       dealerNameEn: primary.dealerNameEn ?? null,
       dealerNameAr: primary.dealerNameAr ?? null,
@@ -160,6 +193,8 @@ export function selectFinishedOrders(
       enteredAt,
       leftAt,
       leaveSortKey: leaveSortKey(primary),
+      originKind: groupOriginKind(groupLots),
+      returnNumber: groupReturnNumber(groupLots),
     });
   }
 

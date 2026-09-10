@@ -145,11 +145,7 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
               valueColor={colors.success}
             />
           ) : (
-            <MoneyPill
-              label={t('accounting.total')}
-              value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
-              alignEnd
-            />
+            <View style={{ flex: 1 }} />
           )}
         </View>
 
@@ -162,23 +158,23 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
             gap: theme.spacing.sm,
           }}
         >
-          {showCredit ? (
-            <FootRow
-              label={t('accounting.total')}
-              value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
-            />
-          ) : null}
-          <FootRow
-            label={t('accounting.total')}
-            value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
-          />
           <FootRow
             label={t('accounting.subtotal')}
             value={`${moneyLabel(locale, model.subtotal)} ${currencySuffix}`}
           />
+          {model.discount > 0.001 ? (
+            <FootRow
+              label={t('accounting.discount')}
+              value={`${moneyLabel(locale, model.discount)} ${currencySuffix}`}
+            />
+          ) : null}
           <FootRow
             label={t('accounting.tax')}
             value={`${moneyLabel(locale, model.tax)} ${currencySuffix}`}
+          />
+          <FootRow
+            label={t('accounting.total')}
+            value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
           />
         </View>
       </View>

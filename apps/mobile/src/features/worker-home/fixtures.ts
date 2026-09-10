@@ -5,6 +5,7 @@ export const workerHomeSuccessFixture: WorkerHomePayload = {
   unreadNotifications: 2,
   urgentTask: {
     id: 't-urgent',
+    productionOrderId: 'po-urgent',
     number: 'PT-1042',
     name: 'Upholstery',
     nameEn: 'Upholstery',
@@ -22,6 +23,7 @@ export const workerHomeSuccessFixture: WorkerHomePayload = {
   todaysTasks: [
     {
       id: 't2',
+      productionOrderId: 'po-t2',
       number: 'PT-1043',
       name: 'Frame assembly',
       nameEn: 'Frame assembly',
@@ -38,6 +40,7 @@ export const workerHomeSuccessFixture: WorkerHomePayload = {
     },
     {
       id: 't3',
+      productionOrderId: 'po-t3',
       number: 'PT-1044',
       name: 'Sanding',
       nameEn: 'Sanding',

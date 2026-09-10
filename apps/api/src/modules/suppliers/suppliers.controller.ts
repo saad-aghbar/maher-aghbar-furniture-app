@@ -19,6 +19,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
 import { pageSkipTake } from '../../common/dto/list-query.dto';
 import type { AuthUser } from '@maher/types';
+import { supplierListWhere } from './supplier-list-where';
 
 class ListSuppliersDto extends PaginationDto {
   @IsOptional()
@@ -41,7 +42,6 @@ class SupplierDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) leadTimeDays?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) rating?: number;
-  @IsOptional() @IsBoolean() isCertified?: boolean;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() status?: string;
 }
@@ -61,7 +61,6 @@ class UpdateSupplierDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) leadTimeDays?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) rating?: number;
-  @IsOptional() @IsBoolean() isCertified?: boolean;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() status?: string;
 }
@@ -85,23 +84,7 @@ export class SuppliersController {
   @RequirePermissions('supplier.read')
   async list(@Query() query: ListSuppliersDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where: Prisma.SupplierWhereInput = {
-      archivedAt: null,
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { name: { contains: query.q, mode: 'insensitive' } },
-              { nameAr: { contains: query.q, mode: 'insensitive' } },
-              { nameEn: { contains: query.q, mode: 'insensitive' } },
-              { nameHe: { contains: query.q, mode: 'insensitive' } },
-              { code: { contains: query.q, mode: 'insensitive' } },
-              { email: { contains: query.q, mode: 'insensitive' } },
-              { companyName: { contains: query.q, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    };
+    const where = supplierListWhere(query);
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.supplier.count({ where }),
       this.prisma.supplier.findMany({
@@ -136,7 +119,7 @@ export class SuppliersController {
         paymentTermsDays: dto.paymentTermsDays ?? 30,
         leadTimeDays: dto.leadTimeDays ?? 7,
         rating: dto.rating,
-        isCertified: dto.isCertified ?? false,
+        isCertified: true,
         notes: dto.notes,
         status: dto.status ?? 'ACTIVE',
       },

@@ -15,6 +15,12 @@ import {
   mergeFabricDeskRows,
   fabricRowHref,
   pickFabricBlockingRow,
+  fabricAwaitsSupply,
+  fabricRemainingNeed,
+  fabricRowMatchesQuery,
+  fabricStockCoverage,
+  fabricStockMatchesQuery,
+  filterFabricRowsByQuery,
   FABRIC_DESK_LANES,
   type FabricTrackerRow,
 } from '../selectFabricTracker';
@@ -194,14 +200,25 @@ function asRow(partial: Partial<FabricTrackerRow> & { id: string }): FabricTrack
     overridden: partial.overridden ?? false,
     attentionCode: partial.attentionCode ?? null,
     orderNumber: partial.orderNumber ?? 'SO-FB1042',
-    dealerName: 'Oasis Living',
-    productName: '3-Seater Sofa',
+    dealerName: 'dealerName' in partial ? partial.dealerName ?? null : 'Oasis Living',
+    productName: 'productName' in partial ? partial.productName ?? null : '3-Seater Sofa',
     productImageUrl: null,
-    supplierName: null,
+    supplierName: 'supplierName' in partial ? partial.supplierName ?? null : null,
+    inventoryItemId: null,
+    sku: 'sku' in partial ? partial.sku ?? null : null,
+    purchaseOrderId: null,
+    purchaseOrderNumber:
+      'purchaseOrderNumber' in partial ? partial.purchaseOrderNumber ?? null : null,
+    supplierInvoiceId: null,
+    supplierInvoiceNumber:
+      'supplierInvoiceNumber' in partial ? partial.supplierInvoiceNumber ?? null : null,
     imageUrl: null,
     locationLabel: 'locationLabel' in partial ? partial.locationLabel ?? null : 'Fabric Holding A-3',
     qrCodes: partial.qrCodes ?? ['FB-SOFB1042-001'],
     lots: [],
+    expectedAvailableAt: null,
+    costOnFile: false,
+    resolvedUnitCost: null,
   };
 }
 
@@ -405,5 +422,124 @@ describe('blocking row + purchasing status filter', () => {
     expect(groups.find((g) => g.orderNumber === 'SO-FB1042')?.rows.map((r) => r.label)).toEqual([
       'Linen 180 · Natural',
     ]);
+  });
+});
+
+describe('fabric stock coverage helpers', () => {
+  it('treats waiting and delayed lines as still awaiting supply', () => {
+    expect(
+      fabricAwaitsSupply(
+        asRow({
+          id: 'wait',
+          derivedStatus: 'WAITING',
+          readyForProduction: false,
+          arrivedQty: 0,
+          expectedQty: 12,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      fabricAwaitsSupply(
+        asRow({
+          id: 'delay',
+          derivedStatus: 'DELAYED',
+          readyForProduction: false,
+          arrivedQty: 0,
+          expectedQty: 12,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      fabricAwaitsSupply(
+        asRow({
+          id: 'ready',
+          derivedStatus: 'READY_FOR_PRODUCTION',
+          readyForProduction: true,
+          arrivedQty: 12,
+          expectedQty: 12,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      fabricAwaitsSupply(
+        asRow({
+          id: 'issued',
+          derivedStatus: 'ISSUED',
+          readyForProduction: true,
+          arrivedQty: 12,
+          expectedQty: 12,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('computes remaining need and coverage', () => {
+    expect(fabricRemainingNeed({ expectedQty: 12, arrivedQty: 4 })).toBe(8);
+    expect(fabricRemainingNeed({ expectedQty: null, arrivedQty: 0 })).toBeNull();
+    expect(fabricStockCoverage({ need: 8, free: 10 })).toBe('full');
+    expect(fabricStockCoverage({ need: 8, free: 3 })).toBe('partial');
+    expect(fabricStockCoverage({ need: 8, free: 0 })).toBe('none');
+    expect(fabricStockCoverage({ need: null, free: 6 })).toBe('full');
+  });
+});
+
+describe('fabric desk search', () => {
+  const velvet = asRow({
+    id: 'a',
+    sku: 'FAB-VEL',
+    supplierName: 'Abdali Textile Mill',
+    purchaseOrderNumber: 'PO-88',
+    supplierInvoiceNumber: 'SI-12',
+  });
+  const linen = asRow({
+    id: 'b',
+    label: 'Linen 180 · Natural',
+    orderNumber: 'SO-1048',
+    salesOrderId: 'so-1048',
+    dealerName: 'Cedar House',
+    productName: 'Armchair',
+    sku: 'FAB-LIN',
+    locationLabel: 'Aisle B-2',
+    qrCodes: ['FB-SO1048-002'],
+    supplierName: 'Nablus Weavers',
+    purchaseOrderNumber: 'PO-91',
+  });
+
+  it('matches order number, dealer, product, supplier, sku, PO, location, and QR', () => {
+    expect(fabricRowMatchesQuery(velvet, 'SO-FB1042')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'oasis')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, '3-seater')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'abdali')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'fab-vel')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'po-88')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'holding a-3')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'FB-SOFB1042-001')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'linen')).toBe(false);
+  });
+
+  it('requires every token and ignores empty needles', () => {
+    expect(fabricRowMatchesQuery(velvet, 'SO-FB1042 velvet')).toBe(true);
+    expect(fabricRowMatchesQuery(velvet, 'SO-1048 velvet')).toBe(false);
+    expect(fabricRowMatchesQuery(velvet, '   ')).toBe(true);
+    expect(filterFabricRowsByQuery([velvet, linen], 'cedar armchair')).toEqual([linen]);
+    expect(filterFabricRowsByQuery([velvet, linen], '')).toEqual([velvet, linen]);
+  });
+
+  it('matches general stock by name, sku, scan code, and color', () => {
+    const stock = {
+      name: 'Velvet 302',
+      nameEn: 'Velvet 302',
+      nameAr: 'مخمل 302',
+      sku: 'FAB-VEL',
+      scanCode: 'SC-VEL',
+      barcode: null,
+      color: 'Sand',
+      size: null,
+    };
+    expect(fabricStockMatchesQuery(stock, 'velvet sand')).toBe(true);
+    expect(fabricStockMatchesQuery(stock, 'fab-vel')).toBe(true);
+    expect(fabricStockMatchesQuery(stock, 'sc-vel')).toBe(true);
+    expect(fabricStockMatchesQuery(stock, 'linen')).toBe(false);
+    expect(fabricStockMatchesQuery(stock, '')).toBe(true);
   });
 });

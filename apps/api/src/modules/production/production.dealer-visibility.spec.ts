@@ -70,7 +70,10 @@ describe('ProductionService dealer visibility', () => {
       product: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      customer: { findUnique: jest.fn().mockResolvedValue(null) },
+      fabricProcurement: { findMany: jest.fn().mockResolvedValue([]) },
       productionSchedule: { count: jest.fn().mockResolvedValue(0) },
+      qualityInspection: { findFirst: jest.fn().mockResolvedValue(null) },
     } as unknown as PrismaService;
     const service = new ProductionService(
       prisma,
@@ -134,7 +137,10 @@ describe('ProductionService dealer visibility', () => {
       product: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      customer: { findUnique: jest.fn().mockResolvedValue(null) },
+      fabricProcurement: { findMany: jest.fn().mockResolvedValue([]) },
       productionSchedule: { count: jest.fn().mockResolvedValue(0) },
+      qualityInspection: { findFirst: jest.fn().mockResolvedValue(null) },
     } as unknown as PrismaService;
     const service = new ProductionService(
       prisma,

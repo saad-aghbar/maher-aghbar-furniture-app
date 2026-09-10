@@ -81,6 +81,8 @@ export const statusVariantMap: Record<string, BadgeVariant> = {
   QUARANTINED: 'warning',
   CONSUMED: 'default',
   DAMAGED: 'error',
+  DISPOSE: 'warning',
+  RECOVER_TO_INVENTORY: 'success',
   SCRAPPED: 'error',
   SCRAP: 'error',
   RETURN_TO_STOCK: 'success',

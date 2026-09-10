@@ -10,9 +10,8 @@ describe('assignWindow helpers', () => {
       now: new Date('2026-09-01T09:10:00'),
       estimatedMinutes: 90,
     });
+    expect(parts.hasStageTime).toBe(true);
     expect(parts.start.ymd).toBe('2026-09-01');
-    expect(parts.estHours).toBe('1');
-    expect(parts.estMinutes).toBe('30');
     // Rounded up from 09:10 → 09:30, then +90m → 11:00
     expect(parts.start.hour).toBe('9');
     expect(parts.start.minute).toBe('30');
@@ -23,12 +22,24 @@ describe('assignWindow helpers', () => {
   it('uses order production start when task has no window', () => {
     const parts = defaultAssignWindowParts({
       orderPlannedStartDate: '2026-09-10T00:00:00.000Z',
-      estimatedMinutes: 120,
+      estimatedMinutes: 30,
       now: new Date('2026-09-01T09:10:00'),
     });
+    expect(parts.hasStageTime).toBe(true);
     expect(parts.start.ymd).toBe('2026-09-10');
     expect(parts.start.hour).toBe('8');
     expect(parts.start.minute).toBe('00');
+    expect(parts.due.hour).toBe('8');
+    expect(parts.due.minute).toBe('30');
+  });
+
+  it('does not invent a two-hour duration when the stage has no time', () => {
+    const parts = defaultAssignWindowParts({
+      now: new Date('2026-09-01T09:10:00'),
+    });
+    expect(parts.hasStageTime).toBe(false);
+    expect(parts.start.hour).toBe(parts.due.hour);
+    expect(parts.start.minute).toBe(parts.due.minute);
   });
 
   it('preserves existing planned window over order production start', () => {

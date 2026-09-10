@@ -40,24 +40,126 @@ function Gap({ children }: { children: ReactNode }) {
   return <View style={{ gap: theme.spacing.sm }}>{children}</View>;
 }
 
+function SharedPrimaryButtonDemo() {
+  const [loading, setLoading] = useState(false);
+  return (
+    <Gap>
+      <PrimaryButton label="Primary filled" onPress={() => undefined} />
+      <PrimaryButton label="Disabled" disabled onPress={() => undefined} />
+      <PrimaryButton
+        label={loading ? 'Loading…' : 'Start loading'}
+        loading={loading}
+        onPress={() => {
+          setLoading(true);
+          setTimeout(() => setLoading(false), 1200);
+        }}
+      />
+    </Gap>
+  );
+}
+
+function SharedIconButtonDemo() {
+  const { colors } = useTheme();
+  return (
+    <IconButton accessibilityLabel="Settings" onPress={() => undefined}>
+      <Ionicons name="settings-outline" size={22} color={colors.textPrimary} />
+    </IconButton>
+  );
+}
+
+function SharedTextFieldDemo() {
+  const [v, setV] = useState('Editable');
+  return (
+    <Gap>
+      <TextField label="Text" value={v} onChangeText={setV} />
+      <TextField label="Error" value="" onChangeText={() => undefined} error="Required" />
+      <TextField label="Disabled" value="Locked" editable={false} />
+    </Gap>
+  );
+}
+
+function SharedPasswordFieldDemo() {
+  const [v, setV] = useState('secret');
+  return (
+    <PasswordField
+      label="Password"
+      value={v}
+      onChangeText={setV}
+      showLabel="Show"
+      hideLabel="Hide"
+    />
+  );
+}
+
+function SharedCodeFieldDemo() {
+  const [v, setV] = useState('');
+  return <CodeField label="Code" value={v} onChangeText={setV} />;
+}
+
+function SharedBottomSheetDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Gap>
+      <SecondaryButton label="Open BottomSheet" onPress={() => setOpen(true)} />
+      <BottomSheet open={open} onClose={() => setOpen(false)} title="BottomSheet" fitContent>
+        <AppText variant="body">Real BottomSheet — close via dismiss.</AppText>
+        <PrimaryButton label="Close" onPress={() => setOpen(false)} />
+      </BottomSheet>
+    </Gap>
+  );
+}
+
+function SharedConfirmationSheetDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Gap>
+      <SecondaryButton label="Open ConfirmationSheet" onPress={() => setOpen(true)} />
+      <ConfirmationSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Confirm action"
+        message="Simulated confirmation — no mutation."
+        confirmLabel="Confirm"
+        onConfirm={() => setOpen(false)}
+      />
+    </Gap>
+  );
+}
+
+function SharedActionSheetDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Gap>
+      <SecondaryButton label="Open ActionSheet" onPress={() => setOpen(true)} />
+      <ActionSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Actions"
+        actions={[
+          { label: 'Option A', onPress: () => setOpen(false) },
+          { label: 'Option B', onPress: () => setOpen(false) },
+        ]}
+      />
+    </Gap>
+  );
+}
+
+function SharedFloatingActionDockDemo() {
+  const { colors, theme } = useTheme();
+  return (
+    <View style={{ height: 180, backgroundColor: colors.surfaceSecondary }}>
+      <AppText variant="caption" color="secondary" style={{ padding: theme.spacing.md }}>
+        Checker area behind dock (transparent floating mode)
+      </AppText>
+      <FloatingActionDock floating>
+        <PrimaryButton label="Floating CTA" onPress={() => undefined} />
+      </FloatingActionDock>
+    </View>
+  );
+}
+
 export const richDemoRenderers: Record<string, (ctx: LabRenderContext) => ReactNode> = {
-  'shared.primary-button': () => {
-    const [loading, setLoading] = useState(false);
-    return (
-      <Gap>
-        <PrimaryButton label="Primary filled" onPress={() => undefined} />
-        <PrimaryButton label="Disabled" disabled onPress={() => undefined} />
-        <PrimaryButton
-          label={loading ? 'Loading…' : 'Start loading'}
-          loading={loading}
-          onPress={() => {
-            setLoading(true);
-            setTimeout(() => setLoading(false), 1200);
-          }}
-        />
-      </Gap>
-    );
-  },
+  'shared.primary-button': SharedPrimaryButtonDemo,
   'shared.secondary-button': () => (
     <Gap>
       <SecondaryButton label="Secondary" onPress={() => undefined} />
@@ -70,14 +172,7 @@ export const richDemoRenderers: Record<string, (ctx: LabRenderContext) => ReactN
   'shared.destructive-button': () => (
     <DestructiveButton label="Danger action" onPress={() => undefined} />
   ),
-  'shared.icon-button': () => {
-    const { colors } = useTheme();
-    return (
-      <IconButton accessibilityLabel="Settings" onPress={() => undefined}>
-        <Ionicons name="settings-outline" size={22} color={colors.textPrimary} />
-      </IconButton>
-    );
-  },
+  'shared.icon-button': SharedIconButtonDemo,
   'shared.app-text': () => (
     <Gap>
       <AppText variant="display">Display</AppText>
@@ -122,32 +217,9 @@ export const richDemoRenderers: Record<string, (ctx: LabRenderContext) => ReactN
       <PriorityBadge priority="urgent" />
     </Gap>
   ),
-  'shared.text-field': () => {
-    const [v, setV] = useState('Editable');
-    return (
-      <Gap>
-        <TextField label="Text" value={v} onChangeText={setV} />
-        <TextField label="Error" value="" onChangeText={() => undefined} error="Required" />
-        <TextField label="Disabled" value="Locked" editable={false} />
-      </Gap>
-    );
-  },
-  'shared.password-field': () => {
-    const [v, setV] = useState('secret');
-    return (
-      <PasswordField
-        label="Password"
-        value={v}
-        onChangeText={setV}
-        showLabel="Show"
-        hideLabel="Hide"
-      />
-    );
-  },
-  'shared.code-field': () => {
-    const [v, setV] = useState('');
-    return <CodeField label="Code" value={v} onChangeText={setV} />;
-  },
+  'shared.text-field': SharedTextFieldDemo,
+  'shared.password-field': SharedPasswordFieldDemo,
+  'shared.code-field': SharedCodeFieldDemo,
   'shared.info-row': () => (
     <Gap>
       <InfoRow label="Dealer" value="Oasis Furniture" />
@@ -169,64 +241,10 @@ export const richDemoRenderers: Record<string, (ctx: LabRenderContext) => ReactN
   'shared.back-button': () => <BackButton onPress={() => undefined} />,
   'shared.brand-mark': () => <BrandMark />,
   'shared.product-thumb': () => <ProductThumb uri={null} size={72} />,
-  'shared.bottom-sheet': () => {
-    const [open, setOpen] = useState(false);
-    return (
-      <Gap>
-        <SecondaryButton label="Open BottomSheet" onPress={() => setOpen(true)} />
-        <BottomSheet open={open} onClose={() => setOpen(false)} title="BottomSheet" fitContent>
-          <AppText variant="body">Real BottomSheet — close via dismiss.</AppText>
-          <PrimaryButton label="Close" onPress={() => setOpen(false)} />
-        </BottomSheet>
-      </Gap>
-    );
-  },
-  'shared.confirmation-sheet': () => {
-    const [open, setOpen] = useState(false);
-    return (
-      <Gap>
-        <SecondaryButton label="Open ConfirmationSheet" onPress={() => setOpen(true)} />
-        <ConfirmationSheet
-          open={open}
-          onClose={() => setOpen(false)}
-          title="Confirm action"
-          message="Simulated confirmation — no mutation."
-          confirmLabel="Confirm"
-          onConfirm={() => setOpen(false)}
-        />
-      </Gap>
-    );
-  },
-  'shared.action-sheet': () => {
-    const [open, setOpen] = useState(false);
-    return (
-      <Gap>
-        <SecondaryButton label="Open ActionSheet" onPress={() => setOpen(true)} />
-        <ActionSheet
-          open={open}
-          onClose={() => setOpen(false)}
-          title="Actions"
-          actions={[
-            { label: 'Option A', onPress: () => setOpen(false) },
-            { label: 'Option B', onPress: () => setOpen(false) },
-          ]}
-        />
-      </Gap>
-    );
-  },
-  'shared.floating-action-dock': () => {
-    const { colors, theme } = useTheme();
-    return (
-      <View style={{ height: 180, backgroundColor: colors.surfaceSecondary }}>
-        <AppText variant="caption" color="secondary" style={{ padding: theme.spacing.md }}>
-          Checker area behind dock (transparent floating mode)
-        </AppText>
-        <FloatingActionDock floating>
-          <PrimaryButton label="Floating CTA" onPress={() => undefined} />
-        </FloatingActionDock>
-      </View>
-    );
-  },
+  'shared.bottom-sheet': SharedBottomSheetDemo,
+  'shared.confirmation-sheet': SharedConfirmationSheetDemo,
+  'shared.action-sheet': SharedActionSheetDemo,
+  'shared.floating-action-dock': SharedFloatingActionDockDemo,
   'motion.animated-pressable': () => (
     <AnimatedPressable onPress={() => undefined} style={{ padding: 12 }}>
       <AppText>AnimatedPressable</AppText>

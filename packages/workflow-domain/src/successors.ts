@@ -28,7 +28,9 @@ export function productionSuccessorIds(
  */
 export function materialPrepSuccessorIds(graph: CanonicalWorkflowGraph): string[] {
   const prepId = graph.nodes.find((n) => isOpeningCode(n.code))?.id ?? null;
-  if (!prepId) return [];
+  if (!prepId) {
+    return graph.nodes.filter((n) => isMiddleProductionCode(n.code)).map((n) => n.id);
+  }
   return productionSuccessorIds(graph, prepId);
 }
 
@@ -80,6 +82,8 @@ export function filterStartSuccessorIds(
   graph: CanonicalWorkflowGraph,
   successorIds: readonly string[],
 ): string[] {
+  const hasPrep = graph.nodes.some((n) => isOpeningCode(n.code));
+  if (!hasPrep) return sortedUnique([...successorIds]);
   const allow = new Set(materialPrepSuccessorIds(graph));
   return sortedUnique(successorIds.filter((id) => allow.has(id)));
 }

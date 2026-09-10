@@ -28,6 +28,12 @@ import { InventorySheetFooter } from './InventorySheetFooter';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import { ScanInventoryItemAction } from './ScanInventoryItemAction';
 import { WarehousePickList } from './WarehousePickList';
+import {
+  locationsForWarehouse,
+  WarehouseBinStrip,
+} from './WarehouseBinBoard';
+import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
   InventoryScanSelectInline,
@@ -59,6 +65,7 @@ export type StockMoveItem = {
 export type StockMoveSubmit = {
   inventoryItemId: string;
   warehouseId: string;
+  locationId?: string;
   quantity: number;
   notes?: string;
   purchaseOrderId?: string;
@@ -117,14 +124,15 @@ export function AddStockSheet({
   const { user } = useAuth();
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.round(height * 0.82);
-  const warehouseListHeight = Math.round(height * 0.28);
+  const sheetHeight = Math.round(height * 0.88);
+  const warehouseListHeight = Math.round(height * 0.16);
   const canAddWarehouse = can(user, 'warehouse.manage');
 
   const [item, setItem] = useState<StockMoveItem | null>(null);
   const [scanCode, setScanCode] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +148,7 @@ export function AddStockSheet({
     orderNumber: string | null;
   } | null>(null);
   const canReceive = can(user, 'inventory.receive');
+  const scanWarehouseBin = useScanWarehouseBin();
   const knownItem = Boolean(initialItem?.id);
   const {
     verifyKind,
@@ -199,6 +208,7 @@ export function AddStockSheet({
     setScanCode('');
     setLookingUp(false);
     setWarehouseId('');
+    setLocationId('');
     setQty('1');
     setNotes('');
     setError(null);
@@ -239,6 +249,9 @@ export function AddStockSheet({
   }, [open, preferredId, item?.id]);
 
   const effectiveWarehouseId = warehouseId || preferredId || orderedWarehouses[0]?.id || '';
+  const selectedWarehouse = orderedWarehouses.find((wh) => wh.id === effectiveWarehouseId);
+  const bins = locationsForWarehouse(selectedWarehouse);
+  const effectiveLocationId = pickDefaultLocationId(bins, locationId);
   const unit = item?.unit || 'pcs';
   const itemLabel = item ? `${item.sku} — ${item.name}` : '—';
 
@@ -270,7 +283,8 @@ export function AddStockSheet({
       if (
         resolved.status === 'NOT_FOUND' ||
         resolved.status === 'FOUND_KIT' ||
-        resolved.status === 'FOUND_LOT'
+        resolved.status === 'FOUND_LOT' ||
+        resolved.status === 'FOUND_BIN'
       ) {
         void haptics.error();
         setConfirmItem(null);
@@ -322,6 +336,10 @@ export function AddStockSheet({
       setError(t('mobile.inventory.addStockWarehouseRequired'));
       return;
     }
+    if (bins.length > 0 && !effectiveLocationId) {
+      setError(t('mobile.inventory.binRequired'));
+      return;
+    }
     if (!Number.isFinite(quantity) || quantity <= 0) {
       setError(t('mobile.inventory.addStockQtyInvalid'));
       return;
@@ -337,6 +355,7 @@ export function AddStockSheet({
     onSubmit({
       inventoryItemId: item.id,
       warehouseId: effectiveWarehouseId,
+      locationId: effectiveLocationId || undefined,
       quantity,
       notes: notes.trim() || undefined,
       ...(mode === 'receive' && receiptKind === 'po' && selectedPo
@@ -522,6 +541,57 @@ export function AddStockSheet({
             </AppText>
           ) : null}
 
+          <WarehousePickList
+            warehouses={orderedWarehouses}
+            selectedId={effectiveWarehouseId}
+            onSelect={(id) => {
+              setWarehouseId(id);
+              setLocationId(
+                pickDefaultLocationId(locationsForWarehouse(warehouses.find((wh) => wh.id === id))),
+              );
+              setError(null);
+            }}
+            label={t('mobile.inventory.warehouse')}
+            balances={item?.balances ?? []}
+            listHeight={warehouseListHeight}
+            resetToken={`${open}-${mode}-${item?.id ?? 'none'}`}
+            onAddWarehouse={
+              canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
+            }
+          />
+
+          {bins.length > 0 ? (
+            <WarehouseBinStrip
+              locations={bins}
+              selectedId={effectiveLocationId}
+              onSelect={(id) => {
+                setLocationId(id);
+                setError(null);
+              }}
+              onScanPress={() => {
+                void (async () => {
+                  const bin = await scanWarehouseBin();
+                  if (!bin) return;
+                  const whId = bin.warehouse?.id ?? bin.warehouseId;
+                  if (whId) setWarehouseId(whId);
+                  setLocationId(bin.id);
+                  setError(null);
+                })();
+              }}
+            />
+          ) : null}
+
+          <QtyStepperField
+            label={t('mobile.inventory.quantity', { unit })}
+            value={qty}
+            onChangeText={(text) => {
+              setQty(text);
+              if (error) setError(null);
+            }}
+            min={0.01}
+            placeholder="1"
+          />
+
           {mode === 'receive' && item && canReceive && openReceipts.length > 0 ? (
             <View style={{ gap: theme.spacing.sm }}>
               {openReceipts.map((row) => {
@@ -599,33 +669,6 @@ export function AddStockSheet({
               </AnimatedPressable>
             </View>
           ) : null}
-
-          <WarehousePickList
-            warehouses={orderedWarehouses}
-            selectedId={effectiveWarehouseId}
-            onSelect={(id) => {
-              setWarehouseId(id);
-              setError(null);
-            }}
-            label={t('mobile.inventory.warehouse')}
-            balances={item?.balances ?? []}
-            listHeight={warehouseListHeight}
-            resetToken={`${open}-${mode}-${item?.id ?? 'none'}`}
-            onAddWarehouse={
-              canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
-            }
-          />
-
-          <QtyStepperField
-            label={t('mobile.inventory.quantity', { unit })}
-            value={qty}
-            onChangeText={(text) => {
-              setQty(text);
-              if (error) setError(null);
-            }}
-            min={0.01}
-            placeholder="1"
-          />
 
           <TextField
             label={t('mobile.inventory.notes')}

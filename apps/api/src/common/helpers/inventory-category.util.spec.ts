@@ -1,8 +1,24 @@
+import { InventoryCategory } from '@maher/database';
 import {
+  categoriesForGroup,
   nextSkuFromExisting,
   skuPrefixForCategory,
   summarizeInventoryMeasurements,
 } from './inventory-category.util';
+
+describe('categoriesForGroup', () => {
+  it('puts paint, adhesive, and other with accessories', () => {
+    expect(categoriesForGroup('accessories')).toEqual(
+      expect.arrayContaining([
+        InventoryCategory.PAINT,
+        InventoryCategory.ADHESIVE,
+        InventoryCategory.OTHER,
+        InventoryCategory.METAL_ACCESSORY,
+      ]),
+    );
+    expect(categoriesForGroup('wood')).toEqual([InventoryCategory.WOOD]);
+  });
+});
 
 describe('inventory SKU helpers', () => {
   it('maps categories to type prefixes', () => {

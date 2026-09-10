@@ -14,7 +14,7 @@ export type QuietOrderRowModel = {
   title: string;
   imageUrl: string | null;
   deliveryDate: string | null;
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
 };
 
 type Props = {

@@ -50,10 +50,17 @@ export function FlowStageNode({
 }: Props) {
   const { colors } = useTheme();
   const status = normalizeStatus(stage.status);
-  const completed = status === 'COMPLETED' || status === 'SKIPPED';
-  const inProgress = status === 'IN_PROGRESS' || status === 'ACTIVE';
-  const ready = status === 'READY';
-  const blocked = status === 'BLOCKED' || stage.blockers.length > 0 || stage.isOverdue;
+  const access = stage.workerAccess;
+  const completed = access === 'done' || status === 'COMPLETED' || status === 'SKIPPED';
+  const inProgress =
+    access === 'available'
+      ? status === 'IN_PROGRESS' || status === 'ACTIVE' || status === 'PAUSED'
+      : !access && (status === 'IN_PROGRESS' || status === 'ACTIVE');
+  const ready = access === 'available' ? !inProgress : !access && status === 'READY';
+  const mineWaiting = access === 'assigned';
+  const foreign = access === 'foreign';
+  const blocked =
+    !access && (status === 'BLOCKED' || stage.blockers.length > 0 || stage.isOverdue);
   const glyph = selectFlowStageGlyph(stage, {
     preview,
     index,
@@ -65,9 +72,11 @@ export function FlowStageNode({
       ? colors.error
       : completed
         ? colors.success
-        : inProgress || ready
-          ? colors.brand
-          : colors.borderStrong;
+        : foreign
+          ? colors.border
+          : inProgress || ready || mineWaiting
+            ? colors.brand
+            : colors.borderStrong;
 
   const enter = useSharedValue(preview || reduceMotion ? 1 : 0);
   const pulse = useSharedValue(1);
@@ -113,7 +122,7 @@ export function FlowStageNode({
   }, [arcProgress, completed, inProgress, reduceMotion, stage.progressPercent]);
 
   const wrapStyle = useAnimatedStyle(() => ({
-    opacity: enter.value,
+    opacity: enter.value * (foreign ? 0.46 : 1),
     transform: [
       { scale: enter.value * pulse.value },
       { translateY: (1 - enter.value) * 12 },
@@ -130,7 +139,11 @@ export function FlowStageNode({
     ? colors.success
     : ready
       ? colors.brandSoft
-      : colors.surface;
+      : foreign
+        ? colors.surfaceSecondary
+        : mineWaiting
+          ? colors.surface
+          : colors.surface;
 
   const shadow =
     Platform.OS === 'ios'
@@ -165,7 +178,7 @@ export function FlowStageNode({
         style={{ alignItems: 'center', gap: 8 }}
       >
         {/* Soft halo behind active / completed nodes */}
-        {(completed || inProgress || ready) && (
+        {(completed || inProgress || ready || mineWaiting) && (
           <View
             pointerEvents="none"
             style={{
@@ -177,7 +190,7 @@ export function FlowStageNode({
               backgroundColor: completed
                 ? colors.successSoft
                 : colors.brandSoft,
-              opacity: 0.9,
+              opacity: mineWaiting && !completed ? 0.4 : 0.9,
             }}
           />
         )}
@@ -250,11 +263,13 @@ export function FlowStageNode({
               weight="semibold"
               style={{
                 color:
-                  glyph === '!'
+                  glyph === '!' && !access
                     ? colors.error
-                    : inProgress || ready
+                    : inProgress || ready || mineWaiting
                       ? colors.brand
-                      : colors.textSecondary,
+                      : foreign
+                        ? colors.textMuted
+                        : colors.textSecondary,
                 fontSize: 11,
               }}
             >
@@ -271,7 +286,14 @@ export function FlowStageNode({
             maxWidth: FLOW_NODE + 72,
             lineHeight: 16,
             letterSpacing: 0.15,
-            color: blocked && !completed ? colors.error : colors.textPrimary,
+            color:
+              blocked && !completed
+                ? colors.error
+                : foreign
+                  ? colors.textMuted
+                  : ready || mineWaiting
+                    ? colors.brand
+                    : colors.textPrimary,
           }}
         >
           {stage.name}

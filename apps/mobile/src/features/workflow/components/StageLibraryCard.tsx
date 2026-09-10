@@ -1,13 +1,16 @@
-import { type ReactNode } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import type { StageDefinition } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
+import { StatusBadge } from '@/components/badges/StatusBadge';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { formatDuration, useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+
+const MEDIA = 56;
 
 function stageGlyph(
   row: StageDefinition,
@@ -22,56 +25,6 @@ function stageGlyph(
   return 'people-outline';
 }
 
-function Mark({
-  icon,
-  label,
-  accessibilityLabel,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label?: string;
-  accessibilityLabel?: string;
-}) {
-  const { isRTL } = useLocale();
-  const { colors, theme } = useTheme();
-  return (
-    <View
-      accessible
-      accessibilityLabel={accessibilityLabel ?? label}
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: label ? theme.spacing.sm + 2 : 0,
-        paddingVertical: label ? 5 : 0,
-        borderRadius: theme.radius.full,
-        backgroundColor: label ? colors.surface : 'transparent',
-        borderWidth: label ? 1 : 0,
-        borderColor: colors.border,
-      }}
-    >
-      <View
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <Ionicons name={icon} size={14} color={colors.brand} />
-      </View>
-      {label ? (
-        <AppText variant="caption" weight="medium" color="brand">
-          {label}
-        </AppText>
-      ) : null}
-    </View>
-  );
-}
-
 type Props = {
   row: StageDefinition;
   locked?: boolean;
@@ -80,7 +33,7 @@ type Props = {
   onPress: () => void;
 };
 
-/** Showroom tile for the stage library — name first, no department codes. */
+/** Floor stage card — rail, header band, icon well, inset marks. */
 export function StageLibraryCard({ row, locked = false, caption, index = 0, onPress }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -91,22 +44,18 @@ export function StageLibraryCard({ row, locked = false, caption, index = 0, onPr
       ? formatDuration(locale, Math.round(Number(row.estimatedHours) * 60))
       : null;
   const hasMarks = Boolean(hours || row.requiresPhotos || row.requiresInspection);
+  const railColor = locked ? colors.textMuted : colors.brand;
+  const railOpacity = locked ? 0.35 : 0.55;
+  const badgeLabel = caption ?? (locked ? t('mobile.production.workflow.lockedCaption') : null);
 
   return (
-    <ListItemEnter index={index} staggerMs={28}>
-      <AnimatedPressable
-        variant="card"
-        accessibilityRole="button"
-        accessibilityLabel={name}
-        onPress={() => {
-          void haptics.selection();
-          onPress();
-        }}
+    <ListItemEnter index={index}>
+      <View
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor: locked ? colors.brandSoft : colors.border,
-          backgroundColor: locked ? colors.brandSoft : colors.surface,
+          borderColor: locked ? colors.border : colors.borderStrong,
+          backgroundColor: colors.surface,
           overflow: 'hidden',
           ...orderBoardShadow(colorScheme),
         }}
@@ -117,17 +66,58 @@ export function StageLibraryCard({ row, locked = false, caption, index = 0, onPr
             position: 'absolute',
             top: 0,
             bottom: 0,
-            width: 88,
+            width: 3,
+            backgroundColor: railColor,
+            opacity: railOpacity,
             ...(isRTL ? { right: 0 } : { left: 0 }),
-            backgroundColor: locked ? 'transparent' : colors.brandSoft,
-            opacity: locked ? 0 : 0.55,
           }}
         />
+
         <View
           style={{
-            paddingVertical: theme.spacing.lg,
-            paddingHorizontal: theme.spacing.md,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.lg,
+            paddingVertical: theme.spacing.md,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
+          }}
+        >
+          {badgeLabel ? (
+            <StatusBadge
+              status={caption ? 'ACTIVE' : 'DRAFT'}
+              label={badgeLabel}
+              branded={Boolean(caption)}
+              dot
+            />
+          ) : (
+            <View />
+          )}
+          <AppText variant="caption" color="brand" weight={titleWeight}>
+            {t('common.details')}
+          </AppText>
+        </View>
+
+        <AnimatedPressable
+          variant="card"
+          accessibilityRole="button"
+          accessibilityLabel={name}
+          onPress={() => {
+            void haptics.selection();
+            onPress();
+          }}
+          style={{
+            padding: theme.spacing.lg,
             gap: theme.spacing.md,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
           }}
         >
           <View
@@ -139,150 +129,123 @@ export function StageLibraryCard({ row, locked = false, caption, index = 0, onPr
           >
             <View
               style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
+                width: MEDIA,
+                height: MEDIA,
+                borderRadius: theme.radius.lg,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: colors.surface,
+                backgroundColor: colors.brandSoft,
                 borderWidth: 1,
                 borderColor: colors.border,
               }}
             >
-              <Ionicons
-                name={stageGlyph(row, locked)}
-                size={22}
-                color={colors.brand}
-              />
+              <Ionicons name={stageGlyph(row, locked)} size={22} color={colors.brand} />
             </View>
-            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-              {caption ? (
-                <AppText
-                  variant="caption"
-                  weight="semibold"
-                  style={{
-                    color: colors.brand,
-                    letterSpacing: locale === 'ar' ? 0 : 1.1,
-                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                    fontSize: 10,
-                    textAlign: isRTL ? 'right' : 'left',
-                  }}
-                >
-                  {caption}
-                </AppText>
-              ) : null}
+            <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
               <AppText
-                variant="heading"
+                variant="label"
                 weight={titleWeight}
                 numberOfLines={2}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
+                style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 16 }}
               >
                 {name}
               </AppText>
-            </View>
-            <View
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <Ionicons
-                name={
-                  locked ? 'lock-closed' : isRTL ? 'chevron-back' : 'chevron-forward'
-                }
-                size={14}
-                color={locked ? colors.brand : colors.textMuted}
-              />
             </View>
           </View>
 
           {hasMarks ? (
             <View
               style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                flexWrap: 'wrap',
-                alignItems: 'center',
+                borderRadius: theme.radius.lg,
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+                padding: theme.spacing.md,
                 gap: theme.spacing.sm,
-                paddingStart: 52 + theme.spacing.md,
               }}
             >
-              {hours ? <Mark icon="time-outline" label={hours} /> : null}
+              {hours ? (
+                <MetaRow label={t('mobile.production.workflow.typicalHours')} value={hours} />
+              ) : null}
               {row.requiresPhotos ? (
-                <Mark
-                  icon="camera-outline"
-                  accessibilityLabel={t('mobile.production.workflow.requiresPhotos')}
+                <MetaRow
+                  label={t('mobile.production.workflow.requiresPhotos')}
+                  value={t('mobile.production.workflow.required')}
                 />
               ) : null}
               {row.requiresInspection ? (
-                <Mark
-                  icon="shield-checkmark-outline"
-                  accessibilityLabel={t('mobile.production.workflow.requiresInspection')}
+                <MetaRow
+                  label={t('mobile.production.workflow.requiresInspection')}
+                  value={t('mobile.production.workflow.required')}
                 />
               ) : null}
             </View>
           ) : null}
-        </View>
-      </AnimatedPressable>
+        </AnimatedPressable>
+      </View>
     </ListItemEnter>
   );
 }
 
+function MetaRow({ label, value }: { label: string; value: string }) {
+  const { isRTL, locale } = useLocale();
+  const { colors } = useTheme();
+
+  return (
+    <View style={{ gap: 2 }}>
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textAlign: isRTL ? 'right' : 'left',
+          fontSize: 10,
+          letterSpacing: locale === 'ar' ? 0 : 0.4,
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        variant="bodySecondary"
+        weight="medium"
+        style={{ textAlign: isRTL ? 'right' : 'left', color: colors.textPrimary }}
+      >
+        {value}
+      </AppText>
+    </View>
+  );
+}
+
+/** Slim section board — sibling stage cards sit below, not inside. */
 export function StageLibrarySection({
   title,
   hint,
-  children,
+  count,
 }: {
   title: string;
   hint?: string;
-  children: ReactNode;
+  count?: number;
 }) {
-  const { locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { locale } = useLocale();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <View style={{ gap: theme.spacing.md }}>
-      <View style={{ gap: 6, paddingHorizontal: 2 }}>
-        <AppText
-          variant="caption"
-          weight={titleWeight}
-          style={{
-            color: colors.brand,
-            letterSpacing: locale === 'ar' ? 0 : 1.4,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-            fontSize: 11,
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        >
-          {title}
-        </AppText>
-        {hint ? (
-          <AppText
-            variant="caption"
-            color="muted"
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
-          >
-            {hint}
+    <DealerBoard
+      title={title}
+      titleWeight={titleWeight}
+      trailing={
+        count != null ? (
+          <AppText variant="caption" weight={titleWeight} dir="ltr" color="muted">
+            {String(count)}
           </AppText>
-        ) : null}
-        <View
-          style={{
-            width: 36,
-            height: 2,
-            borderRadius: 1,
-            backgroundColor: colors.brand,
-            opacity: 0.35,
-            alignSelf: isRTL ? 'flex-end' : 'flex-start',
-          }}
-        />
-      </View>
-      <View style={{ gap: theme.spacing.md }}>{children}</View>
-    </View>
+        ) : undefined
+      }
+    >
+      {hint ? (
+        <AppText variant="caption" color="muted">
+          {hint}
+        </AppText>
+      ) : null}
+    </DealerBoard>
   );
 }

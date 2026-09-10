@@ -47,6 +47,7 @@ describe('staff vs identity permission isolation', () => {
     expect(hasPermission(pack, 'fabric.procurement.manage')).toBe(true);
     expect(hasPermission(pack, 'purchase-order.read')).toBe(true);
     expect(hasPermission(pack, 'inventory.receive')).toBe(true);
+    expect(hasPermission(pack, 'supplier-payment.record')).toBe(true);
   });
 
   it('PRODUCTION_MANAGEMENT can read fabric tracker and override holds', () => {

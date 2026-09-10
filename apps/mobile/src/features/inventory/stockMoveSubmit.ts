@@ -10,12 +10,14 @@ export function toGoodsReceiptArgs(input: StockMoveSubmit): {
     purchaseOrderId: input.purchaseOrderId,
     body: {
       warehouseId: input.warehouseId,
+      locationId: input.locationId,
       notes: input.notes,
       lines: [
         {
           inventoryItemId: input.inventoryItemId,
           orderedQty: input.orderedQty ?? input.quantity,
           receivedQty: input.quantity,
+          locationId: input.locationId,
         },
       ],
     },

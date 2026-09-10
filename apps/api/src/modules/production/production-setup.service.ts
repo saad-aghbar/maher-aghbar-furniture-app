@@ -20,7 +20,18 @@ import { resolveProductStageOutput } from './product-inventory-output.resolver';
 import { validateProductionSetup, type SetupStageInput } from './production-setup.validator';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
-import { normalizePieceLabels, isPackagingStageCode, isInspectionStageCode, isDeliveryStageCode, type PieceLabel } from './piece-labels';
+import {
+  fillPieceLabelsToCount,
+  normalizePieceLabels,
+  isPackagingStageCode,
+  isInspectionStageCode,
+  isDeliveryStageCode,
+  type PieceLabel,
+} from './piece-labels';
+import {
+  inspectionTakesInventory,
+  stripInspectionGateStage,
+} from './inspection-gate';
 
 export type ProductionSetupStagePut = {
   workflowNodeId: string;
@@ -93,7 +104,16 @@ export class ProductionSetupService {
           },
         },
       }),
-      this.prisma.warehouse.findMany({ where: { isActive: true }, orderBy: { createdAt: 'asc' } }),
+      this.prisma.warehouse.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          locations: {
+            where: { isActive: true },
+            orderBy: { code: 'asc' },
+          },
+        },
+      }),
       this.prisma.material.findMany({
         where: { archivedAt: null },
         select: { sku: true },
@@ -395,6 +415,10 @@ export class ProductionSetupService {
       }
     }
 
+    for (const s of stages) {
+      stripInspectionGateStage(s, s.stageCode);
+    }
+
     const excluded = (compiled?.excluded ?? []).map((node) => ({
       workflowNodeId: node.sourceWorkflowNodeId,
       nodeKey: node.nodeKey,
@@ -613,6 +637,13 @@ export class ProductionSetupService {
           message: 'Inspection confirms quality only and must not create stocked inventory.',
         });
       }
+      if (isInspectionStageCode(code) && inspectionTakesInventory(stage, code)) {
+        throw new BadRequestException({
+          code: 'SETUP_INSPECTION_MUST_NOT_CONSUME',
+          message: 'Inspection confirms quality only and must not take kits or materials.',
+        });
+      }
+      stripInspectionGateStage(stage, code);
       if (isDeliveryStageCode(code) && behaviorProduces(stage.behavior)) {
         throw new BadRequestException({
           code: 'SETUP_DELIVERY_MUST_NOT_PRODUCE',
@@ -680,20 +711,27 @@ export class ProductionSetupService {
         const nameHe = isFinished
           ? product.nameHe ?? null
           : stage.outputNameHe ?? null;
-        const pieceLabels: PieceLabel[] = produces
+        const namedLabels: PieceLabel[] = produces
           ? normalizePieceLabels(stage.pieceLabels)
           : [];
-        if (produces && !isFinished && pieceLabels.length === 0) {
-          pieceLabels.push({ nameEn, nameAr, nameHe });
-        }
-        const expectedPieceCount = isFinished
-          ? Math.max(
-              1,
-              pieceLabels.length > 0
-                ? pieceLabels.length
-                : Math.floor(Number(stage.expectedPieceCount) || 1),
+        const requestedCount = Math.max(
+          1,
+          namedLabels.length,
+          Math.floor(Number(stage.expectedPieceCount) || 1),
+        );
+        const pieceLabels: PieceLabel[] = produces
+          ? fillPieceLabelsToCount(
+              namedLabels.length
+                ? namedLabels
+                : produces && !isFinished
+                  ? [{ nameEn, nameAr, nameHe }]
+                  : namedLabels,
+              requestedCount,
             )
-          : Math.max(1, pieceLabels.length);
+          : [];
+        const expectedPieceCount = produces
+          ? Math.max(1, pieceLabels.length)
+          : Math.max(1, requestedCount);
         const qty = Number(stage.outputQtyPerUnit ?? 1);
         const inventoryItemId = produces
           ? (

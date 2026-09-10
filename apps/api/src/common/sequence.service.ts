@@ -24,6 +24,8 @@ const SEQUENCE_KEY_ALIASES: Record<string, string> = {
   purchase_request: 'purchase_request',
   pord: 'purchase_order',
   purchase_order: 'purchase_order',
+  prun: 'purchase_run',
+  purchase_run: 'purchase_run',
   grn: 'grn',
   goods_receipt: 'grn',
   task: 'task',
@@ -35,11 +37,21 @@ const SEQUENCE_KEY_ALIASES: Record<string, string> = {
   contract: 'contract',
   ret: 'return_request',
   return_request: 'return_request',
+  rd: 'return_disposition',
+  return_disposition: 'return_disposition',
+  rp: 'replacement',
+  replacement: 'replacement',
+  rc: 'return_recovery',
+  return_recovery: 'return_recovery',
 };
 
 function canonicalizeSequenceKey(key: string): string {
   const normalized = key.trim().toLowerCase();
   return SEQUENCE_KEY_ALIASES[normalized] ?? normalized;
+}
+
+export function formatDocumentNumber(prefix: string, year: number, current: number): string {
+  return `${prefix}-${year}-${String(current).padStart(5, '0')}`;
 }
 
 @Injectable()
@@ -54,6 +66,19 @@ export class SequenceService {
       create: { key: canonical, year, current: 1 },
       update: { current: { increment: 1 } },
     });
-    return `${prefix}-${year}-${String(row.current).padStart(5, '0')}`;
+    return formatDocumentNumber(prefix, year, row.current);
+  }
+
+  /** Increment until `isTaken` is false — counters that lag seeded docs must not 500. */
+  async nextUnused(
+    key: string,
+    prefix: string,
+    isTaken: (number: string) => Promise<boolean>,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const number = await this.next(key, prefix);
+      if (!(await isTaken(number))) return number;
+    }
+    throw new Error(`Could not allocate a unique ${prefix} number.`);
   }
 }

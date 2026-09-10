@@ -7,7 +7,12 @@ export default function AdminReportsRoute() {
   return (
     <PermissionGate
       user={user}
-      require={['report.sales.read', 'report.production.read', 'report.financial.read']}
+      require={[
+        'inventory.cost.read',
+        'report.sales.read',
+        'report.production.read',
+        'report.financial.read',
+      ]}
       mode="any"
     >
       <ReportsScreen />

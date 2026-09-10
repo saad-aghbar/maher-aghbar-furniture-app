@@ -42,6 +42,21 @@ export function pieceLabelsFromMetadata(metadata: unknown): PieceLabel[] {
   return normalizePieceLabels((metadata as Record<string, unknown>).pieceLabels);
 }
 
+/** Floor cards need a slot per expected piece even when setup omitted names. */
+export function fillPieceLabelsToCount(
+  labels: PieceLabel[] | null | undefined,
+  count: number,
+): PieceLabel[] {
+  const named = labels?.length ? [...labels] : [];
+  const n = Math.max(1, Math.floor(Number(count) || 0) || named.length || 1);
+  const out = named.slice(0, n);
+  for (let i = out.length; i < n; i++) {
+    const label = `Piece ${i + 1}`;
+    out.push({ nameEn: label, nameAr: `قطعة ${i + 1}`, nameHe: `חלק ${i + 1}` });
+  }
+  return out;
+}
+
 export function labelForPieceIndex(
   labels: PieceLabel[] | null | undefined,
   index: number,

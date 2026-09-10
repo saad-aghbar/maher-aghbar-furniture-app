@@ -39,6 +39,8 @@ import {
   getInspectionNodeId,
   lockedAnchorNodeIds,
 } from '@/lib/workflow-terminal';
+import { formatWorkflowDomainIssues } from '@/lib/workflow-issue-text';
+import { workflowGraphChainRequirements } from '@maher/types';
 import { Alert, Button, Card, EmptyState, ErrorState } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -95,6 +97,11 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
   };
 
+  const scoped = (v: WorkflowVersion): WorkflowVersion => ({
+    ...v,
+    scope: v.scope ?? workflowQuery.data?.scope ?? null,
+  });
+
   const createDraftMutation = useMutation({
     mutationFn: (fromVersionId?: string) =>
       apiFetch<WorkflowVersion>(`/api/v1/production-workflows/${workflowId}/versions`, {
@@ -107,22 +114,30 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       setVersionsOpen(false);
       await invalidate();
       try {
+        const flags = workflowGraphChainRequirements(
+          workflowQuery.data?.scope,
+          (created.nodes ?? []).map((n) => n.stageDefinition?.code ?? ''),
+        );
         let revision = created.revision;
-        const opened = await apiFetch<{ revision: number }>(
-          `/api/v1/production-workflows/${workflowId}/versions/${created.id}/ensure-opening-chain`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ expectedRevision: revision }),
-          },
-        );
-        revision = opened.revision;
-        await apiFetch(
-          `/api/v1/production-workflows/${workflowId}/versions/${created.id}/ensure-terminal-chain`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ expectedRevision: revision }),
-          },
-        );
+        if (flags.requiresOpeningChain) {
+          const opened = await apiFetch<{ revision: number }>(
+            `/api/v1/production-workflows/${workflowId}/versions/${created.id}/ensure-opening-chain`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ expectedRevision: revision }),
+            },
+          );
+          revision = opened.revision;
+        }
+        if (flags.requiresTerminalChain) {
+          await apiFetch(
+            `/api/v1/production-workflows/${workflowId}/versions/${created.id}/ensure-terminal-chain`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ expectedRevision: revision }),
+            },
+          );
+        }
         await invalidate();
       } catch {
         /* draft still usable — publish will append anchors */
@@ -132,23 +147,34 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
   });
 
   const ensureAnchorsMutation = useMutation({
-    mutationFn: async (args: { versionId: string; revision: number }) => {
+    mutationFn: async (args: {
+      versionId: string;
+      revision: number;
+      scope?: string | null;
+      stageCodes: string[];
+    }) => {
+      const flags = workflowGraphChainRequirements(args.scope, args.stageCodes);
       let revision = args.revision;
-      const opened = await apiFetch<{ applied: boolean; revision: number }>(
-        `/api/v1/production-workflows/${workflowId}/versions/${args.versionId}/ensure-opening-chain`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ expectedRevision: revision }),
-        },
-      );
-      revision = opened.revision;
-      return apiFetch<{ applied: boolean; revision: number }>(
-        `/api/v1/production-workflows/${workflowId}/versions/${args.versionId}/ensure-terminal-chain`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ expectedRevision: revision }),
-        },
-      );
+      if (flags.requiresOpeningChain) {
+        const opened = await apiFetch<{ applied: boolean; revision: number }>(
+          `/api/v1/production-workflows/${workflowId}/versions/${args.versionId}/ensure-opening-chain`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ expectedRevision: revision }),
+          },
+        );
+        revision = opened.revision;
+      }
+      if (flags.requiresTerminalChain) {
+        return apiFetch<{ applied: boolean; revision: number }>(
+          `/api/v1/production-workflows/${workflowId}/versions/${args.versionId}/ensure-terminal-chain`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ expectedRevision: revision }),
+          },
+        );
+      }
+      return { applied: false, revision };
     },
     onSuccess: async () => {
       await invalidate();
@@ -161,7 +187,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     body: Record<string, unknown>,
     expectedRevision?: number,
   ) => {
-    const version = versionQuery.data!;
+    const version = scoped(versionQuery.data!);
     return apiFetch(
       `/api/v1/production-workflows/${workflowId}/versions/${version.id}/nodes/${nodeId}`,
       {
@@ -208,7 +234,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         stageCode = created.code;
       }
       if (!stageId) throw new Error(t('workflow.pickStageFirst'));
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       if (!args.create) {
         stageCode =
           stageLibraryQuery.data?.find((s) => s.id === stageId)?.code ?? stageCode;
@@ -236,7 +262,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       );
       const validation = validateSimulated(simulated, startIds);
       if (!validation.ok) {
-        throw new Error(validation.issues.map((i) => i.message).join('; ') || 'Invalid graph');
+        throw new Error(formatWorkflowDomainIssues(validation.issues, t) || 'Invalid graph');
       }
 
       const newPreds = simulated.predecessorsByNode[tempId] ?? [];
@@ -268,7 +294,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         code: stageCode,
         placement,
       });
-      const patches = predecessorDiff(toDomainGraph(mid), finalGraph).filter(
+      const patches = predecessorDiff(toDomainGraph(scoped(mid)), finalGraph).filter(
         (p) => p.nodeId !== createdNode.id,
       );
       for (const patch of patches) {
@@ -301,7 +327,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       placement?: PlacementIntent;
       parallelIds?: string[];
     }) => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       const placement: PlacementIntent =
         args.placement ??
         (args.runsAfterNodeIds.length === 0
@@ -321,7 +347,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       );
       const validation = validateSimulated(after, startIds);
       if (!validation.ok) {
-        throw new Error(validation.issues.map((i) => i.message).join('; ') || 'Invalid graph');
+        throw new Error(formatWorkflowDomainIssues(validation.issues, t) || 'Invalid graph');
       }
 
       await patchNode(
@@ -342,7 +368,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       const mid = await apiFetch<WorkflowVersion>(
         `/api/v1/production-workflows/${workflowId}/versions/${version.id}`,
       );
-      const patches = predecessorDiff(toDomainGraph(mid), after).filter(
+      const patches = predecessorDiff(toDomainGraph(scoped(mid)), after).filter(
         (p) => p.nodeId !== args.nodeId,
       );
       for (const patch of patches) {
@@ -359,7 +385,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
 
   const removeMutation = useMutation({
     mutationFn: async (nodeId: string) => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       const before = toDomainGraph(version);
       const after = simulateRemove(version, nodeId);
       await apiFetch(
@@ -369,7 +395,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       const mid = await apiFetch<WorkflowVersion>(
         `/api/v1/production-workflows/${workflowId}/versions/${version.id}`,
       );
-      const patches = predecessorDiff(toDomainGraph(mid), after);
+      const patches = predecessorDiff(toDomainGraph(scoped(mid)), after);
       for (const patch of patches) {
         await patchNode(patch.nodeId, { runsAfterNodeIds: patch.runsAfterNodeIds });
       }
@@ -386,7 +412,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
   /** Persist canonical predecessor sets for editable drafts (legacy spider → minimal DAG). */
   const normalizeDraftMutation = useMutation({
     mutationFn: async () => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       const { patches } = canonicalizeDraftVersion(version);
       for (const patch of patches) {
         await patchNode(patch.nodeId, { runsAfterNodeIds: patch.runsAfterNodeIds });
@@ -410,7 +436,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       toBandNodeIds: string[];
       mode: ParallelBandLinkMode;
     }) => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       const before = toDomainGraph(version);
       const after = simulateParallelBandLink(version, args);
       const validation = validateSimulated(after, [
@@ -421,7 +447,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         }),
       ]);
       if (!validation.ok) {
-        throw new Error(validation.issues.map((i) => i.message).join('; ') || 'Invalid graph');
+        throw new Error(formatWorkflowDomainIssues(validation.issues, t) || 'Invalid graph');
       }
       const patches = predecessorDiff(before, after);
       for (const patch of patches) {
@@ -437,7 +463,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
 
   const validateMutation = useMutation({
     mutationFn: () => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
       return apiFetch<{ ok: boolean; issues?: Array<{ code: string; message: string }> }>(
         `/api/v1/production-workflows/${workflowId}/versions/${version.id}/validate`,
         { method: 'POST' },
@@ -461,28 +487,37 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      const version = versionQuery.data!;
+      const version = scoped(versionQuery.data!);
+      const flags = workflowGraphChainRequirements(
+        version.scope,
+        version.nodes.map((n) => n.stageDefinition.code),
+      );
       let revision = version.revision;
-      const opened = await apiFetch<{ revision: number }>(
-        `/api/v1/production-workflows/${workflowId}/versions/${version.id}/ensure-opening-chain`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ expectedRevision: revision }),
-        },
-      );
-      revision = opened.revision;
-      const appended = await apiFetch<{ revision: number }>(
-        `/api/v1/production-workflows/${workflowId}/versions/${version.id}/ensure-terminal-chain`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ expectedRevision: revision }),
-        },
-      );
+      if (flags.requiresOpeningChain) {
+        const opened = await apiFetch<{ revision: number }>(
+          `/api/v1/production-workflows/${workflowId}/versions/${version.id}/ensure-opening-chain`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ expectedRevision: revision }),
+          },
+        );
+        revision = opened.revision;
+      }
+      if (flags.requiresTerminalChain) {
+        const appended = await apiFetch<{ revision: number }>(
+          `/api/v1/production-workflows/${workflowId}/versions/${version.id}/ensure-terminal-chain`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ expectedRevision: revision }),
+          },
+        );
+        revision = appended.revision;
+      }
       return apiFetch(
         `/api/v1/production-workflows/${workflowId}/versions/${version.id}/publish`,
         {
           method: 'POST',
-          body: JSON.stringify({ expectedRevision: appended.revision }),
+          body: JSON.stringify({ expectedRevision: revision }),
         },
       );
     },
@@ -514,15 +549,25 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     if (!version || version.status !== 'DRAFT') return;
     if (ensuredVersionRef.current === version.id) return;
     if (ensureAnchorsMutation.isPending) return;
+    const stageCodes = version.nodes.map((n) => n.stageDefinition.code);
+    const flags = workflowGraphChainRequirements(wf?.scope, stageCodes);
     const { terminal } = partitionWorkflowAnchors(version.nodes);
-    const hasOpening = version.nodes.some((n) => n.stageDefinition.code === 'MATERIAL_PREP');
-    if (terminal.length >= 3 && hasOpening) {
+    const hasOpening = stageCodes.includes('MATERIAL_PREP');
+    if (
+      (!flags.requiresOpeningChain || hasOpening) &&
+      (!flags.requiresTerminalChain || terminal.length >= 3)
+    ) {
       ensuredVersionRef.current = version.id;
       return;
     }
     ensuredVersionRef.current = version.id;
-    ensureAnchorsMutation.mutate({ versionId: version.id, revision: version.revision });
-  }, [version?.id, version?.status, version?.revision, version?.nodes.length]);
+    ensureAnchorsMutation.mutate({
+      versionId: version.id,
+      revision: version.revision,
+      scope: wf?.scope,
+      stageCodes,
+    });
+  }, [version?.id, version?.status, version?.revision, version?.nodes.length, wf?.scope]);
 
   if (workflowQuery.isLoading) return <WorkflowSkeleton />;
 
@@ -633,6 +678,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         node={selected}
         nodes={nodes}
         edges={edges}
+        scope={workflowQuery.data?.scope}
         readOnly={!isDraft}
         saving={saveNodeMutation.isPending}
         removing={removeMutation.isPending}
@@ -657,6 +703,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         nodes={nodes}
         edges={edges}
         library={stageLibraryQuery.data ?? []}
+        scope={workflowQuery.data?.scope}
         saving={addMutation.isPending}
         onClose={() => setAddOpen(false)}
         onAdd={(args) => addMutation.mutate(args)}

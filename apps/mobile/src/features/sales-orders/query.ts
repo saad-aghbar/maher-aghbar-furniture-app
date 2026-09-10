@@ -15,6 +15,7 @@ import {
   type SalesOrderListFilters,
   type UpdateSalesOrderInput,
 } from './api';
+import { listReturnWorkOrders } from '@/api/modules/sales-orders';
 import { listRequests } from '@/api/modules/requests';
 
 export type OrdersListQueryFilters = Omit<SalesOrderListFilters, 'page' | 'pageSize'>;
@@ -43,14 +44,42 @@ export function useOrdersInfiniteQuery(
         {
           orderType: filters.orderType ?? null,
           journeyBucket: filters.journeyBucket ?? null,
+          returned: filters.returned ?? null,
         },
-        ['orderType', 'journeyBucket'],
+        ['orderType', 'journeyBucket', 'returned'],
       ),
   });
 }
 
 export function flattenOrdersPages(
   data: ReturnType<typeof useOrdersInfiniteQuery>['data'],
+) {
+  return flattenPaginatedPages(data?.pages);
+}
+
+export type ReturnWorkListFilters = { q?: string; customerId?: string };
+
+export function useReturnWorkInfiniteQuery(
+  filters: ReturnWorkListFilters,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.salesOrders.returnedCases(filters),
+    queryFn: ({ pageParam }) =>
+      listReturnWorkOrders({
+        ...filters,
+        page: pageParam,
+        pageSize: 20,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPageParamFromMeta,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function flattenReturnWorkPages(
+  data: ReturnType<typeof useReturnWorkInfiniteQuery>['data'],
 ) {
   return flattenPaginatedPages(data?.pages);
 }

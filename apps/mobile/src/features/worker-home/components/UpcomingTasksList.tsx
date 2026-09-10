@@ -22,6 +22,7 @@ import type { WorkerHomeTask } from '../api';
 import {
   localizedWorkerProductTitle,
   localizedWorkerStageName,
+  workerHomeLaneHref,
 } from '../selectWorkerHome';
 
 type UpcomingTasksListProps = {
@@ -70,7 +71,7 @@ function UpcomingQueueTicket({ task, index }: TicketProps) {
         accessibilityLabel={`${productTitle} ${task.orderNumber}`}
         onPress={() => {
           void haptics.selection();
-          router.push(`/(app)/(employee)/tasks/${task.id}` as Href);
+          router.push(workerHomeLaneHref(task));
         }}
         style={{
           width: TICKET_WIDTH,

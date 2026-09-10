@@ -40,13 +40,6 @@ export { MetaWhatsAppProvider } from './whatsapp/meta-whatsapp.provider';
 export { TwilioWhatsAppProvider } from './whatsapp/twilio-whatsapp.provider';
 export { createWhatsAppProvider } from './whatsapp/create-whatsapp.provider';
 
-export type {
-  JoFotaraClearanceResult,
-  JoFotaraInvoicePayload,
-  JoFotaraProvider,
-} from './jofotara/types';
-export { JoFotaraHttpProvider, createJoFotaraProvider } from './jofotara/jofotara.provider';
-
 export {
   createInboundEmailReader,
   readInboundEmailConfig,

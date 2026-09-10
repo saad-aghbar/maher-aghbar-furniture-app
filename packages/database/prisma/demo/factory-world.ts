@@ -21,11 +21,13 @@ import { seedPiece8FactoryFloorExamples } from './piece8-factory-floor';
 import { seedPiece9QualityPackagingExamples } from './piece9-quality-packaging';
 import { seedPiece10FinishedOutboundExamples } from './piece10-finished-outbound';
 import { seedPiece11ExceptionsReturnsExamples } from './piece11-exceptions-returns';
+import { seedUniqueFloorWorkerExamples } from './unique-floor-workers';
 import { seedPiece12ManagementDashboardExamples } from './piece12-management-dashboard';
 import { seedPiece14FullSystemExamples } from './piece14-full-system';
 import { seedDemoExtras } from './extras';
 import { wipeOperationalData } from './wipe';
 import { ensureQuotationAcceptedUniqueIndex } from './quotation-accepted-index';
+import { reconcileAvailableQtyFromTransactions, ensureAllDefaultWarehouseBins, ensureAllWarehouseBinQrCodes } from '../seed/warehouse-bins';
 
 export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   const passwordHash = hashSync('123', 12);
@@ -188,6 +190,16 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     driverId: people.driverId,
   });
 
+  console.log('Seeding unique-floor worker test orders (inspector / packer / recovery / driver)…');
+  await seedUniqueFloorWorkerExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+    driverId: people.driverId,
+  });
+
   console.log('Seeding Piece 12 management dashboard mapping log…');
   await seedPiece12ManagementDashboardExamples(prisma);
 
@@ -208,6 +220,13 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     workerIds: people.workers.map((w) => w.id),
     counters,
   });
+
+  await ensureAllDefaultWarehouseBins(prisma);
+  await ensureAllWarehouseBinQrCodes(prisma);
+  const patchedBins = await reconcileAvailableQtyFromTransactions(prisma);
+  if (patchedBins > 0) {
+    console.log(`  reconciled ${patchedBins} bin balances from ledger txs`);
+  }
 
   await seedDemoSequences(prisma, counters);
   console.log(`Demo factory as of ${asOf.toISOString()} ready.`);

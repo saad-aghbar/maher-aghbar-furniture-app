@@ -75,6 +75,8 @@ function samplePayload(locale: 'en' | 'ar' | 'he'): RawMaterialsReportPayload {
     costBasisId: RAW_MATERIALS_COST_BASIS_ID,
     costBasisLabel: 'Standard cost + latest purchase receipt',
     period: { preset: 'month', fromYmd: '2026-08-01', toYmd: '2026-08-31' },
+    sections: ['fabric', 'foam', 'wood', 'accessories'],
+    allSections: true,
     summary: {
       skuCount: 2,
       lowStockCount: 1,
@@ -161,6 +163,7 @@ function samplePayload(locale: 'en' | 'ar' | 'he'): RawMaterialsReportPayload {
         material: locale === 'ar' ? 'مخمل إيطالي FAB-0042' : 'Italian velvet FAB-0042',
         category: 'fabric',
         warehouseCode: 'RAW-A',
+        locationCode: 'RAW-A-MAIN',
         qty: 12,
         unit: 'm',
         unitCost: 10,
@@ -304,7 +307,8 @@ describe('buildRawMaterialsReportPdf', () => {
     const buf = await buildRawMaterialsReportPdf(samplePayload('en'), 'white');
     expect(buf.slice(0, 5).toString()).toBe('%PDF-');
     expect(pageCount(buf)).toBeGreaterThanOrEqual(3);
-    expect(pdfHasLatin(buf, 'Raw Materials')).toBe(true);
+    expect(pdfHasLatin(buf, 'Materials Management')).toBe(true);
+    expect(pdfHasLatin(buf, 'All sections')).toBe(true);
     expect(pdfHasLatin(buf, 'Valuation incomplete') || pdfHasLatin(buf, 'incomplete')).toBe(true);
     const boxes = mediaBoxes(buf);
     const portrait = boxes.filter((b) => (b[2] ?? 0) < (b[3] ?? 0));
@@ -312,6 +316,21 @@ describe('buildRawMaterialsReportPdf', () => {
     expect(portrait.length).toBeGreaterThan(0);
     expect(landscape.length).toBeGreaterThan(0);
     expect(pdfHasLatin(buf, 'Page 1 of') || pdfHasLatin(buf, 'Page 1 of ')).toBe(true);
+  });
+
+  it('builds a two-section payload', async () => {
+    const payload = {
+      ...samplePayload('en'),
+      sections: ['fabric', 'foam'] as const,
+      allSections: false,
+      categories: samplePayload('en').categories.filter(
+        (c) => c.group === 'fabric' || c.group === 'foam',
+      ),
+    };
+    const buf = await buildRawMaterialsReportPdf(payload, 'white');
+    expect(buf.slice(0, 5).toString()).toBe('%PDF-');
+    expect(pdfHasLatin(buf, 'Fabric')).toBe(true);
+    expect(pdfHasLatin(buf, 'Foam')).toBe(true);
   });
 
   it.each(['ar', 'he'] as const)('paints %s with vector outlines', async (locale) => {

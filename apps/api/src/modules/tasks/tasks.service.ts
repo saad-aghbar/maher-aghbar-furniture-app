@@ -16,24 +16,52 @@ import { ProductionInventoryService } from '../production/production-inventory.s
 import { MaterialUsageService } from '../production/material-usage.service';
 import { WipKitService } from '../production/wip-kit.service';
 import { pieceLabelsFromMetadata } from '../production/piece-labels';
+import {
+  expectedPackageLabelList,
+  loadIncomingPiecesForInspection,
+  resolveExpectedPackages,
+} from '../quality/prior-stage-packages';
 import { InvoicesService } from '../invoices/invoices.service';
 import {
   AssignTaskDto,
   ListTasksDto,
+  ResolveBlockerDto,
   TaskBlockDto,
+  TaskCarryOverDto,
   TaskProgressDto,
 } from './dto/task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { PlacementService } from '../scheduling/placement.service';
+import { ReturnPieceService } from '../contracts/return-piece.service';
+import { ensureTaskTimeEntry } from './ensure-time-entry';
 import {
   buildTaskTimingSummary,
   closedSecondsFromTimeEntries,
 } from '../../common/helpers/task-timing.util';
-import { intervalsOverlap } from '../production/worker-recommend';
 import {
   isPrereqLockedForWorker,
+  workerAssignedRemainingOrdersWhere,
+  workerAssignedRemainingTaskWhere,
   workerFloorOpenClauses,
 } from '../production/worker-task-visibility';
+import {
+  buildWorkerOrderLane,
+  orderMatchesSegment,
+  parseMyOrderSegment,
+  remainingTasksForSegment,
+  summarizeAssignedOrderTasks,
+  summarizeLane,
+  workerOrderMatchesSearch,
+  type MyOrderSegment,
+  type SnapshotLaneInput,
+} from './worker-order-workflow';
+import { completedDateWindow, completedOnFactoryDaysWhere } from './completed-date-filter';
+import { DEFAULT_FACTORY_TIMEZONE } from '../production/production-day-lens';
+import {
+  resolveAssignStageMinutes,
+  shouldWriteBackStageTime,
+} from './assign-stage-time';
 
 function startOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
@@ -41,13 +69,6 @@ function startOfUtcDay(d = new Date()) {
 
 function endOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
-}
-
-/** Parse YYYY-MM-DD as a UTC calendar day; null if invalid. */
-function parseYmd(value?: string | null): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const d = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 @Injectable()
@@ -63,7 +84,21 @@ export class TasksService {
     private readonly idempotency: IdempotencyService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly scheduling?: SchedulingService,
-  ) {}
+    @Optional() private readonly returnPieces?: ReturnPieceService,
+    @Optional() placement?: PlacementService,
+  ) {
+    this.placement = placement ?? new PlacementService(this.prisma);
+  }
+
+  private async resolveFactoryTimezone(): Promise<string> {
+    const row = await this.prisma.factoryCalendar.findFirst({
+      where: { isDefault: true },
+      select: { timezone: true },
+    });
+    return row?.timezone?.trim() || DEFAULT_FACTORY_TIMEZONE;
+  }
+
+  private readonly placement: PlacementService;
 
   private notifyScheduleLifecycle(taskId: string, event: 'start' | 'pause' | 'complete' | 'blocker') {
     this.scheduling?.onTaskLifecycle(taskId, event).catch(() => undefined);
@@ -84,15 +119,22 @@ export class TasksService {
         status: { notIn: [TaskStatus.COMPLETED, TaskStatus.CANCELLED] },
       };
       if (forceMine) {
-        // Hide locked/waiting + non-floor stages — match worker home / Tasks tab.
+        // Home / open task rows: only floor-actionable work (released + unlocked).
+        // My Tasks orders use listMyOrders — remaining assignedEmployeeId work.
         statusWhere = { AND: workerFloorOpenClauses() };
       } else {
         statusWhere = openBase;
       }
     }
 
-    const completedFrom = parseYmd(query.completedFrom);
-    const completedTo = parseYmd(query.completedTo);
+    const completedWindow =
+      query.completedFrom || query.completedTo
+        ? completedDateWindow(
+            query.completedFrom,
+            query.completedTo,
+            await this.resolveFactoryTimezone(),
+          )
+        : null;
     const q = query.q?.trim();
 
     let dealerIdsFromSearch: string[] | undefined;
@@ -114,6 +156,46 @@ export class TasksService {
       dealerIdsFromSearch = dealers.map((d) => d.id);
     }
 
+    const searchOr: Prisma.ProductionTaskWhereInput[] | undefined = q
+      ? [
+          { number: { contains: q, mode: 'insensitive' } },
+          { name: { contains: q, mode: 'insensitive' } },
+          {
+            productionOrder: {
+              number: { contains: q, mode: 'insensitive' },
+            },
+          },
+          {
+            productionOrder: {
+              productDescription: { contains: q, mode: 'insensitive' },
+            },
+          },
+          {
+            productionOrder: {
+              salesOrder: { number: { contains: q, mode: 'insensitive' } },
+            },
+          },
+          ...(dealerIdsFromSearch?.length
+            ? [
+                {
+                  productionOrder: {
+                    customerId: { in: dealerIdsFromSearch },
+                  },
+                },
+              ]
+            : []),
+        ]
+      : undefined;
+    const completedWhere = completedWindow ? completedOnFactoryDaysWhere(completedWindow) : undefined;
+    const dateAndSearch: Prisma.ProductionTaskWhereInput =
+      completedWhere && searchOr
+        ? { AND: [completedWhere, { OR: searchOr }] }
+        : completedWhere
+          ? completedWhere
+          : searchOr
+            ? { OR: searchOr }
+            : {};
+
     const where: Prisma.ProductionTaskWhereInput = {
       ...statusWhere,
       ...(forceMine ? { assignedEmployeeId: userId } : {}),
@@ -128,46 +210,7 @@ export class TasksService {
       ...(query.customerId
         ? { productionOrder: { customerId: query.customerId } }
         : {}),
-      ...(completedFrom || completedTo
-        ? {
-            actualCompletion: {
-              ...(completedFrom ? { gte: startOfUtcDay(completedFrom) } : {}),
-              ...(completedTo ? { lte: endOfUtcDay(completedTo) } : {}),
-            },
-          }
-        : {}),
-      ...(q
-        ? {
-            OR: [
-              { number: { contains: q, mode: 'insensitive' } },
-              { name: { contains: q, mode: 'insensitive' } },
-              {
-                productionOrder: {
-                  number: { contains: q, mode: 'insensitive' },
-                },
-              },
-              {
-                productionOrder: {
-                  productDescription: { contains: q, mode: 'insensitive' },
-                },
-              },
-              {
-                productionOrder: {
-                  salesOrder: { number: { contains: q, mode: 'insensitive' } },
-                },
-              },
-              ...(dealerIdsFromSearch?.length
-                ? [
-                    {
-                      productionOrder: {
-                        customerId: { in: dealerIdsFromSearch },
-                      },
-                    },
-                  ]
-                : []),
-            ],
-          }
-        : {}),
+      ...dateAndSearch,
     };
 
     const [totalItems, data] = await this.prisma.$transaction([
@@ -265,6 +308,260 @@ export class TasksService {
     return { data: mapped, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
   }
 
+  /** Orders where this worker has remaining assigned work, optionally filtered. */
+  async listMyOrders(userId: string, segment: MyOrderSegment | string = 'open', q?: string) {
+    const assignedRemaining = workerAssignedRemainingTaskWhere(userId);
+    const needle = q?.trim() ?? '';
+    const searching = needle.length > 0;
+    const timezone = await this.resolveFactoryTimezone();
+    const orders = await this.prisma.productionOrder.findMany({
+      where: workerAssignedRemainingOrdersWhere(userId),
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        quantity: true,
+        productDescription: true,
+        plannedCompletionDate: true,
+        requiredDeliveryDate: true,
+        priority: true,
+        product: {
+          select: { id: true, imageUrl: true, nameEn: true, nameAr: true, nameHe: true },
+        },
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            externalOrderNumber: true,
+            customer: {
+              select: {
+                code: true,
+                name: true,
+                nameEn: true,
+                nameAr: true,
+                nameHe: true,
+                companyName: true,
+              },
+            },
+          },
+        },
+        tasks: {
+          where: assignedRemaining,
+          select: {
+            id: true,
+            status: true,
+            plannedStart: true,
+            plannedCompletion: true,
+            stageInstance: { select: { status: true } },
+            stageDefinition: {
+              select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ plannedCompletionDate: 'asc' }, { createdAt: 'desc' }],
+      ...(searching ? {} : { take: 80 }),
+    });
+
+    const now = new Date();
+    const parsed = parseMyOrderSegment(typeof segment === 'string' ? segment : 'open');
+    const visible = orders.filter((order) => {
+      const deadline = order.plannedCompletionDate ?? order.requiredDeliveryDate;
+      if (searching) {
+        if (!orderMatchesSegment('open', order.tasks, deadline, now, timezone)) return false;
+        return workerOrderMatchesSearch(order, needle);
+      }
+      return orderMatchesSegment(parsed, order.tasks, deadline, now, timezone);
+    });
+
+    return {
+      data: visible.map((order) => {
+        const deadline = order.plannedCompletionDate ?? order.requiredDeliveryDate;
+        const scoped = remainingTasksForSegment(
+          searching ? 'open' : parsed,
+          order.tasks,
+          deadline,
+          now,
+          timezone,
+        );
+        const { myTaskCount, actionableCount, blockedCount } = summarizeAssignedOrderTasks(scoped);
+        return {
+          id: order.id,
+          number: order.number,
+          salesOrderNumber: order.salesOrder?.number ?? null,
+          externalOrderNumber: order.salesOrder?.externalOrderNumber ?? null,
+          status: order.status,
+          quantity: order.quantity,
+          productDescription: order.productDescription,
+          product: order.product,
+          productImageUrl: order.product?.imageUrl?.trim() || null,
+          dealer: order.salesOrder?.customer ?? null,
+          assignedStages: scoped.map((task) => ({
+            code: task.stageDefinition?.code ?? '',
+            nameEn: task.stageDefinition?.nameEn ?? null,
+            nameAr: task.stageDefinition?.nameAr ?? null,
+            nameHe: task.stageDefinition?.nameHe ?? null,
+          })),
+          priority: order.priority,
+          deadline,
+          myTaskCount,
+          actionableCount,
+          blockedCount,
+        };
+      }),
+    };
+  }
+
+  async getMyOrderWorkflow(productionOrderId: string, userId: string) {
+    const order = await this.prisma.productionOrder.findFirst({
+      where: {
+        id: productionOrderId,
+        archivedAt: null,
+        tasks: { some: { assignedEmployeeId: userId, status: { not: TaskStatus.CANCELLED } } },
+      },
+      include: {
+        product: { select: { id: true, imageUrl: true, nameEn: true, nameAr: true, nameHe: true } },
+        salesOrder: { select: { id: true, number: true } },
+        stages: { select: { id: true, status: true } },
+        workflowSnapshot: {
+          include: {
+            nodes: {
+              include: {
+                stageDefinition: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
+              },
+              orderBy: { sortOrder: 'asc' },
+            },
+            edges: true,
+          },
+        },
+        tasks: {
+          include: {
+            stageDefinition: { select: { code: true, nameEn: true, nameAr: true } },
+            stageInstance: { select: { id: true, status: true } },
+            timeEntries: {
+              orderBy: { startedAt: 'desc' as const },
+              select: { startedAt: true, endedAt: true },
+            },
+          },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Order not found.' });
+    }
+
+    const snapshot = order.workflowSnapshot;
+    const nodes = snapshot?.nodes ?? [];
+    const edges = snapshot?.edges ?? [];
+    const instanceById = new Map(order.stages.map((s) => [s.id, s]));
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const predsByNode = new Map<
+      string,
+      { ids: string[]; codes: string[]; names: string[]; unfinishedNames: string[] }
+    >();
+    for (const edge of edges) {
+      const from = nodeById.get(edge.fromSnapshotNodeId);
+      const to = nodeById.get(edge.toSnapshotNodeId);
+      if (!from || !to) continue;
+      const name = from.nameEnSnapshot || from.stageDefinition?.nameEn || from.stageCode;
+      const slot = predsByNode.get(to.id) ?? {
+        ids: [],
+        codes: [],
+        names: [],
+        unfinishedNames: [],
+      };
+      slot.ids.push(from.id);
+      slot.codes.push(from.stageCode);
+      slot.names.push(name);
+      const fromStatus = from.stageInstanceId
+        ? instanceById.get(from.stageInstanceId)?.status
+        : undefined;
+      const done = fromStatus === 'COMPLETED' || Boolean(from.isSkipped);
+      if (!done) slot.unfinishedNames.push(name);
+      predsByNode.set(to.id, slot);
+    }
+
+    const laneInputs: SnapshotLaneInput[] = [];
+    for (const node of nodes) {
+      const task = order.tasks.find(
+        (t) =>
+          t.stageInstanceId === node.stageInstanceId ||
+          t.stageDefinitionId === node.stageDefinitionId,
+      );
+      const assignedToWorker = task?.assignedEmployeeId === userId;
+      const preds = predsByNode.get(node.id) ?? {
+        ids: [],
+        codes: [],
+        names: [],
+        unfinishedNames: [],
+      };
+      const predComplete = preds.unfinishedNames.length === 0;
+
+      let needsReceive = false;
+      let receiveFromStageName: string | null = preds.names[0] ?? null;
+      if (assignedToWorker && task && !isPrereqLockedForWorker(task) && node.consumesSemiFinished) {
+        const claim = await this.wipKits.claimRequirementsForTask(task.id);
+        needsReceive = Boolean(claim.required && !claim.allReceived);
+        const blocking = claim.lines?.find((l) => l.statusKey !== 'RECEIVED');
+        receiveFromStageName = blocking?.fromStageNameEn ?? receiveFromStageName;
+      }
+
+      const nameEn = node.nameEnSnapshot || node.stageDefinition?.nameEn || node.stageCode;
+      const nameAr = node.nameArSnapshot || node.stageDefinition?.nameAr || null;
+      const nameHe = node.stageDefinition?.nameHe ?? null;
+
+      laneInputs.push({
+        id: node.id,
+        sortOrder: node.sortOrder,
+        stageCode: node.stageCode,
+        stageName: nameEn,
+        nameEn,
+        nameAr,
+        nameHe,
+        stageStatus:
+          (node.stageInstanceId
+            ? instanceById.get(node.stageInstanceId)?.status
+            : undefined) ?? 'PENDING',
+        assignedToWorker: Boolean(assignedToWorker && task),
+        task: task
+          ? {
+              id: task.id,
+              status: task.status,
+              plannedStart: task.plannedStart,
+              plannedCompletion: task.plannedCompletion,
+              stageInstanceStatus: task.stageInstance?.status ?? null,
+              estimatedMinutes: task.estimatedMinutes,
+              actualMinutes: task.actualMinutes,
+              timeEntries: task.timeEntries,
+            }
+          : null,
+        predecessorIds: preds.ids,
+        predecessorCodes: preds.codes,
+        predecessorNames: preds.names,
+        unfinishedPredecessorNames: preds.unfinishedNames,
+        predecessorComplete: predComplete,
+        needsReceive,
+        receiveFromStageName,
+      });
+    }
+
+    const lane = buildWorkerOrderLane(laneInputs);
+    const counts = summarizeLane(lane);
+    return {
+      id: order.id,
+      number: order.number,
+      salesOrderNumber: order.salesOrder?.number ?? null,
+      quantity: order.quantity,
+      productDescription: order.productDescription,
+      product: order.product,
+      productImageUrl: order.product?.imageUrl?.trim() || null,
+      priority: order.priority,
+      deadline: order.plannedCompletionDate ?? order.requiredDeliveryDate,
+      ...counts,
+      lane,
+    };
+  }
+
   /**
    * Distinct dealers from completed tasks the worker can see (for floor filters).
    * Avoids requiring customer.read for production workers.
@@ -349,6 +646,9 @@ export class TasksService {
             specifications: true,
             currentStageCode: true,
             ...(canSeeAll ? { progressPercent: true } : {}),
+            returnRequestId: true,
+            returnPieceId: true,
+            originType: true,
             salesOrder: { select: { id: true, number: true } },
             product: {
               select: {
@@ -513,8 +813,27 @@ export class TasksService {
       requiresPhotos,
     };
 
-    if (canSeeAll) return payload;
-    const { progressPercent: _omit, timeEntries: _te, ...safe } = payload;
+    const carry = this.scheduling
+      ? await this.scheduling.getCarryOverEligibility({
+          taskId: task.id,
+          status: task.status,
+          assignedEmployeeId: task.assignedEmployeeId ?? null,
+          estimatedMinutes: task.estimatedMinutes ?? null,
+          elapsedMinutes: timing.elapsedMinutes,
+        })
+      : {
+          canCarryOver: false,
+          leftoverRemainingMinutes: Math.max(
+            1,
+            (task.estimatedMinutes ?? 30) - (timing.elapsedMinutes ?? 0),
+          ),
+          carryOverAllowsOvertime: false,
+        };
+
+    const withCarry = { ...payload, ...carry };
+
+    if (canSeeAll) return withCarry;
+    const { progressPercent: _omit, timeEntries: _te, ...safe } = withCarry;
     return safe;
   }
 
@@ -597,303 +916,78 @@ export class TasksService {
 
   async assign(id: string, dto: AssignTaskDto, permissions: string[] = [], actorUserId?: string) {
     const task = await this.getTask(id);
-    const orderStatus = task.productionOrder?.status;
-    if (orderStatus === 'COMPLETED' || orderStatus === 'CANCELLED') {
+    const snapshotNode = task.stageInstanceId
+      ? await this.prisma.productionOrderWorkflowSnapshotNode.findUnique({
+          where: { stageInstanceId: task.stageInstanceId },
+          select: { id: true, estimatedMinutes: true },
+        })
+      : null;
+    const resolvedMinutes = resolveAssignStageMinutes({
+      dtoMinutes: dto.estimatedMinutes,
+      taskMinutes: task.estimatedMinutes,
+      snapshotMinutes: snapshotNode?.estimatedMinutes,
+    });
+    if (resolvedMinutes == null) {
       throw new BadRequestException({
-        code: 'ASSIGN_LOCKED',
-        message: 'Cannot assign workers on a completed or cancelled production order.',
+        code: 'STAGE_TIME_REQUIRED',
+        message: 'Set this stage time in the workflow before assigning a worker.',
       });
     }
-
-    const lockedTaskStatuses = [
-      'COMPLETED',
-      'CANCELLED',
-      'IN_PROGRESS',
-      'PAUSED',
-      'READY_FOR_INSPECTION',
-      'BLOCKED',
-    ];
-    const lockedStageStatuses = [
-      'COMPLETED',
-      'SKIPPED',
-      'IN_PROGRESS',
-      'PAUSED',
-      'READY_FOR_INSPECTION',
-      'BLOCKED',
-    ];
-    const stageStatus = task.stageInstance?.status;
-    if (lockedTaskStatuses.includes(task.status) || (stageStatus && lockedStageStatuses.includes(stageStatus))) {
-      throw new BadRequestException({
-        code: 'ASSIGN_LOCKED',
-        message:
-          'Cannot reassign this stage — it is already in progress, completed, or otherwise locked.',
-      });
-    }
-
-    // Reassign allowed only pre-start (PO not yet on the floor).
     if (
-      task.assignedEmployeeId &&
-      task.assignedEmployeeId !== dto.employeeId &&
-      (orderStatus === 'IN_PROGRESS' || orderStatus === 'QUALITY_CHECK' || orderStatus === 'READY_FOR_PACKAGING')
+      shouldWriteBackStageTime({
+        dtoMinutes: dto.estimatedMinutes,
+        snapshotMinutes: snapshotNode?.estimatedMinutes,
+        stageStatus: task.stageInstance?.status,
+      }) &&
+      snapshotNode
     ) {
-      throw new BadRequestException({
-        code: 'REASSIGN_LOCKED',
-        message:
-          'Cannot reassign after the production order is on the floor. Pause or complete the stage first.',
-      });
-    }
-
-    const employee = await this.prisma.user.findFirst({
-      where: { id: dto.employeeId, isActive: true, archivedAt: null },
-      include: {
-        roles: { include: { role: { select: { kind: true } } } },
-        workerSkills: {
-          where: { isActive: true },
-          select: { stageDefinitionId: true },
-        },
-      },
-    });
-    if (!employee) {
-      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Employee not found.' });
-    }
-    const isProductionWorker = employee.roles.some((r) => r.role.kind === 'PRODUCTION_WORKER');
-    if (!isProductionWorker) {
-      throw new BadRequestException({
-        code: 'WORKER_NOT_ELIGIBLE',
-        message: 'Only active production workers can be assigned to floor stages.',
-      });
-    }
-    const stageDefinitionId = task.stageDefinitionId ?? task.stageDefinition?.id ?? null;
-    if (stageDefinitionId) {
-      const skillCount = await this.prisma.workerSkill.count({
-        where: { stageDefinitionId, isActive: true },
-      });
-      if (skillCount > 0) {
-        const hasSkill = employee.workerSkills.some((s) => s.stageDefinitionId === stageDefinitionId);
-        if (!hasSkill) {
-          throw new BadRequestException({
-            code: 'WORKER_SKILL_REQUIRED',
-            message: 'Worker does not have the required skill for this stage.',
-          });
-        }
-      }
-    }
-
-    let plannedStart: Date | null = null;
-    let plannedCompletion: Date | null = null;
-    if (dto.plannedStart) {
-      plannedStart = new Date(dto.plannedStart);
-      if (Number.isNaN(plannedStart.getTime())) {
-        throw new BadRequestException({
-          code: 'BAD_REQUEST',
-          message: 'plannedStart must be a valid ISO datetime.',
-        });
-      }
-    }
-    if (dto.plannedCompletion) {
-      plannedCompletion = new Date(dto.plannedCompletion);
-      if (Number.isNaN(plannedCompletion.getTime())) {
-        throw new BadRequestException({
-          code: 'BAD_REQUEST',
-          message: 'plannedCompletion must be a valid ISO datetime.',
-        });
-      }
-    }
-    if (plannedStart && !plannedCompletion) {
-      throw new BadRequestException({
-        code: 'DATE_INCOMPLETE',
-        message: 'When plannedStart is set, plannedCompletion is required.',
-      });
-    }
-    if (plannedStart && plannedCompletion && plannedStart.getTime() >= plannedCompletion.getTime()) {
-      throw new BadRequestException({
-        code: 'DATE_INVALID',
-        message: 'plannedStart must be before plannedCompletion.',
-      });
-    }
-
-    // Assign is planning (who + a window), not starting the stage. If the chosen
-    // window sits before a predecessor, slide it to start when that predecessor ends.
-    if (plannedStart && task.stageDefinition?.dependsOnCodes?.length) {
-      const depCodes = task.stageDefinition.dependsOnCodes;
-      const siblings = await this.prisma.productionTask.findMany({
-        where: {
-          productionOrderId: task.productionOrderId,
-          id: { not: task.id },
-          status: { not: 'CANCELLED' },
-          isRework: false,
-          stageDefinition: { code: { in: depCodes } },
-        },
-        select: {
-          id: true,
-          plannedCompletion: true,
-          plannedStart: true,
-          stageDefinition: { select: { code: true, nameEn: true } },
-        },
-      });
-      let latestPredEnd: Date | null = null;
-      for (const pred of siblings) {
-        const predEnd = pred.plannedCompletion ?? pred.plannedStart;
-        if (!predEnd) continue;
-        if (!latestPredEnd || predEnd.getTime() > latestPredEnd.getTime()) {
-          latestPredEnd = predEnd;
-        }
-      }
-      if (latestPredEnd && plannedStart.getTime() < latestPredEnd.getTime()) {
-        const durationMs = plannedCompletion
-          ? Math.max(30 * 60_000, plannedCompletion.getTime() - plannedStart.getTime())
-          : 2 * 60 * 60_000;
-        plannedStart = new Date(latestPredEnd.getTime());
-        plannedCompletion = new Date(plannedStart.getTime() + durationMs);
-      }
-    }
-
-    // Worker overlap conflict vs other open tasks + schedule allocations.
-    const windowStart = plannedStart;
-    const windowEnd = plannedCompletion;
-    if (windowStart && windowEnd) {
-      const openStatuses = [
-        'NOT_STARTED',
-        'READY',
-        'IN_PROGRESS',
-        'PAUSED',
-        'BLOCKED',
-        'READY_FOR_INSPECTION',
-      ] as const;
-      const otherTasks = await this.prisma.productionTask.findMany({
-        where: {
-          assignedEmployeeId: dto.employeeId,
-          id: { not: task.id },
-          status: { in: [...openStatuses] },
-          productionOrder: { archivedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
-          OR: [
-            {
-              plannedStart: { not: null },
-              plannedCompletion: { not: null },
-            },
-            { plannedCompletion: { not: null }, plannedStart: null },
-          ],
-        },
-        select: {
-          id: true,
-          name: true,
-          plannedStart: true,
-          plannedCompletion: true,
-          productionOrder: { select: { number: true } },
-        },
-      });
-      const conflicts: Array<{
-        kind: 'TASK' | 'ALLOCATION';
-        id: string;
-        label: string;
-        start: string;
-        end: string;
-      }> = [];
-      for (const other of otherTasks) {
-        const oEnd = other.plannedCompletion;
-        if (!oEnd) continue;
-        const oStart = other.plannedStart ?? new Date(oEnd.getTime() - 60 * 60 * 1000);
-        if (intervalsOverlap(windowStart, windowEnd, oStart, oEnd)) {
-          conflicts.push({
-            kind: 'TASK',
-            id: other.id,
-            label: `${other.productionOrder?.number ?? ''} ${other.name}`.trim(),
-            start: oStart.toISOString(),
-            end: oEnd.toISOString(),
-          });
-        }
-      }
-      const allocations = await this.prisma.scheduleAllocation.findMany({
-        where: {
-          employeeId: dto.employeeId,
-          productionTaskId: { not: task.id },
-          schedule: { status: { in: ['APPROVED', 'PROPOSED'] } },
-          plannedStart: { lt: windowEnd },
-          plannedEnd: { gt: windowStart },
-        },
-        select: {
-          id: true,
-          plannedStart: true,
-          plannedEnd: true,
-          productionTask: { select: { name: true, number: true } },
-        },
-        take: 20,
-      });
-      for (const a of allocations) {
-        if (intervalsOverlap(windowStart, windowEnd, a.plannedStart, a.plannedEnd)) {
-          conflicts.push({
-            kind: 'ALLOCATION',
-            id: a.id,
-            label: a.productionTask?.name ?? a.productionTask?.number ?? 'Scheduled work',
-            start: a.plannedStart.toISOString(),
-            end: a.plannedEnd.toISOString(),
-          });
-        }
-      }
-
-      if (conflicts.length > 0) {
-        const canOverride =
-          dto.overrideConflict === true && permissions.includes('schedule.override');
-        if (!canOverride) {
-          const durationMs = Math.max(
-            30 * 60_000,
-            windowEnd.getTime() - windowStart.getTime(),
-          );
-          const latestEndMs = Math.max(
-            ...conflicts.map((c) => new Date(c.end).getTime()),
-            windowStart.getTime(),
-          );
-          const suggestedStart = new Date(latestEndMs);
-          const suggestedEnd = new Date(latestEndMs + durationMs);
-          throw new ConflictException({
-            code: 'WORKER_SCHEDULE_CONFLICT',
-            message: 'Worker has overlapping work in this time window.',
-            conflicts,
-            suggestedWindow: {
-              plannedStart: suggestedStart.toISOString(),
-              plannedCompletion: suggestedEnd.toISOString(),
-            },
-            overrideRequires: 'schedule.override',
-          });
-        }
-      }
-    }
-
-    const updated = await this.prisma.productionTask.update({
-      where: { id },
-      data: {
-        assignedEmployeeId: dto.employeeId,
-        ...(dto.priority ? { priority: dto.priority } : {}),
-        ...(plannedStart ? { plannedStart } : {}),
-        ...(plannedCompletion ? { plannedCompletion } : {}),
-        ...(dto.estimatedMinutes != null ? { estimatedMinutes: dto.estimatedMinutes } : {}),
-      },
-      include: {
-        assignedEmployee: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-        stageDefinition: true,
-        productionOrder: { select: { id: true, number: true, releasedToFactoryAt: true } },
-      },
-    });
-
-    // Post–Release to factory: Change worker / dates are explicit actions — audit them.
-    if (updated.productionOrder?.releasedToFactoryAt) {
-      await this.prisma.auditEvent.create({
+      await this.prisma.productionOrderWorkflowSnapshotNode.update({
+        where: { id: snapshotNode.id },
         data: {
-          userId: actorUserId ?? null,
-          action: 'production-task.change-assignment',
-          entityType: 'ProductionTask',
-          entityId: id,
-          newValues: {
-            productionOrderId: updated.productionOrder.id,
-            assignedEmployeeId: dto.employeeId,
-            plannedStart: plannedStart?.toISOString() ?? null,
-            plannedCompletion: plannedCompletion?.toISOString() ?? null,
-            previousEmployeeId: task.assignedEmployeeId,
-          },
+          estimatedMinutes: resolvedMinutes,
+          estimateReviewRequired: false,
         },
-      }).catch(() => undefined);
+      });
+      if (task.stageInstanceId) {
+        await this.prisma.productionTask.updateMany({
+          where: { stageInstanceId: task.stageInstanceId },
+          data: { estimatedMinutes: resolvedMinutes },
+        });
+      }
+    }
+
+    const placed = await this.placement.placeTask({
+      productionTaskId: id,
+      employeeId: dto.employeeId,
+      plannedStart: dto.plannedStart,
+      plannedEnd: dto.plannedCompletion,
+      priority: dto.priority,
+      estimatedMinutes: resolvedMinutes,
+      override: dto.overrideConflict,
+      acknowledge: dto.acknowledge,
+      actorUserId,
+      permissions,
+      reason: dto.reason ?? 'task-assign',
+    });
+    const updated = placed.task as typeof task & {
+      assignedEmployee?: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+      productionOrder?: { id: string; number: string; releasedToFactoryAt?: Date | null } | null;
+    };
+    const plannedStart = updated.plannedStart ? new Date(updated.plannedStart as Date) : null;
+    const plannedCompletion = updated.plannedCompletion
+      ? new Date(updated.plannedCompletion as Date)
+      : null;
+
+    if (plannedStart && plannedCompletion) {
+      await this.scheduling
+        ?.applyAssignmentOvertime({
+          overtime: Boolean(dto.overtime),
+          start: plannedStart,
+          end: plannedCompletion,
+          employeeId: dto.employeeId,
+          userId: actorUserId,
+        })
+        .catch(() => undefined);
     }
 
     const timing = buildTaskTimingSummary({
@@ -1063,6 +1157,11 @@ export class TasksService {
       }
       await this.pipeline.onTaskStart(task.productionOrderId, task.stageInstanceId, tx);
       return updated;
+    }).then(async (updated) => {
+      await this.scheduling
+        ?.applyPauseSlide({ taskId: id, actorUserId: userId })
+        .catch(() => undefined);
+      return updated;
     });
   }
 
@@ -1121,6 +1220,8 @@ export class TasksService {
               category: dto.category,
               reason: dto.reason,
               reportedById: userId,
+              voiceDocumentId: dto.voiceDocumentId ?? null,
+              photoDocumentIds: dto.photoDocumentIds ?? [],
             },
           });
 
@@ -1157,9 +1258,15 @@ export class TasksService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
       await tx.taskBlocker.updateMany({
         where: { taskId: id, resolvedAt: null },
-        data: { resolvedAt: new Date() },
+        data: {
+          resolvedAt: now,
+          resolutionAt: now,
+          resolvedById: userId,
+          resolution: 'Unblocked',
+        },
       });
 
       const updated = await tx.productionTask.update({
@@ -1176,6 +1283,171 @@ export class TasksService {
       }
 
       return updated;
+    });
+  }
+
+  async resolveBlocker(
+    taskId: string,
+    blockerId: string,
+    dto: ResolveBlockerDto,
+    userId: string,
+    permissions: string[],
+  ) {
+    if (!permissions.includes('production-task.update-any')) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Only supervisors can answer production problems.',
+      });
+    }
+    const blocker = await this.prisma.taskBlocker.findFirst({
+      where: { id: blockerId, taskId },
+      include: {
+        task: {
+          select: {
+            id: true,
+            name: true,
+            assignedEmployeeId: true,
+            productionOrder: { select: { id: true, number: true } },
+          },
+        },
+      },
+    });
+    if (!blocker) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Problem not found.' });
+
+    const now = new Date();
+    const resolution = dto.resolution?.trim() || 'Answered';
+    const updated = await this.prisma.taskBlocker.update({
+      where: { id: blockerId },
+      data: {
+        resolution,
+        resolvedAt: blocker.resolvedAt ?? now,
+        resolutionAt: now,
+        resolvedById: userId,
+        resolutionVoiceDocumentId: dto.resolutionVoiceDocumentId ?? blocker.resolutionVoiceDocumentId,
+        resolutionPhotoDocumentIds:
+          dto.resolutionPhotoDocumentIds ?? blocker.resolutionPhotoDocumentIds,
+      },
+    });
+
+    const workerId = blocker.task.assignedEmployeeId;
+    if (workerId) {
+      await this.notifications.sendFromTemplate({
+        templateCode: 'PRODUCTION_PROBLEM_ANSWERED',
+        channel: 'IN_APP',
+        to: { userId: workerId },
+        vars: {
+          orderNumber: blocker.task.productionOrder.number,
+          taskName: blocker.task.name,
+          resolution,
+        },
+        linkUrl: `/tasks/${blocker.task.id}`,
+      });
+    }
+
+    if (blocker.task.id && blocker.task.assignedEmployeeId) {
+      /* keep floor moving — do not auto-unblock status */
+    }
+    return updated;
+  }
+
+  async listProblems(query: { status?: 'open' | 'answered' | 'all' }) {
+    const status = query.status ?? 'open';
+    const where =
+      status === 'open'
+        ? { resolvedAt: null }
+        : status === 'answered'
+          ? { resolvedAt: { not: null } }
+          : {};
+    const rows = await this.prisma.taskBlocker.findMany({
+      where,
+      include: {
+        reportedBy: { select: { id: true, firstName: true, lastName: true } },
+        task: {
+          select: {
+            id: true,
+            name: true,
+            number: true,
+            status: true,
+            assignedEmployeeId: true,
+            assignedEmployee: { select: { id: true, firstName: true, lastName: true } },
+            stageDefinition: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
+            productionOrder: {
+              select: { id: true, number: true, productDescription: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        taskId: row.taskId,
+        category: row.category,
+        reason: row.reason,
+        voiceDocumentId: row.voiceDocumentId,
+        photoDocumentIds: row.photoDocumentIds ?? [],
+        resolution: row.resolution,
+        resolutionVoiceDocumentId: row.resolutionVoiceDocumentId,
+        resolutionPhotoDocumentIds: row.resolutionPhotoDocumentIds ?? [],
+        resolvedAt: row.resolvedAt,
+        resolutionAt: row.resolutionAt,
+        resolvedById: row.resolvedById,
+        createdAt: row.createdAt,
+        elapsedMinutes: Math.max(0, Math.round((Date.now() - row.createdAt.getTime()) / 60_000)),
+        worker: row.task.assignedEmployee
+          ? {
+              id: row.task.assignedEmployee.id,
+              name: [row.task.assignedEmployee.firstName, row.task.assignedEmployee.lastName]
+                .filter(Boolean)
+                .join(' ')
+                .trim(),
+            }
+          : row.reportedBy
+            ? {
+                id: row.reportedBy.id,
+                name: [row.reportedBy.firstName, row.reportedBy.lastName].filter(Boolean).join(' ').trim(),
+              }
+            : null,
+        stage: row.task.stageDefinition,
+        order: row.task.productionOrder,
+        task: { id: row.task.id, name: row.task.name, number: row.task.number, status: row.task.status },
+      })),
+    };
+  }
+
+  async previewCarryOver(
+    id: string,
+    mode: 'tomorrow' | 'overtime',
+    remainingMinutes: number,
+    userId: string,
+    permissions: string[],
+  ) {
+    const task = await this.getTask(id);
+    this.assertCanModify(task, userId, permissions);
+    if (!this.scheduling) {
+      throw new BadRequestException({ code: 'UNAVAILABLE', message: 'Scheduling is not available.' });
+    }
+    return this.scheduling.previewExecutionRipple({ taskId: id, mode, remainingMinutes });
+  }
+
+  async carryOver(id: string, dto: TaskCarryOverDto, userId: string, permissions: string[]) {
+    const task = await this.getTask(id);
+    this.assertCanModify(task, userId, permissions);
+    if (!this.scheduling) {
+      throw new BadRequestException({ code: 'UNAVAILABLE', message: 'Scheduling is not available.' });
+    }
+    const worker = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    return this.scheduling.applyExecutionRipple({
+      taskId: id,
+      mode: dto.mode,
+      remainingMinutes: dto.remainingMinutes,
+      actorUserId: userId,
+      workerName: [worker?.firstName, worker?.lastName].filter(Boolean).join(' ').trim() || userId,
     });
   }
 
@@ -1241,6 +1513,8 @@ export class TasksService {
       sku?: string;
       issueWarehouseId?: string | null;
       returnWarehouseId?: string | null;
+      issueLocationId?: string | null;
+      returnLocationId?: string | null;
     }>,
   ) {
     const task = await this.getTask(id);
@@ -1303,16 +1577,15 @@ export class TasksService {
             where: { stageInstanceId: task.stageInstanceId },
           })
         : null;
-      const labels = pieceLabelsFromMetadata(snapNode?.metadata);
-      const expected =
-        labels.length > 0
-          ? labels.map((l) => l.nameEn)
-          : Number(snapNode?.expectedPieceCount) > 0
-            ? Array.from(
-                { length: Math.floor(Number(snapNode?.expectedPieceCount)) },
-                (_, i) => `Package ${i + 1}`,
-              )
-            : [];
+      const incoming = task.productionOrderId
+        ? await loadIncomingPiecesForInspection(this.prisma, task.productionOrderId, 'INSPECTION')
+        : [];
+      const packages = resolveExpectedPackages({
+        incoming,
+        snapshotLabels: pieceLabelsFromMetadata(snapNode?.metadata),
+        snapshotCount: Number(snapNode?.expectedPieceCount) || 1,
+      });
+      const expected = expectedPackageLabelList(packages);
       if (expected.length) {
         const confirmed = (dto?.confirmedPackageLabels ?? []).map((s) => String(s).trim());
         const missing = expected.filter(
@@ -1363,6 +1636,15 @@ export class TasksService {
     // not gate completion — only a hard BLOCKED status does.
 
     await this.assertPrereqsMet(task);
+
+    const originType = String(task.productionOrder?.originType ?? '').toUpperCase();
+    const recoveryPieceId = task.productionOrder?.returnPieceId ?? null;
+    if (
+      (originType === 'RETURN_RECOVERY' || stageCode === 'DISMANTLE_RECOVER') &&
+      recoveryPieceId
+    ) {
+      await this.returnPieces?.assertRecoveryFinishAllowed(recoveryPieceId);
+    }
 
     if (['READY', 'NOT_STARTED', 'PAUSED'].includes(task.status)) {
       await this.start(id, userId, permissions);
@@ -1442,6 +1724,13 @@ export class TasksService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.closeOpenTimeEntries(tx, id, userId);
+      await ensureTaskTimeEntry(tx, {
+        taskId: id,
+        userId,
+        actualMinutes: task.actualMinutes,
+        actualStart: task.actualStart,
+        actualCompletion: new Date(),
+      });
 
       if (dto?.photoDocumentIds?.length) {
         await tx.document.updateMany({
@@ -1630,6 +1919,10 @@ export class TasksService {
     }
 
     this.notifyScheduleLifecycle(id, 'complete');
+
+    if (recoveryPieceId) {
+      await this.returnPieces?.completeRecoveryIfPosted(recoveryPieceId);
+    }
 
     return updated;
   }

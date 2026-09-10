@@ -7,7 +7,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { WorkflowListItem } from '@/api/modules/workflow';
+import type { WorkflowListItem, WorkflowScope } from '@/api/modules/workflow';
+import { isReturnWorkflowScope } from '@maher/types';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
@@ -25,6 +26,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   selectedId: string | null;
+  preferredScope?: WorkflowScope;
   onPick: (workflow: WorkflowListItem) => void;
 };
 
@@ -41,6 +43,7 @@ export function WorkflowPickerSheet({
   open,
   onClose,
   selectedId,
+  preferredScope,
   onPick,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -57,9 +60,30 @@ export function WorkflowPickerSheet({
 
   const rows = useMemo(() => {
     const all = (workflowsQuery.data ?? []).filter(isPublished);
+    const scoped = preferredScope
+      ? [...all].sort((a, b) => {
+          const aMatch =
+            preferredScope === 'RETURN'
+              ? isReturnWorkflowScope(a.scope)
+                ? 0
+                : 1
+              : (a.scope ?? 'STANDARD') === preferredScope
+                ? 0
+                : 1;
+          const bMatch =
+            preferredScope === 'RETURN'
+              ? isReturnWorkflowScope(b.scope)
+                ? 0
+                : 1
+              : (b.scope ?? 'STANDARD') === preferredScope
+                ? 0
+                : 1;
+          return aMatch - bMatch;
+        })
+      : all;
     const needle = q.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((wf) => {
+    if (!needle) return scoped;
+    return scoped.filter((wf) => {
       const name = workflowDisplayName(locale, wf).toLowerCase();
       return (
         name.includes(needle) ||
@@ -69,7 +93,7 @@ export function WorkflowPickerSheet({
         (wf.nameHe ?? '').toLowerCase().includes(needle)
       );
     });
-  }, [workflowsQuery.data, q, locale]);
+  }, [workflowsQuery.data, preferredScope, q, locale]);
 
   const empty = !workflowsQuery.isLoading && rows.length === 0;
 
@@ -236,7 +260,11 @@ export function WorkflowPickerSheet({
                   const name = workflowDisplayName(locale, item);
                   const stageCount = item.activeVersion?._count?.nodes ?? null;
                   const versionNumber = item.activeVersion?.versionNumber ?? null;
-                  const metaBits: string[] = [];
+                  const metaBits: string[] = [
+                    isReturnWorkflowScope(item.scope)
+                      ? t('mobile.production.workflow.scopeReturn')
+                      : t('mobile.production.workflow.scopeStandard'),
+                  ];
                   if (stageCount != null) {
                     metaBits.push(t('mobile.productionSetup.stageCount', { n: stageCount }));
                   }

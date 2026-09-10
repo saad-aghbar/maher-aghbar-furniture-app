@@ -10,6 +10,8 @@ type Props = {
   /** When set, show the dealers trigger (admin). */
   showDealers?: boolean;
   dealerLabel: string | null;
+  dealersFallbackKey?: string;
+  dealersIcon?: keyof typeof Ionicons.glyphMap;
   onOpenDealers: () => void;
   onClearDealer?: () => void;
   statusActive: boolean;
@@ -23,6 +25,8 @@ type Props = {
 export function InvoiceFilterTriggers({
   showDealers = false,
   dealerLabel,
+  dealersFallbackKey = 'mobile.invoices.partyFilter',
+  dealersIcon = 'people-outline',
   onOpenDealers,
   onClearDealer,
   statusActive,
@@ -42,9 +46,9 @@ export function InvoiceFilterTriggers({
       {showDealers ? (
         <FloorTrigger
           flex={1}
-          icon="people-outline"
+          icon={dealersIcon}
           label={dealerLabel}
-          fallbackKey="accounting.allCustomers"
+          fallbackKey={dealersFallbackKey}
           active={Boolean(dealerLabel)}
           onPress={onOpenDealers}
           onClear={dealerLabel && onClearDealer ? onClearDealer : undefined}

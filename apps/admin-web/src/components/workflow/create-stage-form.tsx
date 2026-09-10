@@ -5,6 +5,7 @@ import { DepartmentSearchPicker } from '@/components/admin/department-search-pic
 import { Input, cn } from '@maher/ui';
 import { Check, Box, ShieldCheck, Camera, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { isQualityGateStageCode } from '@/lib/workflow-terminal';
 
 export type CreateStageValues = {
   nameEn: string;
@@ -39,6 +40,8 @@ type Props = {
   readOnly?: boolean;
   /** Opening/finishing stages keep their names; everything else stays editable. */
   lockNames?: boolean;
+  /** Library stage code when editing an existing definition. */
+  stageCode?: string | null;
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -157,6 +160,7 @@ export function CreateStageForm({
   showFlags = true,
   readOnly = false,
   lockNames = false,
+  stageCode = null,
 }: Props) {
   const t = useTranslations('production');
   const namesLocked = readOnly || lockNames;
@@ -171,6 +175,7 @@ export function CreateStageForm({
     onChange({ ...value, ...partial });
   };
   const slots = Math.max(1, Math.min(20, Number(value.resourceSlots) || 1));
+  const hideTypicalHours = isQualityGateStageCode(stageCode);
 
   return (
     <div className="grid gap-4">
@@ -217,6 +222,7 @@ export function CreateStageForm({
                 patch({ departmentId: id, departmentCode: dept?.code ?? '' })
               }
             />
+            {!hideTypicalHours ? (
             <Input
               label={t('workflow.typicalHours')}
               type="number"
@@ -228,6 +234,7 @@ export function CreateStageForm({
               disabled={readOnly}
               onChange={(e) => patch({ hours: e.target.value })}
             />
+            ) : null}
             <FlagRow
               icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
               label={t('workflow.requiresInspection')}

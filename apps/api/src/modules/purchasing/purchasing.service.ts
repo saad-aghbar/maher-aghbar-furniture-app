@@ -4,12 +4,34 @@ import type { WhatsAppProvider } from '@maher/integrations';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { roundMoney } from '../../common/helpers/money.util';
+import { buildPurchaseOrderWhatsAppBody as buildPoWhatsAppCopy } from '../../common/helpers/fabric-whatsapp-copy';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
 import { WHATSAPP_PROVIDER } from '../../integrations/integrations.module';
 import { classifyMaterialDemand } from './material-demand';
 import { scaleMaterialQty } from '../scheduling/domain/material-readiness';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
+import { countBuyAlert, groupLowStockDraft } from './low-stock-draft';
+import {
+  normalizeBatchOrders,
+  preparePurchaseOrderLines,
+  type BatchOrderInput,
+} from './purchase-order-lines';
+import { normalizePurchaseOrderOrigin } from './purchase-order-origin';
+import {
+  attachPurchaseRunMeta,
+  classifyPurchaseRun,
+  PURCHASE_RUN_INCLUDE,
+} from './purchase-run';
+import { classifyPurchaseOrder } from './purchase-order-presentation';
+import {
+  mergePurchasingWhatsAppSettings,
+  renderPurchaseWhatsAppTemplate,
+} from '../../common/helpers/purchase-whatsapp-template';
+import {
+  mapReceivableLines,
+  RECEIVABLE_PO_STATUSES,
+} from './receivable-queue';
 
 const OPEN_PR_STATUSES: PurchaseRequestStatus[] = [
   PurchaseRequestStatus.DRAFT,
@@ -81,8 +103,8 @@ export class PurchasingService {
   }
 
   /**
-   * Create a SUBMITTED PR for low-stock items not already covered by an open PR.
-   * Returns null when nothing to order (or auto-reorder disabled when requireEnabled).
+   * Create DRAFT purchase orders for low-stock items not already covered by an open PO.
+   * One order per preferred supplier. Items without a supplier are skipped (shown via lowStockDraft).
    */
   async createFromLowStock(opts: {
     requestedById?: string | null;
@@ -91,115 +113,745 @@ export class PurchasingService {
     requireEnabled?: boolean;
     throwIfEmpty?: boolean;
     skipNotify?: boolean;
-  }): Promise<{ id: string; number: string; lineCount: number } | null> {
+  }): Promise<{
+    id: string;
+    number: string;
+    lineCount: number;
+    orders: Array<{ id: string; number: string; lineCount: number }>;
+  } | null> {
     if (opts.requireEnabled && !(await this.isAutoReorderEnabled())) {
       return null;
     }
 
+    const draft = await this.lowStockDraft({ inventoryItemIds: opts.inventoryItemIds });
+    const batches: BatchOrderInput[] = [];
+    for (const group of draft.groups) {
+      if (!group.supplierId) continue;
+      const items = group.items.filter(
+        (item) =>
+          !item.coveredByOpenOrder &&
+          (item.reason === 'LOW_STOCK' || item.reason === 'BOTH' || !item.reason),
+      );
+      if (!items.length) continue;
+      batches.push({
+        supplierId: group.supplierId,
+        warehouseId: items.find((i) => i.defaultWarehouseId)?.defaultWarehouseId,
+        notes: opts.reason ?? 'AUTO_REORDER',
+        origin: 'LOW_STOCK',
+        lines: items.map((item) => ({
+          description: item.nameEn || item.nameAr || item.sku,
+          quantity: item.suggestedQty,
+          unitPrice: item.lastUnitCost ?? item.standardCost ?? 0,
+          inventoryItemId: item.id,
+          unit: item.unit,
+          warehouseId: item.defaultWarehouseId,
+        })),
+      });
+    }
+
+    if (!batches.length) {
+      if (opts.throwIfEmpty) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: draft.unassigned.items.length
+            ? 'Low-stock items need a preferred supplier before they can be ordered.'
+            : 'No low-stock items to order.',
+        });
+      }
+      return null;
+    }
+
+    const { orders: created } = await this.createOrdersBatch(
+      batches,
+      opts.requestedById ?? undefined,
+    );
+    const itemIds = batches.flatMap((b) =>
+      b.lines.map((l) => l.inventoryItemId).filter((id): id is string => Boolean(id)),
+    );
+    if (itemIds.length) {
+      await this.prisma.inventoryItem.updateMany({
+        where: { id: { in: itemIds } },
+        data: { lastAutoPrAt: new Date() },
+      });
+    }
+
+    const orders = created.map((po) => ({
+      id: po.id,
+      number: po.number,
+      lineCount: po.lines.length,
+    }));
+    const lineCount = orders.reduce((s, o) => s + o.lineCount, 0);
+    this.logger.log(
+      `Created ${orders.length} PO(s) from low stock (${lineCount} lines)`,
+    );
+
+    await this.notifyLowStock(
+      draft.groups.flatMap((g) =>
+        g.items.map((i) => ({
+          sku: i.sku,
+          name: i.nameEn || i.nameAr || i.sku,
+          available: i.onHandQty,
+          minStock: i.minStock,
+        })),
+      ),
+      orders[0]?.number,
+      opts.skipNotify,
+    );
+
+    return {
+      id: orders[0]!.id,
+      number: orders[0]!.number,
+      lineCount,
+      orders,
+    };
+  }
+
+  async lowStockDraft(opts: { inventoryItemIds?: string[]; q?: string } = {}) {
     const itemWhere: Prisma.InventoryItemWhereInput = {
       archivedAt: null,
       isActive: true,
       isPurchasable: true,
-      ...(opts.inventoryItemIds?.length
-        ? { id: { in: opts.inventoryItemIds } }
-        : {}),
+      itemClass: 'RAW_MATERIAL',
+      ...(opts.inventoryItemIds?.length ? { id: { in: opts.inventoryItemIds } } : {}),
     };
-
     const items = await this.prisma.inventoryItem.findMany({
       where: itemWhere,
-      include: { balances: true },
-    });
-
-    const low = items.filter((item) => {
-      const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-      return available <= Number(item.minStock);
-    });
-
-    if (!low.length) {
-      if (opts.throwIfEmpty) {
-        throw new BadRequestException({
-          code: 'BAD_REQUEST',
-          message: 'No low-stock items to order.',
-        });
-      }
-      return null;
-    }
-
-    const lowIds = low.map((i) => i.id);
-    const covered = await this.prisma.purchaseRequestLine.findMany({
-      where: {
-        inventoryItemId: { in: lowIds },
-        purchaseRequest: {
-          archivedAt: null,
-          status: { in: OPEN_PR_STATUSES },
+      include: {
+        balances: true,
+        preferredSupplier: {
+          select: {
+            id: true,
+            name: true,
+            nameEn: true,
+            nameAr: true,
+            whatsappPhone: true,
+            phone: true,
+            isCertified: true,
+          },
         },
       },
-      select: { inventoryItemId: true },
     });
-    const coveredSet = new Set(
-      covered.map((c) => c.inventoryItemId).filter((id): id is string => Boolean(id)),
+    const demand = await this.materialDemand();
+    const shortageById = new Map(
+      demand
+        .filter((row) => Number(row.stillNeeded) > 0)
+        .map((row) => [row.inventoryItemId, row] as const),
     );
-    const toOrder = low.filter((item) => !coveredSet.has(item.id));
-
-    if (!toOrder.length) {
-      if (opts.throwIfEmpty) {
-        throw new BadRequestException({
-          code: 'BAD_REQUEST',
-          message: 'Low-stock items are already covered by open purchase requests.',
-        });
-      }
-      return null;
+    const candidates = items.filter((item) => {
+      const onHand = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+      return onHand <= Number(item.minStock) || shortageById.has(item.id);
+    });
+    const lowIds = candidates.map((i) => i.id);
+    const onOrderByItem = await this.openCoverageByItem(lowIds);
+    const defaultWarehouse = await this.prisma.warehouse.findFirst({
+      where: { isActive: true, type: 'RAW_MATERIALS' },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+    const lastCosts = lowIds.length
+      ? await this.prisma.goodsReceiptLine.findMany({
+          where: { inventoryItemId: { in: lowIds }, unitCost: { not: null } },
+          orderBy: { goodsReceipt: { receiptDate: 'desc' } },
+          select: { inventoryItemId: true, unitCost: true },
+        })
+      : [];
+    const lastCostByItem = new Map<string, number>();
+    for (const row of lastCosts) {
+      if (lastCostByItem.has(row.inventoryItemId)) continue;
+      lastCostByItem.set(row.inventoryItemId, Number(row.unitCost));
     }
 
-    const number = await this.sequences.next('PR', 'PR');
-    const reason = opts.reason ?? 'AUTO_REORDER';
-    const pr = await this.prisma.purchaseRequest.create({
+    const mapped = candidates.map((item) => {
+      const onHandQty = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+      const shortage = shortageById.get(item.id);
+      const stillNeeded = Number(shortage?.stillNeeded ?? 0);
+      const isLow = onHandQty <= Number(item.minStock);
+      const isProd = stillNeeded > 0;
+      const onOrderQty = onOrderByItem.get(item.id) ?? 0;
+      return {
+        id: item.id,
+        sku: item.sku,
+        nameEn: item.nameEn,
+        nameAr: item.nameAr,
+        nameHe: item.nameHe,
+        unit: item.unit || 'pcs',
+        imageUrl: canonicalInventoryImageUrl(item),
+        category: item.category,
+        minStock: Number(item.minStock),
+        reorderQty: item.reorderQty != null ? Number(item.reorderQty) : null,
+        onHandQty,
+        standardCost: Number(item.standardCost ?? 0),
+        lastUnitCost: lastCostByItem.get(item.id) ?? null,
+        preferredSupplierId: item.preferredSupplierId,
+        preferredSupplier: item.preferredSupplier,
+        defaultWarehouseId: defaultWarehouse?.id ?? null,
+        isPurchasable: item.isPurchasable,
+        coveredByOpenOrder: onOrderQty > 0,
+        onOrderQty,
+        stillNeeded,
+        reason: isLow && isProd ? ('BOTH' as const) : isProd ? ('PRODUCTION' as const) : ('LOW_STOCK' as const),
+      };
+    });
+    const needle = opts.q?.trim().toLowerCase();
+    const filtered = needle
+      ? mapped.filter((item) =>
+          [item.sku, item.nameEn, item.nameAr, item.nameHe, item.preferredSupplier?.name]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(needle),
+        )
+      : mapped;
+    return groupLowStockDraft(filtered);
+  }
+
+  async createOrdersBatch(
+    orders: BatchOrderInput[],
+    userId?: string,
+    opts?: {
+      runNotes?: string;
+      runExpectedDeliveryDate?: string | null;
+      runOrigin?: string;
+    },
+  ) {
+    const normalized = normalizeBatchOrders(orders);
+    const inventoryIds = [
+      ...new Set(
+        normalized.flatMap((o) =>
+          o.lines.map((l) => l.inventoryItemId).filter((id): id is string => Boolean(id)),
+        ),
+      ),
+    ];
+    await this.assertPurchasableItems(inventoryIds);
+    const inventoryUnits = inventoryIds.length
+      ? Object.fromEntries(
+          (
+            await this.prisma.inventoryItem.findMany({
+              where: { id: { in: inventoryIds } },
+              select: { id: true, unit: true },
+            })
+          ).map((i) => [i.id, i.unit]),
+        )
+      : ({} as Record<string, string>);
+
+    const preparedOrders = normalized.map((order) => {
+      const prepared = preparePurchaseOrderLines(order.lines, {
+        headerWarehouseId: order.warehouseId,
+        inventoryUnits,
+        requirePrice: true,
+      });
+      return { order, prepared };
+    });
+
+    const numbered: Array<(typeof preparedOrders)[number] & { number: string }> = [];
+    for (const row of preparedOrders) {
+      numbered.push({ ...row, number: await this.sequences.next('PORD', 'PORD') });
+    }
+    const runNumber = await this.sequences.next('purchase_run', 'PRUN');
+    const runOrigin = normalizePurchaseOrderOrigin(
+      opts?.runOrigin ?? numbered[0]?.order.origin,
+    );
+    const runExpected = opts?.runExpectedDeliveryDate
+      ? new Date(opts.runExpectedDeliveryDate)
+      : numbered[0]?.order.expectedDeliveryDate
+        ? new Date(numbered[0].order.expectedDeliveryDate)
+        : undefined;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const run = await tx.purchaseRun.create({
+        data: {
+          number: runNumber,
+          origin: runOrigin,
+          notes: opts?.runNotes ?? (numbered.length === 1 ? numbered[0]?.order.notes : undefined),
+          expectedDeliveryDate: runExpected,
+          createdById: userId,
+        },
+      });
+      const out = [];
+      for (const { order, prepared, number } of numbered) {
+        const po = await tx.purchaseOrder.create({
+          data: {
+            number,
+            supplierId: order.supplierId,
+            warehouseId: order.warehouseId ?? prepared.lines[0]?.warehouseId,
+            purchaseRunId: run.id,
+            notes: order.notes,
+            origin: order.origin,
+            ...(order.expectedDeliveryDate
+              ? { expectedDeliveryDate: new Date(order.expectedDeliveryDate) }
+              : {}),
+            status: PurchaseOrderStatus.DRAFT,
+            subtotal: roundMoney(prepared.subtotal),
+            taxAmount: roundMoney(prepared.taxAmount),
+            total: roundMoney(prepared.total),
+            lines: {
+              create: prepared.lines.map((l) => ({
+                description: l.description,
+                quantity: roundMoney(l.quantity),
+                unit: l.unit,
+                unitPrice: roundMoney(l.unitPrice),
+                taxRate: roundMoney(l.taxRate),
+                lineTotal: roundMoney(l.lineTotal),
+                inventoryItemId: l.inventoryItemId,
+                warehouseId: l.warehouseId,
+                locationId: l.locationId,
+              })),
+            },
+          },
+          include: {
+            lines: { include: { inventoryItem: true, warehouse: true, location: true } },
+            supplier: true,
+            purchaseRun: { select: PURCHASE_RUN_INCLUDE },
+          },
+        });
+        out.push(attachPurchaseRunMeta(po));
+        await tx.auditEvent.create({
+          data: {
+            userId,
+            action: 'purchase-order.create',
+            entityType: 'PurchaseOrder',
+            entityId: po.id,
+            newValues: { origin: order.origin, batch: true, purchaseRunId: run.id },
+          },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'purchase-run.create',
+          entityType: 'PurchaseRun',
+          entityId: run.id,
+          newValues: { origin: runOrigin, orderCount: out.length },
+        },
+      });
+      return { orders: out, run };
+    });
+    return created;
+  }
+
+  async createPurchaseRun(
+    input: {
+      notes?: string;
+      expectedDeliveryDate?: string | null;
+      origin?: string;
+      orders: BatchOrderInput[];
+    },
+    userId?: string,
+  ) {
+    const origin = normalizePurchaseOrderOrigin(input.origin ?? input.orders[0]?.origin);
+    const orders = input.orders.map((order) => ({
+      ...order,
+      origin: order.origin ?? origin,
+      notes: order.notes ?? input.notes,
+      expectedDeliveryDate: order.expectedDeliveryDate ?? input.expectedDeliveryDate,
+    }));
+    const created = await this.createOrdersBatch(orders, userId, {
+      runNotes: input.notes,
+      runExpectedDeliveryDate: input.expectedDeliveryDate,
+      runOrigin: origin,
+    });
+    return this.getPurchaseRun(created.run.id);
+  }
+
+  async getPurchaseRun(id: string) {
+    const run = await this.prisma.purchaseRun.findUniqueOrThrow({
+      where: { id },
+      include: {
+        orders: {
+          where: { archivedAt: null },
+          include: {
+            supplier: true,
+            warehouse: true,
+            lines: { include: { inventoryItem: true, warehouse: true, location: true } },
+            goodsReceipts: { include: { lines: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    const orders = run.orders.map((po) => {
+      const orderedQty = po.lines.reduce((s, l) => s + Number(l.quantity), 0);
+      let receivedAcceptedQty = 0;
+      for (const grn of po.goodsReceipts) {
+        for (const line of grn.lines) {
+          receivedAcceptedQty += Number(line.receivedQty) - Number(line.rejectedQty ?? 0);
+        }
+      }
+      return attachPurchaseRunMeta({
+        ...po,
+        purchaseRun: {
+          id: run.id,
+          number: run.number,
+          _count: { orders: run.orders.length },
+        },
+        orderedQty,
+        receivedAcceptedQty,
+        presentation: classifyPurchaseOrder({
+          status: po.status,
+          expectedDeliveryDate: po.expectedDeliveryDate,
+          orderedQty,
+          receivedAcceptedQty,
+        }),
+      });
+    });
+    const total = orders.reduce((s, po) => s + Number(po.total), 0);
+    return {
+      ...run,
+      orders,
+      phase: classifyPurchaseRun(orders.map((po) => po.status)),
+      supplierCount: orders.length,
+      total,
+      runId: run.id,
+      runNumber: run.number,
+      runSupplierCount: orders.length,
+    };
+  }
+
+  async approvePurchaseRun(id: string, userId?: string) {
+    const run = await this.prisma.purchaseRun.findUniqueOrThrow({
+      where: { id },
+      include: { orders: { where: { archivedAt: null }, select: { id: true, status: true } } },
+    });
+    const drafts = run.orders.filter((po) => po.status === PurchaseOrderStatus.DRAFT);
+    if (drafts.length) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const po of drafts) {
+          await tx.purchaseOrder.update({
+            where: { id: po.id },
+            data: { status: PurchaseOrderStatus.APPROVED },
+          });
+          await tx.auditEvent.create({
+            data: {
+              userId,
+              action: 'purchase-order.approve',
+              entityType: 'PurchaseOrder',
+              entityId: po.id,
+              newValues: { purchaseRunId: id },
+            },
+          });
+        }
+        await tx.auditEvent.create({
+          data: {
+            userId,
+            action: 'purchase-run.approve',
+            entityType: 'PurchaseRun',
+            entityId: id,
+            newValues: { approvedCount: drafts.length },
+          },
+        });
+      });
+    }
+    return this.getPurchaseRun(id);
+  }
+
+  async draftPurchaseRunWhatsApp(id: string) {
+    const run = await this.getPurchaseRun(id);
+    const messages = [];
+    for (const po of run.orders) {
+      const draft = await this.draftPurchaseOrderWhatsApp(po.id);
+      messages.push({
+        orderId: po.id,
+        orderNumber: po.number,
+        supplierId: po.supplierId,
+        supplierName: po.supplier.nameAr || po.supplier.nameEn || po.supplier.name,
+        to: draft.to,
+        body: draft.body,
+        templateBody: draft.body,
+        lines: po.lines.map((line) => ({
+          description: line.description,
+          quantity: Number(line.quantity),
+          unit: line.unit,
+          warehouseName: line.warehouse?.nameAr || line.warehouse?.nameEn || null,
+          locationName: line.location?.name ?? null,
+        })),
+      });
+    }
+    return {
+      runId: run.id,
+      number: run.number,
+      phase: run.phase,
+      messages,
+    };
+  }
+
+  async sendPurchaseRun(
+    id: string,
+    userId?: string,
+    bodies?: Array<{ id: string; body?: string }>,
+  ) {
+    const run = await this.prisma.purchaseRun.findUniqueOrThrow({
+      where: { id },
+      include: { orders: { where: { archivedAt: null }, select: { id: true } } },
+    });
+    const items = bodies?.length ? bodies : run.orders.map((po) => ({ id: po.id }));
+    const result = await this.sendPurchaseOrdersBatch(items, userId);
+    return { ...result, run: await this.getPurchaseRun(id) };
+  }
+
+  async markPurchaseOrderSent(id: string, userId?: string) {
+    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({ where: { id } });
+    if (
+      existing.status !== PurchaseOrderStatus.APPROVED &&
+      existing.status !== PurchaseOrderStatus.SENT
+    ) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Only approved purchase orders can be marked sent.',
+      });
+    }
+    const po = await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: { status: PurchaseOrderStatus.SENT },
+      include: { supplier: true, lines: true },
+    });
+    await this.prisma.auditEvent.create({
       data: {
-        number,
-        requestedById: opts.requestedById ?? undefined,
-        reason,
-        status: PurchaseRequestStatus.SUBMITTED,
-        lines: {
-          create: toOrder.map((item) => {
-            const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-            const reorder = item.reorderQty != null ? Number(item.reorderQty) : null;
-            const qty =
-              reorder && reorder > 0
-                ? reorder
-                : Math.max(Number(item.minStock) * 2 - available, 1);
-            return {
-              description: item.nameEn || item.nameAr || item.sku,
-              quantity: roundMoney(qty),
-              inventoryItemId: item.id,
-              unit: item.unit || 'pcs',
-            };
-          }),
-        },
+        userId,
+        action: 'purchase-order.mark-sent',
+        entityType: 'PurchaseOrder',
+        entityId: id,
       },
-      include: { lines: true },
     });
+    return po;
+  }
 
-    await this.prisma.inventoryItem.updateMany({
-      where: { id: { in: toOrder.map((i) => i.id) } },
-      data: { lastAutoPrAt: new Date() },
+  async buyAlert() {
+    const draft = await this.lowStockDraft();
+    const items = [...draft.groups.flatMap((g) => g.items), ...draft.unassigned.items];
+    return countBuyAlert(items);
+  }
+
+  private async assertPurchasableItems(ids: string[]) {
+    if (!ids.length) return;
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, isPurchasable: true, sku: true },
     });
+    const blocked = items.filter((i) => !i.isPurchasable);
+    if (blocked.length) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Only purchasable raw materials can be added to purchasing documents.',
+      });
+    }
+  }
 
-    this.logger.log(
-      `Created PR ${pr.number} from low stock (${pr.lines.length} lines)`,
-    );
+  private async openCoverageByItem(itemIds: string[]): Promise<Map<string, number>> {
+    const qty = new Map<string, number>();
+    if (!itemIds.length) return qty;
+    const openPo: PurchaseOrderStatus[] = [
+      PurchaseOrderStatus.DRAFT,
+      PurchaseOrderStatus.APPROVED,
+      PurchaseOrderStatus.SENT,
+      PurchaseOrderStatus.PARTIALLY_RECEIVED,
+    ];
+    const [poLines, receipts, prLines] = await Promise.all([
+      this.prisma.purchaseOrderLine.findMany({
+        where: {
+          inventoryItemId: { in: itemIds },
+          purchaseOrder: { archivedAt: null, status: { in: openPo } },
+        },
+        select: { inventoryItemId: true, quantity: true },
+      }),
+      this.prisma.goodsReceiptLine.findMany({
+        where: {
+          inventoryItemId: { in: itemIds },
+          goodsReceipt: {
+            purchaseOrder: { archivedAt: null, status: { in: openPo } },
+          },
+        },
+        select: { inventoryItemId: true, receivedQty: true, rejectedQty: true },
+      }),
+      this.prisma.purchaseRequestLine.findMany({
+        where: {
+          inventoryItemId: { in: itemIds },
+          purchaseRequest: { archivedAt: null, status: { in: OPEN_PR_STATUSES } },
+        },
+        select: { inventoryItemId: true, quantity: true },
+      }),
+    ]);
+    const add = (id: string | null | undefined, n: number) => {
+      if (!id || !(n > 0)) return;
+      qty.set(id, (qty.get(id) ?? 0) + n);
+    };
+    const received = new Map<string, number>();
+    for (const row of receipts) {
+      received.set(
+        row.inventoryItemId,
+        (received.get(row.inventoryItemId) ?? 0) +
+          Number(row.receivedQty) -
+          Number(row.rejectedQty ?? 0),
+      );
+    }
+    const ordered = new Map<string, number>();
+    for (const row of poLines) {
+      if (!row.inventoryItemId) continue;
+      ordered.set(row.inventoryItemId, (ordered.get(row.inventoryItemId) ?? 0) + Number(row.quantity));
+    }
+    for (const [id, amount] of ordered) {
+      add(id, amount - (received.get(id) ?? 0));
+    }
+    for (const row of prLines) {
+      add(row.inventoryItemId, Number(row.quantity));
+    }
+    return qty;
+  }
 
-    await this.notifyLowStock(
-      toOrder.map((i) => ({
-        sku: i.sku,
-        name: i.nameEn || i.nameAr || i.sku,
-        available: i.balances.reduce((s, b) => s + Number(b.availableQty), 0),
-        minStock: Number(i.minStock),
+  async draftPurchaseOrderWhatsApp(poId: string) {
+    const po = await this.prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id: poId },
+      include: {
+        supplier: true,
+        warehouse: true,
+        lines: { include: { warehouse: true } },
+      },
+    });
+    const settingsRow = await this.prisma.systemSetting.findUnique({
+      where: { key: 'purchasingWhatsApp' },
+    });
+    const companyRow = await this.prisma.systemSetting.findUnique({
+      where: { key: 'company' },
+    });
+    const settings = mergePurchasingWhatsAppSettings(settingsRow?.value);
+    const company =
+      companyRow?.value && typeof companyRow.value === 'object' && !Array.isArray(companyRow.value)
+        ? (companyRow.value as Record<string, unknown>)
+        : {};
+    const body = renderPurchaseWhatsAppTemplate(settings, {
+      supplierName: po.supplier.nameAr || po.supplier.nameEn || po.supplier.name || '',
+      orderNumber: po.number,
+      currency: po.currency,
+      total: po.total,
+      expectedDate: po.expectedDeliveryDate,
+      companyName: String(company.nameAr ?? company.nameEn ?? ''),
+      lines: po.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        unit: l.unit,
+        unitPrice: l.unitPrice,
+        warehouseName: l.warehouse?.nameAr || l.warehouse?.nameEn || po.warehouse?.nameAr || null,
       })),
-      pr.number,
-      opts.skipNotify,
-    );
+    });
+    return {
+      to: this.supplierWhatsAppTo(po.supplier),
+      body,
+      supplier: {
+        id: po.supplier.id,
+        name: po.supplier.name,
+        whatsappPhone: po.supplier.whatsappPhone,
+        phone: po.supplier.phone,
+      },
+    };
+  }
 
-    return { id: pr.id, number: pr.number, lineCount: pr.lines.length };
+  async sendPurchaseOrdersBatch(
+    items: Array<{ id: string; body?: string }>,
+    userId?: string,
+  ) {
+    const results = [];
+    for (const item of items) {
+      try {
+        const sent = await this.sendPurchaseOrder(item.id, userId, {
+          body: item.body,
+          autoApprove: true,
+        });
+        results.push({
+          id: item.id,
+          ok: sent.whatsapp.ok,
+          to: sent.whatsapp.to,
+          error: sent.whatsapp.error,
+          purchaseOrder: sent.purchaseOrder,
+        });
+      } catch (err) {
+        results.push({
+          id: item.id,
+          ok: false,
+          to: null,
+          error: err instanceof Error ? err.message : 'Send failed.',
+        });
+      }
+    }
+    return { results };
+  }
+
+  async listReceivable(query: { warehouseId?: string; q?: string } = {}) {
+    const needle = query.q?.trim();
+    const mode = 'insensitive' as const;
+    const orders = await this.prisma.purchaseOrder.findMany({
+      where: {
+        archivedAt: null,
+        status: { in: [...RECEIVABLE_PO_STATUSES] },
+        ...(query.warehouseId
+          ? {
+              OR: [
+                { warehouseId: query.warehouseId },
+                { lines: { some: { warehouseId: query.warehouseId } } },
+              ],
+            }
+          : {}),
+        ...(needle
+          ? {
+              OR: [
+                { number: { contains: needle, mode } },
+                { supplier: { name: { contains: needle, mode } } },
+                { supplier: { nameAr: { contains: needle, mode } } },
+                { supplier: { nameEn: { contains: needle, mode } } },
+                { lines: { some: { description: { contains: needle, mode } } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        supplier: true,
+        warehouse: true,
+        purchaseRun: { select: PURCHASE_RUN_INCLUDE },
+        lines: { include: { inventoryItem: true, warehouse: true, location: true } },
+        goodsReceipts: { include: { lines: true } },
+      },
+      orderBy: { expectedDeliveryDate: 'asc' },
+    });
+
+    return orders
+      .map((po) => {
+        const receivedByItem = new Map<string, number>();
+        for (const grn of po.goodsReceipts) {
+          for (const line of grn.lines) {
+            receivedByItem.set(
+              line.inventoryItemId,
+              (receivedByItem.get(line.inventoryItemId) ?? 0) +
+                Number(line.receivedQty) -
+                Number(line.rejectedQty ?? 0),
+            );
+          }
+        }
+        const lines = mapReceivableLines(
+          po.lines.map((line) => ({
+            id: line.id,
+            inventoryItemId: line.inventoryItemId,
+            description: line.description,
+            quantity: Number(line.quantity),
+            unit: line.unit,
+            unitPrice: Number(line.unitPrice),
+            warehouseId: line.warehouseId ?? po.warehouseId,
+            locationId: line.locationId,
+            category: line.inventoryItem?.category ?? null,
+            fabricProcurementId: line.fabricProcurementId,
+          })),
+          receivedByItem,
+        );
+        const remainingQty = lines.reduce((s, l) => s + l.remainingQty, 0);
+        const orderedQty = po.lines.reduce((s, l) => s + Number(l.quantity), 0);
+        return {
+          ...attachPurchaseRunMeta(po),
+          lines,
+          remainingQty,
+          orderedQty,
+          isOverdue: Boolean(
+            po.expectedDeliveryDate && po.expectedDeliveryDate.getTime() < Date.now(),
+          ),
+        };
+      })
+      .filter((po) => po.remainingQty > 1e-9);
   }
 
   async maybeAutoReorderAfterStockChange(inventoryItemId: string, userId?: string) {
@@ -292,19 +944,6 @@ export class PurchasingService {
     }
   }
 
-  async assertSupplierCertified(supplierId: string) {
-    const supplier = await this.prisma.supplier.findUniqueOrThrow({
-      where: { id: supplierId },
-    });
-    if (!supplier.isCertified) {
-      throw new BadRequestException({
-        code: 'SUPPLIER_NOT_CERTIFIED',
-        message: 'Supplier must be certified before creating or sending a purchase order.',
-      });
-    }
-    return supplier;
-  }
-
   /** Prefer WhatsApp number; fall back to phone. */
   supplierWhatsAppTo(supplier: {
     whatsappPhone?: string | null;
@@ -318,15 +957,7 @@ export class PurchasingService {
     number: string;
     lines: Array<{ description: string; quantity: unknown; unit?: string | null }>;
   }): string {
-    const lines = po.lines
-      .map((l) => {
-        const qty = Number(l.quantity);
-        const qtyLabel = Number.isFinite(qty) ? String(qty) : String(l.quantity);
-        const unit = l.unit?.trim() ? ` ${l.unit.trim()}` : '';
-        return `• ${l.description}: ${qtyLabel}${unit}`;
-      })
-      .join('\n');
-    return `Purchase order ${po.number}\nPlease supply:\n${lines}\nThank you.`;
+    return buildPoWhatsAppCopy(po);
   }
 
   /**
@@ -415,6 +1046,7 @@ export class PurchasingService {
           taxAmount: roundMoney(taxAmount),
           total: roundMoney(subtotal + taxAmount),
           notes: pr.reason ?? undefined,
+          origin: 'REQUEST',
           lines: { create: lines },
         },
         include: { lines: true, supplier: true },
@@ -453,14 +1085,35 @@ export class PurchasingService {
   async sendPurchaseOrder(
     poId: string,
     userId?: string,
+    opts?: { body?: string; autoApprove?: boolean },
   ): Promise<PurchaseOrderSendResult> {
-    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({
+    let existing = await this.prisma.purchaseOrder.findUniqueOrThrow({
       where: { id: poId },
       include: {
         supplier: true,
-        lines: true,
+        lines: { include: { warehouse: true } },
+        warehouse: true,
       },
     });
+    if (existing.status === PurchaseOrderStatus.DRAFT && opts?.autoApprove) {
+      existing = await this.prisma.purchaseOrder.update({
+        where: { id: poId },
+        data: { status: PurchaseOrderStatus.APPROVED },
+        include: {
+          supplier: true,
+          lines: { include: { warehouse: true } },
+          warehouse: true,
+        },
+      });
+      await this.prisma.auditEvent.create({
+        data: {
+          userId,
+          action: 'purchase-order.approve',
+          entityType: 'PurchaseOrder',
+          entityId: poId,
+        },
+      });
+    }
     if (
       existing.status !== PurchaseOrderStatus.APPROVED &&
       existing.status !== PurchaseOrderStatus.SENT
@@ -471,7 +1124,10 @@ export class PurchasingService {
       });
     }
 
-    const body = this.buildPurchaseOrderWhatsAppBody(existing);
+    const drafted = opts?.body?.trim()
+      ? null
+      : await this.draftPurchaseOrderWhatsApp(poId);
+    const body = opts?.body?.trim() || drafted?.body || this.buildPurchaseOrderWhatsAppBody(existing);
     const to = this.supplierWhatsAppTo(existing.supplier);
     let whatsapp: PurchaseWhatsAppResult = { ok: false, to, body };
 

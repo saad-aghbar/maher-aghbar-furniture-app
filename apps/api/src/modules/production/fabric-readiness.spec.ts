@@ -65,6 +65,17 @@ describe('assessFabricReadiness', () => {
     expect(result.attentionCode).toBe('FABRIC_PARTIAL');
   });
 
+  it('keeps PARTIAL after a short receive even when stored state is READY_FOR_PICKUP', () => {
+    const result = assessFabricReadiness({
+      requirement: req,
+      procurement: { state: 'READY_FOR_PICKUP' },
+      lots: [lot({ id: 'lot-1', quantity: 10, remainingQty: 10 })],
+    });
+    expect(result.derivedStatus).toBe('PARTIAL');
+    expect(result.readyForProduction).toBe(false);
+    expect(result.attentionCode).toBe('FABRIC_PARTIAL');
+  });
+
   it('allows partial when PARTIALLY_AVAILABLE is stored', () => {
     const result = assessFabricReadiness({
       requirement: req,
@@ -197,11 +208,11 @@ describe('isOrderAllocatedFabricLot', () => {
 });
 
 describe('buildFabricProcurementWhatsAppBody', () => {
-  it('keeps per-requirement traceability in a batched message', () => {
+  it('defaults to Arabic with per-requirement traceability', () => {
     const body = buildFabricProcurementWhatsAppBody({
       orderNumber: 'SO-1042',
       productName: 'Milano Sofa',
-      dealerName: 'Nablus Showroom',
+      dealerName: 'معرض نابلس',
       lines: [
         {
           procurementId: 'aaaaaaaa-1111-2222-3333-444444444444',
@@ -219,8 +230,31 @@ describe('buildFabricProcurementWhatsAppBody', () => {
         },
       ],
     });
-    expect(body).toContain('SO-1042');
+    expect(body).toContain('طلب قماش لأمر SO-1042');
+    expect(body).toContain('معرض نابلس');
     expect(body).toContain('Velvet 302 (Main body): 24 m [aaaaaaaa]');
     expect(body).toContain('Bouclé 611 (Cushions): 8 m [bbbbbbbb]');
+  });
+
+  it('keeps English when locale is en', () => {
+    const body = buildFabricProcurementWhatsAppBody(
+      {
+        orderNumber: 'SO-1042',
+        productName: 'Milano Sofa',
+        dealerName: 'Nablus Showroom',
+        lines: [
+          {
+            procurementId: 'aaaaaaaa-1111-2222-3333-444444444444',
+            label: 'Velvet 302',
+            role: 'Main body',
+            qty: 24,
+            unit: 'm',
+          },
+        ],
+      },
+      'en',
+    );
+    expect(body).toContain('Fabric request for order SO-1042');
+    expect(body).toContain('Velvet 302 (Main body): 24 m [aaaaaaaa]');
   });
 });

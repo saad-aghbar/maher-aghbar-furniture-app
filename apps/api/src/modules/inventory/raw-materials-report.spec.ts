@@ -1,11 +1,13 @@
 import { factoryCalendarForTimezone } from '../production/production-day-lens';
 import {
+  ALL_CATEGORY_GROUPS,
   addToBucket,
   backComputeQuantities,
   bucketForMovement,
   classifyRawStockStatus,
   emptyQtyBuckets,
   moneyOrNull,
+  normalizeReportSections,
   periodNetFromBuckets,
   reconcileItem,
   resolveReportPeriod,
@@ -225,5 +227,28 @@ describe('RAW-REPORT-J missing cost never becomes 0', () => {
     expect(valueAtCurrentCost(5, 'FAB-1', costs)).toBe(50);
     expect(valueAtCurrentCost(5, 'FAB-MISSING', costs)).toBeNull();
     expect(valueAtCurrentCost(0, 'FAB-MISSING', costs)).toBe(0);
+  });
+});
+
+describe('normalizeReportSections', () => {
+  it('defaults to all four groups', () => {
+    expect(normalizeReportSections(undefined)).toEqual(ALL_CATEGORY_GROUPS);
+    expect(normalizeReportSections(null)).toEqual(ALL_CATEGORY_GROUPS);
+    expect(normalizeReportSections('')).toEqual(ALL_CATEGORY_GROUPS);
+    expect(normalizeReportSections('all')).toEqual(ALL_CATEGORY_GROUPS);
+    expect(normalizeReportSections(['all'])).toEqual(ALL_CATEGORY_GROUPS);
+  });
+
+  it('accepts a single group, CSV, and repeated values', () => {
+    expect(normalizeReportSections('fabric')).toEqual(['fabric']);
+    expect(normalizeReportSections('fabric,foam')).toEqual(['fabric', 'foam']);
+    expect(normalizeReportSections(['wood', 'accessories'])).toEqual(['wood', 'accessories']);
+    expect(normalizeReportSections('foam,fabric,foam')).toEqual(['fabric', 'foam']);
+    expect(normalizeReportSections('accessories,wood,foam,fabric')).toEqual(ALL_CATEGORY_GROUPS);
+  });
+
+  it('rejects an unknown section', () => {
+    expect(() => normalizeReportSections('leather')).toThrow(ReportRangeError);
+    expect(() => normalizeReportSections('fabric,unknown')).toThrow(ReportRangeError);
   });
 });

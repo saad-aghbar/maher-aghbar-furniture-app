@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../../common/prisma.service';
-import { isLockedAnchorStageCode } from '@maher/types';
+import { isProtectedStageCode, isReturnWorkflowScope, workflowGraphChainRequirements } from '@maher/types';
 import {
   compileWorkflow,
   validateWorkflowGraph,
@@ -64,6 +64,35 @@ export class WorkflowVersionService {
     });
   }
 
+  private async workflowScopeForVersion(
+    tx: Tx,
+    versionId: string,
+  ): Promise<'STANDARD' | 'RETURN'> {
+    const version = await tx.productionWorkflowVersion.findUnique({
+      where: { id: versionId },
+      select: { workflow: { select: { scope: true } } },
+    });
+    if (isReturnWorkflowScope(version?.workflow?.scope)) return 'RETURN';
+    return 'STANDARD';
+  }
+
+  private openingLocksApply(scope: 'STANDARD' | 'RETURN' | string): boolean {
+    return workflowGraphChainRequirements(scope).requiresOpeningChain;
+  }
+
+  private terminalLocksApply(
+    scope: 'STANDARD' | 'RETURN' | string,
+    stageCodes: readonly string[] = [],
+  ): boolean {
+    return workflowGraphChainRequirements(scope, stageCodes).requiresTerminalChain;
+  }
+
+  private stageCodesOf(
+    nodes: Array<{ stageDefinition?: { code?: string | null } | null }>,
+  ): string[] {
+    return nodes.map((n) => n.stageDefinition?.code ?? '').filter(Boolean);
+  }
+
   async listWorkflows() {
     return this.prisma.productionWorkflow.findMany({
       where: { archivedAt: null },
@@ -104,6 +133,7 @@ export class WorkflowVersionService {
     descriptionAr?: string;
     descriptionEn?: string;
     descriptionHe?: string;
+    scope?: 'STANDARD' | 'RETURN' | string;
     createdById?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -123,6 +153,7 @@ export class WorkflowVersionService {
           descriptionEn: input.descriptionEn,
           descriptionHe: input.descriptionHe,
           status: 'DRAFT',
+          scope: isReturnWorkflowScope(input.scope) ? 'RETURN' : 'STANDARD',
           createdById: input.createdById,
         },
       });
@@ -322,13 +353,17 @@ export class WorkflowVersionService {
       if (!stage) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
       }
-      if (this.isTerminalStageCode(stage.code)) {
-        throw this.terminalLockedError('added manually');
-      }
+      const addScope = await this.workflowScopeForVersion(tx, versionId);
       const existingNodes = await tx.productionWorkflowNode.findMany({
         where: { workflowVersionId: versionId },
-        select: { nodeKey: true, sortOrder: true },
+        select: { nodeKey: true, sortOrder: true, stageDefinition: { select: { code: true } } },
       });
+      if (
+        this.terminalLocksApply(addScope, [...this.stageCodesOf(existingNodes), stage.code]) &&
+        this.isTerminalStageCode(stage.code)
+      ) {
+        throw this.terminalLockedError('added manually');
+      }
       const nodeKey = resolveNodeKey(
         data.nodeKey,
         stage.code,
@@ -403,7 +438,14 @@ export class WorkflowVersionService {
       if (!existing) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Node not found.' });
       }
-      if (this.isOpeningStageCode(existing.stageDefinition.code)) {
+      const scope = await this.workflowScopeForVersion(tx, versionId);
+      const siblingCodes = this.stageCodesOf(
+        await tx.productionWorkflowNode.findMany({
+          where: { workflowVersionId: versionId },
+          select: { stageDefinition: { select: { code: true } } },
+        }),
+      );
+      if (this.openingLocksApply(scope) && this.isOpeningStageCode(existing.stageDefinition.code)) {
         if (runsAfterNodeIds !== undefined) {
           throw this.openingLockedError('rewired');
         }
@@ -411,7 +453,10 @@ export class WorkflowVersionService {
           throw this.openingLockedError('marked optional');
         }
       }
-      if (this.isFullyLockedTerminalCode(existing.stageDefinition.code)) {
+      if (
+        this.terminalLocksApply(scope, siblingCodes) &&
+        this.isFullyLockedTerminalCode(existing.stageDefinition.code)
+      ) {
         if (runsAfterNodeIds !== undefined) {
           throw this.terminalLockedError('rewired');
         }
@@ -420,7 +465,7 @@ export class WorkflowVersionService {
         }
       }
       let effectiveRunsAfter = runsAfterNodeIds;
-      if (existing.stageDefinition.code === 'INSPECTION') {
+      if (this.terminalLocksApply(scope, siblingCodes) && existing.stageDefinition.code === 'INSPECTION') {
         if (rest.canBeSkipped === true || rest.isRequiredByDefault === false) {
           throw this.terminalLockedError('marked optional');
         }
@@ -528,10 +573,17 @@ export class WorkflowVersionService {
       if (!target) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Node not found.' });
       }
-      if (this.isOpeningStageCode(target.stageDefinition.code)) {
+      const scope = await this.workflowScopeForVersion(tx, versionId);
+      const siblingCodes = this.stageCodesOf(
+        await tx.productionWorkflowNode.findMany({
+          where: { workflowVersionId: versionId },
+          select: { stageDefinition: { select: { code: true } } },
+        }),
+      );
+      if (this.openingLocksApply(scope) && this.isOpeningStageCode(target.stageDefinition.code)) {
         throw this.openingLockedError('removed');
       }
-      if (this.isTerminalStageCode(target.stageDefinition.code)) {
+      if (this.terminalLocksApply(scope, siblingCodes) && this.isTerminalStageCode(target.stageDefinition.code)) {
         throw this.terminalLockedError('removed');
       }
       await this.reconnectAndDeleteNode(tx, versionId, nodeId, options.reconnect !== false);
@@ -552,10 +604,10 @@ export class WorkflowVersionService {
       if (!stage) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
       }
-      if (isLockedAnchorStageCode(stage.code)) {
+      if (isProtectedStageCode(stage.code)) {
         throw new BadRequestException({
           code: 'LOCKED_ANCHOR_STAGE',
-          message: 'Material Prep, Inspection, Packaging, and Delivery cannot be deleted.',
+          message: 'Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be deleted.',
         });
       }
 
@@ -609,23 +661,26 @@ export class WorkflowVersionService {
   async validateVersion(versionId: string) {
     const version = await this.prisma.productionWorkflowVersion.findUnique({
       where: { id: versionId },
-      include: { nodes: { include: { stageDefinition: true } }, edges: true },
+      include: { nodes: { include: { stageDefinition: true } }, edges: true, workflow: true },
     });
     if (!version) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Version not found.' });
     const graph = validateWorkflowGraph(
       version.nodes.map((n) => ({ id: n.id, nodeKey: n.nodeKey })),
       version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
     );
-    const chain = validateTerminalChain(
-      version.nodes.map((n) => ({
-        id: n.id,
-        nodeKey: n.nodeKey,
-        stageCode: n.stageDefinition.code,
-        isRequired: n.isRequiredByDefault && !n.canBeSkipped,
-        isSkipped: false,
-      })),
-      version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
-    );
+    const scope = isReturnWorkflowScope(version.workflow.scope) ? 'RETURN' : 'STANDARD';
+    const chain = this.terminalLocksApply(scope, this.stageCodesOf(version.nodes))
+      ? validateTerminalChain(
+          version.nodes.map((n) => ({
+            id: n.id,
+            nodeKey: n.nodeKey,
+            stageCode: n.stageDefinition.code,
+            isRequired: n.isRequiredByDefault && !n.canBeSkipped,
+            isSkipped: false,
+          })),
+          version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
+        )
+      : [];
     const opening = validateOpeningChain(
       version.nodes.map((n) => ({
         id: n.id,
@@ -635,6 +690,7 @@ export class WorkflowVersionService {
         isSkipped: false,
       })),
       version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
+      { enforce: this.openingLocksApply(scope) },
     );
     const issues = [...graph.issues, ...chain, ...opening];
     return { ok: issues.length === 0, issues };
@@ -658,6 +714,15 @@ export class WorkflowVersionService {
       });
       if (!version) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Version not found.' });
+      }
+      const appendScope = await this.workflowScopeForVersion(tx, versionId);
+      if (!this.terminalLocksApply(appendScope, this.stageCodesOf(version.nodes))) {
+        return {
+          applied: false,
+          revision: version.revision,
+          addedStages: [] as string[],
+          addedEdges: [] as string[],
+        };
       }
 
       const nodeById = new Map(version.nodes.map((n) => [n.id, n]));
@@ -804,6 +869,14 @@ export class WorkflowVersionService {
       if (!version) {
         throw new NotFoundException({ code: 'NOT_FOUND', message: 'Version not found.' });
       }
+      const scope = await this.workflowScopeForVersion(tx, versionId);
+      if (!this.openingLocksApply(scope)) {
+        return {
+          applied: false,
+          revision: version.revision,
+          addedStages: [] as string[],
+        };
+      }
 
       const plan = planOpeningChainAppend(
         version.nodes.map((n) => ({ stageCode: n.stageDefinition.code })),
@@ -888,16 +961,19 @@ export class WorkflowVersionService {
         version.nodes.map((n) => ({ id: n.id, nodeKey: n.nodeKey })),
         version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
       );
-      const chain = validateTerminalChain(
-        version.nodes.map((n) => ({
-          id: n.id,
-          nodeKey: n.nodeKey,
-          stageCode: n.stageDefinition.code,
-          isRequired: n.isRequiredByDefault && !n.canBeSkipped,
-          isSkipped: false,
-        })),
-        version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
-      );
+      const scope = await this.workflowScopeForVersion(tx, versionId);
+      const chain = this.terminalLocksApply(scope, this.stageCodesOf(version.nodes))
+        ? validateTerminalChain(
+            version.nodes.map((n) => ({
+              id: n.id,
+              nodeKey: n.nodeKey,
+              stageCode: n.stageDefinition.code,
+              isRequired: n.isRequiredByDefault && !n.canBeSkipped,
+              isSkipped: false,
+            })),
+            version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
+          )
+        : [];
       const opening = validateOpeningChain(
         version.nodes.map((n) => ({
           id: n.id,
@@ -907,6 +983,7 @@ export class WorkflowVersionService {
           isSkipped: false,
         })),
         version.edges.map((e) => ({ fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
+        { enforce: this.openingLocksApply(scope) },
       );
       const issues = [...graph.issues, ...chain, ...opening];
       if (issues.length > 0) {
@@ -1010,6 +1087,7 @@ export class WorkflowVersionService {
     const version = await db.productionWorkflowVersion.findUnique({
       where: { id: versionId },
       include: {
+        workflow: { select: { scope: true } },
         nodes: { include: { stageDefinition: true } },
         edges: true,
       },
@@ -1105,12 +1183,23 @@ export class WorkflowVersionService {
       }
     }
 
+    const version = await this.db(tx).productionWorkflowVersion.findUnique({
+      where: { id: versionId },
+      select: { workflow: { select: { scope: true } } },
+    });
+    const scope = isReturnWorkflowScope(version?.workflow?.scope) ? 'RETURN' : 'STANDARD';
+    const flags = workflowGraphChainRequirements(
+      scope,
+      nodes.map((n) => n.stage.code),
+    );
     return compileWorkflow({
       nodes,
       edges,
       productOverrides,
       orderOverrides,
       productEstimateMinutes,
+      enforceOpeningChain: flags.requiresOpeningChain,
+      enforceTerminalChain: flags.requiresTerminalChain,
     });
   }
 

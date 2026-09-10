@@ -5,6 +5,7 @@ import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import type { PrismaService } from '../../common/prisma.service';
 import { calculateDurationMinutes } from './domain/duration-calculator';
+import { isQualityGateStage } from './domain/milestone';
 import {
   assessMaterialReadiness,
   frozenInputsFromSnapshotNodes,
@@ -310,20 +311,26 @@ export async function loadCapacityOptimizeWorld(
       if (snap?.isSkipped) continue;
       const estimate = estimateByDef.get(task.stageDefinitionId);
       if (!snap && estimate && !estimate.isRequired) continue;
-      const estimatedMinutes = estimate
-        ? calculateDurationMinutes({
-            quantityScalingMode: estimate.quantityScalingMode,
-            quantity: Number(po.quantity),
-            setupMinutes: estimate.setupMinutes,
-            minutesPerUnit: estimate.minutesPerUnit,
-            fixedMinutes: estimate.fixedMinutes,
-            batchSize: estimate.batchSize ?? undefined,
-            batchMinutes: estimate.batchMinutes ?? undefined,
-            maxParallelUnits: estimate.maxParallelUnits ?? undefined,
-          })
-        : (snap?.estimatedMinutes ??
-          task.estimatedMinutes ??
-          Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
+      const qualityGate = isQualityGateStage({
+        code: task.stageDefinition.code,
+        executionKind: snap?.executionKind,
+      });
+      const estimatedMinutes = qualityGate
+        ? 0
+        : estimate
+          ? calculateDurationMinutes({
+              quantityScalingMode: estimate.quantityScalingMode,
+              quantity: Number(po.quantity),
+              setupMinutes: estimate.setupMinutes,
+              minutesPerUnit: estimate.minutesPerUnit,
+              fixedMinutes: estimate.fixedMinutes,
+              batchSize: estimate.batchSize ?? undefined,
+              batchMinutes: estimate.batchMinutes ?? undefined,
+              maxParallelUnits: estimate.maxParallelUnits ?? undefined,
+            })
+          : (snap?.estimatedMinutes ??
+            task.estimatedMinutes ??
+            Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
       plannerStages.push({
         code: task.stageDefinition.code,
         stageDefinitionId: task.stageDefinitionId,
@@ -331,6 +338,7 @@ export async function loadCapacityOptimizeWorld(
           (task.stageInstanceId ? dependsByInstance.get(task.stageInstanceId) : undefined) ??
           task.stageDefinition.dependsOnCodes,
         estimatedMinutes,
+        isMilestone: qualityGate,
         departmentCode:
           estimate?.overrideDepartment?.code ??
           snap?.responsibleDepartmentCode ??

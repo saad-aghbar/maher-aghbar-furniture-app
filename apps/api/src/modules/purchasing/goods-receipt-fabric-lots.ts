@@ -6,7 +6,7 @@ export async function allocateFabricBundleQr(
   tx: Tx,
   salesOrderNumber: string,
 ): Promise<string> {
-  const compact = String(salesOrderNumber || 'SO')
+  const compact = String(salesOrderNumber || 'WO')
     .replace(/[^A-Za-z0-9]/g, '')
     .slice(0, 16)
     .toUpperCase() || 'SO';
@@ -29,7 +29,120 @@ export type FabricReceiptLineInput = {
   fabricProcurementId?: string | null;
   salesOrderId?: string | null;
   salesOrderLineId?: string | null;
+  productionOrderId?: string | null;
 };
+
+export type OrderAllocatedFabricLot = {
+  id: string;
+  qrCode: string;
+  fabricProcurementId: string;
+  reused: boolean;
+};
+
+/** One labelled FB- bundle, idempotent on sourceKey. */
+export async function createOrderAllocatedFabricLot(input: {
+  tx: Tx;
+  sourceKey: string;
+  inventoryItemId: string;
+  warehouseId: string;
+  locationId?: string | null;
+  salesOrderId?: string | null;
+  salesOrderLineId?: string | null;
+  productionOrderId?: string | null;
+  qty: number;
+  unitCost?: number | null;
+  fabricProcurementId: string;
+  supplierId?: string | null;
+  purchaseOrderId?: string | null;
+  goodsReceiptId?: string | null;
+  salesOrderNumber?: string | null;
+  photoDocumentId?: string | null;
+}): Promise<OrderAllocatedFabricLot> {
+  const existing = await input.tx.inventoryLot.findFirst({
+    where: { sourceKey: input.sourceKey },
+    select: { id: true, qrCode: true },
+  });
+  if (existing) {
+    return {
+      id: existing.id,
+      qrCode: existing.qrCode ?? '',
+      fabricProcurementId: input.fabricProcurementId,
+      reused: true,
+    };
+  }
+
+  const qrCode = await allocateFabricBundleQr(input.tx, input.salesOrderNumber ?? 'WO');
+  const lot = await input.tx.inventoryLot.create({
+    data: {
+      inventoryItemId: input.inventoryItemId,
+      warehouseId: input.warehouseId,
+      locationId: input.locationId ?? undefined,
+      salesOrderId: input.salesOrderId ?? undefined,
+      salesOrderLineId: input.salesOrderLineId ?? undefined,
+      productionOrderId: input.productionOrderId ?? undefined,
+      quantity: new Prisma.Decimal(input.qty),
+      remainingQty: new Prisma.Decimal(input.qty),
+      status: InventoryLotStatus.AVAILABLE,
+      allocationMode: InventoryAllocationMode.ORDER_ALLOCATED,
+      sourceKey: input.sourceKey,
+      qrCode,
+      fabricProcurementId: input.fabricProcurementId,
+      supplierId: input.supplierId ?? undefined,
+      purchaseOrderId: input.purchaseOrderId ?? undefined,
+      goodsReceiptId: input.goodsReceiptId ?? undefined,
+      unitCost: input.unitCost != null ? new Prisma.Decimal(input.unitCost) : undefined,
+      photoDocumentId: input.photoDocumentId ?? undefined,
+    },
+  });
+  return {
+    id: lot.id,
+    qrCode,
+    fabricProcurementId: input.fabricProcurementId,
+    reused: false,
+  };
+}
+
+export async function createGeneralStockFabricLot(input: {
+  tx: Tx;
+  sourceKey: string;
+  inventoryItemId: string;
+  warehouseId: string;
+  locationId?: string | null;
+  qty: number;
+  unitCost?: number | null;
+  supplierId?: string | null;
+  purchaseOrderId?: string | null;
+  goodsReceiptId?: string | null;
+  photoDocumentId?: string | null;
+}): Promise<{ id: string; qrCode: string; reused: boolean }> {
+  const existing = await input.tx.inventoryLot.findFirst({
+    where: { sourceKey: input.sourceKey },
+    select: { id: true, qrCode: true },
+  });
+  if (existing) {
+    return { id: existing.id, qrCode: existing.qrCode ?? '', reused: true };
+  }
+  const qrCode = await allocateFabricBundleQr(input.tx, 'STOCK');
+  const lot = await input.tx.inventoryLot.create({
+    data: {
+      inventoryItemId: input.inventoryItemId,
+      warehouseId: input.warehouseId,
+      locationId: input.locationId ?? undefined,
+      quantity: new Prisma.Decimal(input.qty),
+      remainingQty: new Prisma.Decimal(input.qty),
+      status: InventoryLotStatus.AVAILABLE,
+      allocationMode: InventoryAllocationMode.GENERAL_STOCK,
+      sourceKey: input.sourceKey,
+      qrCode,
+      supplierId: input.supplierId ?? undefined,
+      purchaseOrderId: input.purchaseOrderId ?? undefined,
+      goodsReceiptId: input.goodsReceiptId ?? undefined,
+      unitCost: input.unitCost != null ? new Prisma.Decimal(input.unitCost) : undefined,
+      photoDocumentId: input.photoDocumentId ?? undefined,
+    },
+  });
+  return { id: lot.id, qrCode, reused: false };
+}
 
 /**
  * Create ORDER_ALLOCATED fabric lots for GRN lines that carry a fabric procurement.
@@ -54,44 +167,27 @@ export async function createFabricLotsForGoodsReceipt(input: {
     if (String(line.category ?? '').toUpperCase() !== 'FABRIC') continue;
 
     seq += 1;
-    const sourceKey = `grn:${input.goodsReceiptId}:${line.fabricProcurementId}:${seq}`;
-    const existing = await input.tx.inventoryLot.findFirst({
-      where: { sourceKey },
-      select: { id: true, qrCode: true },
+    const lot = await createOrderAllocatedFabricLot({
+      tx: input.tx,
+      sourceKey: `grn:${input.goodsReceiptId}:${line.fabricProcurementId}:${seq}`,
+      inventoryItemId: line.inventoryItemId,
+      warehouseId: input.warehouseId,
+      locationId: input.locationId,
+      salesOrderId: line.salesOrderId,
+      salesOrderLineId: line.salesOrderLineId,
+      productionOrderId: line.productionOrderId,
+      qty: line.acceptedQty,
+      unitCost: line.unitCost,
+      fabricProcurementId: line.fabricProcurementId,
+      supplierId: input.supplierId,
+      purchaseOrderId: input.purchaseOrderId,
+      goodsReceiptId: input.goodsReceiptId,
+      salesOrderNumber: input.salesOrderNumber,
+      photoDocumentId: input.photoDocumentId,
     });
-    if (existing) {
-      if (existing.qrCode) {
-        created.push({ qrCode: existing.qrCode, fabricProcurementId: line.fabricProcurementId });
-      }
-      continue;
+    if (lot.qrCode) {
+      created.push({ qrCode: lot.qrCode, fabricProcurementId: line.fabricProcurementId });
     }
-
-    const qrCode = await allocateFabricBundleQr(
-      input.tx,
-      input.salesOrderNumber ?? 'SO',
-    );
-    await input.tx.inventoryLot.create({
-      data: {
-        inventoryItemId: line.inventoryItemId,
-        warehouseId: input.warehouseId,
-        locationId: input.locationId ?? undefined,
-        salesOrderId: line.salesOrderId ?? undefined,
-        salesOrderLineId: line.salesOrderLineId ?? undefined,
-        quantity: new Prisma.Decimal(line.acceptedQty),
-        remainingQty: new Prisma.Decimal(line.acceptedQty),
-        status: InventoryLotStatus.AVAILABLE,
-        allocationMode: InventoryAllocationMode.ORDER_ALLOCATED,
-        sourceKey,
-        qrCode,
-        fabricProcurementId: line.fabricProcurementId,
-        supplierId: input.supplierId,
-        purchaseOrderId: input.purchaseOrderId,
-        goodsReceiptId: input.goodsReceiptId,
-        unitCost: line.unitCost != null ? new Prisma.Decimal(line.unitCost) : undefined,
-        photoDocumentId: input.photoDocumentId ?? undefined,
-      },
-    });
-    created.push({ qrCode, fabricProcurementId: line.fabricProcurementId });
   }
   return created;
 }

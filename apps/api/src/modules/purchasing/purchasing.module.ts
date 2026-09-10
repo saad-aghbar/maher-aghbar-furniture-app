@@ -3,6 +3,7 @@ import { PurchasingController } from './purchasing.controller';
 import { PurchasingService } from './purchasing.service';
 import { FabricProcurementController } from './fabric-procurement.controller';
 import { FabricProcurementService } from './fabric-procurement.service';
+import { FabricReceivingService } from './fabric-receiving.service';
 import { LowStockPrWebhookController } from './low-stock-pr.webhook.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -17,7 +18,7 @@ import { SupplierInvoicesModule } from '../supplier-invoices/supplier-invoices.m
     SupplierInvoicesModule,
   ],
   controllers: [PurchasingController, LowStockPrWebhookController, FabricProcurementController],
-  providers: [PurchasingService, FabricProcurementService],
-  exports: [PurchasingService, FabricProcurementService],
+  providers: [PurchasingService, FabricProcurementService, FabricReceivingService],
+  exports: [PurchasingService, FabricProcurementService, FabricReceivingService],
 })
 export class PurchasingModule {}

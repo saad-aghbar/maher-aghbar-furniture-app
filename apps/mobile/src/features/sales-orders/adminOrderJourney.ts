@@ -5,6 +5,7 @@
  * Preparing ↔ Production boundary = Release to factory (not setup RELEASED / plan-save).
  */
 
+import { isDeliveredSalesOrderStatus } from '@maher/types';
 import type { AdminOrderLifecycle } from './adminOrderLifecycle';
 
 export type JourneyAttentionSeverity = 'warning' | 'critical' | 'info';
@@ -270,7 +271,7 @@ export function classifyAdminOrderJourney(input: AdminOrderJourneyInput): AdminO
     };
   }
 
-  if (so === 'DELIVERED' || so === 'COMPLETED' || del === 'DELIVERED') {
+  if (isDeliveredSalesOrderStatus(so) || del === 'DELIVERED') {
     return {
       journeyBucket: 'delivered',
       attention: resolveAttention(input, now),

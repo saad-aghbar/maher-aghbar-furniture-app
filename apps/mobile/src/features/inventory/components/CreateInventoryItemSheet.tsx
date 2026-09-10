@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Keyboard, useWindowDimensions } from 'react-native';
-import { CodeField } from '@/components/forms/CodeField';
+import { AppText } from '@/components/AppText';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
@@ -26,6 +26,9 @@ import { InventoryPickerRow } from './InventoryPickerRow';
 import { InventorySheetBody } from './InventorySheetBody';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventoryUnitPickerSheet } from './InventoryUnitPickerSheet';
+import { PurchasingSupplierSheet } from '@/features/purchasing/components/PurchasingSupplierSheet';
+import { useSuppliersQuery } from '@/features/purchasing/query';
+import { localizedName } from '@maher/i18n';
 
 type Props = {
   open: boolean;
@@ -35,6 +38,10 @@ type Props = {
   categoryGroup: InventoryCategoryGroup;
   loading?: boolean;
   onSubmit: (body: CreateInventoryItemInput) => void;
+  /** Stack on top of a picker / preparing sheet. */
+  overlay?: boolean;
+  /** Preparing fabric: standard cost must be greater than zero. */
+  requireCost?: boolean;
 };
 
 export function CreateInventoryItemSheet({
@@ -44,8 +51,10 @@ export function CreateInventoryItemSheet({
   categoryGroup,
   loading,
   onSubmit,
+  overlay = false,
+  requireCost = false,
 }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
 
@@ -55,8 +64,11 @@ export function CreateInventoryItemSheet({
   const [nameAr, setNameAr] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [minStock, setMinStock] = useState('0');
+  const [reorderQty, setReorderQty] = useState('0');
   const [standardCost, setStandardCost] = useState('0');
-  const [barcode, setBarcode] = useState('');
+  const [preferredSupplierId, setPreferredSupplierId] = useState('');
+  const [preferredSupplierName, setPreferredSupplierName] = useState('');
+  const [supplierOpen, setSupplierOpen] = useState(false);
   const [color, setColor] = useState('');
   const [measurements, setMeasurements] = useState<InventoryCustomMeasurement[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -70,6 +82,17 @@ export function CreateInventoryItemSheet({
     setMeasurements,
     open,
   );
+  const suppliersQuery = useSuppliersQuery(open, { status: 'ACTIVE' });
+  const supplierOptions = (suppliersQuery.data?.data ?? []).map((s) => ({
+    id: s.id,
+    name: localizedName(
+      locale,
+      { name: s.name, nameEn: s.nameEn, nameAr: s.nameAr, nameHe: s.nameHe },
+      s.code,
+    ),
+    code: s.code,
+    searchText: [s.name, s.nameEn, s.nameAr, s.nameHe, s.code].filter(Boolean).join(' '),
+  }));
 
   const showPhoto = true;
 
@@ -82,10 +105,12 @@ export function CreateInventoryItemSheet({
     setMaterialGroup(categoryGroup);
     setNameEn('');
     setNameAr('');
-    setUnit('pcs');
+    setUnit(categoryGroup === 'fabric' ? 'm' : 'pcs');
     setMinStock('0');
-    setStandardCost('0');
-    setBarcode('');
+    setReorderQty('0');
+    setStandardCost(requireCost ? '' : '0');
+    setPreferredSupplierId('');
+    setPreferredSupplierName('');
     setColor('');
     setMeasurements(starterMeasurements(categoryGroup));
     setPhotoPreview(null);
@@ -94,7 +119,7 @@ export function CreateInventoryItemSheet({
     setError(null);
     setUnitSheet(false);
     setTypeSheet(false);
-  }, [open, categoryGroup]);
+  }, [open, categoryGroup, requireCost]);
 
   function selectMaterialGroup(next: InventoryCategoryGroup) {
     setMaterialGroup(next);
@@ -103,16 +128,21 @@ export function CreateInventoryItemSheet({
     );
   }
 
+  const costOk = !requireCost || Number(standardCost) > 0;
+
   function submit() {
     if (!nameEn.trim() || !nameAr.trim()) {
       setError(t('mobile.inventory.createItemRequired'));
+      return;
+    }
+    if (!costOk) {
+      setError(t('mobile.purchasing.fabricUnitCost'));
       return;
     }
     setError(null);
     Keyboard.dismiss();
     setUnitSheet(false);
     setTypeSheet(false);
-    // Camera on this form fills supplier barcode only. Printed identity is assigned on save.
     onSubmit({
       nameEn: nameEn.trim(),
       nameAr: nameAr.trim(),
@@ -120,8 +150,9 @@ export function CreateInventoryItemSheet({
       category: INVENTORY_CATEGORY_FOR_CREATE[materialGroup],
       materialType: materialGroup,
       minStock: Number(minStock) || 0,
+      reorderQty: Number(reorderQty) > 0 ? Number(reorderQty) : undefined,
       standardCost: Number(standardCost) || 0,
-      barcode: barcode.trim() || undefined,
+      preferredSupplierId: preferredSupplierId || undefined,
       color: color.trim() || undefined,
       customMeasurements: measurements,
       ...(showPhoto && photoRemoteUrl ? { imageUrl: photoRemoteUrl } : {}),
@@ -136,6 +167,7 @@ export function CreateInventoryItemSheet({
         onClosed={onClosed}
         title={t('mobile.inventory.newItem')}
         sheetHeight={sheetHeight}
+        overlay={overlay}
       >
         <InventorySheetBody
           hint={t('mobile.inventory.newItemHint', {
@@ -170,12 +202,18 @@ export function CreateInventoryItemSheet({
             icon="resize-outline"
             onPress={() => setUnitSheet(true)}
           />
-          <InventoryPickerRow
-            label={t('mobile.inventory.materialType')}
-            value={t(`mobile.inventory.groups.${materialGroup}`)}
-            icon="layers-outline"
-            onPress={() => setTypeSheet(true)}
-          />
+          {requireCost ? (
+            <AppText variant="caption" color="muted">
+              {t(`mobile.inventory.groups.${materialGroup}`)}
+            </AppText>
+          ) : (
+            <InventoryPickerRow
+              label={t('mobile.inventory.materialType')}
+              value={t(`mobile.inventory.groups.${materialGroup}`)}
+              icon="layers-outline"
+              onPress={() => setTypeSheet(true)}
+            />
+          )}
           <InventoryMeasurementsList
             measurements={measurements}
             onAdd={measureEditor.openAdd}
@@ -190,21 +228,27 @@ export function CreateInventoryItemSheet({
             placeholder="0"
           />
           <QtyStepperField
+            label={t('mobile.inventory.reorderQty')}
+            value={reorderQty}
+            onChangeText={setReorderQty}
+            min={0}
+            placeholder="0"
+          />
+          <AppText variant="caption" color="muted">
+            {t('mobile.inventory.reorderQtyHint')}
+          </AppText>
+          <QtyStepperField
             label={t('mobile.inventory.standardCost')}
             value={standardCost}
             onChangeText={setStandardCost}
             min={0}
             placeholder="0"
           />
-          <CodeField
-            label={t('mobile.inventory.supplierBarcode')}
-            value={barcode}
-            onChangeText={setBarcode}
-            placeholder={t('mobile.inventory.scanSupplierBarcodeHint')}
-            scanTitle={t('mobile.inventory.scanSupplierBarcode')}
-            scanHint={t('mobile.inventory.scanSupplierBarcodeHint')}
-            scanAccessibilityLabel={t('mobile.inventory.scanSupplierBarcode')}
-            scanIcon="barcode-outline"
+          <InventoryPickerRow
+            label={t('catalog.supplier')}
+            value={preferredSupplierName || t('mobile.purchasing.pickSupplierHint')}
+            icon="business-outline"
+            onPress={() => setSupplierOpen(true)}
           />
           <TextField
             label={t('mobile.inventory.color')}
@@ -217,7 +261,7 @@ export function CreateInventoryItemSheet({
           onPrimary={submit}
           onSecondary={onClose}
           loading={loading || photoBusy}
-          disabled={loading || photoBusy}
+          disabled={loading || photoBusy || !costOk}
         />
       </BottomSheet>
 
@@ -242,6 +286,19 @@ export function CreateInventoryItemSheet({
         selected={materialGroup}
         onClose={() => setTypeSheet(false)}
         onSelect={selectMaterialGroup}
+      />
+      <PurchasingSupplierSheet
+        overlay
+        allowNone={false}
+        open={supplierOpen}
+        onClose={() => setSupplierOpen(false)}
+        suppliers={supplierOptions}
+        selectedId={preferredSupplierId || null}
+        openOrdersBySupplier={new Map()}
+        onConfirm={(s) => {
+          setPreferredSupplierId(s?.id ?? '');
+          setPreferredSupplierName(s?.name ?? '');
+        }}
       />
     </>
   );

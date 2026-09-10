@@ -8,6 +8,7 @@ export const dealerHomeSuccessFixture: DealerHomePayload = {
   outstandingBalance: '18750.000',
   balanceDueInDays: 15,
   unreadNotifications: 2,
+  pendingReturns: 1,
   recentOrders: [
     {
       id: 'so1',
@@ -57,6 +58,7 @@ export const dealerHomeEmptyFixture: DealerHomePayload = {
   outstandingBalance: '0.000',
   balanceDueInDays: null,
   unreadNotifications: 0,
+  pendingReturns: 0,
   recentOrders: [],
   recentInvoices: [],
 };

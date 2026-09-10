@@ -11,6 +11,7 @@ import { VAT, money } from '../seed/util';
 import { ammanLocal } from './clock';
 import type { MaterialRef } from './catalog';
 import { nextDoc, type SeqBag } from './seq';
+import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 
 export async function applyDemoMovement(
   prisma: PrismaClient,
@@ -40,12 +41,14 @@ export async function applyDemoMovement(
   const signed = outbound.includes(opts.type) ? -Math.abs(opts.quantity) : Math.abs(opts.quantity);
   const number = await nextDoc(prisma, 'invtx', opts.counters);
 
+  const locationId = await defaultBinIdForWarehouse(prisma, opts.warehouseId);
   await prisma.inventoryTransaction.create({
     data: {
       number,
       type: opts.type,
       inventoryItemId: opts.itemId,
       warehouseId: opts.warehouseId,
+      locationId,
       quantity: money(signed),
       unitCost: opts.unitCost != null ? money(opts.unitCost) : undefined,
       notes: opts.notes,
@@ -57,7 +60,7 @@ export async function applyDemoMovement(
   });
 
   const existing = await prisma.inventoryBalance.findFirst({
-    where: { inventoryItemId: opts.itemId, warehouseId: opts.warehouseId, locationId: null },
+    where: { inventoryItemId: opts.itemId, warehouseId: opts.warehouseId, locationId },
   });
   const nextAvail = Number(existing?.availableQty ?? 0) + signed;
   const nextReserved = Number(existing?.reservedQty ?? 0) + (opts.reservedDelta ?? 0);
@@ -76,6 +79,7 @@ export async function applyDemoMovement(
       data: {
         inventoryItemId: opts.itemId,
         warehouseId: opts.warehouseId,
+        locationId,
         availableQty: money(nextAvail),
         reservedQty: money(nextReserved),
         onOrderQty: money(nextOnOrder),
@@ -106,14 +110,20 @@ export async function seedDemoStock(
 ) {
   const rawWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'RAW' } });
   const finWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'FIN' } });
-  await prisma.warehouseLocation.create({
-    data: { warehouseId: rawWh.id, code: 'RAW-A1', name: 'Raw aisle A1' },
+  await prisma.warehouseLocation.upsert({
+    where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-A1' } },
+    update: {},
+    create: { warehouseId: rawWh.id, code: 'RAW-A1', name: 'Raw aisle A1' },
   });
-  await prisma.warehouseLocation.create({
-    data: { warehouseId: rawWh.id, code: 'RAW-B2', name: 'Raw aisle B2' },
+  await prisma.warehouseLocation.upsert({
+    where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-B2' } },
+    update: {},
+    create: { warehouseId: rawWh.id, code: 'RAW-B2', name: 'Raw aisle B2' },
   });
-  await prisma.warehouseLocation.create({
-    data: { warehouseId: finWh.id, code: 'FIN-DOCK', name: 'Finished dock' },
+  await prisma.warehouseLocation.upsert({
+    where: { warehouseId_code: { warehouseId: finWh.id, code: 'FIN-DOCK' } },
+    update: {},
+    create: { warehouseId: finWh.id, code: 'FIN-DOCK', name: 'Finished dock' },
   });
 
   const openingAt = ammanLocal(2026, 6, 1, 8, 0);
@@ -353,9 +363,10 @@ export async function seedDemoStock(
         }
       }
     } else if (spec.status === PurchaseOrderStatus.SENT || spec.status === PurchaseOrderStatus.APPROVED) {
+      const rawBinId = await defaultBinIdForWarehouse(prisma, rawWh.id);
       for (const l of lineData) {
         const existing = await prisma.inventoryBalance.findFirst({
-          where: { inventoryItemId: l.mat.id, warehouseId: rawWh.id, locationId: null },
+          where: { inventoryItemId: l.mat.id, warehouseId: rawWh.id, locationId: rawBinId },
         });
         if (existing) {
           await prisma.inventoryBalance.update({
@@ -367,6 +378,7 @@ export async function seedDemoStock(
             data: {
               inventoryItemId: l.mat.id,
               warehouseId: rawWh.id,
+              locationId: rawBinId,
               availableQty: money(0),
               onOrderQty: money(l.qty),
             },

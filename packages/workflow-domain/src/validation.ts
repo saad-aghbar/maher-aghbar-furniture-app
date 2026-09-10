@@ -10,6 +10,10 @@ import type {
 export type ValidateOptions = {
   /** Node ids that are allowed to have empty preds beyond Material Prep (explicit START). */
   explicitStartIds?: ReadonlySet<string>;
+  /** STANDARD only. Return/recovery workflows may start on any stage. */
+  requiresOpeningChain?: boolean;
+  /** Skip Inspection → Packaging → Delivery rules when the graph is recovery-shaped. */
+  requiresTerminalChain?: boolean;
 };
 
 export function validateCanonicalWorkflowGraph(
@@ -18,6 +22,9 @@ export function validateCanonicalWorkflowGraph(
 ): WorkflowValidationResult {
   const issues: WorkflowValidationIssue[] = [];
   const explicitStarts = options.explicitStartIds ?? new Set<string>();
+  const requiresOpeningChain = options.requiresOpeningChain ?? graph.requiresOpeningChain ?? true;
+  const requiresTerminalChain =
+    options.requiresTerminalChain ?? graph.requiresTerminalChain ?? true;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const nodeIds = graph.nodes.map((n) => n.id);
 
@@ -38,17 +45,19 @@ export function validateCanonicalWorkflowGraph(
     seen.add(key);
   }
 
-  if (!graph.inspectionNodeId) {
-    issues.push({ code: 'TERMINAL_MISSING', message: 'Missing INSPECTION' });
-  }
-  if (!graph.packagingNodeId) {
-    issues.push({ code: 'TERMINAL_MISSING', message: 'Missing PACKAGING' });
-  }
-  if (!graph.deliveryNodeId) {
-    issues.push({ code: 'TERMINAL_MISSING', message: 'Missing DELIVERY' });
+  if (requiresTerminalChain) {
+    if (!graph.inspectionNodeId) {
+      issues.push({ code: 'TERMINAL_MISSING', message: 'Missing INSPECTION' });
+    }
+    if (!graph.packagingNodeId) {
+      issues.push({ code: 'TERMINAL_MISSING', message: 'Missing PACKAGING' });
+    }
+    if (!graph.deliveryNodeId) {
+      issues.push({ code: 'TERMINAL_MISSING', message: 'Missing DELIVERY' });
+    }
   }
 
-  if (graph.inspectionNodeId && graph.packagingNodeId) {
+  if (requiresTerminalChain && graph.inspectionNodeId && graph.packagingNodeId) {
     const packPreds = graph.predecessorsByNode[graph.packagingNodeId] ?? [];
     if (packPreds.length !== 1 || packPreds[0] !== graph.inspectionNodeId) {
       issues.push({
@@ -58,7 +67,7 @@ export function validateCanonicalWorkflowGraph(
       });
     }
   }
-  if (graph.packagingNodeId && graph.deliveryNodeId) {
+  if (requiresTerminalChain && graph.packagingNodeId && graph.deliveryNodeId) {
     const delPreds = graph.predecessorsByNode[graph.deliveryNodeId] ?? [];
     if (delPreds.length !== 1 || delPreds[0] !== graph.packagingNodeId) {
       issues.push({
@@ -70,7 +79,7 @@ export function validateCanonicalWorkflowGraph(
   }
 
   // Inspection = frontier
-  if (graph.inspectionNodeId) {
+  if (requiresTerminalChain && graph.inspectionNodeId) {
     const inspPreds = sortedUnique(graph.predecessorsByNode[graph.inspectionNodeId] ?? []);
     const frontier = sortedUnique(graph.frontierNodeIds);
     if (inspPreds.join(',') !== frontier.join(',')) {
@@ -83,15 +92,17 @@ export function validateCanonicalWorkflowGraph(
   }
 
   // No production → Packaging/Delivery
-  for (const e of graph.edges) {
-    const toCode = byId.get(e.to)?.code ?? '';
-    const fromCode = byId.get(e.from)?.code ?? '';
-    if ((toCode === 'PACKAGING' || toCode === 'DELIVERY') && isProductionCode(fromCode)) {
-      issues.push({
-        code: 'PROD_TO_TERMINAL',
-        message: `Production ${e.from} must not edge to ${toCode}`,
-        nodeId: e.from,
-      });
+  if (requiresTerminalChain) {
+    for (const e of graph.edges) {
+      const toCode = byId.get(e.to)?.code ?? '';
+      const fromCode = byId.get(e.from)?.code ?? '';
+      if ((toCode === 'PACKAGING' || toCode === 'DELIVERY') && isProductionCode(fromCode)) {
+        issues.push({
+          code: 'PROD_TO_TERMINAL',
+          message: `Production ${e.from} must not edge to ${toCode}`,
+          nodeId: e.from,
+        });
+      }
     }
   }
 
@@ -101,6 +112,7 @@ export function validateCanonicalWorkflowGraph(
     const preds = graph.predecessorsByNode[id] ?? [];
     if (preds.length === 0) {
       const allowed =
+        !requiresOpeningChain ||
         isOpeningCode(node.code) ||
         node.code === OPENING_STAGE_CODE ||
         explicitStarts.has(id);
@@ -116,7 +128,7 @@ export function validateCanonicalWorkflowGraph(
   }
 
   // Reach Inspection
-  if (graph.inspectionNodeId) {
+  if (requiresTerminalChain && graph.inspectionNodeId) {
     for (const id of graph.productionNodeIds) {
       if (!isReachable(graph.successorsByNode, id, graph.inspectionNodeId)) {
         issues.push({

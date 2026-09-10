@@ -63,6 +63,9 @@ function inventoryFlagsForStage(stageCode: string): {
       consumesSemiFinished: true,
     };
   }
+  if (code === 'INSPECTION') {
+    return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: true };
+  }
   return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: false };
 }
 

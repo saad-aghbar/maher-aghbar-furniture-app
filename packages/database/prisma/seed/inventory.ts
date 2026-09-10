@@ -4,6 +4,7 @@ import {
   InventoryTxType,
 } from '@prisma/client';
 import { daysAgo, money, monthsAgo } from './util';
+import { defaultBinIdForWarehouse } from './warehouse-bins';
 
 export type InvItemRef = {
   id: string;
@@ -57,15 +58,25 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
   const finWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'FIN' } });
   const semiWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'SEMI' } });
 
-  const locRaw = await prisma.warehouseLocation.create({
-    data: { warehouseId: rawWh.id, code: 'RAW-A1', name: 'Raw aisle A1' },
+  const locRaw =
+    (await prisma.warehouseLocation.findUnique({
+      where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-A1' } },
+    })) ??
+    (await prisma.warehouseLocation.create({
+      data: { warehouseId: rawWh.id, code: 'RAW-A1', name: 'Raw aisle A1' },
+    }));
+  await prisma.warehouseLocation.upsert({
+    where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-B2' } },
+    update: {},
+    create: { warehouseId: rawWh.id, code: 'RAW-B2', name: 'Raw aisle B2' },
   });
-  await prisma.warehouseLocation.create({
-    data: { warehouseId: rawWh.id, code: 'RAW-B2', name: 'Raw aisle B2' },
+  await prisma.warehouseLocation.upsert({
+    where: { warehouseId_code: { warehouseId: finWh.id, code: 'FIN-DOCK' } },
+    update: {},
+    create: { warehouseId: finWh.id, code: 'FIN-DOCK', name: 'Finished dock' },
   });
-  await prisma.warehouseLocation.create({
-    data: { warehouseId: finWh.id, code: 'FIN-DOCK', name: 'Finished dock' },
-  });
+  const locFin = await defaultBinIdForWarehouse(prisma, finWh.id);
+  const locSemi = await defaultBinIdForWarehouse(prisma, semiWh.id);
 
   const items: InvItemRef[] = [];
   let txSeq = 1;
@@ -122,7 +133,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
       data: {
         inventoryItemId: item.id,
         warehouseId: wh.id,
-        locationId: m.category !== InventoryCategory.FINISHED ? locRaw.id : null,
+        locationId: m.category !== InventoryCategory.FINISHED ? locRaw.id : locFin,
         availableQty: money(m.opening),
         reservedQty: money(0),
       },
@@ -134,6 +145,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
         type: InventoryTxType.OPENING_BALANCE,
         inventoryItemId: item.id,
         warehouseId: wh.id,
+        locationId: m.category !== InventoryCategory.FINISHED ? locRaw.id : locFin,
         quantity: money(m.opening),
         unitCost: money(m.unitCost),
         notes: 'Opening balance — 8-month world',
@@ -161,6 +173,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
           type: InventoryTxType.PRODUCTION_ISSUE,
           inventoryItemId: item.id,
           warehouseId: rawWh.id,
+          locationId: locRaw.id,
           quantity: money(-qty),
           notes: `Floor issue month-${mo}`,
           createdById: adminId,
@@ -176,6 +189,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
           type: InventoryTxType.PURCHASE_RECEIPT,
           inventoryItemId: wood.id,
           warehouseId: rawWh.id,
+          locationId: locRaw.id,
           quantity: money(40),
           unitCost: money(11.5),
           notes: `Timber receipt month-${mo}`,
@@ -192,6 +206,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
     data: {
       inventoryItemId: ply.id,
       warehouseId: semiWh.id,
+      locationId: locSemi,
       availableQty: money(12),
       reservedQty: money(2),
     },

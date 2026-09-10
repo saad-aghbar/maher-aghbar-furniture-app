@@ -1,11 +1,9 @@
 'use client';
 
 import {
-  MaterialsListEditor,
   emptyMaterialsList,
   type MaterialsListRow,
 } from '@/components/admin/materials-list-editor';
-import { SupplierSearchPicker } from '@/components/admin/supplier-search-picker';
 import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
@@ -16,6 +14,7 @@ import {
   statusOptions,
 } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { setDemandCart } from '@/lib/purchasing-demand-cart';
 import {
   Alert,
   Button,
@@ -25,6 +24,7 @@ import {
   Ltr,
   Modal,
   MotionSection,
+  DateRangeField,
   PageHero,
   Select,
   Skeleton,
@@ -77,6 +77,7 @@ interface PORow {
   id: string;
   number: string;
   status: string;
+  origin?: string | null;
   warehouseId?: string | null;
   supplier?: { name: string; nameAr?: string | null; nameEn?: string | null; nameHe?: string | null };
   total?: string | number;
@@ -206,7 +207,6 @@ type SupplierFormState = {
   paymentTermsDays: string;
   leadTimeDays: string;
   rating: string;
-  isCertified: boolean;
   notes: string;
 };
 
@@ -222,7 +222,6 @@ const emptySupplierForm = (): SupplierFormState => ({
   paymentTermsDays: '30',
   leadTimeDays: '7',
   rating: '',
-  isCertified: true,
   notes: '',
 });
 
@@ -238,18 +237,10 @@ export default function PurchasingPage() {
   const currency = tCommon('currency');
 
   const [banner, setBanner] = useState<string | null>(null);
-  const [poOpen, setPoOpen] = useState(false);
-  const [prOpen, setPrOpen] = useState(false);
   const [supplierOpen, setSupplierOpen] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [supplierFormError, setSupplierFormError] = useState<string | null>(null);
   const [supplierForm, setSupplierForm] = useState<SupplierFormState>(emptySupplierForm);
-  const [supplierId, setSupplierId] = useState('');
-  const [warehouseId, setWarehouseId] = useState('');
   const [poMaterials, setPoMaterials] = useState<MaterialsListRow[]>(emptyMaterialsList());
-  const [prMaterials, setPrMaterials] = useState<MaterialsListRow[]>(emptyMaterialsList());
-  const [prReason, setPrReason] = useState('');
-  const [prPreferredSupplierId, setPrPreferredSupplierId] = useState('');
   const [poSearch, setPoSearch] = useState('');
   const [prSearch, setPrSearch] = useState('');
   const [siSearch, setSiSearch] = useState('');
@@ -320,7 +311,7 @@ export default function PurchasingPage() {
   const suppliersQuery = useQuery({
     queryKey: ['suppliers-pick'],
     queryFn: () =>
-      apiFetch<{ data: Supplier[] }>('/api/v1/suppliers?pageSize=100').then((r) => r.data),
+      apiFetch<{ data: Supplier[] }>('/api/v1/suppliers?pageSize=100&status=ACTIVE').then((r) => r.data),
   });
   const warehousesQuery = useQuery({
     queryKey: ['warehouses-pick'],
@@ -344,81 +335,6 @@ export default function PurchasingPage() {
   });
   const siStatusOpts = statusOptions(tStatus, INVOICE_STATUSES, {
     label: tCommon('all'),
-  });
-
-  const createPo = useMutation({
-    mutationFn: async () => {
-      const lines = poMaterials
-        .filter((row) => row.inventoryItemId && Number(row.quantity) > 0)
-        .map((row) => ({
-          description:
-            localizedName(locale, { nameEn: row.nameEn, nameAr: row.nameAr }) || row.sku,
-          quantity: Number(row.quantity),
-          unitPrice: Number(row.unitPrice) || 0,
-          inventoryItemId: row.inventoryItemId,
-          unit: row.unit || 'pcs',
-        }));
-      if (!supplierId) {
-        throw new ApiClientError(tc('selectSupplierRequired'), 400);
-      }
-      if (lines.length === 0) {
-        throw new ApiClientError(tc('selectMaterialRequired'), 400);
-      }
-      return apiFetch('/api/v1/purchase-orders', {
-        method: 'POST',
-        body: JSON.stringify({
-          supplierId,
-          warehouseId: warehouseId || undefined,
-          lines,
-        }),
-      });
-    },
-    onSuccess: async () => {
-      setFormError(null);
-      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-      await queryClient.invalidateQueries({ queryKey: ['material-demand'] });
-      setPoOpen(false);
-      setPoMaterials(emptyMaterialsList());
-      setSupplierId('');
-      setBanner(tc('purchaseOrderCreated'));
-    },
-    onError: (err) => setFormError(mutationErrorMessage(err)),
-  });
-
-  const createPr = useMutation({
-    mutationFn: async () => {
-      const lines = prMaterials
-        .filter((row) => row.inventoryItemId && Number(row.quantity) > 0)
-        .map((row) => ({
-          description:
-            localizedName(locale, { nameEn: row.nameEn, nameAr: row.nameAr }) || row.sku,
-          quantity: Number(row.quantity),
-          inventoryItemId: row.inventoryItemId,
-          unit: row.unit || 'pcs',
-        }));
-      if (!prPreferredSupplierId) {
-        throw new ApiClientError(tc('selectSupplierRequired'), 400);
-      }
-      if (lines.length === 0) {
-        throw new ApiClientError(tc('selectMaterialRequired'), 400);
-      }
-      return apiFetch('/api/v1/purchase-requests', {
-        method: 'POST',
-        body: JSON.stringify({
-          reason: prReason.trim() || undefined,
-          warehouseId: warehouseId || undefined,
-          preferredSupplierId: prPreferredSupplierId,
-          lines,
-        }),
-      });
-    },
-    onSuccess: async () => {
-      setFormError(null);
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setPrOpen(false);
-      setBanner(tc('purchaseRequestSubmitted'));
-    },
-    onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
   const createSupplier = useMutation({
@@ -447,7 +363,6 @@ export default function PurchasingPage() {
           leadTimeDays: Number(supplierForm.leadTimeDays) || 7,
           rating:
             supplierForm.rating.trim() === '' ? undefined : Number(supplierForm.rating),
-          isCertified: Boolean(supplierForm.isCertified),
           notes: supplierForm.notes.trim() || undefined,
         }),
       });
@@ -457,23 +372,11 @@ export default function PurchasingPage() {
       await queryClient.invalidateQueries({ queryKey: ['suppliers-pick'] });
       await queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       await queryClient.invalidateQueries({ queryKey: ['suppliers-search'] });
-      if (created?.id) setSupplierId(created.id);
       setSupplierOpen(false);
       setSupplierForm(emptySupplierForm());
       setBanner(tc('supplierCreated'));
     },
     onError: (err) => setSupplierFormError(mutationErrorMessage(err)),
-  });
-
-  const fromLowStock = useMutation({
-    mutationFn: () =>
-      apiFetch<{ id: string }>('/api/v1/purchase-requests/from-low-stock', { method: 'POST' }),
-    onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setBanner(tc('prFromLowStockCreated'));
-      if (created?.id) router.push(`/purchasing/requests/${created.id}`);
-    },
-    onError: (err) => setBanner(mutationErrorMessage(err)),
   });
 
   if ((poQuery.isLoading && !poQuery.data) || (prQuery.isLoading && !prQuery.data) || (siQuery.isLoading && !siQuery.data)) {
@@ -532,31 +435,27 @@ export default function PurchasingPage() {
     return '—';
   }
 
-  function resetPoForm() {
-    setSupplierId('');
-    setWarehouseId(warehouses[0]?.id ?? '');
-    setPoMaterials(emptyMaterialsList());
-    setFormError(null);
-  }
-
-  function resetPrForm() {
-    setWarehouseId(warehouses[0]?.id ?? '');
-    setPrReason('');
-    setPrPreferredSupplierId('');
-    setPrMaterials(emptyMaterialsList());
-    setFormError(null);
-  }
-
   function openNewSupplier() {
     setSupplierForm(emptySupplierForm());
     setSupplierFormError(null);
     setSupplierOpen(true);
   }
 
-  function openPoDraft() {
-    setWarehouseId((prev) => prev || warehouses[0]?.id || '');
-    setFormError(null);
-    setPoOpen(true);
+  function openDemandBuilder() {
+    setDemandCart(
+      poMaterials.map((row) => ({
+        inventoryItemId: row.inventoryItemId,
+        sku: row.sku,
+        nameEn: row.nameEn,
+        nameAr: row.nameAr,
+        category: row.category,
+        unit: row.unit,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        imageUrl: row.imageUrl,
+      })),
+    );
+    router.push('/purchasing/new');
   }
 
   function addDemandToPurchase(row: DemandRow) {
@@ -612,28 +511,18 @@ export default function PurchasingPage() {
             <Button
               variant="ghost"
               className="maher-lift"
-              loading={fromLowStock.isPending}
-              onClick={() => fromLowStock.mutate()}
+              onClick={() => router.push('/purchasing/low-stock')}
             >
-              {tc('fromLowStock')}
+              {tc('lowStockOrders')}
             </Button>
             <Button
               variant="secondary"
               className="maher-lift"
-              onClick={() => {
-                resetPrForm();
-                setPrOpen(true);
-              }}
+              onClick={() => router.push('/suppliers')}
             >
-              {tc('newPurchaseRequest')}
+              {tc('actionSuppliers')}
             </Button>
-            <Button
-              className="maher-lift"
-              onClick={() => {
-                resetPoForm();
-                setPoOpen(true);
-              }}
-            >
+            <Button className="maher-lift" onClick={() => router.push('/purchasing/new')}>
               {tc('newPurchaseOrder')}
             </Button>
           </>
@@ -649,11 +538,8 @@ export default function PurchasingPage() {
         <Tabs defaultValue="orders">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <TabList>
-              <Tab value="orders" count={orders.length}>
+              <Tab value="orders" count={orders.length + requests.length}>
                 {tc('purchaseOrders')}
-              </Tab>
-              <Tab value="requests" count={requests.length}>
-                {tc('purchaseRequests')}
               </Tab>
               <Tab value="supplier-invoices" count={supplierInvoices.length}>
                 {tc('supplierInvoices')}
@@ -705,19 +591,13 @@ export default function PurchasingPage() {
                 >
                   {supplierFilterOptions}
                 </Select>
-                <Input
-                  type="date"
-                  label={tc('dateFrom')}
-                  value={poDateFrom}
-                  onChange={(e) => setPoDateFrom(e.target.value)}
-                  className="w-40"
-                />
-                <Input
-                  type="date"
-                  label={tc('dateTo')}
-                  value={poDateTo}
-                  onChange={(e) => setPoDateTo(e.target.value)}
-                  className="w-40"
+                <DateRangeField
+                  fromLabel={tc('dateFrom')}
+                  toLabel={tc('dateTo')}
+                  from={poDateFrom}
+                  to={poDateTo}
+                  onFromChange={setPoDateFrom}
+                  onToChange={setPoDateTo}
                 />
               </div>
               <div
@@ -725,7 +605,7 @@ export default function PurchasingPage() {
                   poQuery.isFetching ? 'opacity-70 transition-opacity' : ''
                 }`}
               >
-                {orders.length === 0 ? (
+                {orders.length === 0 && requests.length === 0 ? (
                   <div className="col-span-full">
                     <EmptyState title={tc('noPurchaseOrders')} />
                   </div>
@@ -740,10 +620,15 @@ export default function PurchasingPage() {
                         className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
                       >
                         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                          <StatusBadge
-                            status={row.presentation?.phase ?? row.status}
-                            label={phaseLabel ?? undefined}
-                          />
+                          <div className="flex items-center gap-2">
+                            <StatusBadge
+                              status={row.presentation?.phase ?? row.status}
+                              label={phaseLabel ?? undefined}
+                            />
+                            {row.origin && row.origin !== 'MANUAL' ? (
+                              <StatusBadge status={row.origin} />
+                            ) : null}
+                          </div>
                           <Link
                             href={`/purchasing/${row.id}`}
                             className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
@@ -798,11 +683,52 @@ export default function PurchasingPage() {
                     );
                   })
                 )}
+                {requests.map((row) => {
+                  const offerCount = row.offers?.length ?? 0;
+                  const linkedPo = row.purchaseOrder?.number ?? null;
+                  return (
+                    <article
+                      key={`pr-${row.id}`}
+                      className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
+                    >
+                      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={row.status} />
+                          <StatusBadge status="REQUEST" label={tc('requestChip')} />
+                        </div>
+                        <Link
+                          href={`/purchasing/requests/${row.id}`}
+                          className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
+                        >
+                          {tCommon('details')}
+                        </Link>
+                      </div>
+                      <div className="flex flex-1 flex-col px-4 py-4">
+                        <p className="truncate text-lg font-semibold tracking-tight text-text-primary">
+                          <Ltr>{row.number}</Ltr>
+                        </p>
+                        <p className="mt-2 truncate text-sm text-text-secondary">
+                          {prSupplierLabel(row)}
+                        </p>
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <span className="rounded-md bg-[var(--maher-surface-muted)] px-2.5 py-1 text-xs font-medium text-text-secondary">
+                            <Ltr>{offerCount}</Ltr> {tc('offersShort')}
+                          </span>
+                          {linkedPo ? (
+                            <span className="rounded-md bg-[var(--maher-surface-muted)] px-2.5 py-1 text-xs font-medium text-text-secondary">
+                              {tc('linkedPo')}: <Ltr>{linkedPo}</Ltr>
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </div>
           </TabPanel>
 
-          <TabPanel value="requests" className="maher-purchasing-panel">
+          <TabPanel value="requests" className="maher-purchasing-panel hidden">
             <div
               key={`requests-${prStatus}-${prSupplierId}`}
               className="space-y-4"
@@ -1059,7 +985,7 @@ export default function PurchasingPage() {
                   ))}
                 </Select>
                 {poMaterials.length > 0 ? (
-                  <Button className="maher-lift shrink-0" onClick={openPoDraft}>
+                  <Button className="maher-lift shrink-0" onClick={openDemandBuilder}>
                     {tc('newPurchaseOrder')} ({poMaterials.length})
                   </Button>
                 ) : null}
@@ -1147,101 +1073,6 @@ export default function PurchasingPage() {
           </TabPanel>
         </Tabs>
       </MotionSection>
-
-      <Modal
-        open={poOpen}
-        onClose={() => !createPo.isPending && setPoOpen(false)}
-        title={tc('newPurchaseOrder')}
-        className="max-w-3xl"
-        footer={
-          <>
-            <Button variant="ghost" disabled={createPo.isPending} onClick={() => setPoOpen(false)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button loading={createPo.isPending} onClick={() => createPo.mutate()}>
-              {tCommon('save')}
-            </Button>
-          </>
-        }
-      >
-        <div className="maher-form-section grid gap-3">
-          {formError ? <Alert variant="error">{formError}</Alert> : null}
-          <div className="flex flex-wrap items-end gap-2">
-            <SupplierSearchPicker
-              label={tc('supplier')}
-              required
-              value={supplierId}
-              onChange={(id) => setSupplierId(id)}
-              className="min-w-[220px] flex-1"
-            />
-            <Button type="button" variant="secondary" onClick={openNewSupplier}>
-              <Plus className="size-4" aria-hidden />
-              {tc('newSupplier')}
-            </Button>
-          </div>
-          <Select
-            label={tc('warehouses')}
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-          >
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.code} — {localizedName(locale, w)}
-              </option>
-            ))}
-          </Select>
-          <MaterialsListEditor rows={poMaterials} onChange={setPoMaterials} />
-        </div>
-      </Modal>
-
-      <Modal
-        open={prOpen}
-        onClose={() => !createPr.isPending && setPrOpen(false)}
-        title={tc('newPurchaseRequest')}
-        className="max-w-3xl"
-        footer={
-          <>
-            <Button variant="ghost" disabled={createPr.isPending} onClick={() => setPrOpen(false)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button loading={createPr.isPending} onClick={() => createPr.mutate()}>
-              {tCommon('submit')}
-            </Button>
-          </>
-        }
-      >
-        <div className="maher-form-section grid gap-3">
-          {formError ? <Alert variant="error">{formError}</Alert> : null}
-          <Input
-            label={tc('reason')}
-            value={prReason}
-            onChange={(e) => setPrReason(e.target.value)}
-          />
-          <SupplierSearchPicker
-            label={tc('supplier')}
-            required
-            value={prPreferredSupplierId}
-            onChange={(id) => setPrPreferredSupplierId(id)}
-          />
-          <Select
-            label={tc('warehouses')}
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-          >
-            <option value="">{tc('noneOption')}</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.code} — {localizedName(locale, w)}
-              </option>
-            ))}
-          </Select>
-          <MaterialsListEditor
-            rows={prMaterials}
-            onChange={setPrMaterials}
-            variant="request"
-          />
-        </div>
-      </Modal>
 
       <Modal
         open={supplierOpen}
@@ -1333,15 +1164,6 @@ export default function PurchasingPage() {
             value={supplierForm.rating}
             onChange={(e) => setSupplierForm((f) => ({ ...f, rating: e.target.value }))}
           />
-          <label className="flex items-center gap-2 self-end pb-2 text-sm text-[var(--maher-text-primary)]">
-            <input
-              type="checkbox"
-              className="size-4 rounded border-[var(--maher-border)]"
-              checked={supplierForm.isCertified}
-              onChange={(e) => setSupplierForm((f) => ({ ...f, isCertified: e.target.checked }))}
-            />
-            {tc('isCertified')}
-          </label>
           <div className="sm:col-span-2">
             <Input
               label={tc('notes')}

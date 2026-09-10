@@ -4,6 +4,7 @@ const KIND_KEYS = [
   'mobile.orders.journey.kind.standard',
   'mobile.orders.journey.kind.modified',
   'mobile.orders.journey.kind.custom',
+  'mobile.orders.journey.kind.returned',
   'mobile.orders.journey.kind.basedOnCatalog',
 ] as const;
 
@@ -21,11 +22,14 @@ describe('order type lens i18n', () => {
     expect(translate('en', 'mobile.orders.journey.kind.standard')).toBe('Standard');
     expect(translate('en', 'mobile.orders.journey.kind.modified')).toBe('Modified');
     expect(translate('en', 'mobile.orders.journey.kind.custom')).toBe('Custom');
+    expect(translate('en', 'mobile.orders.journey.kind.returned')).toBe('Returned');
     expect(translate('ar', 'mobile.orders.journey.kind.standard')).toBe('قياسي');
     expect(translate('ar', 'mobile.orders.journey.kind.modified')).toBe('معدّل');
     expect(translate('ar', 'mobile.orders.journey.kind.custom')).toBe('مخصص');
+    expect(translate('ar', 'mobile.orders.journey.kind.returned')).toBe('مرتجع');
     expect(translate('he', 'mobile.orders.journey.kind.standard')).toBe('סטנדרטי');
     expect(translate('he', 'mobile.orders.journey.kind.modified')).toBe('מותאם');
     expect(translate('he', 'mobile.orders.journey.kind.custom')).toBe('מותאם אישית');
+    expect(translate('he', 'mobile.orders.journey.kind.returned')).toBe('מוחזר');
   });
 });

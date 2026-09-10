@@ -49,6 +49,17 @@ async function ensureUser(
     ? (await prisma.department.findUniqueOrThrow({ where: { code: opts.departmentCode } })).id
     : undefined;
 
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (existing) {
+    const hasRole = await prisma.userRole.findUnique({
+      where: { userId_roleId: { userId: existing.id, roleId: role.id } },
+    });
+    if (!hasRole) {
+      await prisma.userRole.create({ data: { userId: existing.id, roleId: role.id } });
+    }
+    return existing;
+  }
+
   return prisma.user.create({
     data: {
       username,
@@ -149,6 +160,22 @@ const STAFF: Array<{
     phone: '+962790000018',
   },
   {
+    username: 'qc2',
+    firstName: 'Yasmin',
+    lastName: 'Awad',
+    roleCode: 'QUALITY_CONTROL',
+    departmentCode: 'QC',
+    phone: '+962790000021',
+  },
+  {
+    username: 'returnsdesk',
+    firstName: 'Ruba',
+    lastName: 'Haddad',
+    roleCode: 'WAREHOUSE_MANAGEMENT',
+    departmentCode: 'WH',
+    phone: '+962790000022',
+  },
+  {
     username: 'finance',
     firstName: 'Tamer',
     lastName: 'Issa',
@@ -195,6 +222,8 @@ const WORKERS: Array<{
   { username: 'packer2', firstName: 'Waleed', lastName: 'Ghazzawi', departmentCode: 'PACK', phone: '+962790100702', stages: ['PACKAGING', 'MATERIAL_PREP'] },
   { username: 'driver', firstName: 'Basel', lastName: 'Smadi', departmentCode: 'DEL', phone: '+962790100801', stages: ['DELIVERY'] },
   { username: 'driver2', firstName: 'Anas', lastName: 'Freijat', departmentCode: 'DEL', phone: '+962790100802', stages: ['DELIVERY'] },
+  { username: 'recovery1', firstName: 'Suhaib', lastName: 'Zaid', departmentCode: 'WH', phone: '+962790100901', stages: ['DISMANTLE_RECOVER'] },
+  { username: 'recovery2', firstName: 'Murad', lastName: 'Btoush', departmentCode: 'WH', phone: '+962790100902', stages: ['DISMANTLE_RECOVER'] },
 ];
 
 const DEALERS: Array<{

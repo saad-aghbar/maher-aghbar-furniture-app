@@ -134,6 +134,8 @@ describe('SalesOrdersService.list scope', () => {
         progressPercent: 55,
       },
     ],
+    returns: [],
+    _count: { returns: 0 },
   };
 
   it('forces dealer customerId and ignores query override for another dealer', async () => {

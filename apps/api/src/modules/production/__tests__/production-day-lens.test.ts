@@ -1,5 +1,6 @@
 import {
   intervalOverlapsFactoryDay,
+  productionDayLensFocusWhere,
   productionDayLensWhere,
   resolveFactoryDayBounds,
 } from '../production-day-lens';
@@ -39,6 +40,25 @@ describe('production-day-lens (Phase C)', () => {
     expect(JSON.stringify(planned)).not.toContain('actualStart');
     expect(JSON.stringify(actual)).toContain('actualStart');
     expect(JSON.stringify(actual)).toContain('receivedAt');
+  });
+
+  it('late_missed focus is planned-day tasks that missed their end', () => {
+    const bounds = resolveFactoryDayBounds('2026-09-08', tz);
+    const now = new Date('2026-09-08T15:00:00.000Z');
+    const where = productionDayLensFocusWhere(bounds, 'late_missed', now);
+    const json = JSON.stringify(where);
+    expect(json).toContain('plannedCompletion');
+    expect(json).toContain('actualStart');
+    expect(productionDayLensFocusWhere(bounds, null, now)).toBeNull();
+  });
+
+  it('at_risk focus is overdue delivery or open blockers', () => {
+    const bounds = resolveFactoryDayBounds('2026-09-08', tz);
+    const now = new Date('2026-09-08T15:00:00.000Z');
+    const where = productionDayLensFocusWhere(bounds, 'at_risk', now);
+    const json = JSON.stringify(where);
+    expect(json).toContain('requiredDeliveryDate');
+    expect(json).toContain('resolvedAt');
   });
 
   it('timezone boundary: late UTC evening can still be Amman next morning', () => {

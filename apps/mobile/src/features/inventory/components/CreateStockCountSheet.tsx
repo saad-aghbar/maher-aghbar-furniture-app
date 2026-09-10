@@ -16,6 +16,12 @@ import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
 import { WarehousePickList } from './WarehousePickList';
+import {
+  locationsForWarehouse,
+  WarehouseBinStrip,
+} from './WarehouseBinBoard';
+import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import {
   ScanInventoryItemAction,
@@ -56,14 +62,16 @@ export function CreateStockCountSheet({
   const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.round(height * 0.78);
-  const warehouseListHeight = Math.round(height * 0.28);
+  const sheetHeight = Math.round(height * 0.82);
+  const warehouseListHeight = Math.round(height * 0.2);
   const canAddWarehouse = can(user, 'warehouse.manage');
   const copy = inventoryPickCopyKey(lifecycle);
   const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
   const scanRef = useRef<ScanInventoryItemActionHandle>(null);
+  const scanWarehouseBin = useScanWarehouseBin();
 
   const [warehouseId, setWarehouseId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [kind, setKind] = useState<'PERIODIC' | 'SURPRISE'>('PERIODIC');
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [qty, setQty] = useState('');
@@ -87,6 +95,7 @@ export function CreateStockCountSheet({
       return;
     }
     setWarehouseId('');
+    setLocationId('');
     setKind('PERIODIC');
     setItem(initialItem ?? null);
     setQty('');
@@ -122,13 +131,18 @@ export function CreateStockCountSheet({
       return;
     }
     setError(null);
+    const bins = locationsForWarehouse(warehouses.find((wh) => wh.id === warehouseId));
+    const locId = pickDefaultLocationId(bins, locationId);
     const noteParts = [kind, notes.trim()].filter(Boolean);
     onSubmit({
       warehouseId,
       notes: noteParts.length ? noteParts.join(' — ') : undefined,
-      lines: [{ inventoryItemId: item.id, countedQty }],
+      lines: [{ inventoryItemId: item.id, countedQty, locationId: locId || undefined }],
     });
   }
+
+  const countBins = locationsForWarehouse(warehouses.find((wh) => wh.id === warehouseId));
+  const countLocationId = pickDefaultLocationId(countBins, locationId);
 
   return (
     <>
@@ -214,6 +228,9 @@ export function CreateStockCountSheet({
                   onSelect={(id) => {
                     if (id !== warehouseId) setItem(null);
                     setWarehouseId(id);
+                    setLocationId(
+                      pickDefaultLocationId(locationsForWarehouse(warehouses.find((wh) => wh.id === id))),
+                    );
                   }}
                   label={t('mobile.inventory.warehouse')}
                   listHeight={warehouseListHeight}
@@ -222,6 +239,22 @@ export function CreateStockCountSheet({
                     canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
                   }
                 />
+                {countBins.length > 0 ? (
+                  <WarehouseBinStrip
+                    locations={countBins}
+                    selectedId={countLocationId}
+                    onSelect={setLocationId}
+                    onScanPress={() => {
+                      void (async () => {
+                        const bin = await scanWarehouseBin();
+                        if (!bin) return;
+                        const whId = bin.warehouse?.id ?? bin.warehouseId;
+                        if (whId) setWarehouseId(whId);
+                        setLocationId(bin.id);
+                      })();
+                    }}
+                  />
+                ) : null}
 
                 <InventorySheetSectionLabel label={t(copy.item)} />
                 {item ? (

@@ -12,6 +12,7 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -31,13 +32,16 @@ import {
 } from './components/TasksSegmentRail';
 import { TasksListSkeleton } from './components/TasksListSkeleton';
 import type { TaskListItem } from './api';
+import { WorkerOrderCard } from './components/WorkerOrderCard';
 import {
   flattenTasksPages,
   useCompletedDealersQuery,
+  useMyOrdersQuery,
   useTasksInfiniteQuery,
   type TasksListQueryFilters,
 } from './query';
 import { selectTaskCard, sortUrgentFirst } from './selectTask';
+import { selectWorkerOrderCard, workerOrderMatchesQuery } from './selectWorkerOrder';
 
 export type TasksListVariant = 'open' | 'completed';
 
@@ -55,16 +59,8 @@ const INITIAL_COMPLETED_FILTERS: CompletedFiltersState = {
   customDate: '',
 };
 
-function filtersForSegment(segment: TasksSegment): TasksListQueryFilters {
-  switch (segment) {
-    case 'today':
-      return { scope: 'open', dueToday: true, mine: true };
-    case 'active':
-      return { status: 'IN_PROGRESS', mine: true };
-    case 'open':
-    default:
-      return { scope: 'open', mine: true };
-  }
+function orderSegment(segment: TasksSegment): 'open' | 'today' | 'active' {
+  return segment;
 }
 
 /**
@@ -86,9 +82,11 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
     theme.spacing['2xl'];
 
   const [segment, setSegment] = useState<TasksSegment>('open');
+  const [searchInput, setSearchInput] = useState('');
   const [completedFilters, setCompletedFilters] = useState<CompletedFiltersState>(
     INITIAL_COMPLETED_FILTERS,
   );
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const debouncedCompletedQ = useDebouncedValue(completedFilters.q, 300);
 
   useEffect(() => {
@@ -98,7 +96,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
   const dealersQuery = useCompletedDealersQuery(allowed && isCompleted && !forceState);
 
   const filters = useMemo<TasksListQueryFilters>(() => {
-    if (!isCompleted) return filtersForSegment(segment);
+    if (!isCompleted) return { scope: 'open', mine: true };
     const extra = completedFiltersToQuery({
       ...completedFilters,
       q: debouncedCompletedQ,
@@ -110,7 +108,11 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
     };
   }, [isCompleted, segment, completedFilters, debouncedCompletedQ]);
 
-  const query = useTasksInfiniteQuery(filters, allowed && !forceState);
+  const query = useTasksInfiniteQuery(filters, allowed && !forceState && isCompleted);
+  const showOrders = !isCompleted && !forceState;
+  const hasOpenSearch = Boolean(debouncedSearch.trim());
+  const ordersSegment = hasOpenSearch ? 'open' : orderSegment(segment);
+  const ordersQuery = useMyOrdersQuery(ordersSegment, debouncedSearch, allowed && showOrders);
 
   /** Pull-to-refresh only — not segment / filter transitions. */
   const pullRefreshing =
@@ -122,17 +124,26 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
    */
   const isFilterUpdating =
     !forceState &&
-    query.isFetching &&
-    !query.isFetchingNextPage &&
-    Boolean(query.data);
+    (showOrders
+      ? ordersQuery.isFetching && Boolean(ordersQuery.data)
+      : query.isFetching && !query.isFetchingNextPage && Boolean(query.data));
 
   const [animateEnter, setAnimateEnter] = useState(true);
   useEffect(() => {
     if (!animateEnter) return;
-    if (!query.isFetched || query.isPlaceholderData) return;
+    const fetched = showOrders ? ordersQuery.isFetched : query.isFetched;
+    const placeholder = showOrders ? ordersQuery.isPlaceholderData : query.isPlaceholderData;
+    if (!fetched || placeholder) return;
     const id = setTimeout(() => setAnimateEnter(false), 520);
     return () => clearTimeout(id);
-  }, [animateEnter, query.isFetched, query.isPlaceholderData]);
+  }, [
+    animateEnter,
+    showOrders,
+    ordersQuery.isFetched,
+    ordersQuery.isPlaceholderData,
+    query.isFetched,
+    query.isPlaceholderData,
+  ]);
 
   const liveItems = flattenTasksPages(query.data)
     .filter((item) => item.stageDefinition?.code !== 'DELIVERY')
@@ -148,13 +159,17 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
         : sortUrgentFirst(fixtureItems)
       : sortUrgentFirst(liveItems);
 
+  const orderCards = (ordersQuery.data?.data ?? [])
+    .filter((row) => workerOrderMatchesQuery(row, debouncedSearch))
+    .map((row) => selectWorkerOrderCard(row, locale));
+
   const subtitleKey = isCompleted
     ? 'mobile.tasks.subtitleDone'
     : segment === 'today'
       ? 'mobile.tasks.subtitleToday'
       : segment === 'active'
         ? 'mobile.tasks.subtitleActive'
-        : 'mobile.tasks.subtitleOpen';
+        : 'mobile.tasks.openOrdersSubtitle';
 
   const showingLabel = isCompleted
     ? t('mobile.tasks.segments.done')
@@ -169,29 +184,33 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
     ? hasCompletedFilter
       ? t('mobile.tasks.emptyCompletedFilteredTitle')
       : t('mobile.tasks.emptyCompletedTitle')
-    : segment === 'today'
-      ? t('mobile.tasks.emptyTodayTitle')
-      : segment === 'active'
-        ? t('mobile.tasks.emptyActiveTitle')
-        : t('mobile.tasks.emptyTitle');
+    : hasOpenSearch
+      ? t('mobile.tasks.emptySearchTitle')
+      : segment === 'today'
+        ? t('mobile.tasks.emptyTodayTitle')
+        : segment === 'active'
+          ? t('mobile.tasks.emptyActiveTitle')
+          : t('mobile.tasks.emptyOrdersTitle');
   const emptyBody = isCompleted
     ? hasCompletedFilter
       ? t('mobile.tasks.emptyCompletedFilteredBody')
       : t('mobile.tasks.emptyCompletedBody')
-    : segment === 'today'
-      ? t('mobile.tasks.emptyTodayBody')
-      : segment === 'active'
-        ? t('mobile.tasks.emptyActiveBody')
-        : t('mobile.tasks.emptyBody');
+    : hasOpenSearch
+      ? t('mobile.tasks.emptySearchBody')
+      : segment === 'today'
+        ? t('mobile.tasks.emptyTodayBody')
+        : segment === 'active'
+          ? t('mobile.tasks.emptyActiveBody')
+          : t('mobile.tasks.emptyOrdersBody');
 
   /** True first visit only — never when swapping filters. */
   const isInitialLoading =
     forceState === 'loading' ||
     (allowed &&
       !forceState &&
-      query.isPending &&
-      !query.data &&
-      !query.isPlaceholderData);
+      (showOrders
+        ? ordersQuery.isPending && !ordersQuery.data
+        : query.isPending && !query.data && !query.isPlaceholderData));
 
   const header = useMemo(
     () => (
@@ -238,6 +257,16 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
               />
             ) : (
               <>
+                <TextField
+                  value={searchInput}
+                  onChangeText={setSearchInput}
+                  placeholder={t('mobile.tasks.searchPlaceholder')}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                  pill
+                />
                 <TasksSegmentRail value={segment} onChange={setSegment} />
                 <View
                   style={{
@@ -299,6 +328,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
       isFilterUpdating,
       isRTL,
       locale,
+      searchInput,
       segment,
       showingLabel,
       subtitleKey,
@@ -325,7 +355,11 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
     );
   }
 
-  if (forceState === 'error' || (query.isError && !query.data && !forceState)) {
+  if (
+    forceState === 'error' ||
+    (!forceState &&
+      (showOrders ? ordersQuery.isError && !ordersQuery.data : query.isError && !query.data))
+  ) {
     return (
       <AppScreen edges={{ top: true, bottom: false }}>
         {showOfflineBanner ? <OfflineBanner /> : null}
@@ -334,7 +368,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
           title={t('mobile.tasks.errorTitle')}
           description={t('mobile.tasks.errorBody')}
           retryLabel={t('mobile.tasks.retry')}
-          onRetry={() => void query.refetch()}
+          onRetry={() => void (showOrders ? ordersQuery.refetch() : query.refetch())}
         />
       </AppScreen>
     );
@@ -358,48 +392,82 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
   return (
     <AppScreen edges={{ top: true, bottom: false }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{
-          paddingBottom: listBottomPad,
-          flexGrow: 1,
-        }}
-        style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={Boolean(pullRefreshing)}
-            onRefresh={() => void query.refetch()}
-            tintColor={colors.brand}
-          />
-        }
-        ListHeaderComponent={header}
-        renderItem={({ item, index }) => (
-          <TaskCard
-            task={item}
-            index={index}
-            completed={isCompleted}
-            animateEnter={animateEnter}
-          />
-        )}
-        ListEmptyComponent={
-          isFilterUpdating ? (
-            <View style={{ paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.brand} />
-            </View>
-          ) : (
-            <EmptyState title={emptyTitle} description={emptyBody} />
-          )
-        }
-        onEndReached={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage) {
-            void query.fetchNextPage();
+      {showOrders ? (
+        <FlatList
+          data={orderCards}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{
+            paddingBottom: listBottomPad,
+            flexGrow: 1,
+          }}
+          style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={Boolean(ordersQuery.isRefetching)}
+              onRefresh={() => void ordersQuery.refetch()}
+              tintColor={colors.brand}
+            />
           }
-        }}
-        onEndReachedThreshold={0.4}
-        extraData={`${isCompleted ? 'done' : segment}:${animateEnter}:${isFilterUpdating}`}
-        keyboardShouldPersistTaps="handled"
-      />
+          ListHeaderComponent={header}
+          renderItem={({ item, index }) => (
+            <WorkerOrderCard order={item} index={index} animateEnter={animateEnter} />
+          )}
+          ListEmptyComponent={
+            isFilterUpdating ? (
+              <View style={{ paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.brand} />
+              </View>
+            ) : (
+              <EmptyState title={emptyTitle} description={emptyBody} />
+            )
+          }
+          extraData={`${segment}:${debouncedSearch}:${animateEnter}:${isFilterUpdating}`}
+          keyboardShouldPersistTaps="handled"
+        />
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{
+            paddingBottom: listBottomPad,
+            flexGrow: 1,
+          }}
+          style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={Boolean(pullRefreshing)}
+              onRefresh={() => void query.refetch()}
+              tintColor={colors.brand}
+            />
+          }
+          ListHeaderComponent={header}
+          renderItem={({ item, index }) => (
+            <TaskCard
+              task={item}
+              index={index}
+              completed={isCompleted}
+              animateEnter={animateEnter}
+            />
+          )}
+          ListEmptyComponent={
+            isFilterUpdating ? (
+              <View style={{ paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.brand} />
+              </View>
+            ) : (
+              <EmptyState title={emptyTitle} description={emptyBody} />
+            )
+          }
+          onEndReached={() => {
+            if (query.hasNextPage && !query.isFetchingNextPage) {
+              void query.fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          extraData={`${isCompleted ? 'done' : segment}:${animateEnter}:${isFilterUpdating}`}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
     </AppScreen>
   );
 }

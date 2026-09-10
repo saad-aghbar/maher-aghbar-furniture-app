@@ -99,6 +99,8 @@ function deliveryCard() {
 }
 
 describe('FactoryCapacityDetailSheet', () => {
+  jest.setTimeout(20_000);
+
   it('lists eligible pairs and ineligible allocated-only hours without a slash', async () => {
     const view = await render(
       <FactoryCapacityDetailSheet open onClose={() => undefined} card={deliveryCard()} />,

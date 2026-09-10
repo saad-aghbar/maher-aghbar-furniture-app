@@ -26,7 +26,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00047** (IN_PRODUCTION)
 - Production: **PO-2026-00047** (IN_PROGRESS)
-- Dates: requested 2026-09-01 · suggested 2026-08-17 · committed — · factory earliest 2026-08-17 · planned — · actual —
+- Dates: requested 2026-09-01 · suggested 2026-08-16 · committed — · factory earliest 2026-08-16 · planned — · actual —
 
 ### 3. Nile blank production start
 
@@ -35,7 +35,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Nile Interiors (`CUS-0101`)
 - Sales order: **SO-2026-00066** (IN_PRODUCTION)
 - Production: **PO-2026-00066** (IN_PROGRESS)
-- Dates: requested 2026-09-16 · suggested 2026-08-17 · committed — · factory earliest 2026-08-17 · planned — · actual —
+- Dates: requested 2026-09-16 · suggested 2026-08-16 · committed — · factory earliest 2026-08-16 · planned — · actual —
 
 ### 4. Abdali hotel banquettes
 
@@ -65,7 +65,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Diwan Seating (`CUS-0108`)
 - Sales order: **SO-2026-00052** (IN_PRODUCTION)
 - Production: **PO-2026-00052** (IN_PROGRESS)
-- Dates: requested 2026-08-29 · suggested 2026-08-17 · committed — · factory earliest 2026-08-17 · planned — · actual —
+- Dates: requested 2026-08-29 · suggested 2026-08-16 · committed — · factory earliest 2026-08-16 · planned — · actual —
 
 ### 7. Noor banquettes 4 of 6 frames
 
@@ -74,7 +74,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Noor Furnishings (`CUS-0109`)
 - Sales order: **SO-2026-00049** (IN_PRODUCTION)
 - Production: **PO-2026-00049** (IN_PROGRESS)
-- Dates: requested 2026-08-31 · suggested 2026-08-17 · committed — · factory earliest 2026-08-17 · planned — · actual —
+- Dates: requested 2026-08-31 · suggested 2026-08-16 · committed — · factory earliest 2026-08-16 · planned — · actual —
 
 ### 8. Jabal contract dining
 
@@ -92,7 +92,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00042** (IN_PRODUCTION)
 - Production: **PO-2026-00042** (ON_HOLD)
-- Dates: requested 2026-08-17 · suggested 2026-08-17 · committed — · factory earliest 2026-08-17 · planned — · actual —
+- Dates: requested 2026-08-17 · suggested 2026-08-16 · committed — · factory earliest 2026-08-16 · planned — · actual —
 
 ### 10. Nile loveseat recovered
 

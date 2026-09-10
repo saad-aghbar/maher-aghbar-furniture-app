@@ -1,9 +1,11 @@
-import { Controller, Get, Header, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import type { Response } from 'express';
 import type { AuthUser } from '@maher/types';
 import { ReportsService } from './reports.service';
+import { CostPerformanceService } from './cost-performance.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -21,10 +23,26 @@ class PeriodReportQueryDto {
   @IsOptional() @IsUUID() customerId?: string;
 }
 
+class CostOrdersQueryDto extends PeriodReportQueryDto {
+  @IsOptional() @Type(() => Number) page?: number;
+  @IsOptional() @Type(() => Number) pageSize?: number;
+}
+
+class CreateLaborRateDto {
+  @IsOptional() @IsUUID() stageDefinitionId?: string;
+  @IsOptional() @IsUUID() userId?: string;
+  @Type(() => Number) @IsNumber() @Min(0.001) hourlyRate!: number;
+  @IsString() effectiveFrom!: string;
+  @IsOptional() @IsString() effectiveTo?: string;
+}
+
 @ApiTags('reports')
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly costPerformance: CostPerformanceService,
+  ) {}
 
   @Get('dashboard')
   @RequirePermissions('report.sales.read')
@@ -108,8 +126,9 @@ export class ReportsController {
 
   @Get('production-summary')
   @RequirePermissions('production-order.read')
-  productionSummary() {
-    return this.reports.productionSummary();
+  productionSummary(@Query('origin') origin?: string) {
+    const parsed = origin === 'normal' || origin === 'returned' ? origin : undefined;
+    return this.reports.productionSummary(parsed);
   }
 
   @Get('inventory')
@@ -196,6 +215,11 @@ export class ReportsController {
         revenueOrders: data.totals.revenueOrders,
         revenueInvoiced: data.totals.revenueInvoiced,
         materialCogs: data.totals.materialCogs,
+        reworkCost: data.totals.reworkCost,
+        replacementCost: data.totals.replacementCost,
+        recoveredValue: data.totals.recoveredValue,
+        scrapValue: data.totals.scrapValue,
+        returnWriteOff: data.totals.returnWriteOff,
         supplierSpend: data.totals.supplierSpend,
         laborHours: data.totals.laborHours,
         laborCost: data.totals.laborCost,
@@ -236,6 +260,60 @@ export class ReportsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="cash-flow.csv"');
     res.send(csv);
+  }
+
+  @Get('cost/orders')
+  @RequirePermissions('inventory.cost.read')
+  costOrders(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.listOrders({ ...query, user });
+  }
+
+  @Get('cost/orders/:id')
+  @RequirePermissions('inventory.cost.read')
+  costOrderDossier(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.dossier(id, user);
+  }
+
+  @Get('cost/returns')
+  @RequirePermissions('inventory.cost.read')
+  costReturns(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.listReturns({ ...query, user });
+  }
+
+  @Get('cost/returns/:id')
+  @RequirePermissions('inventory.cost.read')
+  costReturnDossier(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.returnDossier(id, user);
+  }
+
+  @Get('cost/products')
+  @RequirePermissions('inventory.cost.read')
+  costProducts(@CurrentUser() user: AuthUser) {
+    return this.costPerformance.productAnalytics(user);
+  }
+
+  @Get('cost/coverage')
+  @RequirePermissions('inventory.cost.read')
+  costCoverage(@CurrentUser() user: AuthUser) {
+    return this.costPerformance.costCoverage(user);
+  }
+
+  @Post('cost/coverage/backfill')
+  @RequirePermissions('inventory.cost.read')
+  backfillCoverage(@CurrentUser() user: AuthUser) {
+    return this.costPerformance.backfillPricesFromReceipts(user);
+  }
+
+  @Get('cost/labor-rates')
+  @RequirePermissions('inventory.cost.read')
+  laborRates(@CurrentUser() user: AuthUser) {
+    return this.costPerformance.listLaborRates(user);
+  }
+
+  @Post('cost/labor-rates')
+  @RequirePermissions('inventory.cost.read')
+  createLaborRate(@Body() body: CreateLaborRateDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.createLaborRate(body, user);
   }
 
   @Get('export/financial.csv')

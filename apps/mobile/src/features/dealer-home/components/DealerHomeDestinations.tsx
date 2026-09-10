@@ -9,6 +9,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/api/queryKeys';
 import { getOwnDeliveries } from '@/api/modules/scheduling';
 import { listSalesOrders } from '@/api/modules/sales-orders';
+import { useDealerHomeQuery } from '../query';
 import { AppText } from '@/components/AppText';
 import { deliveryStatusFromCustomerStatus } from '@/features/sales-orders/stageCounts';
 import { useLocale } from '@/i18n';
@@ -20,9 +21,9 @@ type DestDef = {
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
   hintKey: string;
-  href: Href | ((ctx: { shippedAwaiting: number }) => Href);
+  href: Href | ((ctx: { shippedAwaiting: number; pendingReturns: number }) => Href);
   permission: Permission;
-  badgeCount?: (ctx: { shippedAwaiting: number }) => number | undefined;
+  badgeCount?: (ctx: { shippedAwaiting: number; pendingReturns: number }) => number | undefined;
 };
 
 const DESTINATIONS: DestDef[] = [
@@ -61,6 +62,7 @@ const DESTINATIONS: DestDef[] = [
     hintKey: 'mobile.dealerHome.destReturnsHint',
     href: '/(app)/(customer)/returns' as Href,
     permission: 'sales-order.read',
+    badgeCount: ({ pendingReturns }) => (pendingReturns > 0 ? pendingReturns : undefined),
   },
 ];
 
@@ -79,6 +81,7 @@ export function DealerHomeDestinations() {
     [user],
   );
 
+  const homeQuery = useDealerHomeQuery(Boolean(user?.customerId));
   const badgeQuery = useQuery({
     queryKey: queryKeys.salesOrders.list({ page: 1, pageSize: 100, dealerHomeDest: true }),
     queryFn: async () => {
@@ -108,8 +111,11 @@ export function DealerHomeDestinations() {
   });
 
   const badgeCtx = useMemo(
-    () => ({ shippedAwaiting: badgeQuery.data?.shippedAwaiting ?? 0 }),
-    [badgeQuery.data?.shippedAwaiting],
+    () => ({
+      shippedAwaiting: badgeQuery.data?.shippedAwaiting ?? 0,
+      pendingReturns: homeQuery.data?.pendingReturns ?? 0,
+    }),
+    [badgeQuery.data?.shippedAwaiting, homeQuery.data?.pendingReturns],
   );
 
   if (places.length === 0) return null;

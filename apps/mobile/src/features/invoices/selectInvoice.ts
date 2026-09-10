@@ -21,6 +21,8 @@ export type InvoiceCardModel = {
   invoiceDateLabel: string;
   factoryOrderNumber: string | null;
   dealerOrderNumber: string | null;
+  returnNumber: string | null;
+  returnRequestId: string | null;
   isOverdue: boolean;
 };
 
@@ -41,6 +43,8 @@ export type InvoiceDetailModel = {
   dealerOrderNumber: string | null;
   dealerChip: InvoiceDealerChip | null;
   salesOrderId: string | null;
+  returnRequestId: string | null;
+  returnNumber: string | null;
   invoiceDateLabel: string;
   dueDateLabel: string | null;
   isOverdue: boolean;
@@ -49,6 +53,7 @@ export type InvoiceDetailModel = {
   credit: number;
   total: number;
   subtotal: number;
+  discount: number;
   tax: number;
   availableCredit: number;
   amountDue: number;
@@ -61,19 +66,15 @@ export type InvoiceDetailModel = {
   }>;
   payments: Array<{
     id: string;
+    allocationId?: string;
     number: string;
+    amount: number;
     amountLabel: string;
     method: string;
     dateLabel: string;
     reference: string | null;
+    kind: 'payment' | 'credit';
   }>;
-  jofotara: {
-    submitted: boolean;
-    uuid: string | null;
-    qr: string | null;
-    status: string | null;
-    clearedAtLabel: string | null;
-  };
 };
 
 function asLocale(locale: string): Locale {
@@ -159,6 +160,71 @@ function dealerNameFor(inv: Invoice, locale: string): string {
   return c?.nameEn || c?.name || c?.nameAr || '—';
 }
 
+export type InvoiceHistoryRow = InvoiceDetailModel['payments'][number];
+
+/** Date · method · reference under a payment history title. */
+export function paymentHistoryCaption(
+  parts: Array<string | null | undefined>,
+): string {
+  return parts.map((part) => String(part ?? '').trim()).filter(Boolean).join(' · ');
+}
+
+function paymentRow(
+  locale: string,
+  typed: Locale,
+  p: InvoicePayment,
+  amount: number,
+  kind: 'payment' | 'credit',
+  allocationId?: string,
+): InvoiceHistoryRow {
+  return {
+    id: p.id,
+    allocationId,
+    number: p.number,
+    amount,
+    amountLabel: moneyLabel(locale, amount),
+    method: String(p.method ?? ''),
+    dateLabel: p.paymentDate ? formatDate(typed, p.paymentDate) : '—',
+    reference: p.referenceNumber?.trim() || null,
+    kind,
+  };
+}
+
+export function selectInvoiceHistory(
+  inv: Invoice,
+  locale: string,
+  typed = asLocale(locale),
+): InvoiceDetailModel['payments'] {
+  const allocs = inv.allocations ?? [];
+  if (allocs.length > 0) {
+    return allocs.map((row) => {
+      const payment = row.payment;
+      const fallback: InvoicePayment = {
+        id: row.id,
+        number: payment?.number ?? '—',
+        amount: row.amount,
+        method: payment?.method ?? '',
+        paymentDate: payment?.paymentDate,
+        referenceNumber: payment?.referenceNumber,
+        invoiceId: payment?.invoiceId,
+      };
+      const source = payment ?? fallback;
+      const isCredit = !source.invoiceId || source.invoiceId !== inv.id;
+      return paymentRow(
+        locale,
+        typed,
+        source,
+        toNum(row.amount),
+        isCredit ? 'credit' : 'payment',
+        row.id,
+      );
+    });
+  }
+  return (inv.payments ?? []).map((p) =>
+    paymentRow(locale, typed, p, toNum(p.amount), 'payment'),
+  );
+}
+
 function isOverdueInvoice(inv: Invoice, outstanding: number): boolean {
   if (outstanding <= 0) return false;
   if ((inv.status ?? '').toUpperCase() === 'OVERDUE') return true;
@@ -194,6 +260,8 @@ export function selectInvoiceCard(inv: Invoice, locale: string): InvoiceCardMode
     invoiceDateLabel: inv.invoiceDate ? formatDate(typed, inv.invoiceDate) : '—',
     factoryOrderNumber: inv.salesOrder?.number?.trim() || null,
     dealerOrderNumber: inv.salesOrder?.externalOrderNumber?.trim() || null,
+    returnNumber: inv.returnRequest?.number?.trim() || null,
+    returnRequestId: inv.returnRequest?.id ?? inv.returnRequestId ?? null,
     isOverdue: isOverdueInvoice(inv, outstanding),
   };
 }
@@ -213,18 +281,7 @@ export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetail
     lineTotalLabel: moneyLabel(locale, toNum(line.lineTotal)),
   }));
 
-  const payments = (inv.payments ?? []).map((p: InvoicePayment) => ({
-    id: p.id,
-    number: p.number,
-    amountLabel: moneyLabel(locale, toNum(p.amount)),
-    method: String(p.method ?? ''),
-    dateLabel: p.paymentDate ? formatDate(typed, p.paymentDate) : '—',
-    reference: p.referenceNumber?.trim() || null,
-  }));
-
-  const uuid = inv.jofotaraUuid?.trim() || null;
-  const qr = inv.jofotaraQr?.trim() || null;
-  const submitted = Boolean(uuid || qr || inv.jofotaraStatus || inv.jofotaraClearedAt);
+  const payments = selectInvoiceHistory(inv, locale, typed);
 
   return {
     id: inv.id,
@@ -236,6 +293,8 @@ export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetail
     dealerOrderNumber: inv.salesOrder?.externalOrderNumber?.trim() || null,
     dealerChip: selectInvoiceDealerChip(inv),
     salesOrderId: inv.salesOrder?.id ?? null,
+    returnRequestId: inv.returnRequest?.id ?? inv.returnRequestId ?? null,
+    returnNumber: inv.returnRequest?.number?.trim() || null,
     invoiceDateLabel: inv.invoiceDate ? formatDate(typed, inv.invoiceDate) : '—',
     dueDateLabel: inv.dueDate ? formatDate(typed, inv.dueDate) : null,
     isOverdue: isOverdueInvoice(inv, outstanding),
@@ -244,21 +303,24 @@ export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetail
     credit,
     total,
     subtotal,
+    discount: toNum(inv.discountTotal),
     tax,
     availableCredit: toNum(inv.dealerFinance?.availableCredit),
-    amountDue: toNum(inv.dealerFinance?.amountDue ?? outstanding),
+    amountDue: outstanding,
     lines,
     payments,
-    jofotara: {
-      submitted,
-      uuid,
-      qr,
-      status: inv.jofotaraStatus?.trim() || null,
-      clearedAtLabel: inv.jofotaraClearedAt
-        ? formatDate(typed, inv.jofotaraClearedAt)
-        : null,
-    },
   };
+}
+
+/** Payment for edit/PDF — look on legacy payments and allocation sources. */
+export function findInvoicePayment(
+  inv: Invoice,
+  paymentId: string | null | undefined,
+): InvoicePayment | null {
+  if (!paymentId) return null;
+  const fromPayments = inv.payments?.find((row) => row.id === paymentId);
+  if (fromPayments) return fromPayments;
+  return inv.allocations?.find((row) => row.payment?.id === paymentId)?.payment ?? null;
 }
 
 /** Dealer ownership: never invent another customer's id into filters. */

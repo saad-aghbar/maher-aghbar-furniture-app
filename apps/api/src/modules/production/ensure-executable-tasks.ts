@@ -19,6 +19,8 @@ export type EnsureTaskCreateSpec = {
   stageDefinitionId: string;
   name: string;
   description: string;
+  stageCode?: string | null;
+  executionKind?: string | null;
 };
 
 export function isLogisticsOrDeliveryStage(stage: {
@@ -55,6 +57,8 @@ export function listMissingExecutableTaskSpecs(
       stageDefinitionId: stage.stageDefinitionId,
       name,
       description: `${name} for ${productDescription || 'order'} (qty ${quantity})`,
+      stageCode: def?.code ?? null,
+      executionKind: def?.executionKind ?? null,
     });
   }
   return out;

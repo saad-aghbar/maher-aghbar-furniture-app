@@ -1,5 +1,6 @@
 import {
   humanizeInventoryEnumLabel,
+  inventoryItemCanPurchase,
   inventoryItemLifecycleEyebrow,
   selectInventoryItemCard,
   selectInventoryItemDetail,
@@ -74,6 +75,22 @@ describe('selectInventory cost visibility', () => {
     expect(showsRawMaterialPhoto('RAW_MATERIAL')).toBe(true);
   });
 
+  it('allows purchase orders only for active raw materials', () => {
+    expect(inventoryItemCanPurchase({ itemClass: 'RAW_MATERIAL' })).toBe(true);
+    expect(inventoryItemCanPurchase({ itemClass: null })).toBe(true);
+    expect(inventoryItemCanPurchase({ itemClass: 'FINISHED_GOOD' })).toBe(false);
+    expect(inventoryItemCanPurchase({ itemClass: 'SEMI_FINISHED_GOOD' })).toBe(false);
+    expect(inventoryItemCanPurchase({ itemClass: 'RAW_MATERIAL', isActive: false })).toBe(false);
+    expect(inventoryItemCanPurchase({ itemClass: 'RAW_MATERIAL', archivedAt: '2026-01-01' })).toBe(
+      false,
+    );
+  });
+
+  it('maps reorderQty for low-stock orders', () => {
+    expect(selectInventoryItemCard(baseItem, 'en').reorderQty).toBeNull();
+    expect(selectInventoryItemCard({ ...baseItem, reorderQty: 40 }, 'en').reorderQty).toBe(40);
+  });
+
   it('maps scanCode and treats missing active flags as active', () => {
     const card = selectInventoryItemCard(baseItem, 'en');
     expect(card.scanCode).toBeNull();
@@ -134,6 +151,25 @@ describe('selectInventory cost visibility', () => {
     expect(card.balances[0]?.warehouseName).toBe('Main');
     expect(card.balances[1]?.availableQty).toBe(2);
     expect(card.onHand).toBe(13);
+  });
+
+  it('labels item-detail balances with bin code and name', () => {
+    const item: InventoryItem = {
+      ...baseItem,
+      balances: [
+        {
+          id: 'b1',
+          availableQty: 8,
+          warehouseId: 'wh-1',
+          locationId: 'loc-1',
+          warehouse: { id: 'wh-1', code: 'RAW', nameEn: 'Raw Materials', nameAr: 'خام' },
+          location: { id: 'loc-1', code: 'RAW-MAIN', name: 'Main floor' },
+        },
+      ],
+    };
+    const detail = selectInventoryItemDetail(item, 'en');
+    expect(detail.balances).toHaveLength(1);
+    expect(detail.balances[0]?.locationName).toBe('RAW-MAIN — Main floor');
   });
 
   it('aggregates reserved and free quantity from balances', () => {

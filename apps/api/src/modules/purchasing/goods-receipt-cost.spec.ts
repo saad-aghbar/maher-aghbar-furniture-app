@@ -2,6 +2,7 @@ import {
   acceptedReceiptQty,
   isOverReceipt,
   receiptLineExtendedCost,
+  receiptUnitCostFromCatalog,
   remainingOrderedQty,
 } from './goods-receipt-cost';
 import { purchaseVariance } from './purchase-order-presentation';
@@ -29,6 +30,14 @@ describe('goods-receipt qty helpers', () => {
     expect(receiptLineExtendedCost(12.5, 8)).toBe(100);
     expect(receiptLineExtendedCost(null, 8)).toBeNull();
     expect(receiptLineExtendedCost(12, 0)).toBeNull();
+  });
+});
+
+describe('receiptUnitCostFromCatalog', () => {
+  it('prefers the PO price, then inventory standard cost', () => {
+    expect(receiptUnitCostFromCatalog({ poUnitPrice: 10, standardCost: 8 })).toBe(10);
+    expect(receiptUnitCostFromCatalog({ poUnitPrice: 0, standardCost: 8 })).toBe(8);
+    expect(receiptUnitCostFromCatalog({ poUnitPrice: null, standardCost: 0 })).toBeNull();
   });
 });
 

@@ -15,6 +15,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { locationPickerLabel } from '../pickDefaultLocation';
 
 type Props = {
   open: boolean;
@@ -148,7 +149,7 @@ export function InventorySemiOrderDetailSheet({
   const name = localizedProduct(kit, locale);
   const stageName = localizedStage(kit, locale);
   const accent = kitAccent(kit.status, colors);
-  const bin = kit.location?.name?.trim() || kit.location?.code || null;
+  const bin = locationPickerLabel(kit.location) || null;
   const warehouse = kit.warehouse
     ? locale === 'ar'
       ? kit.warehouse.nameAr || kit.warehouse.nameEn

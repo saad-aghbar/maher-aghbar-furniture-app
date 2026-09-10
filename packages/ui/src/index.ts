@@ -4,6 +4,8 @@ export type { AppLinkComponent } from './AppLinkComponent';
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
 export { Spinner, type SpinnerProps } from './Spinner';
 export { Input, type InputProps } from './Input';
+export { NumberStepper, type NumberStepperProps } from './NumberStepper';
+export { DateRangeField, type DateRangeFieldProps } from './DateRangeField';
 export { ImageSourceField, type ImageSourceFieldProps } from './ImageSourceField';
 export { PhotoAttachField, type PhotoAttachFieldProps } from './PhotoAttachField';
 export { Select, type SelectProps, type SelectOption } from './Select';

@@ -15,6 +15,7 @@ type Props = {
   stageName: string;
   initialMinutes: number | null | undefined;
   saving?: boolean;
+  assignedWorkerName?: string | null;
   onSave: (minutes: number) => void | Promise<void>;
 };
 
@@ -24,6 +25,7 @@ export function StageDurationSheet({
   stageName,
   initialMinutes,
   saving = false,
+  assignedWorkerName,
   onSave,
 }: Props) {
   const { t } = useLocale();
@@ -100,6 +102,14 @@ export function StageDurationSheet({
         {error ? (
           <AppText variant="caption" style={{ color: colors.error }}>
             {error}
+          </AppText>
+        ) : null}
+
+        {assignedWorkerName?.trim() ? (
+          <AppText variant="caption" color="warning">
+            {t('mobile.production.workflow.changeTimeDropsWorker', {
+              worker: assignedWorkerName.trim(),
+            })}
           </AppText>
         ) : null}
 

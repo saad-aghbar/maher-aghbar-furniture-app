@@ -56,7 +56,16 @@ import type { OrderTypeFocus } from './components/OrderTypeLensBar';
 import { matchOrdersSearch } from './matchOrdersSearch';
 import { ORDERS_COMPOSITION } from './ordersComposition';
 import { consumeOrdersDeskChip } from './ordersDeskContext';
-import { flattenOrdersPages, flattenRequestsPages, useAdminRequestsInfiniteQuery, useOrdersInfiniteQuery } from './query';
+import {
+  flattenOrdersPages,
+  flattenRequestsPages,
+  flattenReturnWorkPages,
+  useAdminRequestsInfiniteQuery,
+  useOrdersInfiniteQuery,
+  useReturnWorkInfiniteQuery,
+} from './query';
+import { buildAdminOrderListFilters, isReturnedOrderFocus } from './ordersReturnedLens';
+import { returnCaseHref, selectReturnCaseCard } from './selectReturnCaseCard';
 import {
   toAdminOrderCard,
   toDealerOrderCard,
@@ -196,35 +205,19 @@ export function OrdersListScreen({
    * Only attach `q` on the Sales Orders desk — Customer Requests use their own query.
    */
   const filters = useMemo(
-    () => ({
-      sortBy: applied.sortBy,
-      sortDir: applied.sortDir,
-      ...(variant === 'admin' && adminDeskMode === 'orders' && q ? { q } : {}),
-      ...(variant === 'admin' &&
-      adminDeskMode === 'orders' &&
-      adminLifecycleFocus &&
-      adminLifecycleFocus !== 'all'
-        ? {
-            journeyBucket: adminLifecycleFocus as
-              | 'preparing'
-              | 'ready_to_start'
-              | 'in_production'
-              | 'ready_to_ship'
-              | 'shipped'
-              | 'delivered',
-          }
-        : {}),
-      ...(variant === 'admin' &&
-      adminDeskMode === 'orders' &&
-      adminOrderType !== 'all'
-        ? {
-            orderType: adminOrderType.toUpperCase() as
-              | 'STANDARD'
-              | 'MODIFIED'
-              | 'CUSTOM',
-          }
-        : {}),
-    }),
+    () =>
+      variant === 'admin' && adminDeskMode === 'orders'
+        ? buildAdminOrderListFilters({
+            sortBy: applied.sortBy,
+            sortDir: applied.sortDir,
+            q,
+            journeyBucket: adminLifecycleFocus,
+            orderType: adminOrderType,
+          })
+        : {
+            sortBy: applied.sortBy,
+            sortDir: applied.sortDir,
+          },
     [
       adminDeskMode,
       adminLifecycleFocus,
@@ -236,9 +229,14 @@ export function OrdersListScreen({
     ],
   );
 
+  const returnedFocus = variant === 'admin' && adminDeskMode === 'orders' && isReturnedOrderFocus(adminOrderType);
   const query = useOrdersInfiniteQuery(filters, allowed && !forceState);
+  const returnWorkQuery = useReturnWorkInfiniteQuery(
+    { q: q || undefined },
+    allowed && !forceState && variant === 'admin' && adminDeskMode === 'orders',
+  );
   const seenOrdersBoard = useRef(false);
-  if (query.data) seenOrdersBoard.current = true;
+  if (query.data || returnWorkQuery.data) seenOrdersBoard.current = true;
 
   /** Server journeyCounts — stable across pagination; never loadedRows.length. */
   const journeyCounts = useMemo(() => {
@@ -252,16 +250,37 @@ export function OrdersListScreen({
     return null;
   }, [query.data?.pages]);
 
+  const returnWorkTotal = useMemo(() => {
+    const pages = returnWorkQuery.data?.pages ?? [];
+    for (let i = pages.length - 1; i >= 0; i -= 1) {
+      const total = pages[i]?.meta?.totalItems;
+      if (typeof total === 'number') return total;
+    }
+    return flattenReturnWorkPages(returnWorkQuery.data).length;
+  }, [returnWorkQuery.data]);
+
   const orderTypeCounts = useMemo(() => {
     const pages = query.data?.pages ?? [];
+    let base: { standard: number; modified: number; custom: number } | null = null;
     for (let i = pages.length - 1; i >= 0; i -= 1) {
       const meta = pages[i]?.meta as
-        | { orderTypeCounts?: { standard: number; modified: number; custom: number } }
+        | {
+            orderTypeCounts?: { standard: number; modified: number; custom: number };
+          }
         | undefined;
-      if (meta?.orderTypeCounts) return meta.orderTypeCounts;
+      if (meta?.orderTypeCounts) {
+        base = meta.orderTypeCounts;
+        break;
+      }
     }
-    return null;
-  }, [query.data?.pages]);
+    if (!base && !returnWorkQuery.data) return null;
+    return {
+      standard: base?.standard ?? 0,
+      modified: base?.modified ?? 0,
+      custom: base?.custom ?? 0,
+      returned: returnWorkTotal,
+    };
+  }, [query.data?.pages, returnWorkQuery.data, returnWorkTotal]);
 
   const requestSearchQ =
     variant === 'dealer' || (variant === 'admin' && adminDeskMode === 'requests')
@@ -502,6 +521,7 @@ export function OrdersListScreen({
     if (
       adminDeskMode === 'requests' &&
       adminRequestType !== 'all' &&
+      adminRequestType !== 'returned' &&
       requestTypeCounts &&
       requestTypeCounts[adminRequestType] === 0
     ) {
@@ -596,6 +616,11 @@ export function OrdersListScreen({
   }, [adminRequestsQuery.data, items, locale, requestsQuery.data, variant]);
 
   const adminSalesOrderCards: AdminOrderCardModel[] = useMemo(() => {
+    if (isReturnedOrderFocus(adminOrderType)) {
+      return flattenReturnWorkPages(returnWorkQuery.data).map((row) =>
+        selectReturnCaseCard(row, t),
+      );
+    }
     if (
       adminOrderType !== 'all' &&
       orderTypeCounts &&
@@ -611,7 +636,14 @@ export function OrdersListScreen({
       seen.add(key);
       return true;
     });
-  }, [adminOrderType, locale, orderTypeCounts, refinedSalesOrders]);
+  }, [
+    adminOrderType,
+    locale,
+    orderTypeCounts,
+    refinedSalesOrders,
+    returnWorkQuery.data,
+    t,
+  ]);
 
   /** Desk stream — Sales Orders and Customer Requests never share one list. */
   const adminCards: AdminOrderCardModel[] = useMemo(() => {
@@ -671,7 +703,7 @@ export function OrdersListScreen({
     setDraft((prev) => ({ ...prev, dealerId }));
   };
 
-  const onPressItem = (id: string, kind?: 'order' | 'rfq') => {
+  const onPressItem = (id: string, kind?: 'order' | 'rfq' | 'returnWork') => {
     if (kind === 'rfq') {
       router.push(
         (variant === 'admin'
@@ -680,12 +712,17 @@ export function OrdersListScreen({
       );
       return;
     }
+    if (kind === 'returnWork') {
+      const row = flattenReturnWorkPages(returnWorkQuery.data).find((r) => r.id === id);
+      router.push(returnCaseHref({ id: row?.id ?? id }) as Href);
+      return;
+    }
     router.push(detailHref(id));
   };
 
   const onPrimaryCta = (order: {
     id: string;
-    kind?: 'order' | 'rfq';
+    kind?: 'order' | 'rfq' | 'returnWork';
     lifecycle?: import('./adminOrderLifecycle').AdminOrderLifecycle;
     primaryCta?: import('./adminOrderJourney').JourneyPrimaryCta;
     primaryProductionOrderId?: string | null;
@@ -711,8 +748,12 @@ export function OrdersListScreen({
   };
 
   const onRefresh = () => {
-    void query.refetch();
-    if (variant === 'admin') void adminRequestsQuery.refetch();
+    if (returnedFocus) void returnWorkQuery.refetch();
+    else void query.refetch();
+    if (variant === 'admin') {
+      void returnWorkQuery.refetch();
+      void adminRequestsQuery.refetch();
+    }
     if (variant === 'dealer') {
       void requestsQuery.refetch();
       void ownDeliveriesQuery.refetch();
@@ -724,6 +765,12 @@ export function OrdersListScreen({
     if (variant === 'admin' && adminDeskMode === 'requests') {
       if (adminRequestsQuery.hasNextPage && !adminRequestsQuery.isFetchingNextPage) {
         void adminRequestsQuery.fetchNextPage();
+      }
+      return;
+    }
+    if (returnedFocus) {
+      if (returnWorkQuery.hasNextPage && !returnWorkQuery.isFetchingNextPage) {
+        void returnWorkQuery.fetchNextPage();
       }
       return;
     }
@@ -798,8 +845,7 @@ export function OrdersListScreen({
     (allowed &&
       adminDeskMode !== 'requests' &&
       !seenOrdersBoard.current &&
-      query.isLoading &&
-      !query.data &&
+      (returnedFocus ? returnWorkQuery.isLoading && !returnWorkQuery.data : query.isLoading && !query.data) &&
       !query.isPlaceholderData &&
       !forceState)
   ) {
@@ -819,7 +865,12 @@ export function OrdersListScreen({
     );
   }
 
-  if (forceState === 'error' || (query.isError && !query.data && !forceState)) {
+  if (
+    forceState === 'error' ||
+    (returnedFocus
+      ? returnWorkQuery.isError && !returnWorkQuery.data && !forceState
+      : query.isError && !query.data && !forceState)
+  ) {
     return (
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
@@ -850,7 +901,9 @@ export function OrdersListScreen({
     isFetchingNextPage: Boolean(
       adminDeskMode === 'requests'
         ? adminRequestsQuery.isFetchingNextPage
-        : query.isFetchingNextPage,
+        : returnedFocus
+          ? returnWorkQuery.isFetchingNextPage
+          : query.isFetchingNextPage,
     ),
     onPressItem,
     onPrimaryCta: variant === 'admin' ? onPrimaryCta : undefined,

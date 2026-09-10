@@ -33,7 +33,7 @@ export type PoStatusFilter = (typeof PO_STATUS_FILTERS)[number];
 export type PrStatusFilter = (typeof PR_STATUS_FILTERS)[number];
 export type SiStatusFilter = (typeof SI_STATUS_FILTERS)[number];
 
-export type PurchasingHubTab = 'orders' | 'requests' | 'invoices' | 'fabric';
+export type PurchasingHubTab = 'orders' | 'invoices' | 'fabric';
 
 export const FABRIC_STATUS_FILTERS = [
   'ALL',
@@ -52,12 +52,10 @@ export type PurchasingSupplierOption = {
   name: string;
   code?: string | null;
   searchText?: string;
-  isCertified?: boolean | null;
 };
 
 export function statusFiltersForTab(tab: PurchasingHubTab) {
-  if (tab === 'orders') return PO_STATUS_FILTERS;
-  if (tab === 'requests') return PR_STATUS_FILTERS;
+  if (tab === 'orders') return [...PO_STATUS_FILTERS];
   if (tab === 'fabric') return FABRIC_STATUS_FILTERS;
   return SI_STATUS_FILTERS;
 }

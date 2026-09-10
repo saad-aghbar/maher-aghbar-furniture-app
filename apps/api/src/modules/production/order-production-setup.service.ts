@@ -38,6 +38,7 @@ import type {
   PutLineMaterialsDto,
 } from './order-production-setup.dto';
 import { PIECE2_EXPECTED_MATERIAL_COSTING_HOOK } from './order-production-setup.costing-hook';
+import { freezePlannedCostAtRelease } from './planned-cost-snapshot';
 import {
   CATALOG_TEMPLATE_AUDIT_ACTION,
   bomMaterialCount,
@@ -55,8 +56,6 @@ import {
   type CatalogSeedUnavailableReason,
   type CatalogWorkflowIdentity,
 } from './catalog-seed-preview';
-
-type Tx = Prisma.TransactionClient;
 
 type Dims = {
   width?: number | null;
@@ -1328,15 +1327,14 @@ export class OrderProductionSetupService {
           };
           continue;
         }
-        const balance = await this.prisma.inventoryBalance.findFirst({
+        const balances = await this.prisma.inventoryBalance.findMany({
           where: {
             inventoryItemId: m.inventoryItemId,
             warehouse: { type: 'RAW_MATERIALS', isActive: true },
           },
-          orderBy: { availableQty: 'desc' },
         });
-        const available = Number(balance?.availableQty ?? 0);
-        const reserved = Number(balance?.reservedQty ?? 0);
+        const available = balances.reduce((s, b) => s + Number(b.availableQty), 0);
+        const reserved = balances.reduce((s, b) => s + Number(b.reservedQty), 0);
         const free = available - reserved;
         const needed = (expectedQtyNumber(m.expectedQty) ?? 0) * qty;
         const short = Math.max(0, needed - free);
@@ -1482,10 +1480,68 @@ export class OrderProductionSetupService {
     const resolved = await this.resolveMaterialRows(dto.materials, line.requestedFabricLabel);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.salesOrderLineMaterialRequirement.deleteMany({ where: { lineSetupId: line.id } });
-      if (resolved.length) {
+      const existing = await tx.salesOrderLineMaterialRequirement.findMany({
+        where: { lineSetupId: line.id },
+        select: {
+          id: true,
+          inventoryItemId: true,
+          requestedFabricLabel: true,
+          fabricProcurement: { select: { id: true } },
+        },
+      });
+      const kept = existing.filter((r) => r.fabricProcurement);
+      const keptIds = kept.map((r) => r.id);
+
+      await tx.salesOrderLineMaterialRequirement.deleteMany({
+        where: { lineSetupId: line.id, ...(keptIds.length ? { id: { notIn: keptIds } } : {}) },
+      });
+
+      const usedKept = new Set<string>();
+      const createRows: typeof resolved = [];
+
+      for (const m of resolved) {
+        const isFabric = String(m.category ?? '').toUpperCase() === 'FABRIC';
+        if (!isFabric) {
+          createRows.push(m);
+          continue;
+        }
+        const match = kept.find((r) => {
+          if (usedKept.has(r.id)) return false;
+          if (m.inventoryItemId && r.inventoryItemId === m.inventoryItemId) return true;
+          if (
+            m.requestedFabricLabel &&
+            r.requestedFabricLabel &&
+            m.requestedFabricLabel === r.requestedFabricLabel
+          ) {
+            return true;
+          }
+          return false;
+        });
+        if (match) {
+          usedKept.add(match.id);
+          await tx.salesOrderLineMaterialRequirement.update({
+            where: { id: match.id },
+            data: {
+              inventoryItemId: m.inventoryItemId,
+              sku: m.sku,
+              displayName: m.displayName,
+              category: m.category as never,
+              unit: m.unit,
+              expectedQty: m.expectedQty,
+              source: m.source,
+              needsReview: m.needsReview,
+              notes: m.notes,
+              requestedFabricLabel: m.requestedFabricLabel,
+            },
+          });
+        } else {
+          createRows.push(m);
+        }
+      }
+
+      if (createRows.length) {
         await tx.salesOrderLineMaterialRequirement.createMany({
-          data: resolved.map((m, idx) => ({
+          data: createRows.map((m, idx) => ({
             lineSetupId: line.id,
             inventoryItemId: m.inventoryItemId,
             sku: m.sku,
@@ -1497,16 +1553,34 @@ export class OrderProductionSetupService {
             needsReview: m.needsReview,
             notes: m.notes,
             requestedFabricLabel: m.requestedFabricLabel,
-            sortOrder: idx,
+            sortOrder: idx + usedKept.size,
           })),
         });
       }
+
       await tx.salesOrderLineSetup.update({
         where: { id: line.id },
         data: {
           materialsReviewedAt: resolved.some((m) => m.needsReview) ? null : new Date(),
         },
       });
+
+      await ensureFabricProcurementsForSalesOrder(tx, salesOrderId);
+      const fabricReqs = await tx.salesOrderLineMaterialRequirement.findMany({
+        where: { lineSetupId: line.id, category: 'FABRIC' },
+        select: {
+          expectedQty: true,
+          fabricProcurement: { select: { id: true, state: true } },
+        },
+      });
+      for (const req of fabricReqs) {
+        if (!req.fabricProcurement) continue;
+        if (String(req.fabricProcurement.state) !== 'NEEDS_ORDERING') continue;
+        await tx.fabricProcurement.update({
+          where: { id: req.fabricProcurement.id },
+          data: { orderedQty: req.expectedQty ?? null },
+        });
+      }
     });
 
     await this.recomputeLineAndHeaderStatus(setup.id, line.id);
@@ -1542,7 +1616,7 @@ export class OrderProductionSetupService {
     }> = [];
 
     for (const m of materials) {
-      let item =
+      const item =
         m.inventoryItemId != null
           ? await this.prisma.inventoryItem.findFirst({
               where: { id: m.inventoryItemId, archivedAt: null },
@@ -2443,6 +2517,8 @@ export class OrderProductionSetupService {
         where: { productionSetupId: setup.id },
         data: { status: SalesOrderLineSetupStatus.READY },
       });
+
+      await freezePlannedCostAtRelease(tx, order.id);
 
       return tx.salesOrder.update({
         where: { id: order.id },

@@ -318,6 +318,44 @@ export function humanTxType(type: string, locale: string): string {
 
 export type CategoryGroupKey = 'fabric' | 'foam' | 'wood' | 'accessories';
 
+export const ALL_CATEGORY_GROUPS: CategoryGroupKey[] = [
+  'fabric',
+  'foam',
+  'wood',
+  'accessories',
+];
+
+const SECTION_SET = new Set<string>(ALL_CATEGORY_GROUPS);
+
+function flattenSectionTokens(raw?: string | string[] | null): string[] {
+  if (raw == null) return [];
+  const parts = Array.isArray(raw) ? raw : [raw];
+  return parts.flatMap((part) =>
+    String(part)
+      .split(',')
+      .map((token) => token.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+/** Empty / missing / `'all'` → all four groups. Unknown key throws. */
+export function normalizeReportSections(
+  raw?: string | string[] | null,
+): CategoryGroupKey[] {
+  const tokens = flattenSectionTokens(raw);
+  if (tokens.length === 0 || tokens.includes('all')) {
+    return [...ALL_CATEGORY_GROUPS];
+  }
+  const seen = new Set<CategoryGroupKey>();
+  for (const token of tokens) {
+    if (!SECTION_SET.has(token)) {
+      throw new ReportRangeError('Invalid report section.');
+    }
+    seen.add(token as CategoryGroupKey);
+  }
+  return ALL_CATEGORY_GROUPS.filter((group) => seen.has(group));
+}
+
 export type MoneyQty = { qty: number; value: number | null; uncostedRows: number };
 
 export type RawMaterialsReportPayload = {
@@ -329,6 +367,8 @@ export type RawMaterialsReportPayload = {
   costBasisId: typeof RAW_MATERIALS_COST_BASIS_ID;
   costBasisLabel: string;
   period: { preset: ReportPeriodPreset; fromYmd: string; toYmd: string };
+  sections: CategoryGroupKey[];
+  allSections: boolean;
   summary: {
     skuCount: number;
     lowStockCount: number;
@@ -381,6 +421,7 @@ export type RawMaterialsReportPayload = {
     material: string;
     category: CategoryGroupKey;
     warehouseCode: string;
+    locationCode: string | null;
     qty: number;
     unit: string;
     unitCost: number | null;

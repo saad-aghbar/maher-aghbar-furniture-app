@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { LocaleProvider } from '@/i18n';
 import { ThemeProvider } from '@/theme';
@@ -6,6 +6,10 @@ import { RawMaterialsReportSheet } from '../components/RawMaterialsReportSheet';
 import { RawMaterialsReportRow } from '../components/RawMaterialsReportRow';
 import {
   canOpenRawMaterialsReport,
+  MATERIALS_REPORT_SECTIONS,
+  sectionsQueryValue,
+  toggleReportSection,
+  validateMaterialsReportSections,
   validateRawMaterialsReportRange,
 } from '../rawMaterialsReport';
 import type { AuthUser } from '@maher/types';
@@ -87,6 +91,23 @@ describe('raw materials report period', () => {
   });
 });
 
+describe('materials report sections', () => {
+  it('toggles a section and keeps canonical order', () => {
+    expect(toggleReportSection(['fabric', 'foam'], 'wood')).toEqual(['fabric', 'foam', 'wood']);
+    expect(toggleReportSection(['fabric', 'foam'], 'fabric')).toEqual(['foam']);
+  });
+
+  it('blocks an empty selection', () => {
+    expect(validateMaterialsReportSections([])).toBe('sectionsRequired');
+    expect(validateMaterialsReportSections(['fabric'])).toBeNull();
+  });
+
+  it('serializes all four as all', () => {
+    expect(sectionsQueryValue([...MATERIALS_REPORT_SECTIONS])).toBe('all');
+    expect(sectionsQueryValue(['fabric', 'wood'])).toBe('fabric,wood');
+  });
+});
+
 describe('canOpenRawMaterialsReport', () => {
   it('requires both report.inventory.read and inventory.cost.read', () => {
     expect(canOpenRawMaterialsReport(userWith(['report.inventory.read']))).toBe(false);
@@ -129,7 +150,7 @@ describe('RawMaterialsReportRow', () => {
   it('renders the floor row', async () => {
     const onPress = jest.fn();
     const view = await render(<RawMaterialsReportRow onPress={onPress} />, { wrapper: Wrapper });
-    fireEvent.press(view.getByLabelText('Raw Materials Report'));
+    fireEvent.press(view.getByLabelText('Materials Report'));
     expect(onPress).toHaveBeenCalled();
   });
 });
@@ -147,7 +168,10 @@ describe('RawMaterialsReportSheet', () => {
     );
     fireEvent.press(view.getByText('Generate'));
     expect(onConfirm).toHaveBeenCalledWith(
-      expect.objectContaining({ period: 'month' }),
+      expect.objectContaining({
+        period: 'month',
+        sections: ['fabric', 'foam', 'wood', 'accessories'],
+      }),
     );
   });
 
@@ -161,6 +185,8 @@ describe('RawMaterialsReportSheet', () => {
       />,
       { wrapper: Wrapper },
     );
+    expect(view.getByTestId('materials-report-section-all')).toBeTruthy();
+    expect(view.getByTestId('materials-report-section-fabric')).toBeTruthy();
     expect(view.getByTestId('raw-report-period-today')).toBeTruthy();
     expect(view.getByTestId('raw-report-period-custom')).toBeTruthy();
     expect(view.getByText('From')).toBeTruthy();
@@ -172,7 +198,13 @@ describe('RawMaterialsReportSheet', () => {
     const src = readFileSync(join(inventoryDir, 'components/RawMaterialsReportSheet.tsx'), 'utf8');
     expect(src).not.toMatch(/\bexpandable\b/);
     expect(src).toContain('fill={false}');
-    expect(src).toContain('calendarMaxH');
+    expect(src).toContain('framed={false}');
+    expect(src).toContain('DeskPickerBoard');
+    expect(src).toContain('bodyMaxH');
+    expect(src).toContain('flexShrink: 1');
+    expect(src.lastIndexOf('<InventorySheetFooter')).toBeGreaterThan(
+      src.lastIndexOf('maxHeight: bodyMaxH'),
+    );
     const body = readFileSync(join(inventoryDir, 'components/InventorySheetBody.tsx'), 'utf8');
     expect(body).toContain('fill = true');
   });
@@ -193,4 +225,26 @@ describe('RawMaterialsReportSheet', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(view.getByText('Retry')).toBeTruthy();
   });
+
+  it('blocks confirm when every section is cleared', async () => {
+    const onConfirm = jest.fn();
+    const view = await render(
+      <RawMaterialsReportSheet
+        open
+        onClose={() => undefined}
+        onConfirm={onConfirm}
+      />,
+      { wrapper: Wrapper },
+    );
+    for (const id of ['fabric', 'foam', 'wood', 'accessories'] as const) {
+      await act(async () => {
+        fireEvent.press(view.getByTestId(`materials-report-section-${id}`));
+      });
+    }
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Generate'));
+    });
+    expect(view.getByText('Choose at least one section.')).toBeTruthy();
+    expect(onConfirm).not.toHaveBeenCalled();
+  }, 15_000);
 });

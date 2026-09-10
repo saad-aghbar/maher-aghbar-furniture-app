@@ -7,6 +7,7 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
   const prisma = {
     inventoryLot: {
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
     },
     inventoryTransaction: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -18,6 +19,9 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
       findMany: jest.fn().mockResolvedValue([]),
     },
     qualityInspection: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    returnRequest: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     ...prismaOverrides,
@@ -98,6 +102,7 @@ describe('listFinishedLots outbound desk', () => {
     const { service, prisma } = makeService({
       inventoryLot: {
         findMany: jest.fn().mockResolvedValue([baseLot]),
+        count: jest.fn().mockResolvedValue(1),
       },
       productionOrderWorkflowSnapshotNode: {
         findMany: jest.fn().mockResolvedValue([
@@ -160,6 +165,7 @@ describe('listFinishedLots outbound desk', () => {
     const { service, prisma } = makeService({
       inventoryLot: {
         findMany: jest.fn().mockResolvedValue([leftLot]),
+        count: jest.fn().mockResolvedValue(1),
       },
       inventoryTransaction: {
         findMany: jest.fn().mockResolvedValue([
@@ -200,6 +206,28 @@ describe('listFinishedLots outbound desk', () => {
 
     const where = (prisma.inventoryLot.findMany as jest.Mock).mock.calls[0][0].where;
     expect(where.warehouseId).toBe('wh-fg');
-    expect(where.OR?.length).toBeGreaterThan(0);
+    const searchOr = (where.AND ?? []).find((clause: { OR?: unknown[] }) => Array.isArray(clause.OR));
+    expect(searchOr?.OR?.length).toBeGreaterThan(0);
+  });
+
+  it('paginates inWarehouse at the database with an accurate count', async () => {
+    const { service, prisma } = makeService({
+      inventoryLot: {
+        findMany: jest.fn().mockResolvedValue([baseLot]),
+        count: jest.fn().mockResolvedValue(240),
+      },
+    });
+    const result = await service.listFinishedLots({
+      scope: 'inWarehouse',
+      page: 3,
+      pageSize: 20,
+    } as never);
+    expect(prisma.inventoryLot.count).toHaveBeenCalled();
+    const args = (prisma.inventoryLot.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.take).toBe(20);
+    expect(args.skip).toBe(40);
+    expect(args.take).toBeLessThan(500);
+    expect(result.meta.totalItems).toBe(240);
+    expect(result.meta.totalPages).toBe(12);
   });
 });

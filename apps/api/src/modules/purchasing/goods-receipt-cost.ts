@@ -25,3 +25,18 @@ export function receiptLineExtendedCost(
   if (unitCost == null || !(Number(unitCost) > 0) || !(acceptedQty > 0)) return null;
   return Number(unitCost) * acceptedQty;
 }
+
+function positiveCost(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/** Receive posts the PO / catalog cost — never a typed override from the client. */
+export function receiptUnitCostFromCatalog(parts: {
+  poUnitPrice?: number | null;
+  standardCost?: number | null;
+}): number | null {
+  return positiveCost(parts.poUnitPrice) ?? positiveCost(parts.standardCost);
+}

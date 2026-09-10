@@ -49,7 +49,7 @@ describe('buildLocalizedStageInstructions', () => {
       quantity: 1,
     });
     expect(text).toContain('إسفنج لـ: كنبة × 1');
-    expect(text).toContain('التنجيد');
+    expect(text).toContain('تنجيد');
   });
 
   it('localizes FOAM instructions in Hebrew', () => {

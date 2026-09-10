@@ -6,7 +6,11 @@ import { localizedName } from '@maher/i18n';
 import { Badge, Card, EmptyState, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  withLiveWorkflowGraph,
+  workflowGraphHasRunningTimer,
+} from '@/lib/live-task-progress';
 
 interface OrderWorkflowStage {
   id: string;
@@ -28,6 +32,13 @@ interface OrderWorkflowStage {
   estimatedMinutes?: number | null;
   notes?: string | null;
   blockers?: Array<{ id: string; category: string; reason: string }>;
+  elapsedMinutes?: number;
+  actualSeconds?: number;
+  openStartedAt?: string | null;
+  running?: boolean;
+  inspectionStatus?: string | null;
+  inspectionProgress?: { passed: number; total: number; status?: string | null } | null;
+  backForRework?: boolean;
 }
 
 interface OrderWorkflowGraph {
@@ -71,6 +82,19 @@ export function OrderWorkflowSection({
       apiFetch<OrderWorkflowGraph>(`/api/v1/production-orders/${productionOrderId}/workflow`),
   });
 
+  const [now, setNow] = useState(() => Date.now());
+  const timerRunning = graphQuery.data
+    ? workflowGraphHasRunningTimer(graphQuery.data)
+    : false;
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+  const graph = graphQuery.data
+    ? withLiveWorkflowGraph(graphQuery.data, now)
+    : graphQuery.data;
+
   const docsQuery = useQuery({
     queryKey: ['production-order-docs', productionOrderId],
     queryFn: () =>
@@ -79,7 +103,6 @@ export function OrderWorkflowSection({
       ),
   });
 
-  const graph = graphQuery.data;
   const selected = graph?.stages.find((s) => s.id === selectedId) ?? graph?.stages[0] ?? null;
 
   const flowStages: FlowMapStage[] = useMemo(() => {
@@ -155,6 +178,9 @@ export function OrderWorkflowSection({
                       <StatusBadge status={selected.status} />
                     </dd>
                   </div>
+                  {selected.backForRework ? (
+                    <Badge variant="warning">{t('workflow.backForRework')}</Badge>
+                  ) : null}
                   {selected.isOptional ? (
                     <Badge variant="warning">{t('workflow.optional')}</Badge>
                   ) : null}

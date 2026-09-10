@@ -11,7 +11,7 @@ import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
-import type { ListPaymentsDto } from './dto/payment.dto';
+import type { ListPaymentsDto, UpdatePaymentDto } from './dto/payment.dto';
 import {
   classifyInvoice,
   money,
@@ -20,6 +20,8 @@ import {
   recomputeInvoicePaidFromAllocations,
   summarizeDealerFinance,
 } from './dealer-finance';
+import { planPaymentAllocationGrow } from './payment-allocation-grow';
+import { planAllocationAmountEdit } from './payment-allocation-edit';
 
 type AllocationInput = { invoiceId: string; amount: number };
 
@@ -401,6 +403,237 @@ export class PaymentsService {
         },
       });
     });
+  }
+
+  async update(id: string, dto: UpdatePaymentDto, userId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id },
+      include: { allocations: { orderBy: { createdAt: 'asc' } } },
+    });
+    if (!payment) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Payment not found.' });
+    }
+
+    const nextAmount = dto.amount != null ? money(dto.amount) : money(payment.amount);
+    const allocSum = payment.allocations.reduce((sum, row) => sum + money(row.amount), 0);
+    const touched = new Set(payment.allocations.map((row) => row.invoiceId));
+    if (payment.invoiceId) touched.add(payment.invoiceId);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (nextAmount + 1e-6 < allocSum) {
+        let excess = Number(roundMoney(allocSum - nextAmount));
+        for (const alloc of payment.allocations) {
+          if (excess <= 1e-6) break;
+          const current = money(alloc.amount);
+          if (current <= excess + 1e-6) {
+            await tx.paymentAllocation.delete({ where: { id: alloc.id } });
+            excess = Number(roundMoney(excess - current));
+            touched.add(alloc.invoiceId);
+          } else {
+            await tx.paymentAllocation.update({
+              where: { id: alloc.id },
+              data: { amount: roundMoney(current - excess) },
+            });
+            excess = 0;
+            touched.add(alloc.invoiceId);
+          }
+        }
+      } else if (nextAmount - allocSum > 1e-6) {
+        const extra = Number(roundMoney(nextAmount - allocSum));
+        const targetInvoiceId = payment.invoiceId ?? payment.allocations[0]?.invoiceId;
+        if (targetInvoiceId) {
+          const invoice = await tx.invoice.findFirstOrThrow({
+            where: { id: targetInvoiceId },
+          });
+          const growBy = planPaymentAllocationGrow({
+            extra,
+            invoiceOutstanding: money(invoice.outstandingAmount),
+          });
+          if (growBy > 1e-6) {
+            const existing = payment.allocations.find((row) => row.invoiceId === targetInvoiceId);
+            if (existing) {
+              await tx.paymentAllocation.update({
+                where: { id: existing.id },
+                data: { amount: roundMoney(money(existing.amount) + growBy) },
+              });
+            } else {
+              await tx.paymentAllocation.create({
+                data: {
+                  paymentId: payment.id,
+                  invoiceId: targetInvoiceId,
+                  amount: roundMoney(growBy),
+                },
+              });
+            }
+            touched.add(targetInvoiceId);
+          }
+        }
+      }
+
+      await tx.payment.update({
+        where: { id },
+        data: {
+          ...(dto.amount != null ? { amount: roundMoney(nextAmount) } : {}),
+          ...(dto.method ? { method: dto.method } : {}),
+          ...(dto.referenceNumber !== undefined ? { referenceNumber: dto.referenceNumber } : {}),
+          ...(dto.bank !== undefined ? { bank: dto.bank } : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.paymentDate ? { paymentDate: new Date(dto.paymentDate) } : {}),
+        },
+      });
+
+      for (const invoiceId of touched) {
+        await this.recomputeInvoiceFromAllocations(tx, invoiceId);
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'payment.update',
+          entityType: 'Payment',
+          entityId: id,
+          oldValues: { amount: money(payment.amount) },
+          newValues: { amount: nextAmount, method: dto.method ?? payment.method },
+        },
+      });
+    });
+
+    const updated = await this.prisma.payment.findUniqueOrThrow({
+      where: { id },
+      include: { allocations: true, customer: true, invoice: true },
+    });
+    return this.enrichPayment(updated);
+  }
+
+  async remove(id: string, userId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id },
+      include: { allocations: true },
+    });
+    if (!payment) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Payment not found.' });
+    }
+    const touched = new Set(payment.allocations.map((row) => row.invoiceId));
+    if (payment.invoiceId) touched.add(payment.invoiceId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.delete({ where: { id } });
+      for (const invoiceId of touched) {
+        await this.recomputeInvoiceFromAllocations(tx, invoiceId);
+      }
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'payment.delete',
+          entityType: 'Payment',
+          entityId: id,
+          oldValues: { amount: money(payment.amount), invoiceIds: [...touched] },
+        },
+      });
+    });
+
+    return { ok: true, id };
+  }
+
+  async updateAllocation(
+    id: string,
+    dto: {
+      amount?: number;
+      method?: PaymentMethod;
+      referenceNumber?: string | null;
+    },
+    userId: string,
+  ) {
+    const allocation = await this.prisma.paymentAllocation.findUnique({
+      where: { id },
+      include: {
+        payment: { include: { allocations: true } },
+        invoice: true,
+      },
+    });
+    if (!allocation) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Allocation not found.' });
+    }
+
+    const current = money(allocation.amount);
+    const others = allocation.payment.allocations
+      .filter((row) => row.id !== allocation.id)
+      .map((row) => money(row.amount));
+    const slack = paymentUnallocated(money(allocation.payment.amount), [...others, current]);
+    const nextAmount =
+      dto.amount != null
+        ? planAllocationAmountEdit({
+            currentAlloc: current,
+            nextAmount: money(dto.amount),
+            paymentUnallocated: slack,
+            invoiceOutstanding: money(allocation.invoice.outstandingAmount),
+          })
+        : current;
+    if (dto.amount != null && nextAmount <= 1e-6) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Amount must be positive.',
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (dto.amount != null) {
+        await tx.paymentAllocation.update({
+          where: { id },
+          data: { amount: roundMoney(nextAmount) },
+        });
+      }
+      if (dto.method || dto.referenceNumber !== undefined) {
+        await tx.payment.update({
+          where: { id: allocation.paymentId },
+          data: {
+            ...(dto.method ? { method: dto.method } : {}),
+            ...(dto.referenceNumber !== undefined ? { referenceNumber: dto.referenceNumber } : {}),
+          },
+        });
+      }
+      await this.recomputeInvoiceFromAllocations(tx, allocation.invoiceId);
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'payment.allocation-update',
+          entityType: 'PaymentAllocation',
+          entityId: id,
+          oldValues: { amount: current },
+          newValues: { amount: nextAmount, method: dto.method ?? allocation.payment.method },
+        },
+      });
+    });
+
+    return this.prisma.paymentAllocation.findUniqueOrThrow({
+      where: { id },
+      include: { payment: true, invoice: true },
+    });
+  }
+
+  async removeAllocation(id: string, userId: string) {
+    const allocation = await this.prisma.paymentAllocation.findUnique({
+      where: { id },
+    });
+    if (!allocation) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Allocation not found.' });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.paymentAllocation.delete({ where: { id } });
+      await this.recomputeInvoiceFromAllocations(tx, allocation.invoiceId);
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'payment.allocation-delete',
+          entityType: 'PaymentAllocation',
+          entityId: id,
+          oldValues: { amount: money(allocation.amount), invoiceId: allocation.invoiceId },
+        },
+      });
+    });
+
+    return { ok: true, id };
   }
 
   async recomputeInvoiceFromAllocations(

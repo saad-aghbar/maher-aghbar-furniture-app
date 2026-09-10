@@ -284,15 +284,44 @@ async function main() {
     `approval=${retG2?.approvalStatus} physical=${retG2?.physicalStatus}`,
   );
 
-  const cretBefore = retG2
-    ? await prisma.inventoryTransaction.count({
-        where: {
-          type: 'CUSTOMER_RETURN',
-          referenceType: 'ReturnRequest',
-          referenceId: retG2.id,
-        },
-      })
-    : -1;
+  async function pieceCustody(returnId) {
+    const pieces = await prisma.returnPiece.findMany({
+      where: { returnRequestId: returnId },
+      select: { id: true, inventoryLotId: true },
+    });
+    const pieceIds = pieces.map((piece) => piece.id);
+    const txs = await prisma.inventoryTransaction.count({
+      where: {
+        type: 'CUSTOMER_RETURN',
+        OR: [
+          { referenceType: 'ReturnRequest', referenceId: returnId },
+          ...(pieceIds.length
+            ? [{ referenceType: 'ReturnPiece', referenceId: { in: pieceIds } }]
+            : []),
+        ],
+      },
+    });
+    const lots = await prisma.inventoryLot.findMany({
+      where: {
+        OR: [
+          { sourceKey: `return-quarantine:${returnId}` },
+          { sourceKey: { startsWith: 'return-piece-quarantine:' } },
+          ...(pieceIds.length
+            ? [{ sourceKey: { in: pieceIds.map((id) => `return-piece-quarantine:${id}`) } }]
+            : []),
+        ],
+      },
+      select: { id: true, status: true, sourceKey: true },
+    });
+    const pieceLots = lots.filter(
+      (lot) =>
+        lot.sourceKey === `return-quarantine:${returnId}` ||
+        pieceIds.some((id) => lot.sourceKey === `return-piece-quarantine:${id}`),
+    );
+    return { pieces, txs, lots: pieceLots };
+  }
+
+  const cretBefore = retG2 ? (await pieceCustody(retG2.id)).txs : -1;
   ok(
     '9. CASE2 approve alone had 0 CUSTOMER_RETURN before receive',
     cretBefore === 0,
@@ -308,46 +337,25 @@ async function main() {
         select: { physicalStatus: true, receivedAt: true },
       })
     : null;
-  const cretAfter = retG2
-    ? await prisma.inventoryTransaction.count({
-        where: {
-          type: 'CUSTOMER_RETURN',
-          referenceType: 'ReturnRequest',
-          referenceId: retG2.id,
-        },
-      })
-    : -1;
-  const qLot = retG2
-    ? await prisma.inventoryLot.findUnique({
-        where: { sourceKey: `return-quarantine:${retG2.id}` },
-        select: { id: true, status: true },
-      })
-    : null;
+  const afterReceive = retG2 ? await pieceCustody(retG2.id) : { txs: -1, lots: [] };
+  const qLot = afterReceive.lots[0] ?? null;
   ok(
     '10. CASE2 receive → quarantine once',
     (receiveG.status === 200 || receiveG.status === 201) &&
-      cretAfter === 1 &&
+      afterReceive.txs === 1 &&
       qLot?.status === 'QUARANTINED' &&
       (retGAfter?.physicalStatus === 'RETURNED' || Boolean(retGAfter?.receivedAt)),
-    `status=${receiveG.status} cret=${cretAfter} lot=${qLot?.status ?? 'none'} physical=${retGAfter?.physicalStatus} code=${errCode(receiveG)}`,
+    `status=${receiveG.status} cret=${afterReceive.txs} lot=${qLot?.status ?? 'none'} physical=${retGAfter?.physicalStatus} code=${errCode(receiveG)}`,
   );
 
   const receiveG2 = retG2
     ? await request('POST', `/api/v1/returns/${retG2.id}/receive`, { cookie })
     : { status: 0, json: null };
-  const cretAfter2 = retG2
-    ? await prisma.inventoryTransaction.count({
-        where: {
-          type: 'CUSTOMER_RETURN',
-          referenceType: 'ReturnRequest',
-          referenceId: retG2.id,
-        },
-      })
-    : -1;
+  const afterReceive2 = retG2 ? await pieceCustody(retG2.id) : { txs: -1 };
   ok(
     '11. CASE2 second receive idempotent',
-    (receiveG2.status === 200 || receiveG2.status === 201) && cretAfter2 === 1,
-    `status=${receiveG2.status} cret=${cretAfter2} code=${errCode(receiveG2)}`,
+    (receiveG2.status === 200 || receiveG2.status === 201) && afterReceive2.txs === 1,
+    `status=${receiveG2.status} cret=${afterReceive2.txs} code=${errCode(receiveG2)}`,
   );
 
   // ── CASE3: inventory adjustment on K ──────────────────────────────────────

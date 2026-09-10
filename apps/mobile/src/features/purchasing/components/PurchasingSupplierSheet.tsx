@@ -25,14 +25,6 @@ import {
 import { useSupplierDetailQuery } from '../query';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
-/** Map raw PO statuses to purchasing phase keys — avoid flashing enums. */
-const OPEN_PO_PHASE_KEY: Record<string, string> = {
-  DRAFT: 'purchasing.phaseDraft',
-  APPROVED: 'purchasing.phaseOrdered',
-  SENT: 'purchasing.phaseOrdered',
-  PARTIALLY_RECEIVED: 'purchasing.phasePartial',
-};
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -41,6 +33,8 @@ type Props = {
   onConfirm: (supplier: { id: string; name: string } | null) => void;
   /** Stack on top of another sheet (create PO / PR). */
   overlay?: boolean;
+  /** When false, hide the “all suppliers” row — used when a pick is required. */
+  allowNone?: boolean;
   /** Open PO summaries keyed by supplier id (hub filter context). */
   openOrdersBySupplier?: Map<string, Array<{ id: string; number: string; status: string }>>;
 };
@@ -55,10 +49,11 @@ export function PurchasingSupplierSheet({
   selectedId,
   onConfirm,
   overlay = false,
+  allowNone = true,
   openOrdersBySupplier,
 }: Props) {
   const { user } = useAuth();
-  const { t, isRTL, locale, formatCurrency } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const { height } = useWindowDimensions();
@@ -90,25 +85,29 @@ export function PurchasingSupplierSheet({
   );
   const detail = supplierDetailQuery.data;
 
-  const phaseForStatus = (status: string) => {
-    const key = OPEN_PO_PHASE_KEY[status];
-    if (!key) return null;
-    const translated = t(key);
-    return translated !== key ? translated : null;
-  };
-
   const dismiss = () => {
     setQuery('');
     onClose();
   };
 
   const confirm = () => {
-    void haptics.confirmLight();
-    if (!draftId) onConfirm(null);
-    else {
-      const row = suppliers.find((s) => s.id === draftId);
-      onConfirm(row ? { id: row.id, name: row.name } : null);
+    if (!draftId) {
+      if (!allowNone) {
+        void haptics.error();
+        return;
+      }
+      void haptics.confirmLight();
+      onConfirm(null);
+      dismiss();
+      return;
     }
+    const row = suppliers.find((s) => s.id === draftId);
+    if (!row) {
+      void haptics.error();
+      return;
+    }
+    void haptics.confirmLight();
+    onConfirm({ id: row.id, name: row.name });
     dismiss();
   };
 
@@ -120,6 +119,7 @@ export function PurchasingSupplierSheet({
       open={open}
       onClose={dismiss}
       title={t('catalog.supplier')}
+      expandable
       sheetHeight={sheetHeight}
       overlay={overlay}
     >
@@ -203,18 +203,20 @@ export function PurchasingSupplierSheet({
                 paddingBottom: theme.spacing.md,
               }}
             >
-              <SupplierFloorRow
-                label={t('catalog.allSuppliers')}
-                icon="apps-outline"
-                active={draftId == null}
-                muted
-                isRTL={isRTL}
-                titleWeight={titleWeight}
-                onPress={() => {
-                  void haptics.selection();
-                  setDraftId(null);
-                }}
-              />
+              {allowNone ? (
+                <SupplierFloorRow
+                  label={t('catalog.allSuppliers')}
+                  icon="apps-outline"
+                  active={draftId == null}
+                  muted
+                  isRTL={isRTL}
+                  titleWeight={titleWeight}
+                  onPress={() => {
+                    void haptics.selection();
+                    setDraftId(null);
+                  }}
+                />
+              ) : null}
               {filtered.map((s, index) => {
                 const openCount = openOrdersBySupplier?.get(s.id)?.length ?? 0;
                 const row = (
@@ -273,127 +275,74 @@ export function PurchasingSupplierSheet({
                   </AppText>
                 </View>
               ) : null}
+              {draftId && detail ? (
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: theme.spacing.xs,
+                  }}
+                >
+                  <AppText
+                    variant="caption"
+                    weight={titleWeight}
+                    style={{
+                      color: colors.brand,
+                      textAlign: isRTL ? 'right' : 'left',
+                      textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                      fontSize: 11,
+                    }}
+                  >
+                    {t('mobile.purchasing.contact')}
+                  </AppText>
+                  {detail.phone ? (
+                    <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                      {detail.phone}
+                    </AppText>
+                  ) : null}
+                  {detail.email ? (
+                    <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                      {detail.email}
+                    </AppText>
+                  ) : null}
+                  {detail.lastPurchase ? (
+                    <AppText variant="caption" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                      {`${t('mobile.purchasing.lastPurchase')}: ${detail.lastPurchase.sku ?? '—'}`}
+                    </AppText>
+                  ) : null}
+                </View>
+              ) : null}
+              {draftId && draftOpenOrders.length > 0 ? (
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: theme.spacing.xs,
+                  }}
+                >
+                  <AppText variant="caption" weight={titleWeight} color="brand">
+                    {t('mobile.purchasing.openOrders')}
+                  </AppText>
+                  {draftOpenOrders.slice(0, 4).map((po) => (
+                    <AppText key={po.id} variant="caption" dir="ltr">
+                      {po.number}
+                    </AppText>
+                  ))}
+                </View>
+              ) : draftId ? (
+                <AppText variant="caption" color="muted">
+                  {t('mobile.purchasing.noOpenOrders')}
+                </AppText>
+              ) : null}
             </ScrollView>
           </View>
         </Animated.View>
-
-        {draftId && detail ? (
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: theme.spacing.xs,
-            }}
-          >
-            <AppText
-              variant="caption"
-              weight={titleWeight}
-              style={{
-                color: colors.brand,
-                textAlign: isRTL ? 'right' : 'left',
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-              }}
-            >
-              {t('mobile.purchasing.contact')}
-            </AppText>
-            {detail.phone || detail.email || detail.address ? (
-              <>
-                {detail.phone ? (
-                  <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-                    {detail.phone}
-                  </AppText>
-                ) : null}
-                {detail.email ? (
-                  <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-                    {detail.email}
-                  </AppText>
-                ) : null}
-                {detail.address ? (
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    numberOfLines={2}
-                    style={{ textAlign: isRTL ? 'right' : 'left' }}
-                  >
-                    {detail.address}
-                  </AppText>
-                ) : null}
-              </>
-            ) : (
-              <AppText variant="caption" color="muted">
-                —
-              </AppText>
-            )}
-            {detail.lastPurchase ? (
-              <AppText
-                variant="caption"
-                style={{ textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}
-              >
-                {`${t('mobile.purchasing.lastPurchase')}: ${detail.lastPurchase.sku ?? '—'} · ${
-                  detail.lastPurchase.unitCost != null
-                    ? formatCurrency(detail.lastPurchase.unitCost)
-                    : '—'
-                }`}
-              </AppText>
-            ) : null}
-            {(detail.openPurchaseOrders?.length ?? 0) > 0 ? (
-              <AppText variant="caption" color="muted" dir="ltr">
-                {`${detail.openPurchaseOrders!.length} ${t('mobile.purchasing.openOrders')}`}
-              </AppText>
-            ) : null}
-          </View>
-        ) : null}
-
-        {draftId && draftOpenOrders.length > 0 ? (
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: theme.spacing.xs,
-            }}
-          >
-            <AppText
-              variant="caption"
-              weight={titleWeight}
-              style={{
-                color: colors.brand,
-                textAlign: isRTL ? 'right' : 'left',
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-              }}
-            >
-              {t('mobile.purchasing.openOrders')}
-            </AppText>
-            {draftOpenOrders.slice(0, 4).map((po) => {
-              const phase = phaseForStatus(po.status);
-              return (
-                <AppText
-                  key={po.id}
-                  variant="caption"
-                  dir="ltr"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {phase ? `${po.number} · ${phase}` : po.number}
-                </AppText>
-              );
-            })}
-          </View>
-        ) : draftId ? (
-          <AppText
-            variant="caption"
-            color="muted"
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
-          >
-            {t('mobile.purchasing.noOpenOrders')}
-          </AppText>
-        ) : null}
 
         <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.xs }}>
           <PrimaryButton

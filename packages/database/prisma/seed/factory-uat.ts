@@ -4,6 +4,7 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { STANDARD_FURNITURE_WORKFLOW_CODE, STAGE_LIBRARY_NAME_HE } from './workflow';
+import { defaultBinIdForWarehouse } from './warehouse-bins';
 
 const UAT_PARALLEL_WORKFLOW_CODE = 'UAT_PARALLEL';
 
@@ -610,14 +611,16 @@ async function ensureSecondaryLifecycleWarehouses(prisma: PrismaClient) {
     const item = await prisma.inventoryItem.findUnique({ where: { sku } });
     if (!item) continue;
     for (const warehouseId of [raw.id, raw2.id]) {
+      const locationId = await defaultBinIdForWarehouse(prisma, warehouseId);
       const existing = await prisma.inventoryBalance.findFirst({
-        where: { inventoryItemId: item.id, warehouseId, locationId: null },
+        where: { inventoryItemId: item.id, warehouseId, locationId },
       });
       if (existing) continue;
       await prisma.inventoryBalance.create({
         data: {
           inventoryItemId: item.id,
           warehouseId,
+          locationId,
           availableQty: qty,
         },
       });

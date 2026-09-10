@@ -19,6 +19,8 @@ export class ProductionReworkService {
     stageInstanceId: string;
     notes?: string;
     userId: string;
+    wipPieceId?: string | null;
+    inspectionItemId?: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const rework = await tx.reworkRequest.findUniqueOrThrow({
@@ -58,6 +60,8 @@ export class ProductionReworkService {
             status: 'IN_PROGRESS',
             reentryStageInstanceId: stage.id,
             notes: params.notes ?? rework.notes,
+            ...(params.wipPieceId ? { wipPieceId: params.wipPieceId } : {}),
+            ...(params.inspectionItemId ? { inspectionItemId: params.inspectionItemId } : {}),
           },
         });
         const row = await tx.reworkRequest.findUniqueOrThrow({
@@ -98,6 +102,8 @@ export class ProductionReworkService {
           status: 'IN_PROGRESS',
           reentryStageInstanceId: stage.id,
           notes: params.notes ?? rework.notes,
+          ...(params.wipPieceId ? { wipPieceId: params.wipPieceId } : {}),
+          ...(params.inspectionItemId ? { inspectionItemId: params.inspectionItemId } : {}),
         },
       });
 
@@ -143,7 +149,7 @@ export class ProductionReworkService {
       .$transaction(async (tx) => {
         const rework = await tx.reworkRequest.findUniqueOrThrow({
           where: { id: reworkId },
-          include: { tasks: true },
+          include: { tasks: true, inspection: { include: { items: true } } },
         });
         if (rework.status === 'COMPLETED') {
           return tx.reworkRequest.findUniqueOrThrow({
@@ -172,13 +178,39 @@ export class ProductionReworkService {
           include: { stageDefinition: true, tasks: true },
         });
         if (inspectionStage) {
+          const inspectionId = rework.inspectionId ?? rework.inspection?.id ?? null;
+          if (rework.inspectionItemId) {
+            await tx.qualityInspectionItem.updateMany({
+              where: { id: rework.inspectionItemId },
+              data: { result: null, note: null },
+            });
+          } else if (inspectionId) {
+            await tx.qualityInspectionItem.updateMany({
+              where: { inspectionId, result: 'FAIL' as never },
+              data: { result: null },
+            });
+          }
+          if (inspectionId) {
+            await tx.qualityInspection.update({
+              where: { id: inspectionId },
+              data: { result: null },
+            });
+          }
+          const items = inspectionId
+            ? await tx.qualityInspectionItem.findMany({ where: { inspectionId } })
+            : [];
+          const passed = items.filter((i) => String(i.result ?? '').toUpperCase() === 'PASS').length;
+          const progress = items.length
+            ? Math.min(100, Math.floor((passed / items.length) * 100))
+            : 0;
+          const inspectionStatus = passed > 0 ? 'PARTIAL' : 'PENDING_REINSPECTION';
           await tx.productionStageInstance.update({
             where: { id: inspectionStage.id },
             data: {
               status: 'READY',
-              progressPercent: 0,
+              progressPercent: progress,
               actualEnd: null,
-              inspectionStatus: 'PENDING_REINSPECTION',
+              inspectionStatus,
             },
           });
           for (const task of inspectionStage.tasks) {
@@ -187,7 +219,7 @@ export class ProductionReworkService {
               where: { id: task.id },
               data: {
                 status: 'READY_FOR_INSPECTION',
-                progressPercent: 0,
+                progressPercent: progress,
                 actualCompletion: null,
                 actualStart: null,
               },
@@ -228,12 +260,6 @@ export class ProductionReworkService {
           where: { id: reworkId },
           include: { inspection: true, tasks: true },
         });
-      })
-      .then(async (rework) => {
-        await this.scheduling
-          ?.enqueueTargetedReplan(rework.productionOrderId, 'rework-complete')
-          .catch(() => undefined);
-        return rework;
       });
   }
 
@@ -257,7 +283,14 @@ export class ProductionReworkService {
             where: { salesOrderId: params.salesOrderId },
             orderBy: { createdAt: 'desc' },
           })
-        : null;
+        : await tx.productionOrder.findFirst({
+            where: {
+              returnRequestId: params.returnId,
+              originType: { in: ['RETURN_WORK', 'REPLACEMENT'] },
+              archivedAt: null,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
       if (!po) {
         throw new BadRequestException({
           code: 'INVALID_REWORK_STAGE',

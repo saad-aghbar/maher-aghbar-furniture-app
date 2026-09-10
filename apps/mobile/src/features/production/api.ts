@@ -3,6 +3,7 @@ export type {
   RecommendBand,
   ProductionBlocker,
   ProductionDateMode,
+  ProductionDayFocus,
   ProductionDaySummary,
   ProductionDayLensPayload,
   ProductionListBucket,
@@ -42,4 +43,5 @@ export {
   updateProductionTaskNotes,
   getOrderPlanSetup,
   putOrderPlanSetup,
+  resyncOrderPlanSetup,
 } from '@/api/modules/production';

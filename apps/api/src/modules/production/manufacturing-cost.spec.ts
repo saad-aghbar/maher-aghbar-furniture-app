@@ -90,6 +90,7 @@ describe('ManufacturingCostService', () => {
         findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 5 }]),
       },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -138,6 +139,7 @@ describe('ManufacturingCostService', () => {
       },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -186,6 +188,7 @@ describe('ManufacturingCostService', () => {
       },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([{ sku: 'ZERO', standardCost: 0 }]) },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -233,6 +236,7 @@ describe('ManufacturingCostService', () => {
       },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -280,6 +284,7 @@ describe('ManufacturingCostService', () => {
         findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 99 }]),
       },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -340,6 +345,7 @@ describe('ManufacturingCostService', () => {
       },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -365,6 +371,7 @@ describe('ManufacturingCostService', () => {
       productionTaskMaterialUsage: { findMany },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -393,6 +400,7 @@ describe('ManufacturingCostService', () => {
       // SEMI receive creates WipHandoff / lot moves — never ProductionTaskMaterialUsage rows.
       productionTaskMaterialUsage: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryTransaction: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -471,6 +479,7 @@ describe('ManufacturingCostService', () => {
         findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 5 }]),
       },
       inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
@@ -482,5 +491,93 @@ describe('ManufacturingCostService', () => {
     expect(payload.bySku[0]?.costedQty).toBe(8);
     expect(payload.bySku[0]?.actualCost).toBe(40);
     expect(payload.incomplete).toBe(false);
+  });
+
+  it('estimates a return work order from production-order material requirements', async () => {
+    const prisma = {
+      productionOrder: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'rw-1',
+          number: 'RW-1',
+          status: 'PLANNED',
+          quantity: 1,
+          salesOrderId: null,
+          salesOrderLineId: null,
+          product: null,
+        }),
+      },
+      productionTaskMaterialUsage: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            sku: 'FAB-R',
+            displayName: 'Rework velvet',
+            category: 'FABRIC',
+            expectedQty: 4,
+            inventoryItem: { sku: 'FAB-R', nameEn: 'Rework velvet', category: 'FABRIC' },
+          },
+        ]),
+      },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-R', standardCost: 12 }]),
+      },
+      inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const payload = await makeService(prisma as never).forProductionOrder('rw-1', adminUser());
+    expect(payload.estimated.total).toBe(48);
+    expect(payload.actual.total).toBeNull();
+    expect(payload.bySku[0]?.plannedQty).toBe(4);
+    expect(payload.status).toBe('ESTIMATED_ONLY');
+  });
+
+  it('sums return work-order costs onto the return detail block', async () => {
+    const svc = makeService({
+      returnRequest: {
+        findUnique: jest.fn().mockResolvedValue({ chargeAmount: 0 }),
+      },
+      productionOrder: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'rw-1', originType: 'RETURN_WORK', returnPieceId: 'p1' },
+          { id: 'rw-2', originType: 'REPLACEMENT', returnPieceId: 'p2' },
+        ]),
+      },
+      returnRecoveryLine: { findMany: jest.fn().mockResolvedValue([]) },
+    } as never);
+    jest.spyOn(svc, 'summaryForProductionOrder')
+      .mockResolvedValueOnce({
+        status: 'IN_PROGRESS',
+        incomplete: false,
+        estimatedTotal: 40,
+        actualTotal: 10,
+        varianceCost: -30,
+        variancePct: -75,
+        scrapCost: 0,
+        finalizedAt: null,
+      })
+      .mockResolvedValueOnce({
+        status: 'ESTIMATED_ONLY',
+        incomplete: false,
+        estimatedTotal: 20,
+        actualTotal: null,
+        varianceCost: null,
+        variancePct: null,
+        scrapCost: 0,
+        finalizedAt: null,
+      });
+
+    const block = await svc.summaryForReturn('ret-1', adminUser());
+    expect(block).toEqual({
+      status: 'IN_PROGRESS',
+      estimatedTotal: 60,
+      actualTotal: 10,
+      laborCost: null,
+      repairCost: 10,
+      replacementCost: null,
+      recoveryCost: null,
+      recoveredValue: null,
+      disposedValue: null,
+      factoryAbsorbed: 10,
+    });
   });
 });

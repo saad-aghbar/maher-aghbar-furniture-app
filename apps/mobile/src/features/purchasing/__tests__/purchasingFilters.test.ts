@@ -23,8 +23,9 @@ describe('purchasingFilters', () => {
     expect(isStatusFilterActive('ALL')).toBe(false);
     expect(isStatusFilterActive('SENT')).toBe(true);
     expect(statusFiltersForTab('orders')[0]).toBe('ALL');
-    expect(statusFiltersForTab('requests')).toContain('SUBMITTED');
+    expect(statusFiltersForTab('orders')).not.toContain('SUBMITTED');
     expect(statusFiltersForTab('invoices')).toContain('PAID');
     expect(statusFiltersForTab('fabric')).toContain('NEEDS_ORDERING');
+    expect(statusFiltersForTab('orders')).not.toContain('requests');
   });
 });

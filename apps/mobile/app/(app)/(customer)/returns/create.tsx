@@ -6,7 +6,7 @@ import { PermissionGate } from '@/navigation/PermissionGate';
 export default function DealerCreateReturnRoute() {
   const { user } = useAuth();
   return (
-    <PermissionGate user={user} require="sales-order.read" mode="all">
+    <PermissionGate user={user} require={['return.create', 'return.read', 'sales-order.read']} mode="any">
       <CreateReturnScreen
         afterCreateHref={(id) => `/(app)/(customer)/returns/${id}` as Href}
       />

@@ -1,4 +1,7 @@
-import { resolveProductStageOutput } from './product-inventory-output.resolver';
+import {
+  resolveProductStageOutput,
+  warnProductOutputMiss,
+} from './product-inventory-output.resolver';
 import { InventoryItemClass } from '@maher/database';
 
 describe('resolveProductStageOutput', () => {
@@ -114,6 +117,48 @@ describe('resolveProductStageOutput', () => {
     ]);
     expect(resolved.pieceLabels.map((p) => p.nameEn)).toEqual(['Left rail', 'Right rail']);
     expect(resolved.expectedPieceCount).toBe(2);
+  });
+
+  it('falls back to stageDefinitionId when workflowNodeId rotated on republish', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const resolved = resolveProductStageOutput(
+      {
+        ...node,
+        sourceWorkflowNodeId: 'node-carpentry-v2',
+        inventoryTracking: 'NONE',
+      },
+      [
+        {
+          id: 'out-1',
+          productId: 'sofa',
+          workflowNodeId: 'node-carpentry-v1',
+          stageDefinitionId: 'stage-carpentry',
+          itemClass: InventoryItemClass.SEMI_FINISHED_GOOD,
+          inventoryTracking: 'PRODUCES_SEMI_FINISHED',
+          consumesRawMaterials: true,
+          consumesSemiFinished: false,
+          outputNameAr: 'هيكل',
+          outputNameEn: 'Frame',
+          outputNameHe: null,
+          outputQtyPerUnit: 1,
+          expectedPieceCount: 3,
+          pieceLabels: [
+            { nameEn: 'Couch' },
+            { nameEn: 'Chair 1' },
+            { nameEn: 'Chair 2' },
+          ],
+          unit: 'pcs',
+          defaultWarehouseId: 'semi-wh',
+          inventoryItemId: 'frame-item',
+        },
+      ],
+    );
+    expect(resolved.tracking).toBe('PRODUCES_SEMI_FINISHED');
+    expect(resolved.nameEn).toBe('Frame');
+    expect(resolved.pieceLabels.map((p) => p.nameEn)).toEqual(['Couch', 'Chair 1', 'Chair 2']);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    expect(typeof warnProductOutputMiss).toBe('function');
   });
 
   it('does not invent output when tracking is NONE and no product row exists', () => {

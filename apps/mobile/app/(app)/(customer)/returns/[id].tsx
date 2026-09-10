@@ -7,7 +7,7 @@ export default function DealerReturnDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   return (
-    <PermissionGate user={user} require="sales-order.read" mode="all">
+    <PermissionGate user={user} require={['return.read', 'sales-order.read']} mode="any">
       <ReturnDetailScreen
         returnId={String(id ?? '')}
         dealerFacing

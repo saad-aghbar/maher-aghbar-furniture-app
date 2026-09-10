@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -22,6 +23,7 @@ import { ReportsPeriodChrome } from './components/ReportsPeriodChrome';
 import { ReportsStatusRows } from './components/ReportsStatusRows';
 import { ReportsTabBar } from './components/ReportsTabBar';
 import {
+  useCostOrdersQuery,
   useDashboardReportQuery,
   useFinancialReportQuery,
   useProductionReportQuery,
@@ -37,9 +39,10 @@ import {
 
 const BACK_FALLBACK = '/(app)/(admin)/(tabs)/more' as Href;
 
-const CATEGORIES: ReportsCategory[] = ['dashboard', 'sales', 'production', 'financial'];
+const CATEGORIES: ReportsCategory[] = ['orders', 'dashboard', 'sales', 'production', 'financial'];
 
 const CATEGORY_TAB_KEY: Record<ReportsCategory, string> = {
+  orders: 'mobile.reports.tabs.orders',
   dashboard: 'mobile.reports.tabs.dashboard',
   sales: 'mobile.reports.tabs.sales',
   production: 'mobile.reports.tabs.production',
@@ -47,6 +50,7 @@ const CATEGORY_TAB_KEY: Record<ReportsCategory, string> = {
 };
 
 const CATEGORY_TITLE_KEY: Record<ReportsCategory, string> = {
+  orders: 'accounting.lensOrders',
   dashboard: 'accounting.reportDashboard',
   sales: 'accounting.reportSales',
   production: 'accounting.reportProduction',
@@ -124,25 +128,28 @@ export function ReportsScreen() {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const canSales = can(user, 'report.sales.read');
   const canProduction = can(user, 'report.production.read');
   const canFinancial = can(user, 'report.financial.read');
+  const canCost = can(user, 'inventory.cost.read');
 
   const categories = useMemo(
     () =>
       CATEGORIES.filter((key) => {
+        if (key === 'orders') return canCost;
         if (key === 'dashboard' || key === 'sales') return canSales;
         if (key === 'production') return canProduction;
         return canFinancial;
       }),
-    [canSales, canProduction, canFinancial],
+    [canCost, canSales, canProduction, canFinancial],
   );
 
   const [period, setPeriod] = useState<ReportsPeriod>('month');
   const [category, setCategory] = useState<ReportsCategory>(
-    () => categories[0] ?? 'dashboard',
+    () => categories[0] ?? 'orders',
   );
 
   const range = useMemo(() => reportsPeriodRange(period), [period]);
@@ -154,15 +161,18 @@ export function ReportsScreen() {
     canProduction && category === 'production',
   );
   const financialQuery = useFinancialReportQuery(canFinancial && category === 'financial');
+  const costOrdersQuery = useCostOrdersQuery(range, canCost && category === 'orders');
 
   const activeQuery =
-    category === 'dashboard'
-      ? dashboardQuery
-      : category === 'sales'
-        ? salesQuery
-        : category === 'production'
-          ? productionQuery
-          : financialQuery;
+    category === 'orders'
+      ? costOrdersQuery
+      : category === 'dashboard'
+        ? dashboardQuery
+        : category === 'sales'
+          ? salesQuery
+          : category === 'production'
+            ? productionQuery
+            : financialQuery;
 
   const snapshot = useMemo(
     () => selectDashboardSnapshot(locale, dashboardQuery.data),
@@ -230,8 +240,12 @@ export function ReportsScreen() {
   }
 
   const activeCategory = categories.includes(category) ? category : categories[0]!;
-  const showPeriod = activeCategory === 'sales' || activeCategory === 'production';
-  const hasBody = Boolean(activeQuery.data);
+  const showPeriod =
+    activeCategory === 'orders' || activeCategory === 'sales' || activeCategory === 'production';
+  const hasBody =
+    activeCategory === 'orders'
+      ? Boolean(costOrdersQuery.data?.data?.length)
+      : Boolean(activeQuery.data);
   const loading = activeQuery.isLoading && !activeQuery.data;
 
   return (
@@ -287,6 +301,32 @@ export function ReportsScreen() {
           <ListItemEnter index={0}>
             <DealerBoard title={t(CATEGORY_TITLE_KEY[activeCategory])} titleWeight={titleWeight}>
               <ActivityIndicator color={colors.brand} />
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
+        {activeCategory === 'orders' && costOrdersQuery.data ? (
+          <ListItemEnter index={0}>
+            <DealerBoard title={t('accounting.lensOrders')} titleWeight={titleWeight}>
+              {(costOrdersQuery.data.data ?? []).map((row) => (
+                <Pressable
+                  key={row.id}
+                  onPress={() => router.push(`/(app)/(admin)/reports/order/${row.id}` as Href)}
+                  style={{
+                    paddingVertical: theme.spacing.sm,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                >
+                  <AppText weight={titleWeight}>{row.number}</AppText>
+                  <AppText variant="caption" color="muted">
+                    {row.productSummary || row.status}
+                  </AppText>
+                  <AppText variant="caption">
+                    {row.actualCost == null ? '—' : formatCurrency(locale, row.actualCost)} · {row.coverage}
+                  </AppText>
+                </Pressable>
+              ))}
             </DealerBoard>
           </ListItemEnter>
         ) : null}

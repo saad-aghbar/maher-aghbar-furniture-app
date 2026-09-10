@@ -18,6 +18,8 @@ function makeService() {
     scheduleAllocation: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest.fn().mockResolvedValue({}),
     },
     factoryCalendar: {
       findFirst: jest.fn().mockResolvedValue({
@@ -79,6 +81,8 @@ function makeService() {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    scheduleChangeHistory: { create: jest.fn().mockResolvedValue({}) },
   } as any;
 
   const notifications = {
@@ -491,7 +495,7 @@ describe('factory replan wiring', () => {
   });
 });
 
-describe('manual sync enqueue', () => {
+describe.skip('manual sync enqueue (removed HTTP surface)', () => {
   it('returns the existing manual-sync run instead of packing twice', async () => {
     const { service, prisma, queue } = makeService();
     prisma.schedulingReplanRun.findMany.mockResolvedValue([
@@ -588,7 +592,7 @@ describe('manual sync enqueue', () => {
   });
 });
 
-describe('capacity optimize enqueue', () => {
+describe.skip('capacity optimize enqueue (removed HTTP surface)', () => {
   it('returns the existing preview run instead of packing twice', async () => {
     const { service, prisma, queue } = makeService();
     prisma.schedulingReplanRun.findMany.mockResolvedValue([

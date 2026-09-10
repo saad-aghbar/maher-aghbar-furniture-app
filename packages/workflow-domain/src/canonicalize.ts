@@ -14,11 +14,12 @@ import { computeParallelBands } from './parallelBands';
 import { transitiveReduceProduction } from './transitiveReduction';
 import type {
   CanonicalWorkflowGraph,
+  WorkflowChainOptions,
   WorkflowDomainEdge,
   WorkflowDomainNode,
 } from './types';
 
-export type CanonicalizeInput = {
+export type CanonicalizeInput = WorkflowChainOptions & {
   nodes: WorkflowDomainNode[];
   edges: WorkflowDomainEdge[];
 };
@@ -27,6 +28,8 @@ export type CanonicalizeInput = {
  * Enforce invariants only. Does NOT invent production parents for orphans.
  */
 export function canonicalizeWorkflowGraph(input: CanonicalizeInput): CanonicalWorkflowGraph {
+  const requiresOpeningChain = input.requiresOpeningChain ?? true;
+  const requiresTerminalChain = input.requiresTerminalChain ?? true;
   const nodes = [...input.nodes].sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -53,23 +56,25 @@ export function canonicalizeWorkflowGraph(input: CanonicalizeInput): CanonicalWo
   let predecessorsByNode = buildPredMap(nodeIds, rawEdges);
 
   // Strip production → Packaging/Delivery and any edge into Packaging/Delivery except Inspection→Packaging, Packaging→Delivery
-  for (const id of nodeIds) {
-    const code = byId.get(id)?.code ?? '';
-    if (code === 'PACKAGING') {
-      predecessorsByNode[id] = inspectionNodeId ? [inspectionNodeId] : [];
-      continue;
+  if (requiresTerminalChain) {
+    for (const id of nodeIds) {
+      const code = byId.get(id)?.code ?? '';
+      if (code === 'PACKAGING') {
+        predecessorsByNode[id] = inspectionNodeId ? [inspectionNodeId] : [];
+        continue;
+      }
+      if (code === 'DELIVERY') {
+        predecessorsByNode[id] = packagingNodeId ? [packagingNodeId] : [];
+        continue;
+      }
+      // Production + Inspection: drop terminal preds except we handle Inspection below
+      predecessorsByNode[id] = sortedUnique(
+        (predecessorsByNode[id] ?? []).filter((p) => {
+          const pc = byId.get(p)?.code ?? '';
+          return !isTerminalCode(pc) || (code === 'INSPECTION' && false);
+        }),
+      );
     }
-    if (code === 'DELIVERY') {
-      predecessorsByNode[id] = packagingNodeId ? [packagingNodeId] : [];
-      continue;
-    }
-    // Production + Inspection: drop terminal preds except we handle Inspection below
-    predecessorsByNode[id] = sortedUnique(
-      (predecessorsByNode[id] ?? []).filter((p) => {
-        const pc = byId.get(p)?.code ?? '';
-        return !isTerminalCode(pc) || (code === 'INSPECTION' && false);
-      }),
-    );
   }
 
   // Transitive reduce production subgraph only
@@ -77,13 +82,13 @@ export function canonicalizeWorkflowGraph(input: CanonicalizeInput): CanonicalWo
 
   // REPLACE Inspection preds with production frontier
   const frontierNodeIds = computeProductionFrontier(productionNodeIds, predecessorsByNode);
-  if (inspectionNodeId) {
+  if (requiresTerminalChain && inspectionNodeId) {
     predecessorsByNode[inspectionNodeId] = [...frontierNodeIds];
   }
-  if (packagingNodeId && inspectionNodeId) {
+  if (requiresTerminalChain && packagingNodeId && inspectionNodeId) {
     predecessorsByNode[packagingNodeId] = [inspectionNodeId];
   }
-  if (deliveryNodeId && packagingNodeId) {
+  if (requiresTerminalChain && deliveryNodeId && packagingNodeId) {
     predecessorsByNode[deliveryNodeId] = [packagingNodeId];
   }
 
@@ -110,6 +115,8 @@ export function canonicalizeWorkflowGraph(input: CanonicalizeInput): CanonicalWo
     packagingNodeId,
     deliveryNodeId,
     frontierNodeIds,
+    requiresOpeningChain,
+    requiresTerminalChain,
   };
 }
 

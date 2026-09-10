@@ -1,9 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { InvoiceStatus } from '@maher/database';
+import { InvoiceStatus, PaymentMethod } from '@maher/database';
 import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -24,6 +25,11 @@ export class ListSupplierInvoicesDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  @ApiPropertyOptional({ enum: ['FABRIC', 'RAW'] })
+  @IsOptional()
+  @IsIn(['FABRIC', 'RAW'])
+  materialKind?: 'FABRIC' | 'RAW';
 }
 
 export class UpdateSupplierInvoiceLineDto {
@@ -57,12 +63,62 @@ export class UpdateSupplierInvoiceDto {
   dueDate?: string | null;
 
   @IsOptional()
+  @IsDateString()
+  invoiceDate?: string;
+
+  @IsOptional()
   @IsString()
   notes?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  subtotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  taxTotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  total?: number;
+
+  @IsOptional()
+  @IsEnum(InvoiceStatus)
+  status?: InvoiceStatus;
 
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UpdateSupplierInvoiceLineDto)
   lines?: UpdateSupplierInvoiceLineDto[];
+}
+
+export class UpdateSupplierPaymentDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  amount?: number;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  method?: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  referenceNumber?: string | null;
+
+  @IsOptional()
+  @IsString()
+  notes?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  paymentDate?: string;
 }

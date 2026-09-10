@@ -1,6 +1,8 @@
 export {
   listTasks,
   listCompletedDealers,
+  listMyOrders,
+  getMyOrderWorkflow,
   getTask,
   startTask,
   pauseTask,
@@ -30,4 +32,9 @@ export type {
   TaskStatus,
   TaskWipOutput,
   TaskWipOutputPiece,
+  WorkerMyOrder,
+  WorkerOrderLaneNode,
+  WorkerOrderWorkflow,
+  WorkerTaskLock,
+  MyOrderSegment,
 } from '@/api/modules/tasks';

@@ -43,11 +43,20 @@ function row(partial: Partial<FabricTrackerRow> & { id: string }): FabricTracker
     dealerName: 'Oasis Living',
     productName: '3-Seater Sofa',
     supplierName: partial.supplierName ?? 'Abdali Textile Mill',
+    inventoryItemId: null,
+    sku: null,
+    purchaseOrderId: null,
+    purchaseOrderNumber: null,
+    supplierInvoiceId: null,
+    supplierInvoiceNumber: null,
     imageUrl: null,
     locationLabel:
       'locationLabel' in partial ? partial.locationLabel! : 'Fabric Holding A-3',
     qrCodes: ['FB-SOFB1042-001'],
     lots: [],
+    expectedAvailableAt: null,
+    costOnFile: false,
+    resolvedUnitCost: null,
   };
 }
 

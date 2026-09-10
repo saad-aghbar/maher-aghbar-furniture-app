@@ -8,7 +8,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { PrismaClient, WipKitStatus } from '@maher/database';
+import { PrismaClient, WipKitStatus } from '@prisma/client';
+import { allocateBinQrCode } from './seed/warehouse-bins';
 
 const prisma = new PrismaClient();
 
@@ -120,9 +121,27 @@ async function ensureBin(warehouseId: string, code: string, name: string) {
   const existing = await prisma.warehouseLocation.findUnique({
     where: { warehouseId_code: { warehouseId, code } },
   });
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.qrCode) {
+      const warehouse = await prisma.warehouse.findUnique({
+        where: { id: warehouseId },
+        select: { code: true },
+      });
+      const qrCode = await allocateBinQrCode(prisma, warehouse?.code ?? 'SEMI', existing.code);
+      return prisma.warehouseLocation.update({
+        where: { id: existing.id },
+        data: { qrCode },
+      });
+    }
+    return existing;
+  }
+  const warehouse = await prisma.warehouse.findUnique({
+    where: { id: warehouseId },
+    select: { code: true },
+  });
+  const qrCode = await allocateBinQrCode(prisma, warehouse?.code ?? 'SEMI', code);
   return prisma.warehouseLocation.create({
-    data: { warehouseId, code, name },
+    data: { warehouseId, code, name, qrCode },
   });
 }
 

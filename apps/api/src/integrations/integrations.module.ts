@@ -2,14 +2,12 @@ import { Global, Module, Logger } from '@nestjs/common';
 import {
   createAiProviders,
   createEmailProvider,
-  createJoFotaraProvider,
   createOcrProvider,
   createSmsProvider,
   createWhatsAppProvider,
   type AiProviders,
   type EmailProvider,
   type ExtractionProvider,
-  type JoFotaraProvider,
   type OcrProvider,
   type SmsProvider,
   type TranslateProvider,
@@ -22,7 +20,6 @@ export const EXTRACTION_PROVIDER = 'EXTRACTION_PROVIDER';
 export const EMAIL_PROVIDER = 'EMAIL_PROVIDER';
 export const SMS_PROVIDER = 'SMS_PROVIDER';
 export const WHATSAPP_PROVIDER = 'WHATSAPP_PROVIDER';
-export const JOFOTARA_PROVIDER = 'JOFOTARA_PROVIDER';
 
 const ai = createAiProviders();
 
@@ -41,10 +38,6 @@ const ai = createAiProviders();
     {
       provide: WHATSAPP_PROVIDER,
       useFactory: (): WhatsAppProvider => createWhatsAppProvider(),
-    },
-    {
-      provide: JOFOTARA_PROVIDER,
-      useFactory: (): JoFotaraProvider => createJoFotaraProvider(),
     },
     {
       provide: 'INTEGRATIONS_BOOT_LOG',
@@ -71,7 +64,6 @@ const ai = createAiProviders();
     EMAIL_PROVIDER,
     SMS_PROVIDER,
     WHATSAPP_PROVIDER,
-    JOFOTARA_PROVIDER,
   ],
 })
 export class IntegrationsModule {}

@@ -1,6 +1,20 @@
 import type { PaginatedResponse } from '@maher/types';
 import { apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
+
+export type InvoiceCreatableKind = 'ORDER' | 'RETURN' | 'PURCHASING';
+
+export type InvoiceCreatableSource = {
+  kind: InvoiceCreatableKind;
+  id: string;
+  number: string;
+  title: string;
+  partyName: string;
+  amount: number;
+  status: string;
+  imageUrl?: string | null;
+  blockedReason?: string | null;
+};
 import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
@@ -20,6 +34,15 @@ export type InvoicePayment = {
   method: string;
   paymentDate?: string | null;
   referenceNumber?: string | null;
+  invoiceId?: string | null;
+};
+
+export type InvoiceAllocation = {
+  id: string;
+  amount: number | string;
+  createdAt?: string | null;
+  invoiceId?: string | null;
+  payment?: InvoicePayment | null;
 };
 
 export type InvoicePresentation = {
@@ -55,6 +78,8 @@ export type Invoice = {
   invoiceDate: string;
   dueDate?: string | null;
   notes?: string | null;
+  currency?: string | null;
+  salesOrderId?: string | null;
   subtotal?: number | string | null;
   taxAmount?: number | string | null;
   taxTotal?: number | string | null;
@@ -83,19 +108,46 @@ export type Invoice = {
     externalOrderNumber?: string | null;
     title?: string | null;
   } | null;
+  returnRequestId?: string | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    productDesc?: string | null;
+    responsibility?: string | null;
+    chargeAmount?: number | string | null;
+    factoryShareAmount?: number | string | null;
+    chargeStatus?: string | null;
+    chargeSentAt?: string | null;
+    chargeConfirmedAt?: string | null;
+    chargeRejectedAt?: string | null;
+    chargeRejectionNote?: string | null;
+    lifecycleState?: string | null;
+    resolution?: string | null;
+    salesOrder?: { id: string; number: string } | null;
+    pieces?: Array<{
+      id: string;
+      code: string;
+      pieceNo: number;
+      decision?: string | null;
+      state?: string | null;
+    }>;
+  } | null;
+  reworkCost?: {
+    status?: string | null;
+    estimatedTotal?: number | string | null;
+    actualTotal?: number | string | null;
+  } | null;
   payments?: InvoicePayment[];
+  allocations?: InvoiceAllocation[];
   presentation?: InvoicePresentation | null;
   dealerFinance?: DealerFinanceSnapshot | null;
-  jofotaraUuid?: string | null;
-  jofotaraQr?: string | null;
-  jofotaraStatus?: string | null;
-  jofotaraClearedAt?: string | null;
 };
 
 export type InvoiceListFilters = PageParams & {
   status?: string;
   q?: string;
   customerId?: string;
+  kind?: 'ORDER' | 'RETURN';
   /** When true, server filters overdue; count matches dataset. */
   overdue?: boolean | string;
 };
@@ -140,12 +192,27 @@ export async function createInvoiceFromSalesOrder(salesOrderId: string) {
   return apiPost<Invoice>('/invoices', { salesOrderId });
 }
 
+export async function listCreatableInvoiceSources(
+  params: PageParams & { kind?: 'ALL' | 'ORDER' | 'RETURN' | 'PURCHASING'; q?: string } = {},
+) {
+  const qs = toSearchParams(params);
+  return apiGet<PaginatedResponse<InvoiceCreatableSource>>(`/invoices/creatable-sources${qs}`);
+}
+
 export async function updateInvoice(
   id: string,
   body: {
     notes?: string | null;
     dueDate?: string | null;
     invoiceDate?: string;
+    subtotal?: number;
+    discountTotal?: number;
+    taxTotal?: number;
+    total?: number;
+    currency?: string;
+    status?: string;
+    salesOrderId?: string | null;
+    returnRequestId?: string | null;
     lines?: Array<{
       id?: string;
       description: string;

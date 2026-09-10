@@ -13,11 +13,16 @@ import {
   InvoiceStatus,
   ManufacturingComplexity,
   PaymentMethod,
+  ReturnChargeStatus,
+  ReturnResponsibility,
   PrismaClient,
   ProductionOrderStatus,
+  ProductionOrderOriginType,
   QualityResult,
   QuotationStatus,
   ReturnInventoryFate,
+  ReturnPieceDecision,
+  ReturnPieceState,
   ReturnReason,
   ReturnResolution,
   SalesOrderLineSetupStatus,
@@ -30,6 +35,8 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
+import { attachMinimalWorkflowSnapshot } from './workflow-snapshot';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -316,6 +323,9 @@ export async function seedPiece11ExceptionsReturnsExamples(
         consumesSemiFinished: true,
       };
     }
+    if (code === 'INSPECTION') {
+      return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: true };
+    }
     return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: false };
   }
 
@@ -398,13 +408,46 @@ export async function seedPiece11ExceptionsReturnsExamples(
     };
   }
 
+  async function wipeInvoiceNumber(number: string) {
+    const inv = await prisma.invoice.findUnique({
+      where: { number },
+      select: { id: true },
+    });
+    if (!inv) return;
+    const pays = await prisma.payment.findMany({
+      where: { OR: [{ invoiceId: inv.id }, { allocations: { some: { invoiceId: inv.id } } }] },
+      select: { id: true, number: true },
+    });
+    await prisma.paymentAllocation.deleteMany({ where: { invoiceId: inv.id } });
+    for (const pay of pays) {
+      await prisma.paymentAllocation.deleteMany({ where: { paymentId: pay.id } });
+      await prisma.statementEntry.deleteMany({ where: { reference: pay.number } }).catch(() => undefined);
+      await prisma.payment.delete({ where: { id: pay.id } }).catch(() => undefined);
+    }
+    await prisma.invoiceLine.deleteMany({ where: { invoiceId: inv.id } });
+    await prisma.statementEntry.deleteMany({ where: { reference: number } }).catch(() => undefined);
+    await prisma.invoice.delete({ where: { id: inv.id } });
+  }
+
+  async function wipeChargeInvoicesForReturn(returnId: string) {
+    const chargeInvoices = await prisma.invoice.findMany({
+      where: { returnRequestId: returnId },
+      select: { number: true },
+    });
+    for (const row of chargeInvoices) {
+      await wipeInvoiceNumber(row.number);
+    }
+  }
+
   async function wipeBundle(letter: string) {
     const poNumber = `PO-P11-${letter}`;
     const soNumber = `SO-P11-${letter}`;
     const dlvNumber = `DLV-P11-${letter}`;
     const retNumber = `RET-P11-${letter}`;
     const invNumber = `INV-P11-${letter}`;
+    const retInvNumber = `INV-RET-P11-${letter}`;
     const payNumber = `PAY-P11-${letter}`;
+    const retPayNumber = `PAY-RET-P11-${letter}`;
     const cntNumber = `CNT-P11-${letter}`;
     const replPoNumber = `PO-P11-${letter}-REPL`;
 
@@ -413,6 +456,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       select: { id: true },
     });
     if (ret) {
+      await wipeChargeInvoicesForReturn(ret.id);
       await prisma.reworkRequest.deleteMany({ where: { returnRequestId: ret.id } });
       await prisma.inventoryTransaction.deleteMany({
         where: { referenceType: 'ReturnRequest', referenceId: ret.id },
@@ -440,25 +484,20 @@ export async function seedPiece11ExceptionsReturnsExamples(
       await prisma.delivery.delete({ where: { id: delivery.id } });
     }
 
-    const pay = await prisma.payment.findUnique({
-      where: { number: payNumber },
-      select: { id: true },
-    });
-    if (pay) {
-      await prisma.paymentAllocation.deleteMany({ where: { paymentId: pay.id } });
-      await prisma.statementEntry.deleteMany({ where: { reference: payNumber } }).catch(() => undefined);
-      await prisma.payment.delete({ where: { id: pay.id } });
+    for (const number of [payNumber, retPayNumber]) {
+      const pay = await prisma.payment.findUnique({
+        where: { number },
+        select: { id: true },
+      });
+      if (pay) {
+        await prisma.paymentAllocation.deleteMany({ where: { paymentId: pay.id } });
+        await prisma.statementEntry.deleteMany({ where: { reference: number } }).catch(() => undefined);
+        await prisma.payment.delete({ where: { id: pay.id } });
+      }
     }
 
-    const inv = await prisma.invoice.findUnique({
-      where: { number: invNumber },
-      select: { id: true },
-    });
-    if (inv) {
-      await prisma.paymentAllocation.deleteMany({ where: { invoiceId: inv.id } });
-      await prisma.invoiceLine.deleteMany({ where: { invoiceId: inv.id } });
-      await prisma.statementEntry.deleteMany({ where: { reference: invNumber } }).catch(() => undefined);
-      await prisma.invoice.delete({ where: { id: inv.id } });
+    for (const number of [invNumber, retInvNumber]) {
+      await wipeInvoiceNumber(number);
     }
 
     const count = await prisma.inventoryCount.findUnique({
@@ -551,6 +590,18 @@ export async function seedPiece11ExceptionsReturnsExamples(
       select: { id: true },
     });
     if (so) {
+      const leftoverRets = await prisma.returnRequest.findMany({
+        where: { salesOrderId: so.id },
+        select: { id: true },
+      });
+      for (const leftover of leftoverRets) {
+        await wipeChargeInvoicesForReturn(leftover.id);
+        await prisma.reworkRequest.deleteMany({ where: { returnRequestId: leftover.id } });
+        await prisma.productionOrder.updateMany({
+          where: { returnRequestId: leftover.id },
+          data: { returnRequestId: null },
+        });
+      }
       await prisma.returnRequest.deleteMany({ where: { salesOrderId: so.id } });
       const leftoverDlv = await prisma.delivery.findMany({
         where: { salesOrderId: so.id },
@@ -1029,6 +1080,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         type: InventoryTxType.PRODUCTION_ISSUE,
         inventoryItemId: woodOrRaw.id,
         warehouseId: rawWh.id,
+        locationId: await defaultBinIdForWarehouse(prisma, rawWh.id),
         quantity: money(-qty),
         createdById: opts.adminUserId,
         createdAt: asOf,
@@ -1059,6 +1111,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         type: InventoryTxType.SEMI_FINISHED_RECEIPT,
         inventoryItemId: semiItem.id,
         warehouseId: semiWh.id,
+        locationId: await defaultBinIdForWarehouse(prisma, semiWh.id),
         quantity: money(1),
         createdById: opts.adminUserId,
         createdAt: asOf,
@@ -1072,6 +1125,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       data: {
         inventoryItemId: semiItem.id,
         warehouseId: semiWh.id,
+        locationId: await defaultBinIdForWarehouse(prisma, semiWh.id),
         quantity: 1,
         status: args.status,
         allocationMode: InventoryAllocationMode.ORDER_ALLOCATED,
@@ -1094,10 +1148,12 @@ export async function seedPiece11ExceptionsReturnsExamples(
     packSi: string;
     productId: string;
     status: InventoryLotStatus;
+    quantity?: number;
   }) {
     if (!finWh) return null;
     const fgItem = await resolveFgItem(args.productId);
     if (!fgItem) return null;
+    const qty = args.quantity ?? 1;
     const sourceKey = `FINISHED_GOODS_RECEIPT:${args.poId}:P11-${args.letter}`;
     await prisma.inventoryTransaction.create({
       data: {
@@ -1105,7 +1161,8 @@ export async function seedPiece11ExceptionsReturnsExamples(
         type: InventoryTxType.FINISHED_GOODS_RECEIPT,
         inventoryItemId: fgItem.id,
         warehouseId: finWh.id,
-        quantity: money(1),
+        locationId: await defaultBinIdForWarehouse(prisma, finWh.id),
+        quantity: money(qty),
         createdById: opts.adminUserId,
         createdAt: asOf,
         referenceType: 'ProductionOrder',
@@ -1118,7 +1175,8 @@ export async function seedPiece11ExceptionsReturnsExamples(
       data: {
         inventoryItemId: fgItem.id,
         warehouseId: finWh.id,
-        quantity: 1,
+        locationId: await defaultBinIdForWarehouse(prisma, finWh.id),
+        quantity: qty,
         status: args.status,
         allocationMode: InventoryAllocationMode.ORDER_ALLOCATED,
         productionOrderId: args.poId,
@@ -1161,6 +1219,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
     dealer: DealerRef;
     status: DeliveryStatus;
     confirmed?: boolean;
+    quantity?: number;
   }) {
     return prisma.delivery.create({
       data: {
@@ -1180,7 +1239,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         customerConfirmedById: args.confirmed ? byUsername.get('balqis') ?? undefined : undefined,
         actualDeliveredAt: args.confirmed ? addDays(asOf, -1) : undefined,
         items: {
-          create: [{ description: product.nameEn, quantity: money(1) }],
+          create: [{ description: product.nameEn, quantity: money(args.quantity ?? 1) }],
         },
       },
     });
@@ -1198,6 +1257,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         type: InventoryTxType.DELIVERY_ISSUE,
         inventoryItemId: args.lot.inventoryItemId,
         warehouseId: args.lot.warehouseId,
+        locationId: await defaultBinIdForWarehouse(prisma, args.lot.warehouseId),
         quantity: money(-qty),
         createdById: opts.adminUserId,
         createdAt: addDays(asOf, -2),
@@ -1258,6 +1318,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         type: InventoryTxType.CUSTOMER_RETURN,
         inventoryItemId: fgItem.id,
         warehouseId: finWh.id,
+        locationId: quarantineLoc?.id ?? (await defaultBinIdForWarehouse(prisma, finWh.id)),
         quantity: money(1),
         createdById: opts.adminUserId,
         createdAt: asOf,
@@ -1271,7 +1332,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       data: {
         inventoryItemId: fgItem.id,
         warehouseId: finWh.id,
-        locationId: quarantineLoc?.id ?? null,
+        locationId: quarantineLoc?.id ?? (await defaultBinIdForWarehouse(prisma, finWh.id)),
         salesOrderId: args.soId,
         quantity: 1,
         status: InventoryLotStatus.QUARANTINED,
@@ -1335,6 +1396,91 @@ export async function seedPiece11ExceptionsReturnsExamples(
         idempotencyKey: `demo-pay-p11-${args.letter}`,
       },
     });
+    return inv;
+  }
+
+  async function seedReturnChargeInvoice(args: {
+    letter: string;
+    returnId: string;
+    customerId: string;
+    amount: number;
+    factoryShare?: number;
+    responsibility: ReturnResponsibility;
+    status: InvoiceStatus;
+    paidAmount?: number;
+  }) {
+    const amount = money(args.amount);
+    const paid = money(args.paidAmount ?? 0);
+    const paidNum = Number(paid);
+    const outstanding = money(Math.max(0, Number(amount) - paidNum));
+    await wipeInvoiceNumber(`INV-RET-P11-${args.letter}`);
+    await prisma.returnRequest.update({
+      where: { id: args.returnId },
+      data: {
+        responsibility: args.responsibility,
+        chargeAmount: amount,
+        factoryShareAmount: args.factoryShare != null ? money(args.factoryShare) : null,
+        chargeStatus: ReturnChargeStatus.INVOICED,
+        chargeSentAt: addDays(asOf, -3),
+        chargeConfirmedAt: addDays(asOf, -2),
+        chargeConfirmedById: opts.adminUserId,
+      },
+    });
+    const inv = await prisma.invoice.create({
+      data: {
+        number: `INV-RET-P11-${args.letter}`,
+        customerId: args.customerId,
+        salesOrderId: null,
+        returnRequestId: args.returnId,
+        invoiceDate: asOf,
+        dueDate: addDays(asOf, 30),
+        currency: 'ILS',
+        status: args.status,
+        subtotal: amount,
+        taxTotal: money(0),
+        discountTotal: money(0),
+        total: amount,
+        paidAmount: paid,
+        outstandingAmount: outstanding,
+        createdById: opts.adminUserId,
+        notes: `P11-${args.letter} return charge invoice`,
+        lines: {
+          create: [
+            {
+              description: `Return work RET-P11-${args.letter} — ${product.nameEn}`,
+              quantity: money(1),
+              unitPrice: amount,
+              taxRate: 0,
+              lineTotal: amount,
+            },
+          ],
+        },
+      },
+    });
+    if (paidNum > 0) {
+      const payment = await prisma.payment.create({
+        data: {
+          number: `PAY-RET-P11-${args.letter}`,
+          customerId: args.customerId,
+          invoiceId: inv.id,
+          paymentDate: asOf,
+          amount: paid,
+          currency: 'ILS',
+          method: PaymentMethod.BANK_TRANSFER,
+          createdById: opts.adminUserId,
+          notes: `P11-${args.letter} return charge payment`,
+          idempotencyKey: `demo-pay-ret-p11-${args.letter}`,
+        },
+      });
+      await prisma.paymentAllocation.create({
+        data: {
+          paymentId: payment.id,
+          invoiceId: inv.id,
+          amount: paid,
+          createdById: opts.adminUserId,
+        },
+      });
+    }
     return inv;
   }
 
@@ -1484,7 +1630,12 @@ export async function seedPiece11ExceptionsReturnsExamples(
   }
 
   // Helper: delivered SO + FIN DELIVERED + delivery for return stories F–J
-  async function buildDeliveredReturnBase(letter: string, projectName: string, factoryNotes: string) {
+  async function buildDeliveredReturnBase(
+    letter: string,
+    projectName: string,
+    factoryNotes: string,
+    quantity = 1,
+  ) {
     const built = await buildPo({
       letter,
       customerId: balqis.id,
@@ -1495,6 +1646,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       workflowId: defaultWorkflowId,
       soStatus: SalesOrderStatus.DELIVERED,
       poStatus: ProductionOrderStatus.COMPLETED,
+      quantity,
       planByStage: packagingCompletePlan(),
       currentStageCode: 'PACKAGING',
       progressPercent: 100,
@@ -1511,6 +1663,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       packSi,
       productId: built.productId,
       status: InventoryLotStatus.DELIVERED,
+      quantity,
     });
     const delivery = await seedDelivery({
       letter,
@@ -1518,6 +1671,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
       dealer: balqis,
       status: DeliveryStatus.DELIVERED,
       confirmed: true,
+      quantity,
     });
     if (lot) {
       await seedDeliveryIssue({ letter, deliveryId: delivery.id, lot });
@@ -1563,6 +1717,17 @@ export async function seedPiece11ExceptionsReturnsExamples(
         resolution: ReturnResolution.REPAIR,
         description: 'P11-G approved — physical furniture not yet received',
       });
+      await prisma.returnRequest.update({
+        where: { number: 'RET-P11-G' },
+        data: {
+          responsibility: ReturnResponsibility.DEALER_RESPONSIBILITY,
+          chargeAmount: money(95),
+          chargeStatus: ReturnChargeStatus.CONFIRMED,
+          chargeSentAt: addDays(asOf, -2),
+          chargeConfirmedAt: addDays(asOf, -1),
+          chargeConfirmedById: opts.adminUserId,
+        },
+      });
     }
   }
 
@@ -1590,6 +1755,14 @@ export async function seedPiece11ExceptionsReturnsExamples(
         returnId: ret.id,
         soId: base.built.soId,
         productId: base.built.productId,
+      });
+      await seedReturnChargeInvoice({
+        letter: 'H',
+        returnId: ret.id,
+        customerId: balqis.id,
+        amount: 180,
+        responsibility: ReturnResponsibility.DEALER_RESPONSIBILITY,
+        status: InvoiceStatus.ISSUED,
       });
     }
   }
@@ -1633,6 +1806,15 @@ export async function seedPiece11ExceptionsReturnsExamples(
           assignedToId: carpenterId,
         },
       });
+      await seedReturnChargeInvoice({
+        letter: 'I',
+        returnId: ret.id,
+        customerId: balqis.id,
+        amount: 220,
+        responsibility: ReturnResponsibility.DEALER_RESPONSIBILITY,
+        status: InvoiceStatus.PARTIALLY_PAID,
+        paidAmount: 80,
+      });
     }
   }
 
@@ -1662,7 +1844,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         soId: base.built.soId,
         productId: base.built.productId,
       });
-      await prisma.productionOrder.create({
+      const replPo = await prisma.productionOrder.create({
         data: {
           number: `PO-P11-J-REPL`,
           salesOrderId: base.built.soId,
@@ -1672,10 +1854,52 @@ export async function seedPiece11ExceptionsReturnsExamples(
           productDescription: `REPLACEMENT — ${ret.number}`,
           quantity: 1,
           status: ProductionOrderStatus.PLANNED,
+          originType: ProductionOrderOriginType.REPLACEMENT,
           createdById: opts.adminUserId,
           notes: `REPLACEMENT — ${ret.number} for SO-P11-J (do not mutate original PO)`,
           plannedStartDate: addDays(asOf, 1),
         },
+      });
+      await attachMinimalWorkflowSnapshot(prisma, replPo.id, 'p11-j-repl');
+      await seedReturnChargeInvoice({
+        letter: 'J',
+        returnId: ret.id,
+        customerId: balqis.id,
+        amount: 150,
+        responsibility: ReturnResponsibility.DEALER_RESPONSIBILITY,
+        status: InvoiceStatus.PAID,
+        paidAmount: 150,
+      });
+    }
+  }
+
+  // O — Shared responsibility return invoice (dealer + factory shares)
+  {
+    const base = await buildDeliveredReturnBase(
+      'O',
+      'P11-O Shared return charge',
+      'P11-O: SHARED responsibility with dealer and factory shares invoiced',
+    );
+    if (base) {
+      const ret = await seedReturn({
+        letter: 'O',
+        customerId: balqis.id,
+        salesOrderId: base.built.soId,
+        deliveryId: base.delivery.id,
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'RETURNED',
+        resolution: ReturnResolution.REPAIR,
+        description: 'P11-O shared cost — dealer share invoiced, factory share recorded',
+        received: true,
+      });
+      await seedReturnChargeInvoice({
+        letter: 'O',
+        returnId: ret.id,
+        customerId: balqis.id,
+        amount: 120,
+        factoryShare: 80,
+        responsibility: ReturnResponsibility.SHARED,
+        status: InvoiceStatus.ISSUED,
       });
     }
   }
@@ -1720,6 +1944,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           type: InventoryTxType.INVENTORY_ADJUSTMENT,
           inventoryItemId: woodOrRaw.id,
           warehouseId: rawWh.id,
+          locationId: await defaultBinIdForWarehouse(prisma, rawWh.id),
           quantity: money(-2),
           createdById: opts.adminUserId,
           createdAt: asOf,
@@ -1765,5 +1990,131 @@ export async function seedPiece11ExceptionsReturnsExamples(
     }
   }
 
-  console.log('  piece11: P11-A–L exceptions / returns / cancel / correction examples seeded');
+  const pieceBase = await buildDeliveredReturnBase(
+    'M',
+    'P11-M Piece-model three-piece case',
+    'RT-DEMO-PIECE-001: one repair, one replacement, one scrap & recover',
+    3,
+  );
+  await prisma.returnRequest.deleteMany({ where: { number: 'RT-DEMO-PIECE-001' } });
+  if (pieceBase) {
+    const demoCase = await prisma.returnRequest.create({
+      data: {
+        number: 'RT-DEMO-PIECE-001',
+        customerId: balqis.id,
+        salesOrderId: pieceBase.built.soId,
+        deliveryId: pieceBase.delivery.id,
+        productDesc: 'Sofa + two chairs',
+        quantity: money(3),
+        reason: ReturnReason.MANUFACTURING_DEFECT,
+        description: 'Piece-model demo: one repair, one replacement, one scrap & recover.',
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'RETURNED',
+        lifecycleState: 'REWORKING',
+        inventoryFate: ReturnInventoryFate.REWORK,
+        receivedAt: asOf,
+        receivedById: opts.adminUserId,
+        createdAt: addDays(asOf, -1),
+      },
+    });
+    await prisma.returnPiece.createMany({
+      data: [
+        {
+          returnRequestId: demoCase.id,
+          pieceNo: 1,
+          code: 'RT-DEMO-PIECE-001-P1',
+          salesOrderId: pieceBase.built.soId,
+          salesOrderLineId: pieceBase.built.lineId,
+          productId: pieceBase.built.productId,
+          productDesc: 'Sofa',
+          state: ReturnPieceState.IN_PROGRESS,
+          decision: ReturnPieceDecision.REPAIR,
+          outboundEligible: true,
+          receivedAt: asOf,
+        },
+        {
+          returnRequestId: demoCase.id,
+          pieceNo: 2,
+          code: 'RT-DEMO-PIECE-001-P2',
+          salesOrderId: pieceBase.built.soId,
+          salesOrderLineId: pieceBase.built.lineId,
+          productId: pieceBase.built.productId,
+          productDesc: 'Chair',
+          state: ReturnPieceState.IN_PROGRESS,
+          decision: ReturnPieceDecision.REPLACEMENT,
+          outboundEligible: true,
+          receivedAt: asOf,
+        },
+        {
+          returnRequestId: demoCase.id,
+          pieceNo: 3,
+          code: 'RT-DEMO-PIECE-001-P3',
+          salesOrderId: pieceBase.built.soId,
+          salesOrderLineId: pieceBase.built.lineId,
+          productId: pieceBase.built.productId,
+          productDesc: 'Chair',
+          state: ReturnPieceState.IN_PROGRESS,
+          decision: ReturnPieceDecision.SCRAP_RECOVERY,
+          outboundEligible: false,
+          receivedAt: asOf,
+        },
+      ],
+    });
+  }
+
+  const recoveryBase = await buildDeliveredReturnBase(
+    'N',
+    'P11-N Recovery-only return case',
+    'RT-DEMO-RECOVERY-001: scrap & recover on the recovery-shaped workflow',
+    1,
+  );
+  await prisma.returnRequest.deleteMany({ where: { number: 'RT-DEMO-RECOVERY-001' } });
+  if (recoveryBase) {
+    const recoveryCase = await prisma.returnRequest.create({
+      data: {
+        number: 'RT-DEMO-RECOVERY-001',
+        customerId: balqis.id,
+        salesOrderId: recoveryBase.built.soId,
+        deliveryId: recoveryBase.delivery.id,
+        productDesc: product.nameEn,
+        quantity: money(1),
+        reason: ReturnReason.MANUFACTURING_DEFECT,
+        description: 'Recovery-only demo: scrap & recover on RETURN_RECOVERY.',
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'RETURNED',
+        lifecycleState: 'REWORKING',
+        inventoryFate: ReturnInventoryFate.SCRAP,
+        receivedAt: asOf,
+        receivedById: opts.adminUserId,
+        createdAt: addDays(asOf, -1),
+      },
+    });
+    await prisma.returnPiece.create({
+      data: {
+        returnRequestId: recoveryCase.id,
+        pieceNo: 1,
+        code: 'RT-DEMO-RECOVERY-001-P1',
+        salesOrderId: recoveryBase.built.soId,
+        salesOrderLineId: recoveryBase.built.lineId,
+        productId: recoveryBase.built.productId,
+        productDesc: product.nameEn,
+        state: ReturnPieceState.IN_PROGRESS,
+        decision: ReturnPieceDecision.SCRAP_RECOVERY,
+        outboundEligible: false,
+        receivedAt: asOf,
+      },
+    });
+  }
+
+  const returnInvoices = await prisma.invoice.findMany({
+    where: { number: { startsWith: 'INV-RET-P11-' } },
+    select: { number: true, status: true },
+    orderBy: { number: 'asc' },
+  });
+  console.log('  piece11: P11-A–O exceptions / returns / cancel / correction / piece-model examples seeded');
+  console.log('  piece11: RT-DEMO-PIECE-001 and RT-DEMO-RECOVERY-001 fixtures seeded');
+  console.log(
+    '  piece11: return invoices',
+    returnInvoices.map((row) => `${row.number} ${row.status}`).join(', ') || '(none)',
+  );
 }

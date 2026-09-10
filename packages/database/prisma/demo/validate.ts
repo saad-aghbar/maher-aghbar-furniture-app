@@ -1,6 +1,15 @@
 import { PrismaClient } from '@prisma/client';
 import { classifyScheduleRisk, isInternalScheduleReason } from '../../../../apps/api/src/modules/scheduling/domain/at-risk';
-import { STANDARD_FURNITURE_STAGE_CODES } from '../seed/workflow';
+import {
+  PROTECTED_STAGE_CODES,
+  TERMINAL_STAGE_CODES,
+  workflowGraphChainRequirements,
+} from '../../../../packages/types/src/dealer-lifecycle';
+import {
+  RETURN_RECOVERY_WORKFLOW_CODE,
+  RETURN_REPAIR_WORKFLOW_CODE,
+  STANDARD_FURNITURE_STAGE_CODES,
+} from '../seed/workflow';
 import { demoAsOf } from './clock';
 import { CEDAR_VELVET_SKU, MATERIAL_PHOTO_BY_SKU, isHttpImageUrl } from './material-photo-pool';
 
@@ -28,9 +37,12 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   for (const so of delivered) {
     const okDelivery = so.deliveries.some((d) => d.status === 'DELIVERED');
     if (!okDelivery) fail(`${so.number}: DELIVERED SO without DELIVERED delivery`);
-    const active = so.productionOrders.flatMap((po) =>
-      po.tasks.filter((t) => !['COMPLETED', 'CANCELLED'].includes(t.status)),
-    );
+    const active = so.productionOrders.flatMap((po) => {
+      if (po.originType === 'RETURN_RECOVERY' || po.originType === 'RETURN_WORK' || po.originType === 'REPLACEMENT') {
+        return [];
+      }
+      return po.tasks.filter((t) => !['COMPLETED', 'CANCELLED'].includes(t.status));
+    });
     if (active.length) fail(`${so.number}: DELIVERED SO has active production tasks`);
   }
 
@@ -75,7 +87,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     include: {
       nodes: true,
       edges: true,
-      productionOrder: { include: { stages: true } },
+      productionOrder: { include: { stages: true, reworkRequests: true } },
     },
   });
   for (const snap of snapshots) {
@@ -88,7 +100,14 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
       const fromInst = from.stageInstanceId ? instById.get(from.stageInstanceId) : undefined;
       const toInst = to.stageInstanceId ? instById.get(to.stageInstanceId) : undefined;
       if (toInst?.status === 'COMPLETED' && fromInst && fromInst.status !== 'COMPLETED') {
-        fail(`${snap.productionOrderId}: ${to.stageCode} completed before predecessor ${from.stageCode}`);
+        const reopened = snap.productionOrder.reworkRequests.some(
+          (rw) =>
+            rw.reentryStageInstanceId === fromInst.id &&
+            !['COMPLETED', 'CANCELLED'].includes(rw.status),
+        );
+        if (!reopened) {
+          fail(`${snap.productionOrder.number}: ${to.stageCode} completed before predecessor ${from.stageCode}`);
+        }
       }
     }
   }
@@ -105,8 +124,11 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   for (const po of pos) {
     if (!po.workflowSnapshot) fail(`${po.number}: confirmed PO missing workflow snapshot`);
     const deliveredSo = po.salesOrder?.status === 'DELIVERED';
-    const hasInspectionNode = true;
-    if (deliveredSo && hasInspectionNode) {
+    const skipQc =
+      ['PLANNED', 'WAITING_FOR_MATERIALS'].includes(po.status) ||
+      po.originType === 'REPLACEMENT' ||
+      po.originType === 'RETURN_RECOVERY';
+    if (deliveredSo && !skipQc) {
       const passed = po.inspections.some((i) => i.result === 'PASSED' || i.result === 'PASSED_WITH_NOTES');
       const failed = po.inspections.some((i) => i.result === 'FAILED_REWORK_REQUIRED' || i.result === 'BLOCKED');
       if (!passed) fail(`${po.number}: delivered without passing QC`);
@@ -164,6 +186,26 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     }
   }
 
+  const warehouses = await prisma.warehouse.findMany({
+    select: { code: true, locations: { select: { isDefault: true, qrCode: true } } },
+  });
+  for (const wh of warehouses) {
+    const defaults = wh.locations.filter((l) => l.isDefault);
+    if (defaults.length !== 1) {
+      fail(`warehouse ${wh.code} has ${defaults.length} default bins (expected 1)`);
+    }
+  }
+  const missingBinQr = await prisma.warehouseLocation.count({ where: { qrCode: null } });
+  if (missingBinQr) fail(`${missingBinQr} bins missing qrCode`);
+  const nullBalances = await prisma.inventoryBalance.count({ where: { locationId: null } });
+  const nullLots = await prisma.inventoryLot.count({ where: { locationId: null } });
+  const nullTxs = await prisma.inventoryTransaction.count({ where: { locationId: null } });
+  const nullKits = await prisma.wipKit.count({ where: { locationId: null } });
+  if (nullBalances) fail(`${nullBalances} balances still have locationId null`);
+  if (nullLots) fail(`${nullLots} lots still have locationId null`);
+  if (nullTxs) fail(`${nullTxs} transactions still have locationId null`);
+  if (nullKits) fail(`${nullKits} WIP kits still have locationId null`);
+
   const balances = await prisma.inventoryBalance.findMany();
   const txs = await prisma.inventoryTransaction.findMany();
   const txSum = new Map<string, number>();
@@ -198,10 +240,12 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   }
 
   const invoices = await prisma.invoice.findMany({
-    include: { payments: true, salesOrder: { include: { lines: true } } },
+    include: { payments: true, allocations: true, salesOrder: { include: { lines: true } } },
   });
   for (const inv of invoices) {
-    const paySum = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
+    const paySum = inv.allocations.length
+      ? inv.allocations.reduce((s, a) => s + Number(a.amount), 0)
+      : inv.payments.reduce((s, p) => s + Number(p.amount), 0);
     if (paySum - Number(inv.total) > 0.02) fail(`${inv.number}: payments exceed invoice total`);
     if (Math.abs(paySum - Number(inv.paidAmount)) > 0.02) {
       fail(`${inv.number}: paidAmount ${inv.paidAmount} ≠ payment sum ${paySum}`);
@@ -320,12 +364,24 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     }
   }
 
+  const allowedStageCodes = new Set<string>([
+    ...STANDARD_FURNITURE_STAGE_CODES,
+    ...PROTECTED_STAGE_CODES,
+  ]);
   const extraStages = await prisma.productionStageDefinition.findMany({
-    where: { isActive: true, code: { notIn: [...STANDARD_FURNITURE_STAGE_CODES] } },
+    where: { isActive: true, code: { notIn: [...allowedStageCodes] } },
     select: { code: true },
   });
   if (extraStages.length) {
     fail(`extra active stage library codes: ${extraStages.map((s) => s.code).join(',')}`);
+  }
+
+  for (const code of PROTECTED_STAGE_CODES) {
+    const stage = await prisma.productionStageDefinition.findUnique({
+      where: { code },
+      select: { isActive: true },
+    });
+    if (!stage?.isActive) fail(`protected stage ${code} is missing or inactive`);
   }
   const activeWorkflows = await prisma.productionWorkflow.findMany({
     where: { status: 'ACTIVE', activeVersionId: { not: null } },
@@ -364,6 +420,96 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     select: { username: true },
   });
   for (const w of workerWithoutSkill) fail(`worker ${w.username} has no WorkerSkill`);
+
+  const dismantle = await prisma.productionStageDefinition.findUnique({
+    where: { code: 'DISMANTLE_RECOVER' },
+    select: { id: true, isActive: true },
+  });
+  if (!dismantle?.isActive) fail('DISMANTLE_RECOVER stage is missing or inactive');
+  else {
+    const recoverSkills = await prisma.workerSkill.count({
+      where: { stageDefinitionId: dismantle.id, isActive: true },
+    });
+    if (recoverSkills < 2) fail(`DISMANTLE_RECOVER needs ≥2 skilled workers, found ${recoverSkills}`);
+  }
+
+  const requiredStaff: Array<{ username: string; roleCode: string }> = [
+    { username: 'qc2', roleCode: 'QUALITY_CONTROL' },
+    { username: 'returnsdesk', roleCode: 'WAREHOUSE_MANAGEMENT' },
+    { username: 'finance', roleCode: 'FINANCE' },
+    { username: 'recovery1', roleCode: 'PRODUCTION_WORKER' },
+    { username: 'recovery2', roleCode: 'PRODUCTION_WORKER' },
+  ];
+  for (const expected of requiredStaff) {
+    const user = await prisma.user.findUnique({
+      where: { username: expected.username },
+      select: { roles: { select: { role: { select: { code: true } } } } },
+    });
+    if (!user) fail(`missing returns account ${expected.username}`);
+    else if (!user.roles.some((r) => r.role.code === expected.roleCode)) {
+      fail(`${expected.username} is missing role ${expected.roleCode}`);
+    }
+  }
+
+  const returnWorkflows = await prisma.productionWorkflow.findMany({
+    where: { status: 'ACTIVE', scope: 'RETURN' },
+    include: {
+      versions: {
+        include: { nodes: { include: { stageDefinition: true } } },
+      },
+    },
+  });
+  if (!returnWorkflows.some((w) => w.code === RETURN_RECOVERY_WORKFLOW_CODE)) {
+    fail(`${RETURN_RECOVERY_WORKFLOW_CODE} workflow is missing`);
+  }
+  if (!returnWorkflows.some((w) => w.code === RETURN_REPAIR_WORKFLOW_CODE)) {
+    fail(`${RETURN_REPAIR_WORKFLOW_CODE} workflow is missing`);
+  }
+  for (const workflow of returnWorkflows) {
+    const version = workflow.versions.find((v) => v.id === workflow.activeVersionId);
+    if (!version) {
+      fail(`${workflow.code}: active version missing`);
+      continue;
+    }
+    const codes = version.nodes.map((n) => n.stageDefinition.code);
+    const flags = workflowGraphChainRequirements(workflow.scope, codes);
+    const recoveryShaped = codes.includes('DISMANTLE_RECOVER');
+    if (recoveryShaped) {
+      if (flags.requiresOpeningChain || flags.requiresTerminalChain) {
+        fail(`${workflow.code}: recovery-shaped RETURN must not require opening or terminal chains`);
+      }
+    } else {
+      if (flags.requiresOpeningChain) {
+        fail(`${workflow.code}: repair-shaped RETURN must not require an opening chain`);
+      }
+      if (!flags.requiresTerminalChain) {
+        fail(`${workflow.code}: repair-shaped RETURN must require the finishing trio`);
+      }
+      const missing = TERMINAL_STAGE_CODES.filter((code) => !codes.includes(code));
+      if (missing.length) {
+        fail(`${workflow.code}: repair-shaped RETURN missing ${missing.join(',')}`);
+      }
+    }
+  }
+
+  const pieceDemo = await prisma.returnRequest.findUnique({
+    where: { number: 'RT-DEMO-PIECE-001' },
+    select: { pieces: { select: { decision: true } } },
+  });
+  if (!pieceDemo) fail('RT-DEMO-PIECE-001 is missing');
+  else {
+    const decisions = new Set(pieceDemo.pieces.map((p) => p.decision));
+    for (const decision of ['REPAIR', 'REPLACEMENT', 'SCRAP_RECOVERY'] as const) {
+      if (!decisions.has(decision)) fail(`RT-DEMO-PIECE-001 missing ${decision} piece`);
+    }
+  }
+  const recoveryDemo = await prisma.returnRequest.findUnique({
+    where: { number: 'RT-DEMO-RECOVERY-001' },
+    select: { pieces: { select: { decision: true } } },
+  });
+  if (!recoveryDemo?.pieces.some((p) => p.decision === 'SCRAP_RECOVERY')) {
+    fail('RT-DEMO-RECOVERY-001 recovery-only case is missing');
+  }
 
   await assertPresentationReady(prisma, asOf, fail);
 
@@ -431,6 +577,10 @@ async function assertPresentationReady(
     select: { number: true, status: true, deliveryDate: true, salesOrder: { select: { number: true, projectName: true } } },
   });
   for (const d of deliveries) {
+    if (!d.deliveryDate) {
+      fail(`${d.number}: missing deliveryDate (status ${d.status})`);
+      continue;
+    }
     if (d.status === 'DELIVERED' && d.deliveryDate.getTime() > asOf.getTime()) {
       fail(`${d.number}: DELIVERED after DEMO_AS_OF (${d.deliveryDate.toISOString()})`);
     }
@@ -586,7 +736,7 @@ async function assertPresentationReady(
       const finLots = await prisma.inventoryLot.count({
         where: {
           productionOrderId: po.id,
-          status: { in: ['AVAILABLE', 'RESERVED'] },
+          status: { in: ['AVAILABLE', 'RESERVED', 'DELIVERED'] },
           inventoryItem: { itemClass: 'FINISHED_GOOD' },
         },
       });

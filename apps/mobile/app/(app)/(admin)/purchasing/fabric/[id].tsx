@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
-import { FabricProcurementDetailScreen } from '@/features/purchasing/FabricProcurementDetailScreen';
+import { FabricDetailScreen } from '@/features/fabric/FabricDetailScreen';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
 export default function AdminFabricProcurementRoute() {
@@ -8,7 +8,7 @@ export default function AdminFabricProcurementRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="fabric.procurement.read" mode="all">
-      <FabricProcurementDetailScreen procurementId={String(id ?? '')} />
+      <FabricDetailScreen procurementId={String(id ?? '')} />
     </PermissionGate>
   );
 }

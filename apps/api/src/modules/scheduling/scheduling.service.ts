@@ -6,19 +6,23 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import { hmInTimezone, hmToMinutes, mergeOvertimeException } from './overtime-assign';
 import { IdempotencyService } from '../../common/idempotency.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService, type SchedulingJobName } from './scheduling-queue';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
-import { loadFabricReadinessForSalesOrder } from '../production/fabric-readiness-load';
+import {
+  loadFabricReadinessForProductionOrder,
+  loadFabricReadinessForSalesOrder,
+} from '../production/fabric-readiness-load';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import {
-  type AllocationToValidate,
   type OccupancyInterval,
   type PlannerOrderInput,
   type PlannerStageInput,
@@ -30,10 +34,8 @@ import {
   buildDependencyGraph,
   forwardSchedule,
   mapPromiseState,
-  parseResourceCapacityKey,
   resourceCapacityKey,
   resolveDealerChangePolicy,
-  validateSchedule,
   WorkingCalendar,
   eachYmdInclusive,
   overlapWorkingMinutes,
@@ -54,22 +56,18 @@ import {
   categorizeConflictInflators,
   findResolutionPlacement,
   pickMovableSides,
-  sortConflictsForResolveAll,
   missesCommitment,
   classifyScheduleRisk,
   comparePriority,
   isActiveScheduleStatus,
   publicScheduleReason,
   reasonLabelKey,
-  classifyMinutesDelta,
-  classifySettingsDelta,
   factoryReplanHorizonYmd,
   selectIncreaseCandidates,
   selectDecreaseCandidates,
   compareFactoryReplanCandidates,
   countPinnedIssuesByYmd,
   listPinnedOnUnavailableCalendar,
-  workingMinutesOnYmd,
   ymdInTimezone,
   OccupancyCollisionError,
   PastFloorViolationError,
@@ -102,7 +100,6 @@ import {
   applyNDayFloor,
   attachEmptyDayCauses,
   simulatePolicy,
-  sortPullForwardOrders,
   deriveOptimizeOutcome,
   emptyDayCauseI18nKey,
   isOptimizeChangeType,
@@ -122,10 +119,13 @@ import {
   classifyAdminAvailabilityDay,
   toDealerAvailabilityDay,
   computeDayLoadLayers,
+  isScheduleExecutionStarted,
+  selectScheduleApprovalActions,
   summarizeDayImpact,
-  classifyPersistIssue,
-  loadPercentPersistClass,
-  assertCommercialDateWrite,
+  classifyPlanningState,
+  isUnscheduledPlanningState,
+  workerDayWindows,
+  freeWindowsFromBusy,
   toCommercialYmd,
   isDeliveryOverdue,
   dealerMinimumRequestYmd,
@@ -134,6 +134,17 @@ import {
   laterYmd,
   applyDealerLeadTimeToDay,
   DEFAULT_FACTORY_TIMEZONE,
+  planExecutionRipple,
+  planPauseSlide,
+  DEFAULT_FACTORY_BREAKS,
+  isLegacyHourLunch,
+  clipLiveOccupancy,
+  pauseVisualWindow,
+  leftoverRemainingMinutes,
+  isLastSameWorkerWindowToday,
+  canOfferLeftover,
+  coerceQualityGateEstimate,
+  isMilestoneStage,
   type AdminAvailabilityDay,
   type DealerAvailabilityDay,
   type ScheduleAttentionCode,
@@ -152,6 +163,7 @@ import type {
   RecalculateDto,
 } from './dto/scheduling.dto';
 import { loadCapacityOptimizeWorld } from './capacity-optimize-world';
+import { PlacementService } from './placement.service';
 
 const DEBOUNCE_WINDOW_MS = 60_000;
 
@@ -208,7 +220,12 @@ export class SchedulingService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly idempotency: IdempotencyService,
     private readonly queue: SchedulingQueueService,
-  ) {}
+    @Optional() placement?: PlacementService,
+  ) {
+    this.placement = placement ?? new PlacementService(this.prisma);
+  }
+
+  private readonly placement: PlacementService;
 
   onModuleInit() {
     this.queue.setProcessor((name, data) => this.processSchedulingJob(name, data));
@@ -230,7 +247,7 @@ export class SchedulingService implements OnModuleInit {
           workingWeekdays: SchedulingService.DEFAULT_WORKING_WEEKDAYS,
           shiftStart: '08:00',
           shiftEnd: '16:00',
-          breaks: [{ start: '12:00', end: '13:00' }] as unknown as Prisma.InputJsonValue,
+          breaks: [...DEFAULT_FACTORY_BREAKS] as unknown as Prisma.InputJsonValue,
           deliveryBufferWorkingDays: 1,
           maxProductionEarlyWorkingDays: 10,
           targetFactoryUtilizationPercent: 85,
@@ -240,30 +257,36 @@ export class SchedulingService implements OnModuleInit {
       return row;
     }
 
-    // One-shot upgrade from legacy Sun–Thu / 17:00 defaults.
+    // One-shot upgrade from legacy Sun–Thu / 17:00 / hour-lunch defaults.
     const weekdays = row.workingWeekdays ?? [];
     const isLegacyWeek =
       weekdays.length === SchedulingService.LEGACY_WORKING_WEEKDAYS.length &&
       SchedulingService.LEGACY_WORKING_WEEKDAYS.every((d, i) => weekdays[i] === d);
     const isLegacyEnd = row.shiftEnd === '17:00';
-    if (isLegacyWeek || isLegacyEnd) {
-      row = await this.prisma.factoryCalendar.update({
+    const isLegacyLunch = isLegacyHourLunch(row.breaks);
+    if (isLegacyWeek || isLegacyEnd || isLegacyLunch) {
+      const updated = await this.prisma.factoryCalendar.update({
         where: { id: row.id },
         data: {
           ...(isLegacyWeek ? { workingWeekdays: SchedulingService.DEFAULT_WORKING_WEEKDAYS } : {}),
           ...(isLegacyEnd ? { shiftEnd: '16:00' } : {}),
+          ...(isLegacyLunch ? { breaks: [...DEFAULT_FACTORY_BREAKS] as unknown as Prisma.InputJsonValue } : {}),
         },
       });
-      await this.audit(
-        '',
-        'schedule.calendar.defaults_upgrade',
-        'FactoryCalendar',
-        row.id,
-        {
-          workingWeekdays: isLegacyWeek ? SchedulingService.DEFAULT_WORKING_WEEKDAYS : undefined,
-          shiftEnd: isLegacyEnd ? '16:00' : undefined,
-        },
-      );
+      if (updated) {
+        row = updated;
+        await this.audit(
+          '',
+          'schedule.calendar.defaults_upgrade',
+          'FactoryCalendar',
+          row.id,
+          {
+            workingWeekdays: isLegacyWeek ? SchedulingService.DEFAULT_WORKING_WEEKDAYS : undefined,
+            shiftEnd: isLegacyEnd ? '16:00' : undefined,
+            breaks: isLegacyLunch ? [...DEFAULT_FACTORY_BREAKS] : undefined,
+          },
+        );
+      }
     }
     return row;
   }
@@ -294,6 +317,9 @@ export class SchedulingService implements OnModuleInit {
         shiftStart: e.shiftStart,
         shiftEnd: e.shiftEnd,
         note: e.note,
+        overtimeEmployeeIds: Array.isArray(e.overtimeEmployeeIds)
+          ? (e.overtimeEmployeeIds as string[])
+          : [],
       })),
     });
     return { row, calendar };
@@ -327,7 +353,7 @@ export class SchedulingService implements OnModuleInit {
   }
 
   async upsertCalendar(dto: ProductionCalendarDto, userId: string) {
-    const { row, calendar: beforeCal } = await this.getCalendarDomain();
+    const { row } = await this.getCalendarDomain();
     await this.prisma.factoryCalendar.update({
       where: { id: row.id },
       data: {
@@ -427,15 +453,101 @@ export class SchedulingService implements OnModuleInit {
       reason: dto.note ?? dto.type,
       payload: { date: dto.date, type: dto.type, impact, scheduleMoved: false },
     });
+    const queued = await this.enqueueFactoryReplan(userId, {
+      changeType: `calendar-exception:${dto.type}`,
+      capacityDelta: closing || reducing ? 'decrease' : 'increase',
+      affectedYmd: dto.date,
+      reason: dto.note ?? `calendar-exception:${dto.type}`,
+    });
     void beforeCal;
     return {
       ...exception,
       calendarUpdated: true,
-      replanQueued: false,
+      replanQueued: queued.replanQueued,
+      replanJobId: queued.replanJobId,
       replanned: 0,
       scheduleMoved: false,
       impact: { date: dto.date, ...impact },
     };
+  }
+
+  async extendOvertimeForAssignment(
+    dateYmd: string,
+    untilHm: string,
+    employeeId: string,
+    userId: string,
+  ) {
+    const { row } = await this.getCalendarDomain();
+    const date = new Date(`${dateYmd}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Invalid overtime date.' });
+    }
+    const existing = await this.prisma.factoryCalendarException.findUnique({
+      where: { calendarId_date: { calendarId: row.id, date } },
+    });
+    const merged = mergeOvertimeException({
+      existing,
+      calendarShiftStart: row.shiftStart,
+      calendarShiftEnd: row.shiftEnd,
+      untilHm,
+      employeeId,
+    });
+    const exception = await this.prisma.factoryCalendarException.upsert({
+      where: { calendarId_date: { calendarId: row.id, date } },
+      create: {
+        calendarId: row.id,
+        date,
+        type: 'EXTRA_SHIFT',
+        shiftStart: merged.shiftStart,
+        shiftEnd: merged.shiftEnd,
+        overtimeEmployeeIds: merged.overtimeEmployeeIds,
+      },
+      update: {
+        type: 'EXTRA_SHIFT',
+        shiftStart: merged.shiftStart,
+        shiftEnd: merged.shiftEnd,
+        overtimeEmployeeIds: merged.overtimeEmployeeIds,
+      },
+    });
+    await this.audit(userId, 'schedule.calendar.overtime.assign', 'FactoryCalendarException', exception.id, {
+      date: dateYmd,
+      untilHm,
+      employeeId,
+      shiftEnd: merged.shiftEnd,
+    });
+    return exception;
+  }
+
+  async applyAssignmentOvertime(opts: {
+    overtime?: boolean;
+    start: Date;
+    end: Date;
+    employeeId: string;
+    userId?: string;
+  }) {
+    const { row } = await this.getCalendarDomain();
+    const timezone = row.timezone;
+    const startYmd = ymdInTimezone(opts.start, timezone);
+    const endYmd = ymdInTimezone(opts.end, timezone);
+    const endHm = hmInTimezone(opts.end, timezone);
+    const actor = opts.userId ?? opts.employeeId;
+    if (opts.overtime) {
+      const until = startYmd === endYmd ? endHm : '23:30';
+      await this.extendOvertimeForAssignment(startYmd, until, opts.employeeId, actor);
+    }
+    if (startYmd !== endYmd) {
+      const exception = row.exceptions.find(
+        (e) => String(e.date).slice(0, 10) === endYmd,
+      );
+      const shiftEnd = exception?.type === 'EXTRA_SHIFT' && exception.shiftEnd
+        ? exception.shiftEnd
+        : row.shiftEnd;
+      const endMins = hmToMinutes(endHm);
+      const shiftMins = hmToMinutes(shiftEnd);
+      if (endMins != null && shiftMins != null && endMins > shiftMins) {
+        await this.extendOvertimeForAssignment(endYmd, endHm, opts.employeeId, actor);
+      }
+    }
   }
 
   async deleteException(dateYmd: string, userId: string, confirmImpact = false) {
@@ -471,12 +583,19 @@ export class SchedulingService implements OnModuleInit {
     if (existing.type === 'EXTRA_SHIFT' && impact.taskCount > 0) {
       await this.stampAttentionOnYmd(dateYmd, 'OVERTIME_REMOVED');
     }
+    const queued = await this.enqueueFactoryReplan(userId, {
+      changeType: 'calendar-exception:cleared',
+      capacityDelta: 'increase',
+      affectedYmd: dateYmd,
+      reason: 'calendar-exception:cleared',
+    });
     void beforeCal;
     return {
       deleted: true,
       date: dateYmd,
       calendarUpdated: true,
-      replanQueued: false,
+      replanQueued: queued.replanQueued,
+      replanJobId: queued.replanJobId,
       replanned: 0,
       scheduleMoved: false,
       impact: { date: dateYmd, ...impactAfter },
@@ -497,18 +616,16 @@ export class SchedulingService implements OnModuleInit {
       intervals: Array<{ start: string; end: string }>;
       pinnedOnClosedDayCount: number;
     }> = [];
-    const cursor = new Date(from);
-    let guard = 0;
-    while (cursor.getTime() <= to.getTime() && guard < maxDays) {
-      const intervals = calendar.intervalsForLocalDay(cursor);
+    const fromYmd = query.from;
+    const toYmd = query.to;
+    for (const ymd of eachYmdInclusive(fromYmd, toYmd).slice(0, maxDays)) {
+      const intervals = calendar.intervalsForLocalYmd(ymd);
       days.push({
-        date: cursor.toISOString().slice(0, 10),
+        date: ymd,
         isWorking: intervals.length > 0,
         intervals: intervals.map((iv) => ({ start: iv.start.toISOString(), end: iv.end.toISOString() })),
         pinnedOnClosedDayCount: 0,
       });
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-      guard += 1;
     }
     const rangeEnd = new Date(to.getTime() + 24 * 60 * 60 * 1000 - 1);
     const [orders, pinnedByYmd] = await Promise.all([
@@ -776,31 +893,52 @@ export class SchedulingService implements OnModuleInit {
     const product = await this.prisma.product.findFirst({ where: { id: productId, archivedAt: null } });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
 
+    const defIds = [...new Set(items.map((row) => row.stageDefinitionId))];
+    const defs = defIds.length
+      ? await this.prisma.productionStageDefinition.findMany({
+          where: { id: { in: defIds } },
+          select: { id: true, code: true, executionKind: true },
+        })
+      : [];
+    const defById = new Map(defs.map((d) => [d.id, d]));
+
     for (const row of items) {
+      const def = defById.get(row.stageDefinitionId);
+      const coerced = coerceQualityGateEstimate({
+        code: def?.code,
+        executionKind: def?.executionKind,
+        setupMinutes: row.setupMinutes,
+        minutesPerUnit: row.minutesPerUnit,
+        fixedMinutes: row.fixedMinutes,
+        quantityScalingMode: row.quantityScalingMode,
+        batchSize: row.batchSize,
+        batchMinutes: row.batchMinutes,
+        maxParallelUnits: row.maxParallelUnits,
+      });
       await this.prisma.productStageEstimate.upsert({
         where: { productId_stageDefinitionId: { productId, stageDefinitionId: row.stageDefinitionId } },
         create: {
           productId,
           stageDefinitionId: row.stageDefinitionId,
-          setupMinutes: row.setupMinutes ?? 0,
-          minutesPerUnit: row.minutesPerUnit ?? 0,
-          fixedMinutes: row.fixedMinutes ?? 0,
-          quantityScalingMode: row.quantityScalingMode ?? 'SETUP_PLUS_LINEAR',
-          batchSize: row.batchSize,
-          batchMinutes: row.batchMinutes,
-          maxParallelUnits: row.maxParallelUnits,
+          setupMinutes: coerced.setupMinutes,
+          minutesPerUnit: coerced.minutesPerUnit,
+          fixedMinutes: coerced.fixedMinutes,
+          quantityScalingMode: coerced.quantityScalingMode as never,
+          batchSize: coerced.batchSize,
+          batchMinutes: coerced.batchMinutes,
+          maxParallelUnits: coerced.maxParallelUnits,
           workerCountRequired: row.workerCountRequired ?? 1,
           overrideDepartmentId: row.overrideDepartmentId,
           isRequired: row.isRequired ?? true,
         },
         update: {
-          setupMinutes: row.setupMinutes ?? 0,
-          minutesPerUnit: row.minutesPerUnit ?? 0,
-          fixedMinutes: row.fixedMinutes ?? 0,
-          quantityScalingMode: row.quantityScalingMode ?? 'SETUP_PLUS_LINEAR',
-          batchSize: row.batchSize,
-          batchMinutes: row.batchMinutes,
-          maxParallelUnits: row.maxParallelUnits,
+          setupMinutes: coerced.setupMinutes,
+          minutesPerUnit: coerced.minutesPerUnit,
+          fixedMinutes: coerced.fixedMinutes,
+          quantityScalingMode: coerced.quantityScalingMode as never,
+          batchSize: coerced.batchSize,
+          batchMinutes: coerced.batchMinutes,
+          maxParallelUnits: coerced.maxParallelUnits,
           workerCountRequired: row.workerCountRequired ?? 1,
           overrideDepartmentId: row.overrideDepartmentId,
           isRequired: row.isRequired ?? true,
@@ -1093,18 +1231,37 @@ export class SchedulingService implements OnModuleInit {
         resourceSlot: true,
         plannedStart: true,
         plannedEnd: true,
-        productionTask: { select: { stageDefinitionId: true } },
+        productionTask: {
+          select: {
+            stageDefinitionId: true,
+            status: true,
+            timeEntries: {
+              where: { endedAt: { not: null } },
+              orderBy: { endedAt: 'desc' },
+              take: 1,
+              select: { endedAt: true },
+            },
+          },
+        },
         schedule: { select: { productionOrderId: true } },
       },
     });
     return allocations.flatMap((a) => {
       const poId = a.schedule.productionOrderId;
+      const window = clipLiveOccupancy({
+        start: a.plannedStart,
+        end: a.plannedEnd,
+        now,
+        taskStatus: a.productionTask?.status,
+        pauseAt: a.productionTask?.timeEntries?.[0]?.endedAt ?? null,
+      });
+      if (!window) return [];
       const rows: OccupancyInterval[] = [];
       if (a.employeeId) {
         rows.push({
           employeeId: a.employeeId,
-          start: a.plannedStart,
-          end: a.plannedEnd,
+          start: window.start,
+          end: window.end,
           allocationId: a.id,
           productionOrderId: poId,
         });
@@ -1112,8 +1269,8 @@ export class SchedulingService implements OnModuleInit {
       if (a.resourceSlot != null && a.productionTask?.stageDefinitionId) {
         rows.push({
           employeeId: resourceCapacityKey(a.productionTask.stageDefinitionId, a.resourceSlot),
-          start: a.plannedStart,
-          end: a.plannedEnd,
+          start: window.start,
+          end: window.end,
           allocationId: `${a.id}:res`,
           productionOrderId: poId,
         });
@@ -1240,8 +1397,10 @@ export class SchedulingService implements OnModuleInit {
         inventory[key] = { ...row, available: (row.available ?? 0) + qty };
       }
     }
-    if (po.salesOrderId) {
-      const fabric = await loadFabricReadinessForSalesOrder(this.prisma, po.salesOrderId);
+    {
+      const fabric = po.salesOrderId
+        ? await loadFabricReadinessForSalesOrder(this.prisma, po.salesOrderId)
+        : await loadFabricReadinessForProductionOrder(this.prisma, po.id);
       for (const item of fabric.items) {
         if (!item.sku) continue;
         const key = inventorySkuKey(item.sku);
@@ -1539,7 +1698,14 @@ export class SchedulingService implements OnModuleInit {
     const snapshotHasAllEstimates = Boolean(
       snapshot?.nodes.length &&
         snapshot.nodes.every(
-          (n) => n.isSkipped || (n.estimatedMinutes != null && n.estimatedMinutes > 0),
+          (n) =>
+            n.isSkipped ||
+            isMilestoneStage({
+              code: n.stageCode,
+              executionKind: n.executionKind,
+              estimatedMinutes: n.estimatedMinutes,
+            }) ||
+            (n.estimatedMinutes != null && n.estimatedMinutes > 0),
         ),
     );
     const requiresAdminEstimateReview =
@@ -1572,20 +1738,27 @@ export class SchedulingService implements OnModuleInit {
       const estimate = stageEstimateByDefId.get(task.stageDefinitionId);
       if (!snap && estimate && !estimate.isRequired) continue;
 
-      const estimatedMinutes = estimate
-        ? calculateDurationMinutes({
-            quantityScalingMode: estimate.quantityScalingMode,
-            quantity: Number(po.quantity),
-            setupMinutes: estimate.setupMinutes,
-            minutesPerUnit: estimate.minutesPerUnit,
-            fixedMinutes: estimate.fixedMinutes,
-            batchSize: estimate.batchSize ?? undefined,
-            batchMinutes: estimate.batchMinutes ?? undefined,
-            maxParallelUnits: estimate.maxParallelUnits ?? undefined,
-          })
-        : (snap?.estimatedMinutes ??
-          task.estimatedMinutes ??
-          Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
+      const milestone = isMilestoneStage({
+        code: task.stageDefinition.code,
+        executionKind: snap?.executionKind ?? task.stageDefinition.executionKind,
+        estimatedMinutes: snap?.estimatedMinutes ?? task.estimatedMinutes,
+      });
+      const estimatedMinutes = milestone
+        ? 0
+        : estimate
+          ? calculateDurationMinutes({
+              quantityScalingMode: estimate.quantityScalingMode,
+              quantity: Number(po.quantity),
+              setupMinutes: estimate.setupMinutes,
+              minutesPerUnit: estimate.minutesPerUnit,
+              fixedMinutes: estimate.fixedMinutes,
+              batchSize: estimate.batchSize ?? undefined,
+              batchMinutes: estimate.batchMinutes ?? undefined,
+              maxParallelUnits: estimate.maxParallelUnits ?? undefined,
+            })
+          : (snap?.estimatedMinutes ??
+            task.estimatedMinutes ??
+            Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
 
       const departmentCode =
         estimate?.overrideDepartment?.code ??
@@ -1615,6 +1788,7 @@ export class SchedulingService implements OnModuleInit {
           (task.stageInstanceId ? dependsByInstance.get(task.stageInstanceId) : undefined) ??
           task.stageDefinition.dependsOnCodes,
         estimatedMinutes,
+        isMilestone: milestone,
         departmentCode,
         productionTaskId: task.id,
         stageInstanceId: task.stageInstanceId ?? null,
@@ -1721,7 +1895,9 @@ export class SchedulingService implements OnModuleInit {
       }
     }
 
-    const totalMinutes = plannedStages.reduce((sum, s) => sum + s.estimatedMinutes, 0);
+    const totalMinutes = plannedStages
+      .filter((s) => !s.isMilestone)
+      .reduce((sum, s) => sum + s.estimatedMinutes, 0);
     const bufferPercent = po.product?.productionProfile?.bufferPercent ?? 10;
 
     const [workers, occupancyRaw, { calendar, row: calendarRow }] = await Promise.all([
@@ -1941,7 +2117,6 @@ export class SchedulingService implements OnModuleInit {
         });
 
         if (alloc.productionTaskId) {
-          const task = po.tasks.find((t) => t.id === alloc.productionTaskId);
           await tx.productionTask.update({
             where: { id: alloc.productionTaskId },
             data: {
@@ -2223,8 +2398,6 @@ export class SchedulingService implements OnModuleInit {
       });
     }
 
-    const beforeFp = await this.customerFacingFingerprintForPo(poId).catch(() => null);
-
     const allocations = await this.prisma.scheduleAllocation.findMany({ where: { scheduleId: schedule.id } });
     const latestEnd =
       allocations.length > 0
@@ -2296,6 +2469,70 @@ export class SchedulingService implements OnModuleInit {
     return this.getOrderSchedule(poId);
   }
 
+  async unapprove(poId: string, version: number, userId: string) {
+    const schedule = await this.prisma.productionSchedule.findFirst({
+      where: { productionOrderId: poId },
+      orderBy: { version: 'desc' },
+    });
+    if (!schedule) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'No schedule to overwrite.' });
+    }
+    if (schedule.version !== version) {
+      throw new ConflictException({
+        code: 'SCHEDULE_STALE',
+        message: `Schedule has changed since you loaded it (current version ${schedule.version}).`,
+        currentVersion: schedule.version,
+      });
+    }
+    if (schedule.status !== 'APPROVED') {
+      return this.getOrderSchedule(poId);
+    }
+
+    const [po, tasks] = await Promise.all([
+      this.prisma.productionOrder.findUnique({
+        where: { id: poId },
+        select: { status: true, releasedToFactoryAt: true, actualStartDate: true },
+      }),
+      this.prisma.productionTask.findMany({
+        where: { productionOrderId: poId },
+        select: { status: true },
+      }),
+    ]);
+    if (
+      isScheduleExecutionStarted({
+        orderStatus: po?.status,
+        releasedToFactoryAt: po?.releasedToFactoryAt,
+        actualStartDate: po?.actualStartDate,
+        taskStatuses: tasks.map((row) => row.status),
+      })
+    ) {
+      throw new BadRequestException({
+        code: 'ALREADY_IN_PRODUCTION',
+        message: 'Cannot overwrite approval after production work has started.',
+      });
+    }
+
+    await this.prisma.productionSchedule.update({
+      where: { id: schedule.id },
+      data: {
+        status: 'PROPOSED',
+        promiseState: mapPromiseState({ scheduleStatus: 'PROPOSED' }),
+        approvedAt: null,
+        approvedById: null,
+      },
+    });
+
+    await this.recordScheduleHistory({
+      actorId: userId,
+      kind: 'unapprove',
+      productionOrderId: poId,
+      reason: 'Overwrite approval',
+      payload: { version, previousStatus: 'APPROVED' },
+    });
+    await this.audit(userId, 'schedule.unapprove', 'ProductionSchedule', schedule.id, { version });
+    return this.getOrderSchedule(poId);
+  }
+
   // ── Allocation edits ─────────────────────────────────────────────────────
 
   async patchAllocation(
@@ -2326,155 +2563,44 @@ export class SchedulingService implements OnModuleInit {
 
     const nextStart = dto.plannedStart ? new Date(dto.plannedStart) : target.plannedStart;
     const nextEnd = dto.plannedEnd ? new Date(dto.plannedEnd) : target.plannedEnd;
-    if (Number.isNaN(nextStart.getTime()) || Number.isNaN(nextEnd.getTime()) || nextEnd <= nextStart) {
+    const nextEmployeeId = dto.employeeId !== undefined ? dto.employeeId : target.employeeId;
+    if (
+      Number.isNaN(nextStart.getTime()) ||
+      Number.isNaN(nextEnd.getTime()) ||
+      nextEnd < nextStart ||
+      (nextEnd.getTime() === nextStart.getTime() && nextEmployeeId)
+    ) {
       throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Invalid plannedStart/plannedEnd.' });
     }
-    const nextEmployeeId = dto.employeeId !== undefined ? dto.employeeId : target.employeeId;
     const nextPinned = dto.isPinned !== undefined ? dto.isPinned : target.isPinned;
-
-    const { calendar } = await this.getCalendarDomain();
-    const toValidate: AllocationToValidate[] = allAllocations.map((a) => {
-      const isTarget = a.id === allocationId;
-      return {
-        key: a.id,
-        orderId: poId,
-        stageCode: a.productionTask?.stageDefinition?.code ?? a.id,
-        dependsOnCodes: a.productionTask?.stageDefinition?.dependsOnCodes ?? [],
-        employeeId: isTarget ? (nextEmployeeId ?? null) : a.employeeId,
-        plannedStart: isTarget ? nextStart : a.plannedStart,
-        plannedEnd: isTarget ? nextEnd : a.plannedEnd,
-        isPinned: isTarget ? nextPinned : a.isPinned,
-        previousPinnedStart: a.isPinned ? a.plannedStart : null,
-        previousPinnedEnd: a.isPinned ? a.plannedEnd : null,
-      };
-    });
-
-    const validation = validateSchedule({ allocations: toValidate, calendar });
-    const occupancyIssues: Array<{ code: string; severity: 'CONFLICT'; message: string }> = [];
-
-    if (nextEmployeeId) {
-      const stageDefId = target.productionTask?.stageDefinitionId ?? target.productionTask?.stageDefinition?.id;
-      if (stageDefId) {
-        const skill = await this.prisma.workerSkill.findFirst({
-          where: { userId: nextEmployeeId, stageDefinitionId: stageDefId, isActive: true },
-        });
-        const worker = await this.prisma.user.findFirst({
-          where: { id: nextEmployeeId, isActive: true, archivedAt: null },
-        });
-        if (!skill || !worker) {
-          occupancyIssues.push({
-            code: 'WORKER_NOT_ELIGIBLE',
-            severity: 'CONFLICT',
-            message: 'Assigned worker is not skilled or not active for this stage.',
-          });
-        }
-      }
-
-      const factoryOccupancy = await this.loadOccupancy(poId);
-      const overlapFactory = factoryOccupancy.some(
-        (iv) =>
-          iv.employeeId === nextEmployeeId &&
-          iv.allocationId !== allocationId &&
-          iv.start.getTime() < nextEnd.getTime() &&
-          nextStart.getTime() < iv.end.getTime(),
-      );
-      const overlapSame = allAllocations.some(
-        (a) =>
-          a.id !== allocationId &&
-          a.employeeId === nextEmployeeId &&
-          a.plannedStart.getTime() < nextEnd.getTime() &&
-          nextStart.getTime() < a.plannedEnd.getTime(),
-      );
-      if (overlapFactory || overlapSame) {
-        occupancyIssues.push({
-          code: 'WORKER_DOUBLE_BOOKED',
-          severity: 'CONFLICT',
-          message: 'This worker already has overlapping scheduled work.',
-        });
-      }
+    const taskId = target.productionTaskId;
+    if (!taskId) {
+      throw new BadRequestException({
+        code: 'NOT_FOUND',
+        message: 'Allocation is not linked to a production task.',
+      });
     }
 
-    const mergedSeverity =
-      occupancyIssues.length > 0 || validation.severity === 'CONFLICT'
-        ? 'CONFLICT'
-        : validation.severity;
-    if (mergedSeverity === 'CONFLICT') {
-      const canOverride = Boolean(dto.override) && user.permissions.includes('schedule.override');
-      if (!canOverride) {
-        throw new ConflictException({
-          code: 'SCHEDULE_CONFLICT',
-          message: 'This change conflicts with the schedule. Retry with override to force it.',
-          issues: [...validation.issues, ...occupancyIssues],
-        });
-      }
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.scheduleAllocation.update({
-        where: { id: allocationId },
-        data: {
-          plannedStart: nextStart,
-          plannedEnd: nextEnd,
-          employeeId: nextEmployeeId ?? null,
-          isPinned: nextPinned,
-          manuallyAdjusted: true,
-          attentionCode: null,
-        },
-      });
-      if (target.productionTaskId) {
-        await tx.productionTask.update({
-          where: { id: target.productionTaskId },
-          data: {
-            plannedStart: nextStart,
-            plannedCompletion: nextEnd,
-            ...(nextEmployeeId ? { assignedEmployeeId: nextEmployeeId } : {}),
-          },
-        });
-      }
-      await tx.scheduleChangeHistory.create({
-        data: {
-          productionOrderId: poId,
-          allocationId,
-          kind: dto.override ? 'override' : 'allocation',
-          oldEmployeeId: target.employeeId,
-          newEmployeeId: nextEmployeeId ?? null,
-          oldStart: target.plannedStart,
-          newStart: nextStart,
-          oldEnd: target.plannedEnd,
-          newEnd: nextEnd,
-          actorId: user.id,
-          reason: dto.reason ?? null,
-        },
-      });
-      await tx.productionSchedule.update({
-        where: { id: schedule.id },
-        data: {
-          ...(validation.severity !== 'VALID' ? { materialRisk: schedule.materialRisk } : {}),
-        },
-      });
+    await this.placement.placeTask({
+      productionTaskId: taskId,
+      allocationId,
+      productionOrderId: poId,
+      employeeId: nextEmployeeId,
+      plannedStart: nextStart,
+      plannedEnd: nextEnd,
+      isPinned: nextPinned,
+      version: dto.version,
+      override: dto.override,
+      acknowledge: Boolean(dto.override),
+      reason: dto.reason,
+      actorUserId: user.id,
+      permissions: user.permissions,
     });
 
     await this.audit(user.id, 'schedule.allocation.patch', 'ScheduleAllocation', allocationId, {
       reason: dto.reason,
       override: dto.override,
-      severity: validation.severity,
     });
-
-    if (validation.severity !== 'VALID' || occupancyIssues.length > 0) {
-      const conflict = occupancyIssues.length > 0 || validation.severity === 'CONFLICT';
-      await this.debouncedNotify(
-        conflict ? 'SCHEDULE_CONFLICT' : 'SCHEDULE_AT_RISK',
-        poId,
-        () =>
-          this.notifications.notifyAdminUsers({
-            templateCode: conflict ? 'SCHEDULE_CONFLICT' : 'SCHEDULE_AT_RISK',
-            vars: {
-              reason: [...validation.issues, ...occupancyIssues].map((i) => i.message).join('; '),
-            },
-            linkUrl: `/production-orders/${poId}`,
-          }),
-      );
-    }
 
     return this.getOrderSchedule(poId);
   }
@@ -2516,6 +2642,379 @@ export class SchedulingService implements OnModuleInit {
       null,
     );
     return this.getOrderSchedule(poId);
+  }
+
+  async previewExecutionRipple(input: {
+    taskId: string;
+    mode: 'tomorrow' | 'overtime';
+    remainingMinutes: number;
+    now?: Date;
+  }) {
+    const planned = await this.planRippleForTask(input);
+    return {
+      mode: input.mode,
+      remainingMinutes: Math.max(1, input.remainingMinutes),
+      remainder: planned.result.moves.find((m) => m.reason === 'remainder') ?? null,
+      moves: planned.result.moves.map((m) => ({
+        allocationId: m.allocationId,
+        taskId: m.taskId,
+        oldStart: m.oldStart.toISOString(),
+        oldEnd: m.oldEnd.toISOString(),
+        newStart: m.newStart.toISOString(),
+        newEnd: m.newEnd.toISOString(),
+        reason: m.reason,
+        taskName: planned.names.get(m.taskId) ?? m.taskId,
+        orderNumber: planned.orderNumber,
+      })),
+      blocked: planned.result.blocked,
+      reasons: planned.result.reasons,
+      orderId: planned.orderId,
+      orderNumber: planned.orderNumber,
+    };
+  }
+
+  async applyExecutionRipple(input: {
+    taskId: string;
+    mode: 'tomorrow' | 'overtime';
+    remainingMinutes: number;
+    actorUserId: string;
+    workerName?: string;
+  }) {
+    const planned = await this.planRippleForTask(input);
+    if (input.mode === 'overtime') {
+      const remainder = planned.result.moves.find((m) => m.reason === 'remainder');
+      const employeeId = planned.sourceEmployeeId;
+      if (remainder && employeeId) {
+        await this.applyAssignmentOvertime({
+          overtime: true,
+          start: remainder.newStart,
+          end: remainder.newEnd,
+          employeeId,
+          userId: input.actorUserId,
+        });
+      }
+    }
+    const batchId = `ripple-${input.taskId.slice(0, 8)}-${Date.now()}`;
+    await this.placement.persistExecutionRipple({
+      batchId,
+      actorUserId: input.actorUserId,
+      reason: `execution-ripple:${input.mode}`,
+      mode: input.mode,
+      moves: planned.result.moves.map((m) => ({
+        allocationId: m.allocationId,
+        taskId: m.taskId,
+        productionOrderId: planned.orderIdByTask.get(m.taskId) ?? planned.orderId,
+        plannedStart: m.newStart,
+        plannedEnd: m.newEnd,
+        oldStart: m.oldStart,
+        oldEnd: m.oldEnd,
+        employeeId: planned.employeeByTask.get(m.taskId) ?? planned.sourceEmployeeId,
+        estimatedMinutes: Math.max(
+          1,
+          Math.round((m.newEnd.getTime() - m.newStart.getTime()) / 60_000),
+        ),
+      })),
+    });
+    await this.notifications.notifyAdminUsers({
+      templateCode: 'EXECUTION_RIPPLE',
+      vars: {
+        workerName: input.workerName ?? input.actorUserId,
+        mode: input.mode,
+        orderNumber: planned.orderNumber,
+        rippleBatchId: batchId,
+      },
+      linkUrl: `/production-orders/${planned.orderId}`,
+    });
+    await this.refreshOrderWarnings(planned.orderId);
+    return {
+      rippleBatchId: batchId,
+      ...planned.result,
+      moves: planned.result.moves.map((m) => ({
+        ...m,
+        oldStart: m.oldStart.toISOString(),
+        oldEnd: m.oldEnd.toISOString(),
+        newStart: m.newStart.toISOString(),
+        newEnd: m.newEnd.toISOString(),
+        taskName: planned.names.get(m.taskId) ?? m.taskId,
+      })),
+    };
+  }
+
+  async getCarryOverEligibility(input: {
+    taskId: string;
+    status: string;
+    assignedEmployeeId: string | null;
+    estimatedMinutes: number | null;
+    elapsedMinutes: number;
+  }) {
+    const remaining = leftoverRemainingMinutes(input.estimatedMinutes, input.elapsedMinutes);
+    const empty = {
+      canCarryOver: false,
+      leftoverRemainingMinutes: remaining,
+      carryOverAllowsOvertime: false,
+    };
+    if (!canOfferLeftover({ status: input.status, isLastWindowToday: true })) return empty;
+    if (!input.assignedEmployeeId) return empty;
+
+    const { calendar } = await this.getCalendarDomain();
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id: input.taskId },
+      select: { plannedStart: true },
+    });
+    if (!task?.plannedStart) return empty;
+    const dayYmd = calendar.localYmd(task.plannedStart);
+    const { start, endExclusive } = calendar.localRangeBounds(dayYmd, dayYmd);
+    const allocations = await this.prisma.scheduleAllocation.findMany({
+      where: {
+        employeeId: input.assignedEmployeeId,
+        plannedStart: { lt: endExclusive },
+        plannedEnd: { gt: start },
+        schedule: { status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] } },
+      },
+      select: { productionTaskId: true, employeeId: true, plannedStart: true },
+    });
+    const last = isLastSameWorkerWindowToday({
+      taskId: input.taskId,
+      employeeId: input.assignedEmployeeId,
+      allocations: allocations.map((a) => ({
+        taskId: a.productionTaskId,
+        employeeId: a.employeeId,
+        plannedStart: a.plannedStart,
+      })),
+      localYmd: (d) => calendar.localYmd(d),
+    });
+    const offer = canOfferLeftover({ status: input.status, isLastWindowToday: last });
+    return {
+      canCarryOver: offer,
+      leftoverRemainingMinutes: remaining,
+      carryOverAllowsOvertime: offer,
+    };
+  }
+
+  async applyPauseSlide(input: { taskId: string; actorUserId: string }) {
+    const lastClosed = await this.prisma.taskTimeEntry.findFirst({
+      where: { taskId: input.taskId, endedAt: { not: null } },
+      orderBy: { endedAt: 'desc' },
+      select: { endedAt: true },
+    });
+    if (!lastClosed?.endedAt) return { moved: 0, pauseWorkingMinutes: 0 };
+
+    const planned = await this.planRippleForTask({
+      taskId: input.taskId,
+      mode: 'overtime',
+      remainingMinutes: 1,
+      extraSameWorkerLane: true,
+    });
+    const now = new Date();
+    const pauseWorkingMinutes = planned.calendar.workingMinutesBetween(lastClosed.endedAt, now);
+    const result = planPauseSlide({
+      taskId: input.taskId,
+      pauseWorkingMinutes,
+      calendar: planned.calendar,
+      allocations: planned.rippleAllocs,
+      edges: planned.edges,
+    });
+    if (result.moves.length === 0) {
+      return { moved: 0, pauseWorkingMinutes };
+    }
+    const batchId = `pause-${input.taskId.slice(0, 8)}-${Date.now()}`;
+    await this.placement.persistExecutionRipple({
+      batchId,
+      actorUserId: input.actorUserId,
+      reason: 'execution-ripple:pause',
+      mode: 'pause',
+      moves: result.moves.map((m) => ({
+        allocationId: m.allocationId,
+        taskId: m.taskId,
+        productionOrderId: planned.orderIdByTask.get(m.taskId) ?? planned.orderId,
+        plannedStart: m.newStart,
+        plannedEnd: m.newEnd,
+        oldStart: m.oldStart,
+        oldEnd: m.oldEnd,
+        employeeId: planned.employeeByTask.get(m.taskId) ?? planned.sourceEmployeeId,
+        estimatedMinutes: Math.max(
+          1,
+          planned.rippleAllocs.find((a) => a.allocationId === m.allocationId)?.estimatedMinutes ??
+            Math.round((m.newEnd.getTime() - m.newStart.getTime()) / 60_000),
+        ),
+      })),
+    });
+    await this.refreshOrderWarnings(planned.orderId);
+    return { moved: result.moves.length, pauseWorkingMinutes, rippleBatchId: batchId };
+  }
+
+  async revertRipple(batchId: string, user: AuthUser) {
+    const rows = await this.prisma.scheduleChangeHistory.findMany({
+      where: {
+        kind: 'execution-ripple',
+        payload: { path: ['rippleBatchId'], equals: batchId },
+      },
+    });
+    if (!rows.length) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Ripple batch not found.' });
+    }
+    const already = await this.prisma.scheduleChangeHistory.findFirst({
+      where: {
+        kind: 'execution-ripple-revert',
+        payload: { path: ['rippleBatchId'], equals: batchId },
+      },
+    });
+    if (already) {
+      throw new BadRequestException({
+        code: 'RIPPLE_ALREADY_REVERTED',
+        message: 'This ripple has already been reverted.',
+      });
+    }
+    await this.placement.revertExecutionRipple({
+      batchId,
+      actorUserId: user.id,
+      rows: rows.map((r) => ({
+        allocationId: r.allocationId ?? '',
+        productionOrderId: r.productionOrderId,
+        oldStart: r.oldStart,
+        oldEnd: r.oldEnd,
+        newStart: r.newStart,
+        newEnd: r.newEnd,
+      })),
+    });
+    const orderId = rows[0]?.productionOrderId;
+    if (orderId) await this.refreshOrderWarnings(orderId);
+    return { rippleBatchId: batchId, reverted: rows.length };
+  }
+
+  private async planRippleForTask(input: {
+    taskId: string;
+    mode: 'tomorrow' | 'overtime';
+    remainingMinutes: number;
+    now?: Date;
+    extraSameWorkerLane?: boolean;
+  }) {
+    const task = await this.prisma.productionTask.findUnique({
+      where: { id: input.taskId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        assignedEmployeeId: true,
+        productionOrderId: true,
+        productionOrder: { select: { number: true } },
+        estimatedMinutes: true,
+        actualMinutes: true,
+      },
+    });
+    if (!task) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Task not found.' });
+
+    const allocationInclude = {
+      productionTask: {
+        select: { id: true, name: true, status: true, assignedEmployeeId: true },
+      },
+      schedule: { select: { productionOrderId: true } },
+    } as const;
+
+    const sameOrderAllocations = await this.prisma.scheduleAllocation.findMany({
+      where: {
+        schedule: {
+          productionOrderId: task.productionOrderId,
+          status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+        },
+      },
+      include: allocationInclude,
+    });
+    const allocations = [...sameOrderAllocations];
+
+    if (input.extraSameWorkerLane && task.assignedEmployeeId) {
+      const extra = await this.prisma.scheduleAllocation.findMany({
+        where: {
+          employeeId: task.assignedEmployeeId,
+          productionTaskId: { not: task.id },
+          schedule: {
+            status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+            productionOrderId: { not: task.productionOrderId },
+          },
+        },
+        include: allocationInclude,
+      });
+      const seen = new Set(allocations.map((a) => a.id));
+      for (const row of extra) {
+        if (!seen.has(row.id)) allocations.push(row);
+      }
+    }
+
+    const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findFirst({
+      where: { productionOrderId: task.productionOrderId },
+      include: {
+        nodes: { select: { id: true, stageInstanceId: true } },
+        edges: {
+          select: { fromSnapshotNodeId: true, toSnapshotNodeId: true, dependencyType: true },
+        },
+      },
+    });
+    const taskByInstance = new Map<string, string>();
+    const orderTasks = await this.prisma.productionTask.findMany({
+      where: { productionOrderId: task.productionOrderId, status: { not: 'CANCELLED' } },
+      select: { id: true, stageInstanceId: true },
+    });
+    for (const row of orderTasks) {
+      if (row.stageInstanceId) taskByInstance.set(row.stageInstanceId, row.id);
+    }
+    const nodeInstance = new Map(
+      (snapshot?.nodes ?? []).map((n) => [n.id, n.stageInstanceId] as const),
+    );
+    const edges = (snapshot?.edges ?? [])
+      .filter((e) => !e.dependencyType || e.dependencyType === 'HARD')
+      .flatMap((e) => {
+        const fromInst = nodeInstance.get(e.fromSnapshotNodeId);
+        const toInst = nodeInstance.get(e.toSnapshotNodeId);
+        const fromTaskId = fromInst ? taskByInstance.get(fromInst) : undefined;
+        const toTaskId = toInst ? taskByInstance.get(toInst) : undefined;
+        return fromTaskId && toTaskId ? [{ fromTaskId, toTaskId }] : [];
+      });
+
+    const { calendar } = await this.getCalendarDomain();
+    const names = new Map<string, string>();
+    const employeeByTask = new Map<string, string | null>();
+    const orderIdByTask = new Map<string, string>();
+    const rippleAllocs = allocations
+      .filter((a) => a.productionTaskId && a.employeeId && a.plannedStart && a.plannedEnd)
+      .map((a) => {
+        const orderId = a.schedule?.productionOrderId ?? task.productionOrderId;
+        names.set(a.productionTaskId!, a.productionTask?.name ?? a.productionTaskId!);
+        employeeByTask.set(a.productionTaskId!, a.employeeId);
+        orderIdByTask.set(a.productionTaskId!, orderId);
+        return {
+          allocationId: a.id,
+          taskId: a.productionTaskId!,
+          employeeId: a.employeeId!,
+          plannedStart: a.plannedStart,
+          plannedEnd: a.plannedEnd,
+          estimatedMinutes: a.estimatedMinutes ?? 60,
+          isPinned: a.isPinned,
+          taskStatus: a.productionTask?.status ?? 'NOT_STARTED',
+          orderId,
+        };
+      });
+
+    const result = planExecutionRipple({
+      overrunningTaskId: input.taskId,
+      remainingMinutes: input.remainingMinutes,
+      mode: input.mode,
+      now: input.now ?? new Date(),
+      calendar,
+      allocations: rippleAllocs,
+      edges,
+    });
+    return {
+      result,
+      names,
+      employeeByTask,
+      orderIdByTask,
+      orderId: task.productionOrderId,
+      orderNumber: task.productionOrder.number,
+      sourceEmployeeId: task.assignedEmployeeId,
+      calendar,
+      rippleAllocs,
+      edges,
+    };
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────
@@ -2595,26 +3094,34 @@ export class SchedulingService implements OnModuleInit {
         committedDeliveryDate: true,
         priority: true,
         customerId: true,
+        releasedToFactoryAt: true,
+        actualStartDate: true,
       },
     });
     if (!po) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Production order not found.' });
 
-    const schedule = await this.prisma.productionSchedule.findFirst({
-      where: { productionOrderId: poId },
-      orderBy: { version: 'desc' },
-      include: {
-        allocations: {
-          include: {
-            productionTask: {
-              select: { id: true, name: true, number: true, status: true, stageDefinitionId: true },
+    const [schedule, tasks] = await Promise.all([
+      this.prisma.productionSchedule.findFirst({
+        where: { productionOrderId: poId },
+        orderBy: { version: 'desc' },
+        include: {
+          allocations: {
+            include: {
+              productionTask: {
+                select: { id: true, name: true, number: true, status: true, stageDefinitionId: true },
+              },
+              employee: { select: { id: true, firstName: true, lastName: true } },
+              department: { select: { id: true, code: true, nameEn: true, nameAr: true } },
             },
-            employee: { select: { id: true, firstName: true, lastName: true } },
-            department: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+            orderBy: { plannedStart: 'asc' },
           },
-          orderBy: { plannedStart: 'asc' },
         },
-      },
-    });
+      }),
+      this.prisma.productionTask.findMany({
+        where: { productionOrderId: poId },
+        select: { status: true },
+      }),
+    ]);
 
     const { row, calendar } = await this.getCalendarDomain();
     const bufferWorkingDays = row.deliveryBufferWorkingDays ?? 1;
@@ -2625,12 +3132,25 @@ export class SchedulingService implements OnModuleInit {
       atRisk: risk.primaryStatus === 'AT_RISK' || risk.primaryStatus === 'BLOCKED',
       late: risk.primaryStatus === 'LATE',
     });
+    const executionStarted = isScheduleExecutionStarted({
+      orderStatus: po.status,
+      releasedToFactoryAt: po.releasedToFactoryAt,
+      actualStartDate: po.actualStartDate,
+      taskStatuses: tasks.map((row) => row.status),
+    });
+    const actions = selectScheduleApprovalActions({
+      scheduleStatus: schedule?.status,
+      executionStarted,
+    });
 
     return {
       productionOrder: po,
       promiseState,
       riskStatus: risk.primaryStatus,
       stillAtRisk: risk.contributesToMayBeLate,
+      executionStarted,
+      canApprove: actions.canApprove,
+      canUnapprove: actions.canUnapprove,
       schedule: schedule
         ? this.serializeSchedule(schedule, { calendar, bufferWorkingDays })
         : null,
@@ -2729,7 +3249,8 @@ export class SchedulingService implements OnModuleInit {
     const tz = calendar.timezone;
     const todayYmd = ymdInTimezone(new Date(), tz);
 
-    const salesOrders = await this.prisma.salesOrder.findMany({
+    const [salesOrders, reshipDeliveries] = await Promise.all([
+    this.prisma.salesOrder.findMany({
       where: { customerId: user.customerId, archivedAt: null },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -2770,7 +3291,57 @@ export class SchedulingService implements OnModuleInit {
           select: { status: true, deliveryDate: true },
         },
       },
-    });
+    }),
+    this.prisma.delivery.findMany({
+      where: {
+        customerId: user.customerId,
+        purpose: 'RETURN_RESHIP',
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        deliveryDate: true,
+        deliveryAddress: true,
+        returnRequest: {
+          select: {
+            id: true,
+            number: true,
+            productDesc: true,
+            quantity: true,
+            salesOrder: {
+              select: {
+                id: true,
+                number: true,
+                status: true,
+                requiredDeliveryDate: true,
+                deliveryAddress: true,
+                projectName: true,
+                quotation: { select: { request: { select: { status: true } } } },
+              },
+            },
+            workOrders: {
+              where: { archivedAt: null },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                id: true,
+                number: true,
+                status: true,
+                requiredDeliveryDate: true,
+                committedDeliveryDate: true,
+                quantity: true,
+                productDescription: true,
+                product: { select: { nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
+                schedules: { orderBy: { version: 'desc' }, take: 1 },
+              },
+            },
+          },
+        },
+      },
+    }),
+    ]);
 
     const rows = salesOrders.map((so) => {
       const po = so.productionOrders[0] ?? null;
@@ -2833,10 +3404,88 @@ export class SchedulingService implements OnModuleInit {
       };
     });
 
-    const summary = summarizeDealerDeliveries(rows, todayYmd);
+    const reshipRows = reshipDeliveries.flatMap((delivery) => {
+      const so = delivery.returnRequest?.salesOrder ?? null;
+      const po = delivery.returnRequest?.workOrders[0] ?? null;
+      if (!so && !po && !delivery.returnRequest) return [];
+      const rowId = `reship:${delivery.id}`;
+      const schedule = po?.schedules[0] ?? null;
+      const requested =
+        schedule?.requestedDeliveryDate ??
+        po?.requiredDeliveryDate ??
+        so?.requiredDeliveryDate ??
+        delivery.deliveryDate ??
+        null;
+      const suggested = schedule?.suggestedDeliveryDate ?? null;
+      const committed = schedule?.committedDeliveryDate ?? po?.committedDeliveryDate ?? null;
+      const projected = schedule?.earliestAvailableDate ?? schedule?.suggestedDeliveryDate ?? null;
+      const projectedDealer = this.projectDealerDelivery({
+        salesOrderStatus: so?.status,
+        productionOrder: po,
+        schedule,
+        delivery,
+        requested,
+        suggested,
+        committed,
+        projected,
+        tz,
+        todayYmd,
+        requestStatus: so?.quotation?.request?.status,
+      });
+      const fallbackName =
+        po?.productDescription ??
+        delivery.returnRequest?.productDesc ??
+        so?.projectName ??
+        delivery.number;
+      const product = po?.product ?? null;
+      return [
+        {
+          id: rowId,
+          salesOrderId: so?.id ?? rowId,
+          salesOrderNumber: so?.number ?? delivery.returnRequest?.number ?? delivery.number,
+          productionOrderId: po?.id ?? null,
+          productionOrderNumber: po?.number ?? null,
+          productName: {
+            name: product?.nameEn ?? fallbackName,
+            nameEn: product?.nameEn ?? fallbackName,
+            nameAr: product?.nameAr ?? null,
+            nameHe: product?.nameHe ?? null,
+          },
+          imageUrl: product?.imageUrl ?? null,
+          quantity:
+            po?.quantity != null
+              ? Number(po.quantity)
+              : delivery.returnRequest?.quantity != null
+                ? Number(delivery.returnRequest.quantity)
+                : null,
+          deliveryAddress: delivery.deliveryAddress ?? so?.deliveryAddress ?? null,
+          requestedDeliveryDate: requested,
+          suggestedDeliveryDate: suggested,
+          committedDeliveryDate: committed,
+          projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
+          plannedDeliveryDate: projectedDealer.planned,
+          actualDeliveryDate: projectedDealer.actual,
+          calendarDate: projectedDealer.view.calendarDate,
+          customerStatus: projectedDealer.view.customerStatus,
+          requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
+          actionRequired: projectedDealer.view.actionRequired,
+          customerSafeReason: projectedDealer.view.customerSafeReason,
+          compactDates: projectedDealer.view.compactDates,
+          delayDays: projectedDealer.view.delayDays,
+          scheduleUpdating: projectedDealer.view.scheduleUpdating,
+          canUpdateDeliveryDate: projectedDealer.policy.canUpdateDirect,
+          canRequestDateChange: projectedDealer.policy.canChangeRequest,
+          dateChangeLocked: projectedDealer.policy.locked,
+          dateChangeReason: projectedDealer.policy.reason,
+        },
+      ];
+    });
+
+    const allRows = [...rows, ...reshipRows];
+    const summary = summarizeDealerDeliveries(allRows, todayYmd);
     const from = range?.from?.slice(0, 10);
     const to = range?.to?.slice(0, 10);
-    const data = filterByCalendarDateRange(rows, from, to);
+    const data = filterByCalendarDateRange(allRows, from, to);
 
     return { summary, data, todayYmd };
   }
@@ -4049,14 +4698,17 @@ export class SchedulingService implements OnModuleInit {
     const approvedActive = classified.filter((row) => row.schedule.status === 'APPROVED').length;
     const conflicts = await this.listConflicts();
 
+    const { calendar } = await this.getCalendarDomain();
     const now = new Date();
-    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
-    const weekStart = new Date(todayStart.getTime() - todayStart.getUTCDay() * 24 * 60 * 60 * 1000);
-    const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+    const todayYmd = calendar.localYmd(now);
+    const weekday = new Date(`${todayYmd}T00:00:00.000Z`).getUTCDay();
+    const weekFrom = addDaysYmd(todayYmd, -weekday);
+    const weekTo = addDaysYmd(weekFrom, 6);
+    const todayBounds = calendar.localRangeBounds(todayYmd, todayYmd);
+    const weekBounds = calendar.localRangeBounds(weekFrom, weekTo);
     const [todayOrders, weekOrders] = await Promise.all([
-      this.buildOrderCards(todayStart, todayEnd),
-      this.buildOrderCards(weekStart, weekEnd),
+      this.buildOrderCards(todayBounds.start, new Date(todayBounds.endExclusive.getTime() - 1)),
+      this.buildOrderCards(weekBounds.start, new Date(weekBounds.endExclusive.getTime() - 1)),
     ]);
 
     return {
@@ -4150,12 +4802,31 @@ export class SchedulingService implements OnModuleInit {
       });
     }
 
-    const committed = before.schedule?.committedDeliveryDate ?? before.po.committedDeliveryDate;
-    void committed;
-    return payload(before.classification, {
-      action: 'NEEDS_ADMIN',
-      resolvedAutomatically: false,
-      stillNeedsAttention: true,
+    try {
+      await this.generateForProductionOrder(productionOrderId, user.id, { reason: 'at-risk-resolve' });
+    } catch (err) {
+      const code =
+        err instanceof ConflictException && typeof err.getResponse() === 'object'
+          ? (err.getResponse() as { code?: string }).code
+          : undefined;
+      if (code === 'WOULD_MISS_COMMITMENT') {
+        return payload(before.classification, {
+          action: 'COMMITMENT_INFEASIBLE',
+          resolvedAutomatically: false,
+          stillNeedsAttention: true,
+          alreadyOnTrack: false,
+        });
+      }
+      throw err;
+    }
+
+    const after = await this.classifyProductionOrder(productionOrderId);
+    const classification = after?.classification ?? before.classification;
+    const stillAtRisk = Boolean(after?.classification.contributesToMayBeLate);
+    return payload(classification, {
+      action: stillAtRisk ? 'NEEDS_ADMIN' : 'RESOLVED',
+      resolvedAutomatically: !stillAtRisk,
+      stillNeedsAttention: stillAtRisk,
       alreadyOnTrack: false,
     });
   }
@@ -4324,10 +4995,39 @@ export class SchedulingService implements OnModuleInit {
             data: { attentionCode: 'UNFINISHED_WORK' },
           })
           .catch(() => undefined);
+        const live = await this.prisma.productionTask.findUnique({
+          where: { id: task.id },
+          select: { actualMinutes: true, estimatedMinutes: true },
+        });
+        const remaining = Math.max(
+          1,
+          (live?.estimatedMinutes ?? 60) - (live?.actualMinutes ?? 0),
+        );
+        try {
+          const preview = await this.previewExecutionRipple({
+            taskId: task.id,
+            mode: 'tomorrow',
+            remainingMinutes: remaining,
+          });
+          const downstreamIds = preview.moves
+            .filter((m) => m.reason !== 'remainder')
+            .map((m) => m.allocationId);
+          if (downstreamIds.length) {
+            await this.prisma.scheduleAllocation
+              .updateMany({
+                where: { id: { in: downstreamIds } },
+                data: { attentionCode: 'DEPENDENCY_CONFLICT' },
+              })
+              .catch(() => undefined);
+          }
+        } catch {
+          /* preview is attention-only */
+        }
       }
     }
 
     await this.refreshOrderWarnings(task.productionOrderId);
+    await this.enqueueTargetedReplanAsync(task.productionOrderId, event, task.id);
   }
 
   async enqueueEmployeeReplan(employeeId: string, capacityDelta: CapacityDelta = 'decrease') {
@@ -4430,8 +5130,7 @@ export class SchedulingService implements OnModuleInit {
   }
 
   async enqueueCapacityOptimize(userId: string, persist: boolean) {
-    const changeType = OPTIMIZE_PREVIEW_CHANGE_TYPE;
-    void persist;
+    const changeType = persist ? OPTIMIZE_APPLY_CHANGE_TYPE : OPTIMIZE_PREVIEW_CHANGE_TYPE;
     const inflight = await this.prisma.schedulingReplanRun.findMany({
       where: { status: { in: ['QUEUED', 'RUNNING'] } },
       orderBy: { createdAt: 'asc' },
@@ -4502,7 +5201,12 @@ export class SchedulingService implements OnModuleInit {
     if (name === 'REPLAN' || name === 'SCHEDULE_GENERATE') {
       const poId = typeof data.productionOrderId === 'string' ? data.productionOrderId : '';
       if (!poId) return;
-      await this.refreshOrderWarnings(poId);
+      try {
+        await this.generateForProductionOrder(poId, 'system', { reason: `async:${name}` });
+      } catch (err) {
+        await this.markNeedsReview(poId, 'system', err);
+        throw err;
+      }
       return;
     }
 
@@ -4523,7 +5227,12 @@ export class SchedulingService implements OnModuleInit {
     if (name === 'RISK_ANALYSIS') {
       const poId = typeof data.productionOrderId === 'string' ? data.productionOrderId : '';
       if (!poId) return;
-      await this.refreshOrderWarnings(poId);
+      const classified = await this.classifyProductionOrder(poId);
+      if (classified?.classification.recoverableAutomatically) {
+        await this.generateForProductionOrder(poId, 'system', { reason: 'async:RISK_ANALYSIS' });
+      } else {
+        await this.refreshOrderWarnings(poId);
+      }
       return;
     }
 
@@ -5155,7 +5864,7 @@ export class SchedulingService implements OnModuleInit {
       let pinnedIssues: PinnedUnavailableIssue[] = [];
       let scannedOrders = orders.length;
       let alreadyValid = 0;
-      let generatedIds: string[] = [];
+      const generatedIds: string[] = [];
       const blockedItems: Array<{ productionOrderId: string; number: string; blockerKind?: string | null }> = [];
       const manualAttentionItems: Array<{ productionOrderId: string; number: string }> = [];
       let syncSelection: ReturnType<typeof selectManualSyncCandidates> | null = null;
@@ -5203,6 +5912,10 @@ export class SchedulingService implements OnModuleInit {
       const preExistingConflictIds = conflictsBefore.map((c) => c.conflictId);
       const isSync = capacityDelta === 'sync';
 
+      let occupancyAcc = unionOccupancyIntervals(await this.loadOccupancy());
+      const actorId = latest.actorId ?? 'system';
+      const generateReason = latest.reason ?? latest.changeType;
+
       for (const candidate of candidates) {
         const before = orders.find((o) => o.productionOrderId === candidate.productionOrderId);
         const riskBefore =
@@ -5210,9 +5923,50 @@ export class SchedulingService implements OnModuleInit {
           before?.classification.primaryStatus === 'AT_RISK' ||
           (isSync && (candidate.urgency === 'late' || candidate.urgency === 'atRisk'));
         if (riskBefore) atRiskBefore += 1;
-        await this.refreshOrderWarnings(candidate.productionOrderId);
-        unchanged.push(candidate.productionOrderId);
-        if (isSync) alreadyValid += 1;
+        const occupancyForPo = unionOccupancyIntervals(
+          stripOccupancyForOrder(occupancyAcc, candidate.productionOrderId),
+        );
+        const generateOpts = {
+          reason: generateReason,
+          persist: false,
+          validateAgainstOccupancy: true,
+          existingOccupancy: occupancyForPo,
+        };
+        try {
+          let result: Awaited<ReturnType<SchedulingService['generateForProductionOrder']>>;
+          try {
+            result = await this.generateForProductionOrder(
+              candidate.productionOrderId,
+              actorId,
+              generateOpts,
+            );
+          } catch (err) {
+            if (!(err instanceof OccupancyCollisionError)) throw err;
+            result = await this.generateForProductionOrder(
+              candidate.productionOrderId,
+              actorId,
+              generateOpts,
+            );
+          }
+          const allocs =
+            ((result as { schedule?: { allocations?: unknown[] } } | null)?.schedule?.allocations ??
+              []) as Parameters<typeof occupancyFromGeneratedAllocations>[1];
+          const candidateOcc = occupancyFromGeneratedAllocations(
+            candidate.productionOrderId,
+            allocs,
+          );
+          occupancyAcc = unionOccupancyIntervals([
+            ...stripOccupancyForOrder(occupancyAcc, candidate.productionOrderId),
+            ...candidateOcc,
+          ]);
+          moved.push(candidate.productionOrderId);
+          generatedIds.push(candidate.productionOrderId);
+        } catch (err) {
+          failures.push({
+            productionOrderId: candidate.productionOrderId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       const conflictsAfter = await this.detectOperationalConflicts();
@@ -5586,11 +6340,13 @@ export class SchedulingService implements OnModuleInit {
   }
 
   async listUnscheduledOrders() {
-    const scheduled = await this.prisma.scheduleAllocation.findMany({
-      where: { schedule: { status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] } } },
-      select: { schedule: { select: { productionOrderId: true } } },
-    });
-    const scheduledIds = new Set(scheduled.map((s) => s.schedule.productionOrderId));
+    const classified = await this.listPlanningBoardOrders();
+    return classified.filter(
+      (o) => o.planningState === 'NEEDS_PLANNING' || isUnscheduledPlanningState(o.planningState),
+    );
+  }
+
+  async listPlanningBoardOrders() {
     const orders = await this.prisma.productionOrder.findMany({
       where: {
         archivedAt: null,
@@ -5606,11 +6362,455 @@ export class SchedulingService implements OnModuleInit {
         plannedStartDate: true,
         plannedCompletionDate: true,
         priority: true,
+        customerId: true,
+        product: { select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            customer: { select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true } },
+          },
+        },
+        workflowSnapshot: {
+          select: {
+            id: true,
+            nodes: {
+              select: {
+                estimatedMinutes: true,
+                nameEnSnapshot: true,
+                stageDefinitionId: true,
+              },
+            },
+          },
+        },
+        tasks: {
+          select: {
+            id: true,
+            status: true,
+            estimatedMinutes: true,
+            plannedStart: true,
+            plannedCompletion: true,
+            assignedEmployeeId: true,
+            assignedEmployee: { select: { id: true, firstName: true, lastName: true } },
+            stageDefinition: {
+              select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
-      take: 200,
+      take: 400,
     });
-    return orders.filter((o) => !scheduledIds.has(o.id)).map((o) => ({ ...o, planningStatus: 'UNSCHEDULED' as const }));
+    return orders.map((o) => {
+      const planningState = classifyPlanningState({
+        orderStatus: o.status,
+        hasSnapshot: Boolean(o.workflowSnapshot),
+        tasks: o.tasks,
+      });
+      const stages = o.tasks.map((task) => ({
+        taskId: task.id,
+        stageDefinitionId: task.stageDefinition?.id ?? null,
+        code: task.stageDefinition?.code ?? null,
+        nameEn: task.stageDefinition?.nameEn ?? null,
+        nameAr: task.stageDefinition?.nameAr ?? null,
+        nameHe: task.stageDefinition?.nameHe ?? null,
+        estimatedMinutes: task.estimatedMinutes,
+        plannedStart: task.plannedStart,
+        plannedCompletion: task.plannedCompletion,
+        assignedEmployeeId: task.assignedEmployeeId,
+        assignedName: [task.assignedEmployee?.firstName, task.assignedEmployee?.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null,
+        placed: Boolean(task.assignedEmployeeId && task.plannedStart && task.plannedCompletion),
+      }));
+      return {
+        ...o,
+        dealerName: o.salesOrder?.customer?.nameEn ?? o.salesOrder?.customer?.name ?? null,
+        salesOrderNumber: o.salesOrder?.number ?? null,
+        planningState,
+        planningStatus: planningState,
+        stages,
+        workflowReady: Boolean(o.workflowSnapshot),
+        durationsReady:
+          stages.length > 0 &&
+          stages.every(
+            (s) =>
+              isMilestoneStage({ code: s.code }) || (s.estimatedMinutes ?? 0) > 0,
+          ),
+      };
+    });
+  }
+
+  async getFactoryDay(
+    dateYmd: string,
+    opts: { dealerId?: string; stageId?: string } = {},
+  ) {
+    const parsed = parseYmd(dateYmd);
+    if (!parsed) {
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Invalid date.' });
+    }
+    const { row, calendar } = await this.getCalendarDomain();
+    const { start, endExclusive } = calendar.localRangeBounds(dateYmd, dateYmd);
+    const intervals = calendar.intervalsForLocalYmd(dateYmd);
+    const isWorking = intervals.length > 0;
+    const exception = (row.exceptions ?? []).find(
+      (e) => ymdInTimezone(e.date, calendar.timezone) === dateYmd,
+    );
+    const capacity = await this.listCapacity(dateYmd, dateYmd, {
+      granularity: 'day',
+      includeWorkers: true,
+    });
+    const rows = (capacity.data ?? []) as Array<{
+      allocatedMinutes?: number;
+      availableMinutes?: number;
+    }>;
+    const plannedMinutes = (rows as Array<{ allocatedMinutes?: number }>).reduce(
+      (sum, r) => sum + (r.allocatedMinutes ?? 0),
+      0,
+    );
+    const availableMinutes = (rows as Array<{ availableMinutes?: number }>).reduce(
+      (sum, r) => sum + (r.availableMinutes ?? 0),
+      0,
+    );
+    const loadLayers = computeDayLoadLayers({
+      date: dateYmd,
+      isWorking,
+      normalCapacityMinutes: availableMinutes,
+      targetLoadPercent: exception?.targetLoadPercent ?? row.targetFactoryUtilizationPercent ?? 100,
+      plannedMinutes,
+      overtime: exception?.type === 'EXTRA_SHIFT',
+    });
+
+    const [orders, conflicts, atRisk, allocations, workers] = await Promise.all([
+      this.buildOrderCards(start, new Date(endExclusive.getTime() - 1), {
+        calendar,
+        bufferWorkingDays: row.deliveryBufferWorkingDays ?? 1,
+        fromYmd: dateYmd,
+        toYmd: dateYmd,
+      }),
+      this.listConflicts(),
+      this.listAtRisk(),
+      this.prisma.scheduleAllocation.findMany({
+        where: {
+          plannedStart: { lt: endExclusive },
+          plannedEnd: { gt: start },
+          schedule: { status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] } },
+          ...(opts.stageId
+            ? { productionTask: { stageDefinitionId: opts.stageId } }
+            : {}),
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          plannedStart: true,
+          plannedEnd: true,
+          estimatedMinutes: true,
+          attentionCode: true,
+          isPinned: true,
+          productionTaskId: true,
+          schedule: { select: { version: true } },
+          productionTask: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              actualMinutes: true,
+              estimatedMinutes: true,
+              stageDefinitionId: true,
+              stageDefinition: { select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true } },
+              timeEntries: {
+                where: { endedAt: { not: null } },
+                orderBy: { endedAt: 'desc' },
+                take: 1,
+                select: { endedAt: true },
+              },
+              productionOrder: {
+                select: {
+                  id: true,
+                  number: true,
+                  customerId: true,
+                  salesOrder: { select: { number: true, customerId: true } },
+                },
+              },
+            },
+          },
+          employee: { select: { id: true, firstName: true, lastName: true } },
+        },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          isActive: true,
+          archivedAt: null,
+          roles: { some: { role: { kind: 'PRODUCTION_WORKER' } } },
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          workerSkills: {
+            where: { isActive: true },
+            select: { stageDefinitionId: true },
+          },
+        },
+      }),
+    ]);
+
+    const dealerFilteredOrders = opts.dealerId
+      ? orders.filter((o) => {
+          const card = o as { customerId?: string; dealerId?: string };
+          return card.customerId === opts.dealerId || card.dealerId === opts.dealerId;
+        })
+      : orders;
+    const dayConflicts = conflicts.data.filter((c) => {
+      const startIso = c.overlapStart;
+      return startIso ? calendar.localYmd(new Date(startIso)) === dateYmd : false;
+    });
+    const dayAtRisk = atRisk.data.filter((row) =>
+      dealerFilteredOrders.some((o) => (o as { productionOrderId?: string }).productionOrderId === row.productionOrderId || (o as { id?: string }).id === row.productionOrderId),
+    );
+
+    const calendarInput = {
+      timezone: row.timezone,
+      workingWeekdays: row.workingWeekdays,
+      shiftStart: row.shiftStart,
+      shiftEnd: row.shiftEnd,
+      breaks: (row.breaks as TimeOfDayRange[] | null) ?? [],
+      exceptions: (row.exceptions ?? []).map((e) => ({
+        date: e.date,
+        type: e.type,
+        shiftStart: e.shiftStart,
+        shiftEnd: e.shiftEnd,
+        overtimeEmployeeIds: Array.isArray(e.overtimeEmployeeIds)
+          ? (e.overtimeEmployeeIds as string[])
+          : [],
+      })),
+    };
+
+    const now = new Date();
+    const workerRows = workers
+      .filter((w) => !opts.stageId || w.workerSkills.some((s) => s.stageDefinitionId === opts.stageId))
+      .map((w) => {
+        const windows = workerDayWindows({
+          calendarInput,
+          ymd: dateYmd,
+          workerId: w.id,
+        });
+        const busy = allocations
+          .filter((a) => a.employeeId === w.id)
+          .flatMap((a) => {
+            const pauseAt = a.productionTask?.timeEntries?.[0]?.endedAt ?? null;
+            const status = a.productionTask?.status ?? null;
+            const work = clipLiveOccupancy({
+              start: a.plannedStart,
+              end: a.plannedEnd,
+              now,
+              taskStatus: status,
+              pauseAt,
+            });
+            const stopped = pauseVisualWindow({
+              plannedEnd: a.plannedEnd,
+              now,
+              taskStatus: status,
+              pauseAt,
+            });
+            const base = {
+              id: a.id,
+              productionTaskId: a.productionTaskId,
+              productionOrderId: a.productionTask?.productionOrder?.id ?? null,
+              orderNumber: a.productionTask?.productionOrder?.number ?? null,
+              salesOrderNumber: a.productionTask?.productionOrder?.salesOrder?.number ?? null,
+              stageCode: a.productionTask?.stageDefinition?.code ?? null,
+              stageName: a.productionTask?.stageDefinition?.nameEn ?? a.productionTask?.name ?? null,
+              attentionCode: a.attentionCode,
+              isPinned: a.isPinned,
+              actualMinutes: a.productionTask?.actualMinutes ?? null,
+              elapsedMinutes: a.productionTask?.actualMinutes ?? null,
+              estimatedMinutes: a.estimatedMinutes ?? a.productionTask?.estimatedMinutes ?? null,
+              scheduleVersion: a.schedule?.version ?? null,
+            };
+            const rows: Array<typeof base & { start: Date; end: Date; kind: 'work' | 'stopped' }> = [];
+            if (work) {
+              rows.push({ ...base, start: work.start, end: work.end, kind: 'work' });
+            }
+            if (stopped) {
+              rows.push({
+                ...base,
+                id: `${a.id}:stopped`,
+                start: stopped.start,
+                end: stopped.end,
+                kind: 'stopped',
+              });
+            }
+            return rows;
+          });
+        const workBusy = busy.filter((b) => b.kind !== 'stopped');
+        const freeWindows = freeWindowsFromBusy(windows.intervals, workBusy);
+        const scheduledMinutes = workBusy.reduce(
+          (sum, b) => sum + Math.max(0, (b.end.getTime() - b.start.getTime()) / 60_000),
+          0,
+        );
+        return {
+          employeeId: w.id,
+          firstName: w.firstName,
+          lastName: w.lastName,
+          name: [w.firstName, w.lastName].filter(Boolean).join(' ').trim(),
+          availableMinutes: windows.availableMinutes,
+          scheduledMinutes: Math.round(scheduledMinutes),
+          freeMinutes: Math.max(0, windows.availableMinutes - Math.round(scheduledMinutes)),
+          loadPercent:
+            windows.availableMinutes > 0
+              ? Math.round((scheduledMinutes / windows.availableMinutes) * 100)
+              : 0,
+          overtime: windows.overtime,
+          overtimeAfter: windows.overtimeAfter?.toISOString() ?? null,
+          closed: windows.closed,
+          intervals: windows.intervals.map((iv) => ({
+            start: iv.start.toISOString(),
+            end: iv.end.toISOString(),
+          })),
+          busy: busy.map((b) => ({
+            ...b,
+            start: b.start.toISOString(),
+            end: b.end.toISOString(),
+          })),
+          freeWindows: freeWindows.map((g) => ({
+            start: g.start.toISOString(),
+            end: g.end.toISOString(),
+            durationMinutes: g.durationMinutes,
+          })),
+        };
+      });
+
+    const weekday = new Date(`${dateYmd}T00:00:00.000Z`).getUTCDay();
+    const weekFrom = addDaysYmd(dateYmd, -weekday);
+    const weekTo = addDaysYmd(weekFrom, 6);
+    const unscheduledDemand = await this.unscheduledDemandByStage({ from: weekFrom, to: weekTo });
+
+    return {
+      date: dateYmd,
+      timezone: calendar.timezone,
+      closed: !isWorking,
+      overtime: exception?.type === 'EXTRA_SHIFT',
+      load: loadLayers,
+      availableWorkerMinutes: availableMinutes,
+      plannedMinutes,
+      overtimeMinutes: Math.max(0, plannedMinutes - (loadLayers.normalCapacityMinutes || availableMinutes)),
+      conflicts: dayConflicts,
+      conflictCount: dayConflicts.length,
+      atRiskCount: dayAtRisk.length,
+      orders: dealerFilteredOrders,
+      stages: rows,
+      workers: workerRows,
+      unscheduledDemand,
+    };
+  }
+
+  private async unscheduledDemandByStage(range: { from: string; to: string }) {
+    const planning = await this.listPlanningBoardOrders();
+    const waiting = planning.filter(
+      (o) => o.planningState === 'READY_TO_SCHEDULE' || o.planningState === 'PARTIALLY_SCHEDULED',
+    );
+    const byStage = new Map<string, { stageDefinitionId: string | null; code: string | null; nameEn: string | null; minutes: number }>();
+    for (const order of waiting) {
+      for (const stage of order.stages) {
+        if (stage.placed) continue;
+        const key = stage.stageDefinitionId ?? stage.code ?? 'unknown';
+        const current = byStage.get(key) ?? {
+          stageDefinitionId: stage.stageDefinitionId,
+          code: stage.code,
+          nameEn: stage.nameEn,
+          minutes: 0,
+        };
+        current.minutes += stage.estimatedMinutes ?? 0;
+        byStage.set(key, current);
+      }
+    }
+    return {
+      from: range.from,
+      to: range.to,
+      stages: [...byStage.values()].sort((a, b) => b.minutes - a.minutes),
+    };
+  }
+
+  async factoryControlSummary() {
+    const { row, calendar } = await this.getCalendarDomain();
+    const now = new Date();
+    const todayYmd = calendar.localYmd(now);
+    const weekday = new Date(`${todayYmd}T00:00:00.000Z`).getUTCDay();
+    const weekFrom = addDaysYmd(todayYmd, -weekday);
+    const weekTo = addDaysYmd(weekFrom, 6);
+    const todayBounds = calendar.localRangeBounds(todayYmd, todayYmd);
+    const weekBounds = calendar.localRangeBounds(weekFrom, weekTo);
+    const [todayOrders, weekOrders, planning, atRisk, conflicts, overtime] = await Promise.all([
+      this.buildOrderCards(todayBounds.start, new Date(todayBounds.endExclusive.getTime() - 1)),
+      this.buildOrderCards(weekBounds.start, new Date(weekBounds.endExclusive.getTime() - 1)),
+      this.listPlanningBoardOrders(),
+      this.listAtRisk(),
+      this.listConflicts(),
+      this.countOvertimeAllocations(calendar, row, weekFrom, weekTo),
+    ]);
+    const unscheduled = planning.filter((o) => isUnscheduledPlanningState(o.planningState));
+    return {
+      today: todayOrders.length,
+      thisWeek: weekOrders.length,
+      unscheduled: unscheduled.length,
+      atRisk: atRisk.data.length,
+      conflicts: conflicts.count,
+      overtime,
+      timezone: calendar.timezone,
+      todayYmd,
+      weekFrom,
+      weekTo,
+    };
+  }
+
+  private async countOvertimeAllocations(
+    calendar: WorkingCalendar,
+    row: Awaited<ReturnType<SchedulingService['getCalendar']>>,
+    fromYmd: string,
+    toYmd: string,
+  ) {
+    const { start, endExclusive } = calendar.localRangeBounds(fromYmd, toYmd);
+    const allocations = await this.prisma.scheduleAllocation.findMany({
+      where: {
+        plannedStart: { lt: endExclusive },
+        plannedEnd: { gt: start },
+        schedule: { status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] } },
+      },
+      select: { plannedStart: true, plannedEnd: true },
+    });
+    const exceptionByYmd = new Map(
+      (row.exceptions ?? []).map((e) => [ymdInTimezone(e.date, calendar.timezone), e]),
+    );
+    const normal = new WorkingCalendar({
+      timezone: row.timezone,
+      workingWeekdays: row.workingWeekdays,
+      shiftStart: row.shiftStart,
+      shiftEnd: row.shiftEnd,
+      breaks: (row.breaks as TimeOfDayRange[] | null) ?? [],
+      exceptions: (row.exceptions ?? [])
+        .filter((e) => e.type !== 'EXTRA_SHIFT')
+        .map((e) => ({
+          date: e.date,
+          type: e.type,
+          shiftStart: e.shiftStart,
+          shiftEnd: e.shiftEnd,
+        })),
+    });
+    let count = 0;
+    for (const a of allocations) {
+      const ymd = calendar.localYmd(a.plannedStart);
+      if (exceptionByYmd.get(ymd)?.type === 'EXTRA_SHIFT') {
+        count += 1;
+        continue;
+      }
+      const lastNormal = normal
+        .intervalsForLocalYmd(ymd)
+        .reduce<Date | null>((max, iv) => (!max || iv.end > max ? iv.end : max), null);
+      if (lastNormal && a.plannedEnd.getTime() > lastNormal.getTime()) count += 1;
+    }
+    return count;
   }
 
   async previewDayImpact(ymd: string) {
@@ -5775,6 +6975,7 @@ export class SchedulingService implements OnModuleInit {
     userId: string,
     moves: ReviewedAllocationMove[],
     reason?: string,
+    permissions: string[] = [],
   ) {
     if (!moves.length) {
       throw new BadRequestException({
@@ -5782,63 +6983,26 @@ export class SchedulingService implements OnModuleInit {
         message: 'Apply requires the exact worker/date/time list Admin reviewed.',
       });
     }
-    const schedule = await this.prisma.productionSchedule.findFirst({
-      where: { productionOrderId: poId, status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] } },
-      orderBy: { version: 'desc' },
-      include: { allocations: true },
-    });
-    if (!schedule) {
-      return this.placeUnscheduledFromReviewedMoves(poId, userId, moves, reason);
-    }
     for (const move of moves) {
-      const start = new Date(move.plannedStart);
-      const end = new Date(move.plannedEnd);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-        throw new BadRequestException({ code: 'INVALID_TIME_RANGE', message: 'Invalid plannedStart/plannedEnd.' });
-      }
-      const persistClass = classifyPersistIssue('INVALID_TIME_RANGE');
-      void persistClass;
-      const loadClass = loadPercentPersistClass(100);
-      void loadClass;
-      const target = move.allocationId
-        ? schedule.allocations.find((a) => a.id === move.allocationId)
-        : schedule.allocations.find((a) => a.productionTaskId === move.productionTaskId);
-      if (!target) {
-        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Allocation not found for reviewed move.' });
-      }
-      await this.prisma.scheduleAllocation.update({
-        where: { id: target.id },
-        data: {
-          plannedStart: start,
-          plannedEnd: end,
-          employeeId: move.employeeId,
-          sortOrder: move.sortOrder ?? target.sortOrder,
-          manuallyAdjusted: true,
-          attentionCode: null,
-        },
-      });
-      if (target.productionTaskId) {
-        await this.prisma.productionTask.update({
-          where: { id: target.productionTaskId },
-          data: {
-            plannedStart: start,
-            plannedCompletion: end,
-            ...(move.employeeId ? { assignedEmployeeId: move.employeeId } : {}),
-          },
+      const taskId = move.productionTaskId;
+      if (!taskId) {
+        throw new BadRequestException({
+          code: 'REVIEWED_PAYLOAD_REQUIRED',
+          message: 'Each reviewed move must name the production task being placed.',
         });
       }
-      await this.recordScheduleHistory({
-        actorId: userId,
-        kind: 'allocation',
+      await this.placement.placeTask({
+        productionTaskId: taskId,
+        allocationId: move.allocationId,
         productionOrderId: poId,
-        allocationId: target.id,
-        oldEmployeeId: target.employeeId,
-        newEmployeeId: move.employeeId,
-        oldStart: target.plannedStart,
-        newStart: start,
-        oldEnd: target.plannedEnd,
-        newEnd: end,
-        reason: reason ?? null,
+        employeeId: move.employeeId,
+        plannedStart: move.plannedStart,
+        plannedEnd: move.plannedEnd,
+        sortOrder: move.sortOrder,
+        actorUserId: userId,
+        reason: reason ?? 'apply-moves',
+        permissions,
+        acknowledge: true,
       });
     }
     return this.getOrderSchedule(poId);
@@ -5858,7 +7022,12 @@ export class SchedulingService implements OnModuleInit {
     const parsed = moves.map((move) => {
       const start = new Date(move.plannedStart);
       const end = new Date(move.plannedEnd);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      if (
+        Number.isNaN(start.getTime()) ||
+        Number.isNaN(end.getTime()) ||
+        end < start ||
+        (end.getTime() === start.getTime() && move.employeeId)
+      ) {
         throw new BadRequestException({ code: 'INVALID_TIME_RANGE', message: 'Invalid plannedStart/plannedEnd.' });
       }
       return { move, start, end };

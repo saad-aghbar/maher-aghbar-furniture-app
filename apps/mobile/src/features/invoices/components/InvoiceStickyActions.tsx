@@ -7,15 +7,15 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 type Props = {
-  onPdf: () => void;
+  onPdf?: () => void;
   onPay?: () => void;
   onApplyCredit?: () => void;
-  pdfLabel: string;
+  pdfLabel?: string;
   payLabel?: string;
   applyCreditLabel?: string;
 };
 
-/** Floating action pill — PDF + optional Apply credit + Record payment. */
+/** Floating action pill — optional PDF + Apply credit + Record payment. */
 export function InvoiceStickyActions({
   onPdf,
   onPay,
@@ -27,9 +27,10 @@ export function InvoiceStickyActions({
   const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const showPdf = Boolean(onPdf && pdfLabel);
   const showPay = Boolean(onPay && payLabel);
   const showCredit = Boolean(onApplyCredit && applyCreditLabel);
-  const actionCount = 1 + (showCredit ? 1 : 0) + (showPay ? 1 : 0);
+  const actionCount = (showPdf ? 1 : 0) + (showCredit ? 1 : 0) + (showPay ? 1 : 0);
   const compact = actionCount >= 3;
 
   return (
@@ -48,14 +49,16 @@ export function InvoiceStickyActions({
         ...orderBoardShadow(colorScheme),
       }}
     >
-      <ActionChip
-        label={pdfLabel}
-        icon="download-outline"
-        onPress={onPdf}
-        variant={showPay || showCredit ? 'secondary' : 'primary'}
-        compact={compact}
-        titleWeight={titleWeight}
-      />
+      {showPdf ? (
+        <ActionChip
+          label={pdfLabel!}
+          icon="download-outline"
+          onPress={() => onPdf?.()}
+          variant={showPay || showCredit ? 'secondary' : 'primary'}
+          compact={compact}
+          titleWeight={titleWeight}
+        />
+      ) : null}
 
       {showCredit ? (
         <ActionChip

@@ -9,14 +9,15 @@ import {
 import {
   ActivityIndicator,
   Image,
-  Pressable,
   ScrollView,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { createRequestId } from '@/api/requestId';
 import { ApiError } from '@/api/errors';
+import { invalidateKeys } from '@/api/queryKeys';
 import {
   getTaskWipEligible,
   getTaskWipIncoming,
@@ -45,6 +46,7 @@ import { useTheme } from '@/theme';
 export type TaskIncomingFloorHandle = {
   /** Open receive sheet for first eligible line (dock CTA). */
   openReceive: () => void;
+  openDiscrepancy: () => void;
   /** Latest availability snapshot. */
   getAvailability: () => {
     required: boolean;
@@ -60,6 +62,7 @@ type Props = {
   embedded?: boolean;
   /** When true and !required, still render “None” for first-stage clarity. */
   showNoneWhenEmpty?: boolean;
+  readOnly?: boolean;
   onReceived?: () => void;
   onAvailabilityChange?: (info: {
     required: boolean;
@@ -166,6 +169,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
       enabled = true,
       embedded = false,
       showNoneWhenEmpty = false,
+      readOnly = false,
       onReceived,
       onAvailabilityChange,
     },
@@ -174,6 +178,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
     const { t, locale, isRTL } = useLocale();
     const { colors, theme, colorScheme } = useTheme();
     const { showToast } = useToast();
+    const queryClient = useQueryClient();
     const [loading, setLoading] = useState(false);
     const [lines, setLines] = useState<WipIncomingLine[]>([]);
     const [lanes, setLanes] = useState<WipIncomingLane[]>([]);
@@ -259,6 +264,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
 
     const openReceiveForLine = useCallback(
       async (line: WipIncomingLine) => {
+        if (readOnly) return;
         setActiveLine(line);
         setSelectedKitId(line.kitId);
         setScanCode('');
@@ -277,13 +283,14 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
           setReceiveOpen(true);
         }
       },
-      [taskId],
+      [readOnly, taskId],
     );
 
     useImperativeHandle(
       ref,
       () => ({
         openReceive: () => {
+          if (readOnly) return;
           if (firstReceivable) void openReceiveForLine(firstReceivable);
           else {
             showToast({
@@ -292,9 +299,13 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
             });
           }
         },
+        openDiscrepancy: () => {
+          if (readOnly) return;
+          setDiscrepancyOpen(true);
+        },
         getAvailability: () => ({ required, allReceived, lines }),
       }),
-      [firstReceivable, openReceiveForLine, required, allReceived, lines, showToast, t],
+      [firstReceivable, openReceiveForLine, readOnly, required, allReceived, lines, showToast, t],
     );
 
     function locationFor(line: WipIncomingLine): string | null {
@@ -316,6 +327,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
     }
 
     async function submitReceive(opts: { scanCode?: string; kitId?: string }) {
+      if (readOnly) return;
       const qty = Number(qtyText);
       if (!(qty > 0)) {
         showToast({ variant: 'error', message: t('mobile.tasks.incomingQtyRequired') });
@@ -335,6 +347,9 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
         setScanConfirm(null);
         await reload();
         onReceived?.();
+        for (const key of invalidateKeys.afterTaskMutation(taskId)) {
+          void queryClient.invalidateQueries({ queryKey: key });
+        }
       } catch (err) {
         void haptics.error();
         const code =
@@ -362,6 +377,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
     }
 
     async function submitDiscrepancy() {
+      if (readOnly) return;
       setBusy(true);
       try {
         await reportTaskWipDiscrepancy(taskId, {
@@ -378,6 +394,9 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
         });
         setDiscrepancyOpen(false);
         setDiscNotes('');
+        for (const key of invalidateKeys.afterTaskMutation(taskId)) {
+          void queryClient.invalidateQueries({ queryKey: key });
+        }
       } catch (err) {
         void haptics.error();
         showToast({
@@ -451,8 +470,9 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
 
               {lane.lines.map((line) => {
                 const canReceive =
-                  line.statusKey === 'READY_TO_COLLECT' ||
-                  line.statusKey === 'PARTIALLY_RECEIVED';
+                  !readOnly &&
+                  (line.statusKey === 'READY_TO_COLLECT' ||
+                    line.statusKey === 'PARTIALLY_RECEIVED');
                 const thumb = line.thumbDocumentId ? thumbs[line.thumbDocumentId] : null;
                 const loc = locationFor(line);
                 const partial = line.statusKey === 'PARTIALLY_RECEIVED';
@@ -577,7 +597,8 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                             {t('mobile.tasks.incomingReceivePieces')}
                           </AppText>
                         </AnimatedPressable>
-                        <Pressable
+                        <AnimatedPressable
+                          variant="button"
                           onPress={() => {
                             setActiveLine(line);
                             setDiscrepancyOpen(true);
@@ -593,7 +614,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                           <AppText variant="bodySecondary" weight="medium">
                             {t('mobile.tasks.discrepancyReport')}
                           </AppText>
-                        </Pressable>
+                        </AnimatedPressable>
                       </View>
                     ) : null}
                   </View>
@@ -697,7 +718,8 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                 eligible.map((kit) => {
                   const active = selectedKitId === kit.kitId;
                   return (
-                    <Pressable
+                    <AnimatedPressable
+                      variant="button"
                       key={kit.kitId}
                       onPress={() => {
                         void haptics.selection();
@@ -722,7 +744,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                           qty: formatQty(kit.available),
                         })}
                       </AppText>
-                    </Pressable>
+                    </AnimatedPressable>
                   );
                 })
               )}
@@ -739,7 +761,8 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                   gap: theme.spacing.sm,
                 }}
               >
-                <Pressable
+                <AnimatedPressable
+                          variant="button"
                   onPress={() => bumpQty(-1)}
                   style={{
                     width: 40,
@@ -752,7 +775,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                   }}
                 >
                   <Ionicons name="remove" size={18} color={colors.brand} />
-                </Pressable>
+                </AnimatedPressable>
                 <TextInput
                   value={qtyText}
                   onChangeText={setQtyText}
@@ -768,7 +791,8 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                     textAlign: 'center',
                   }}
                 />
-                <Pressable
+                <AnimatedPressable
+                          variant="button"
                   onPress={() => bumpQty(1)}
                   style={{
                     width: 40,
@@ -781,7 +805,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                   }}
                 >
                   <Ionicons name="add" size={18} color={colors.brand} />
-                </Pressable>
+                </AnimatedPressable>
               </View>
             </View>
 
@@ -856,7 +880,8 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
               {DISCREPANCY_CATEGORIES.map((cat) => {
                 const active = discCategory === cat;
                 return (
-                  <Pressable
+                  <AnimatedPressable
+                          variant="button"
                     key={cat}
                     onPress={() => {
                       void haptics.selection();
@@ -880,7 +905,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                     >
                       {t(`mobile.tasks.discrepancy.${cat}`)}
                     </AppText>
-                  </Pressable>
+                  </AnimatedPressable>
                 );
               })}
             </ScrollView>

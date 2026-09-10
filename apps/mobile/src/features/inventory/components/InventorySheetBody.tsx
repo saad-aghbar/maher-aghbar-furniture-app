@@ -15,6 +15,8 @@ type Props = {
    * the board sizes to its children instead of collapsing to a sliver.
    */
   fill?: boolean;
+  /** Wrap children in the elevated form board. Turn off for sibling floor boards. */
+  framed?: boolean;
 };
 
 /**
@@ -26,6 +28,7 @@ export function InventorySheetBody({
   error,
   style,
   fill = true,
+  framed = true,
 }: Props) {
   const { colors, theme, colorScheme } = useTheme();
   const pad = {
@@ -51,32 +54,36 @@ export function InventorySheetBody({
           {error}
         </AppText>
       ) : null}
-      <View
-        style={{
-          flex: fill ? 1 : undefined,
-          minHeight: fill ? 0 : undefined,
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surface,
-          overflow: 'hidden',
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        {fill ? (
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
-            contentContainerStyle={pad}
-          >
-            {children}
-          </ScrollView>
-        ) : (
-          <View style={pad}>{children}</View>
-        )}
-      </View>
+      {framed ? (
+        <View
+          style={{
+            flex: fill ? 1 : undefined,
+            minHeight: fill ? 0 : undefined,
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surface,
+            overflow: 'hidden',
+            ...orderBoardShadow(colorScheme),
+          }}
+        >
+          {fill ? (
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              style={{ flex: 1 }}
+              contentContainerStyle={pad}
+            >
+              {children}
+            </ScrollView>
+          ) : (
+            <View style={pad}>{children}</View>
+          )}
+        </View>
+      ) : (
+        children
+      )}
     </View>
   );
 }

@@ -1,20 +1,18 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
-  IsArray,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Min,
-  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InvoicesService } from './invoices.service';
 import { PaymentsService } from '../payments/payments.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListInvoicesDto, UpdateInvoiceDto } from './dto/invoice.dto';
+import { ListCreatableSourcesDto, ListInvoicesDto, UpdateInvoiceDto } from './dto/invoice.dto';
 import type { AuthUser } from '@maher/types';
 
 class CreateInvoiceDto {
@@ -56,6 +54,15 @@ export class InvoicesController {
       ...query,
       customerId: user.customerId ?? query.customerId,
     });
+  }
+
+  @Get('creatable-sources')
+  @RequirePermissions('invoice.create')
+  listCreatableSources(
+    @Query() query: ListCreatableSourcesDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.invoices.listCreatableSources(query, user);
   }
 
   @Get(':id')

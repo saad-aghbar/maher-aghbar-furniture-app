@@ -25,6 +25,7 @@ import {
   middleProductionNodes,
   type TerminalStageCode,
 } from '@/lib/workflow-terminal';
+import { isReturnWorkflowScope } from '@maher/types';
 import { Badge, Button, Input, Select } from '@maher/ui';
 import { Lock } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -131,6 +132,7 @@ type Props = {
   node: WorkflowNode | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  scope?: 'STANDARD' | 'RETURN' | null;
   readOnly?: boolean;
   saving?: boolean;
   removing?: boolean;
@@ -157,6 +159,7 @@ export function WorkflowStageDrawer({
   node,
   nodes,
   edges,
+  scope,
   readOnly,
   saving,
   removing,
@@ -189,7 +192,7 @@ export function WorkflowStageDrawer({
     return [...opening, ...editableNodes];
   }, [nodes, editableNodes]);
 
-  const domain = useMemo(() => toDomainGraph({ nodes, edges }), [nodes, edges]);
+  const domain = useMemo(() => toDomainGraph({ nodes, edges, scope }), [nodes, edges, scope]);
 
   useEffect(() => {
     if (!node) return;
@@ -519,6 +522,15 @@ export function WorkflowStageDrawer({
                       </button>
                     ))}
                   </div>
+                  {placement === 'start' ? (
+                    <p className="text-xs text-text-tertiary">
+                      {t(
+                        isReturnWorkflowScope(scope)
+                          ? 'workflow.placementStartHintReturn'
+                          : 'workflow.placementStartHint',
+                      )}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 

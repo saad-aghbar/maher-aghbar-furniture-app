@@ -20,6 +20,7 @@ const KNOWN_STAGES = new Set([
   'INSPECTION',
   'PACKAGING',
   'DELIVERY',
+  'DISMANTLE_RECOVER',
 ]);
 
 /**

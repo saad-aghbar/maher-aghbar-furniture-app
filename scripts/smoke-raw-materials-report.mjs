@@ -81,6 +81,21 @@ ok(
   String(pdf.headers['content-type'] ?? ''),
 );
 
+const scoped = await request(
+  'GET',
+  '/api/v1/inventory/reports/raw-materials/pdf?period=month&sections=fabric,foam&lang=en',
+  { cookie, accept: 'application/pdf' },
+);
+ok('section PDF 200', scoped.status === 200, String(scoped.status));
+ok('section PDF magic', scoped.buf.slice(0, 5).toString() === '%PDF-');
+
+const badSection = await request(
+  'GET',
+  '/api/v1/inventory/reports/raw-materials/pdf?period=month&sections=leather',
+  { cookie, accept: 'application/pdf' },
+);
+ok('invalid section rejected', badSection.status === 400, String(badSection.status));
+
 const alias = await request('GET', '/api/v1/documents/inventory/reports/raw-materials?period=month', {
   cookie,
   accept: 'application/pdf',

@@ -7,6 +7,10 @@ const KEYS = [
   'mobile.productionSetup.versionLabel',
   'mobile.productionSetup.stageCount',
   'mobile.productionSetup.noWorkflows',
+  'mobile.production.workflow.scopeAll',
+  'mobile.production.workflow.scopeStandard',
+  'mobile.production.workflow.scopeReturn',
+  'mobile.production.workflow.scopeHint',
 ] as const;
 
 describe('workflow picker i18n', () => {

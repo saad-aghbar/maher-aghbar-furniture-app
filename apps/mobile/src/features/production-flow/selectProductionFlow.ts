@@ -19,6 +19,8 @@ export type ProductionFlowStage = {
   graphKey?: string;
   /** Snapshot / workflow node id when available (order customize). */
   snapshotNodeId?: string | null;
+  /** Executable production task for this stage (admin assign deep-link). */
+  taskId?: string | null;
   stageDefinitionId?: string | null;
   estimatedMinutes?: number | null;
   estimateReviewRequired?: boolean;
@@ -43,6 +45,12 @@ export type ProductionFlowStage = {
   attachmentCount: number;
   /** Worker completion / work photos (dealers: completed stages only from API). */
   photos: { id: string; fileName: string; mimeType: string | null }[];
+  /**
+   * Worker lane only. Admin / dealer maps leave this unset.
+   * available = assigned and can work now; assigned = theirs but waiting;
+   * foreign = not their station; done = finished.
+   */
+  workerAccess?: 'available' | 'assigned' | 'foreign' | 'done';
 };
 
 export type ProductionFlowModel = {
@@ -70,6 +78,7 @@ const ADMIN_ONLY_KEYS = [
   'actualStart',
   'actualEnd',
   'plannedEnd',
+  'taskId',
 ] as const;
 
 function asLocale(locale: string): Locale {
@@ -86,6 +95,7 @@ function emptyAdminFields(): Pick<
   | 'blockers'
   | 'notes'
   | 'attachmentCount'
+  | 'taskId'
 > {
   return {
     assignees: [],
@@ -96,6 +106,7 @@ function emptyAdminFields(): Pick<
     blockers: [],
     notes: null,
     attachmentCount: 0,
+    taskId: null,
   };
 }
 

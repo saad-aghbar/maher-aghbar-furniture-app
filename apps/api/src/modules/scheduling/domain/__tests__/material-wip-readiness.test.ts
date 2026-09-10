@@ -9,6 +9,7 @@ import {
   requirementFromNeeds,
 } from '../material-readiness';
 import { forwardSchedule } from '../schedule-planner';
+import * as schedulingCapacityUatFixtures from './scheduling-capacity-uat.fixtures';
 import { zonedLocalToUtc } from '../working-calendar';
 import {
   applyConsumeWipDependencies,
@@ -456,7 +457,7 @@ describe('planner honors consume deps without productionReadyAt', () => {
       ctx,
       eightHourCalendar,
       worker,
-    } = require('./scheduling-capacity-uat.fixtures') as typeof import('./scheduling-capacity-uat.fixtures');
+    } = schedulingCapacityUatFixtures;
     const result = forwardSchedule(
       [
         {

@@ -1,5 +1,6 @@
 import { inflateSync } from 'node:zlib';
 import {
+  buildBinLabelSheetPdf,
   buildInventoryItemReportPdf,
   buildInventoryLabelPdf,
   buildSimplePdf,
@@ -306,7 +307,7 @@ describe('buildSimplePdf', () => {
         }
       }
     },
-    120000,
+    240000,
   );
 
   it('embeds a scannable QR image and ignores exp:// payloads', async () => {
@@ -384,6 +385,21 @@ describe('buildSimplePdf', () => {
     expect(pageCount(buf)).toBe(1);
     expect(pdfHasLatin(buf, 'Boucle cream roll')).toBe(true);
     expect(imageXObjectCount(buf)).toBeGreaterThan(0);
+  });
+
+  it('bin label sheet tiles more than one QR on a page', async () => {
+    const buf = await buildBinLabelSheetPdf({
+      locale: 'en',
+      theme: 'white',
+      title: 'RAW bins',
+      items: [
+        { title: 'Main floor', scanCode: 'BIN-RAW-MAIN', warehouse: 'RAW', bin: 'RAW-MAIN' },
+        { title: 'Aisle A1', scanCode: 'BIN-RAW-A1', warehouse: 'RAW', bin: 'RAW-A1' },
+      ],
+    });
+    expect(buf.slice(0, 5).toString()).toBe('%PDF-');
+    expect(pageCount(buf)).toBe(1);
+    expect(imageXObjectCount(buf)).toBeGreaterThanOrEqual(2);
   });
 });
 

@@ -3,7 +3,8 @@
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import type { FactoryCalendarSettings } from '@/lib/scheduling';
-import { Alert, Button, Card, ErrorState, Input, PageHero, Select, Skeleton } from '@maher/ui';
+import { Alert, Button, Card, ErrorState, Input, PageHero, Select, Skeleton, TextArea } from '@maher/ui';
+import { renderWhatsAppTemplate } from '@/lib/low-stock-review';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -32,7 +33,6 @@ interface IntegrationsSettings {
   smsProvider?: string;
   aiProvider: string;
   ocrProvider: string;
-  jofotaraConfigured?: boolean;
   smtpConfigured?: boolean;
   openaiConfigured?: boolean;
   ocrLiveConfigured?: boolean;
@@ -46,12 +46,28 @@ interface IntegrationsSettings {
   mapsConfigured?: boolean;
   mapsProvider?: string;
   smtpFrom?: string;
-  jofotaraBaseUrl?: string;
 }
+
+type PurchasingWhatsAppSettings = {
+  template: string;
+  includePrices: boolean;
+  includeWarehouse: boolean;
+  includeExpectedDate: boolean;
+  signature: string;
+};
 
 type SettingsMap = Record<string, unknown> & {
   company?: CompanySettings;
   integrations?: IntegrationsSettings;
+  purchasingWhatsApp?: PurchasingWhatsAppSettings;
+};
+
+const EMPTY_WHATSAPP: PurchasingWhatsAppSettings = {
+  template: '',
+  includePrices: false,
+  includeWarehouse: false,
+  includeExpectedDate: true,
+  signature: '',
 };
 
 const PROVIDER_OPTIONS = {
@@ -69,6 +85,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [companyForm, setCompanyForm] = useState<CompanySettings | null>(null);
   const [integrationsForm, setIntegrationsForm] = useState<IntegrationsSettings | null>(null);
+  const [whatsappForm, setWhatsappForm] = useState<PurchasingWhatsAppSettings>(EMPTY_WHATSAPP);
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mfaSecret, setMfaSecret] = useState<string | null>(null);
@@ -114,6 +131,9 @@ export default function SettingsPage() {
       });
     }
     if (settingsQuery.data?.integrations) setIntegrationsForm(settingsQuery.data.integrations);
+    if (settingsQuery.data?.purchasingWhatsApp) {
+      setWhatsappForm({ ...EMPTY_WHATSAPP, ...settingsQuery.data.purchasingWhatsApp });
+    }
   }, [settingsQuery.data]);
 
   useEffect(() => {
@@ -138,6 +158,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           company: companyForm,
           integrations: integrationsForm,
+          purchasingWhatsApp: whatsappForm,
         }),
       });
     },
@@ -426,24 +447,6 @@ export default function SettingsPage() {
         <div className="maher-stagger grid gap-4 lg:grid-cols-2">
           <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold">{tc('integrationJoFotara')}</h3>
-              <span className="text-xs text-[var(--maher-text-secondary)]">
-                {configuredBadge(integrationsForm.jofotaraConfigured)}
-              </span>
-            </div>
-            <Input
-              label={tc('jofotaraBaseUrl')}
-              value={integrationsForm.jofotaraBaseUrl ?? ''}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, jofotaraBaseUrl: e.target.value })
-              }
-              dir="ltr"
-              hint={tc('integrationSecretsEnvHint')}
-            />
-          </div>
-
-          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">{tc('integrationWhatsApp')}</h3>
               <span className="text-xs text-[var(--maher-text-secondary)]">
                 {configuredBadge(integrationsForm.whatsappLiveConfigured)}
@@ -565,6 +568,77 @@ export default function SettingsPage() {
             <p className="text-xs text-[var(--maher-text-secondary)]">
               {tc('mapsProviderStatus')}: {integrationsForm.mapsProvider ?? 'nominatim'}
             </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card title={tc('purchasingWhatsApp')}>
+        <p className="mb-4 text-sm text-[var(--maher-text-secondary)]">{tc('purchasingWhatsAppHint')}</p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3">
+            <TextArea
+              label={tc('whatsappTemplate')}
+              value={whatsappForm.template}
+              onChange={(e) => setWhatsappForm({ ...whatsappForm, template: e.target.value })}
+            />
+            <p className="text-xs text-[var(--maher-text-secondary)]">{tc('templateTokens')}</p>
+            <Input
+              label={tc('signature')}
+              value={whatsappForm.signature}
+              onChange={(e) => setWhatsappForm({ ...whatsappForm, signature: e.target.value })}
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-[var(--maher-border)]"
+                checked={whatsappForm.includePrices}
+                onChange={(e) =>
+                  setWhatsappForm({ ...whatsappForm, includePrices: e.target.checked })
+                }
+              />
+              {tc('includePrices')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-[var(--maher-border)]"
+                checked={whatsappForm.includeWarehouse}
+                onChange={(e) =>
+                  setWhatsappForm({ ...whatsappForm, includeWarehouse: e.target.checked })
+                }
+              />
+              {tc('includeWarehouse')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-[var(--maher-border)]"
+                checked={whatsappForm.includeExpectedDate}
+                onChange={(e) =>
+                  setWhatsappForm({ ...whatsappForm, includeExpectedDate: e.target.checked })
+                }
+              />
+              {tc('includeExpectedDate')}
+            </label>
+          </div>
+          <div className="rounded border border-[var(--maher-border)] p-4">
+            <p className="mb-2 text-sm font-medium">{tc('whatsappPreview')}</p>
+            <pre className="whitespace-pre-wrap text-sm" dir="ltr">
+              {renderWhatsAppTemplate(
+                whatsappForm.template ||
+                  'Hello {{supplierName}}\n{{orderNumber}}\n{{lines}}\n{{total}} {{currency}}\n{{expectedDate}}\n{{companyName}}\n{{signature}}',
+                {
+                  supplierName: 'Marka',
+                  orderNumber: 'PORD-1001',
+                  lines: whatsappForm.includePrices ? 'Oak x 2 @ 12.00' : 'Oak x 2',
+                  total: '24.00',
+                  currency: companyForm.currency,
+                  expectedDate: whatsappForm.includeExpectedDate ? '2026-09-20' : '',
+                  companyName: companyForm.nameEn || companyForm.nameAr,
+                  signature: whatsappForm.signature,
+                },
+              )}
+            </pre>
           </div>
         </div>
       </Card>

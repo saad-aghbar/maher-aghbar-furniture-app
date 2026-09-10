@@ -2,6 +2,7 @@ import { localizedName } from '@maher/i18n';
 import type { OrderWorkflowGraph } from '@/api/modules/workflow';
 import type { ProductionFlowModel, ProductionFlowRole, ProductionFlowStage } from './selectProductionFlow';
 import { enforceDealerStageStrip } from './selectProductionFlow';
+import { stageNeedsTimeApproval } from '@/features/workflow/productionSetupBehavior';
 
 function asLocale(locale: string) {
   return locale === 'ar' || locale === 'he' || locale === 'en' ? locale : 'en';
@@ -66,9 +67,14 @@ export function selectProductionFlowFromWorkflowGraph(
       dependsOnCodes: dependsOnCodesForStage(stage, graph.edges),
       sortOrder: index,
       snapshotNodeId: stage.id,
+      taskId: null,
       stageDefinitionId: stage.stageDefinitionId ?? null,
       estimatedMinutes: stage.estimatedMinutes ?? null,
-      estimateReviewRequired: Boolean(stage.estimateReviewRequired) || !(stage.estimatedMinutes && stage.estimatedMinutes > 0),
+      estimateReviewRequired: stageNeedsTimeApproval({
+        code: stage.code,
+        estimateReviewRequired: stage.estimateReviewRequired,
+        estimatedMinutes: stage.estimatedMinutes,
+      }),
       photos: [],
       assignees: [],
       actualStart: null,
@@ -86,6 +92,7 @@ export function selectProductionFlowFromWorkflowGraph(
 
     return {
       ...base,
+      taskId: stage.taskId ?? null,
       assignees: stage.assignedEmployee
         ? [
             {

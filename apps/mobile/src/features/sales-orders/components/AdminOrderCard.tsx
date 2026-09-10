@@ -138,17 +138,68 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
                 dot
               />
             </View>
-            <AppText
-              variant="caption"
-              color="secondary"
-              numberOfLines={1}
-              dir="ltr"
-              style={{ letterSpacing: 0.2 }}
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.xs,
+                width: '100%',
+              }}
             >
-              {order.kind === 'rfq'
-                ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}`
-                : order.number}
-            </AppText>
+              <AppText
+                variant="caption"
+                color="secondary"
+                numberOfLines={1}
+                dir="ltr"
+                style={{ letterSpacing: 0.2, flexShrink: 1 }}
+              >
+                {order.kind === 'rfq'
+                  ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}`
+                  : order.number}
+              </AppText>
+              {order.hasReturn ? (
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    paddingStart: theme.spacing.sm + 3,
+                    paddingEnd: theme.spacing.sm,
+                    paddingVertical: 2,
+                    minHeight: 22,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.brand,
+                    backgroundColor: colors.brandSoft,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      width: 3,
+                      backgroundColor: colors.brand,
+                      ...(isRTL ? { right: 0 } : { left: 0 }),
+                    }}
+                  />
+                  <AppText
+                    variant="caption"
+                    weight={titleWeight}
+                    numberOfLines={1}
+                    style={{
+                      color: colors.brand,
+                      fontSize: 10,
+                      letterSpacing: locale === 'ar' ? 0 : 0.35,
+                      textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                    }}
+                  >
+                    {t('mobile.orders.journey.kind.returned')}
+                  </AppText>
+                </View>
+              ) : null}
+            </View>
             <AppText variant="caption" color="muted" style={{ width: '100%' }}>
               {`${t('mobile.orders.dealer')}: ${order.dealerName}`}
             </AppText>

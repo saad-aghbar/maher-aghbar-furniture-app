@@ -88,14 +88,12 @@ export type QuotationStatus =
   | 'EXPIRED'
   | 'CANCELLED';
 
-export type SalesOrderStatus =
-  | 'CONFIRMED'
-  | 'IN_PRODUCTION'
-  | 'READY_FOR_DELIVERY'
-  | 'DELIVERED'
-  | 'INVOICED'
-  | 'CLOSED'
-  | 'CANCELLED';
+export {
+  SALES_ORDER_STATUSES,
+  DELIVERED_SALES_ORDER_STATUSES,
+  isDeliveredSalesOrderStatus,
+  type SalesOrderStatus,
+} from './sales-order-status';
 
 export type ProductionOrderStatus = 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED';
 
@@ -173,7 +171,13 @@ export type {
 export { isWorkflowGraphAdminDTO } from './workflow-graph';
 
 export {
+  BIN_QR_CODE_PREFIX,
+  BIN_QR_PREFIX,
+  binScanPayload,
+  defaultBinCode,
+  formatBinQrCode,
   inventoryScanPayload,
+  parseBinScanCode,
   parseWipScanCode,
   printableScanCode,
   WIP_KIT_QR_PREFIX,
@@ -185,19 +189,30 @@ export {
 export {
   OPENING_STAGE_CODE,
   LOCKED_ANCHOR_STAGE_CODES,
+  PROTECTED_STAGE_CODES,
+  RECOVERY_STAGE_CODE,
   TERMINAL_STAGE_CODES,
   classifyDealerLifecycle,
   dealerLifecycleLabelKey,
   isConfirmReceiptVisible,
   isLockedAnchorStageCode,
+  isLockedAnchorStageCodeForScope,
   isLogisticsStage,
   isOpeningStageCode,
+  isProtectedStageCode,
+  isRecoveryStageCode,
+  isReturnWorkflowScope,
   isTerminalStageCode,
+  lockedAnchorStageCodesForScope,
+  workflowGraphChainRequirements,
   mapConfirmReceiptErrorCode,
   type DealerLifecycleInput,
   type DealerLifecycleTab,
   type LockedAnchorStageCode,
   type OpeningStageCode,
+  type ProductionWorkflowScope,
+  type ProtectedStageCode,
+  type RecoveryStageCode,
   type TerminalStageCode,
 } from './dealer-lifecycle';
 

@@ -5,6 +5,7 @@ import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -23,12 +24,16 @@ import {
 } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import type { ProductionDateMode, ProductionListBucket } from './api';
+import type { ProductionDateMode, ProductionDayFocus, ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
 import { ProductionDealerSheet } from './components/ProductionDealerSheet';
 import { ProductionDayLensBoard } from './components/ProductionDayLensBoard';
 import { ProductionDayOrderCard } from './components/ProductionDayOrderCard';
 import { ProductionOrderCard } from './components/ProductionOrderCard';
+import {
+  originFocusToParam,
+  type OriginFocus,
+} from './components/OriginFocusBar';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
 import { deviceLocalTodayYmd } from './factoryLocalDay';
 import {
@@ -38,10 +43,11 @@ import {
   useProductionOrdersInfiniteQuery,
   useProductionSummaryQuery,
 } from './query';
+import { productionHubOrderHref } from './productionHubOrderHref';
 import { selectProductionCard } from './selectProduction';
 import { boardCountForBucket, productionListItemsForBoard } from './boardLaneList';
 
-type MetricAccent = 'brand' | 'info' | 'success' | 'late' | 'warning';
+type MetricAccent = 'brand' | 'success' | 'late' | 'warning';
 
 type MetricKey =
   | 'needs_setup'
@@ -76,7 +82,12 @@ export function ProductionOverviewScreen() {
   const { showOfflineBanner } = useNetwork();
   const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
   const router = useRouter();
-  const params = useLocalSearchParams<{ bucket?: string; section?: string; quality?: string }>();
+  const params = useLocalSearchParams<{
+    bucket?: string;
+    section?: string;
+    quality?: string;
+    origin?: string;
+  }>();
   const listRef = useRef<FlatList>(null);
   /** Stagger enter only on first paint — filter swaps remount rows and must stay opaque. */
   const [staggerListEnter, setStaggerListEnter] = useState(true);
@@ -89,6 +100,9 @@ export function ProductionOverviewScreen() {
   })();
 
   const [bucket, setBucket] = useState<ProductionListBucket>(initialBucket);
+  const [origin, setOrigin] = useState<OriginFocus>(
+    params.origin === 'normal' || params.origin === 'returned' ? params.origin : 'all',
+  );
   const [searchInput, setSearchInput] = useState('');
   const [q, setQ] = useState('');
   const [dealerId, setDealerId] = useState<string | null>(null);
@@ -96,6 +110,7 @@ export function ProductionOverviewScreen() {
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
   const [onDate, setOnDate] = useState(deviceLocalTodayYmd());
   const [dateMode, setDateMode] = useState<ProductionDateMode>('planned');
+  const [dayFocus, setDayFocus] = useState<ProductionDayFocus | null>(null);
   const [dateScope, setDateScope] = useState<'day' | 'all'>('day');
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [factoryTodayYmd, setFactoryTodayYmd] = useState(deviceLocalTodayYmd());
@@ -105,7 +120,12 @@ export function ProductionOverviewScreen() {
     if (raw && BOARD_BUCKETS.has(raw)) {
       setBucket(raw as ProductionListBucket);
     }
-  }, [params.bucket, params.section, params.quality]);
+    if (params.origin === 'normal' || params.origin === 'returned') {
+      setOrigin(params.origin);
+    } else {
+      setOrigin('all');
+    }
+  }, [params.bucket, params.section, params.quality, params.origin]);
 
   // Pick up newly seeded production.workflow.* grants without forcing a full reinstall.
   useEffect(() => {
@@ -122,13 +142,16 @@ export function ProductionOverviewScreen() {
     return () => clearTimeout(id);
   }, [searchInput, q]);
 
-  const summaryQuery = useProductionSummaryQuery(allowed);
+  const originParam = originFocusToParam(origin);
+  const summaryQuery = useProductionSummaryQuery(allowed, originParam);
   const daySummaryQuery = useProductionDaySummaryQuery(
     {
       onDate,
       dateMode,
       bucket,
       customerId: dealerId ?? undefined,
+      origin: originParam,
+      dayFocus: dateScope === 'day' ? dayFocus ?? undefined : undefined,
     },
     allowed && dateScope === 'day',
   );
@@ -140,6 +163,8 @@ export function ProductionOverviewScreen() {
       customerId: dealerId ?? undefined,
       onDate: dateScope === 'day' ? onDate : undefined,
       dateMode: dateScope === 'day' ? dateMode : undefined,
+      origin: originParam,
+      dayFocus: dateScope === 'day' ? dayFocus ?? undefined : undefined,
     },
     allowed,
   );
@@ -275,7 +300,7 @@ export function ProductionOverviewScreen() {
           key: 'on_floor',
           label: t('mobile.production.onFloor'),
           value: boardCounts.onFloor,
-          accent: 'info',
+          accent: 'brand',
         },
       ]
     : null;
@@ -305,7 +330,7 @@ export function ProductionOverviewScreen() {
         data={listItems}
         keyExtractor={(item) => item.id}
         style={{ opacity: isFilterUpdating && !listQuery.isPlaceholderData ? 0.72 : 1 }}
-        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${selectedLaneCount}:${isFilterUpdating}`}
+        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${dayFocus ?? ''}:${origin ?? ''}:${selectedLaneCount}:${isFilterUpdating}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: listBottomPad,
@@ -346,22 +371,37 @@ export function ProductionOverviewScreen() {
               dateScope={dateScope}
               onDate={onDate}
               dateMode={dateMode}
+              dayFocus={dayFocus}
               factoryTodayYmd={factoryTodayYmd}
               summary={daySummaryQuery.data ?? null}
+              origin={origin}
+              onChangeOrigin={(next) => {
+                setStaggerListEnter(false);
+                setOrigin(next);
+                router.setParams({ origin: next === 'all' ? '' : next });
+                listRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }}
               onChangeScope={(scope) => {
                 setStaggerListEnter(false);
                 setDateScope(scope);
+                if (scope === 'all') setDayFocus(null);
                 listRef.current?.scrollToOffset({ offset: 0, animated: false });
               }}
               onChangeDate={(ymd) => {
                 setStaggerListEnter(false);
                 setDateScope('day');
                 setOnDate(ymd);
+                if (ymd !== factoryTodayYmd) setDayFocus(null);
                 listRef.current?.scrollToOffset({ offset: 0, animated: false });
               }}
               onChangeMode={(mode) => {
                 setStaggerListEnter(false);
                 setDateMode(mode);
+                listRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }}
+              onChangeDayFocus={(focus) => {
+                setStaggerListEnter(false);
+                setDayFocus(focus);
                 listRef.current?.scrollToOffset({ offset: 0, animated: false });
               }}
               calendarOpen={calendarOpen}
@@ -487,8 +527,8 @@ export function ProductionOverviewScreen() {
                     weight={titleWeight}
                     style={{
                       color: colors.brand,
-                      letterSpacing: locale === 'ar' ? 0 : 0.55,
-                      textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                      letterSpacing: locale === 'en' ? 0.55 : 0,
+                      textTransform: locale === 'en' ? 'uppercase' : 'none',
                       fontSize: 10,
                       lineHeight: 12,
                     }}
@@ -538,6 +578,13 @@ export function ProductionOverviewScreen() {
                 ...orderBoardShadow(colorScheme),
               }}
             >
+              <PrimaryButton
+                label={t('mobile.tasks.problemsTitle')}
+                onPress={() => {
+                  void haptics.selection();
+                  router.push('/(app)/(admin)/production/problems' as Href);
+                }}
+              />
               <ProductionDealerBar
                 label={dealerLabel}
                 onPress={() => setDealerSheetOpen(true)}
@@ -575,8 +622,12 @@ export function ProductionOverviewScreen() {
                       ? t('mobile.production.emptyBody')
                       : dateScope === 'all'
                         ? t('mobile.production.emptyBody')
-                        : dateMode === 'planned'
-                          ? t('mobile.production.dayLens.emptyPlanned')
+                    : dateMode === 'planned'
+                      ? dayFocus === 'late_missed'
+                        ? t('mobile.production.dayLens.emptyLateMissed')
+                        : dayFocus === 'at_risk'
+                          ? t('mobile.production.dayLens.emptyAtRisk')
+                          : t('mobile.production.dayLens.emptyPlanned')
                           : daySummaryQuery.data?.isFuture
                             ? t('mobile.production.dayLens.emptyActualFuture')
                             : t('mobile.production.dayLens.emptyActual')
@@ -602,12 +653,14 @@ export function ProductionOverviewScreen() {
           const openOrder = () => {
             void haptics.selection();
             const soId = item.salesOrder?.id ?? card.salesOrderId;
-            const released = Boolean(item.releasedToFactoryAt);
-            if ((!released || bucket === 'needs_setup') && soId) {
-              router.push(`/(app)/(admin)/orders/${soId}/production-plan` as Href);
-              return;
-            }
-            router.push(`/(app)/(admin)/production/${item.id}` as Href);
+            router.push(
+              productionHubOrderHref({
+                id: item.id,
+                salesOrderId: soId,
+                releasedToFactoryAt: item.releasedToFactoryAt ?? card.releasedToFactoryAt,
+                originType: item.originType,
+              }) as Href,
+            );
           };
           return (
             <ListItemEnter index={index} enabled={staggerListEnter}>
@@ -649,8 +702,8 @@ function ProductionHubTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold
         align="center"
         style={{
           color: colors.brand,
-          letterSpacing: locale === 'ar' ? 0 : 0.55,
-          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'en' ? 0.55 : 0,
+          textTransform: locale === 'en' ? 'uppercase' : 'none',
           fontSize: 10,
         }}
       >
@@ -690,28 +743,22 @@ function MetricRow({
     >
       {items.map((item) => {
         const isSelected = selected === item.key;
-        const tint =
+            const tint =
           item.accent === 'late'
             ? colors.error
             : item.accent === 'success'
               ? colors.success
-              : item.accent === 'info'
-                ? colors.info
-                : item.accent === 'warning'
-                  ? colors.warning
-                  : item.accent === 'brand'
-                    ? colors.brand
-                    : colors.brand;
+              : item.accent === 'warning'
+                ? colors.warning
+                : colors.brand;
         const soft =
           item.accent === 'late'
             ? colors.errorSoft
             : item.accent === 'success'
               ? colors.successSoft
-              : item.accent === 'info'
-                ? colors.infoSoft
-                : item.accent === 'warning'
-                  ? colors.warningSoft
-                  : colors.brandSoft;
+              : item.accent === 'warning'
+                ? colors.warningSoft
+                : colors.brandSoft;
 
         return (
           <AnimatedPressable
@@ -768,8 +815,8 @@ function MetricRow({
                 color: isSelected ? tint : colors.textMuted,
                 fontSize: 10,
                 lineHeight: 13,
-                letterSpacing: locale === 'ar' ? 0 : 0.35,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                letterSpacing: 0,
+                textTransform: 'none',
               }}
             >
               {item.label}

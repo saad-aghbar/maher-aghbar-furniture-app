@@ -10,8 +10,8 @@ import { Prisma, SalesOrderStatus } from '@maher/database';
 import { parseManufacturingComplexity, rollupOrderType, type AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { paginatedMeta } from '../../common/dto/pagination.dto';
-import { assertCustomerOwns } from '../../common/helpers/customer-scope';
+import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
+import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
 import { mapProgressForDealer } from '../../common/helpers/dealer-progress.util';
 import {
   mapWorkflowStageAdmin,
@@ -30,7 +30,15 @@ import {
   type MaterialCostMap,
   type OrderCostResult,
 } from '../../common/helpers/order-costing.util';
-import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import { ListReturnWorkDto, ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import { summarizePieces } from '../contracts/return-case-aggregate';
+import {
+  isPendingReturnLifecycle,
+  productionOriginLabel,
+  productionOriginWhere,
+  PRODUCTION_RETURN_REQUEST_SELECT,
+  returnWorkKind,
+} from '../production/production-origin';
 import {
   classifyAdminOrderJourneyBucket,
   emptyJourneyCounts,
@@ -498,6 +506,12 @@ export class SalesOrdersService {
                 productId: true,
               },
             },
+            returns: {
+              select: { id: true, number: true, lifecycleState: true },
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+            },
+            _count: { select: { returns: true } },
           },
           orderBy,
         })
@@ -509,10 +523,17 @@ export class SalesOrdersService {
     const journeyBucket = !isDealer ? query.journeyBucket : undefined;
 
     const facets = journeyLight
-      ? crossFilterOrderFacets(journeyLight, {
-          journeyBucket: journeyBucket ?? null,
-          orderType,
-        })
+      ? crossFilterOrderFacets(
+          journeyLight.map((row) => ({
+            ...row,
+            hasReturn: row._count.returns > 0,
+          })),
+          {
+            journeyBucket: journeyBucket ?? null,
+            orderType,
+            returned: query.returned === true,
+          },
+        )
       : null;
 
     const journeyCounts = facets?.journeyCounts ?? emptyJourneyCounts();
@@ -632,6 +653,12 @@ export class SalesOrdersService {
               productionSetup: {
                 select: { status: true, releasedAt: true },
               },
+              returns: {
+                select: { id: true, number: true, lifecycleState: true, reason: true },
+                orderBy: { createdAt: 'desc' },
+                take: 5,
+              },
+              _count: { select: { returns: true } },
               deliveries: {
                 select: {
                   id: true,
@@ -828,9 +855,22 @@ export class SalesOrdersService {
             })
           : null;
 
+        const pendingReturn = (row.returns ?? []).find((r) =>
+          isPendingReturnLifecycle(r.lifecycleState),
+        );
+        const returnPick = pendingReturn ?? row.returns?.[0] ?? null;
         const base = stripSalesOrderCosts(
           {
             ...row,
+            hasReturn: (row._count?.returns ?? 0) > 0,
+            hasPendingReturn: Boolean(pendingReturn),
+            returnSummary: returnPick
+              ? {
+                  id: returnPick.id,
+                  number: returnPick.number,
+                  lifecycleState: returnPick.lifecycleState,
+                }
+              : null,
             quotation: row.quotation
               ? {
                   ...row.quotation,
@@ -898,9 +938,167 @@ export class SalesOrdersService {
           ? {
               journeyCounts,
               ...(orderTypeCounts ? { orderTypeCounts } : {}),
+              ...(facets ? { returned: facets.returned } : {}),
             }
           : {}),
       },
+    };
+  }
+
+  async listReturnWork(query: ListReturnWorkDto, user?: AuthUser) {
+    const originWhere = productionOriginWhere('returned');
+    const scoped = customerScopeFilter(user);
+    const q = String(query.q ?? '').trim();
+    const staffCustomerId = !user?.customerId && query.customerId ? query.customerId : undefined;
+    const where: Prisma.ProductionOrderWhereInput = {
+      ...(originWhere ?? {}),
+      ...(scoped.customerId ? { customerId: scoped.customerId } : {}),
+      ...(staffCustomerId ? { customerId: staffCustomerId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { number: { contains: q, mode: 'insensitive' } },
+              { productDescription: { contains: q, mode: 'insensitive' } },
+              { returnRequest: { number: { contains: q, mode: 'insensitive' } } },
+              {
+                returnRequest: {
+                  salesOrder: { number: { contains: q, mode: 'insensitive' } },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const [totalItems, rows] = await this.prisma.$transaction([
+      this.prisma.productionOrder.count({ where }),
+      this.prisma.productionOrder.findMany({
+        where,
+        select: {
+          id: true,
+          number: true,
+          originType: true,
+          status: true,
+          quantity: true,
+          productDescription: true,
+          requiredDeliveryDate: true,
+          plannedStartDate: true,
+          createdAt: true,
+          releasedToFactoryAt: true,
+          customerId: true,
+          returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+    ]);
+
+    const customerIds = [
+      ...new Set(rows.map((row) => row.customerId).filter((id): id is string => Boolean(id))),
+    ];
+    const customers =
+      customerIds.length > 0
+        ? await this.prisma.customer.findMany({
+            where: { id: { in: customerIds } },
+            select: {
+              id: true,
+              name: true,
+              nameAr: true,
+              nameEn: true,
+              nameHe: true,
+              code: true,
+            },
+          })
+        : [];
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        number: row.number,
+        kind: returnWorkKind(row.originType),
+        originType: row.originType,
+        originLabel: productionOriginLabel(row.originType),
+        status: row.status,
+        quantity: row.quantity,
+        productDescription: row.productDescription,
+        requiredDeliveryDate: row.requiredDeliveryDate,
+        plannedStartDate: row.plannedStartDate,
+        createdAt: row.createdAt,
+        releasedToFactoryAt: row.releasedToFactoryAt,
+        customer: row.customerId ? customerById.get(row.customerId) ?? null : null,
+        returnRequest: row.returnRequest
+          ? {
+              id: row.returnRequest.id,
+              number: row.returnRequest.number,
+              lifecycleState: row.returnRequest.lifecycleState,
+            }
+          : null,
+        originalOrder: row.returnRequest?.salesOrder ?? null,
+      })),
+      meta: paginatedMeta(page, pageSize, totalItems),
+    };
+  }
+
+  async listReturnedCases(query: ListReturnWorkDto, user?: AuthUser) {
+    const scoped = customerScopeFilter(user);
+    const q = String(query.q ?? '').trim();
+    const staffCustomerId = !user?.customerId && query.customerId ? query.customerId : undefined;
+    const where: Prisma.ReturnRequestWhereInput = {
+      ...(scoped.customerId ? { customerId: scoped.customerId } : {}),
+      ...(staffCustomerId ? { customerId: staffCustomerId } : {}),
+      approvalStatus: { not: 'REJECTED' },
+      ...(q
+        ? {
+            OR: [
+              { number: { contains: q, mode: 'insensitive' } },
+              { productDesc: { contains: q, mode: 'insensitive' } },
+              { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
+              { customer: { name: { contains: q, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const [totalItems, rows] = await this.prisma.$transaction([
+      this.prisma.returnRequest.count({ where }),
+      this.prisma.returnRequest.findMany({
+        where,
+        include: {
+          customer: {
+            select: { id: true, name: true, nameAr: true, nameEn: true, nameHe: true, code: true },
+          },
+          salesOrder: { select: { id: true, number: true } },
+          pieces: {
+            select: { state: true, decision: true, outboundEligible: true, productDesc: true },
+            orderBy: { pieceNo: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+    ]);
+    return {
+      data: rows.map((row) => {
+        const pieceSummary = summarizePieces(row.pieces);
+        return {
+          id: row.id,
+          number: row.number,
+          kind: 'returnCase',
+          lifecycleState: row.lifecycleState,
+          productDescription: row.productDesc,
+          quantity: row.pieces.length || Number(row.quantity),
+          createdAt: row.createdAt,
+          customer: row.customer,
+          originalOrder: row.salesOrder,
+          pieceSummary,
+          progressPercent: pieceSummary.progressPercent,
+        };
+      }),
+      meta: paginatedMeta(page, pageSize, totalItems),
     };
   }
 
@@ -1262,6 +1460,7 @@ export class SalesOrdersService {
     if (
       !user?.customerId &&
       useSetup &&
+      !order.plannedCostFrozenAt &&
       (!storedOk || Math.abs((storedMfg ?? 0) - setupPrice!) > 0.009)
     ) {
       await this.prisma.salesOrder.update({

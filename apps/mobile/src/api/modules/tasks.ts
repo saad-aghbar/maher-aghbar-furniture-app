@@ -83,6 +83,9 @@ export type TaskListItem = {
       nameHe?: string | null;
     } | null;
     salesOrder?: { id: string; number: string } | null;
+    returnRequestId?: string | null;
+    returnPieceId?: string | null;
+    originType?: string | null;
   };
   stageDefinition?: {
     id?: string;
@@ -94,7 +97,19 @@ export type TaskListItem = {
     /** PRODUCTION | QUALITY | LOGISTICS */
     executionKind?: string | null;
   } | null;
-  blockers?: Array<{ id: string; reason: string; resolvedAt?: string | null }>;
+  blockers?: Array<{
+    id: string;
+    category?: string;
+    reason: string;
+    resolvedAt?: string | null;
+    resolution?: string | null;
+    createdAt?: string | null;
+    resolutionAt?: string | null;
+    voiceDocumentId?: string | null;
+    photoDocumentIds?: string[];
+    resolutionVoiceDocumentId?: string | null;
+    resolutionPhotoDocumentIds?: string[];
+  }>;
 };
 
 export type TaskDetail = TaskListItem & {
@@ -118,6 +133,9 @@ export type TaskDetail = TaskListItem & {
   /** Prefer snapshot requiresPhotos when present on detail payload. */
   requiresPhotos?: boolean;
   isRework?: boolean;
+  canCarryOver?: boolean;
+  leftoverRemainingMinutes?: number;
+  carryOverAllowsOvertime?: boolean;
 };
 
 export type TaskListFilters = PageParams & {
@@ -147,6 +165,92 @@ export async function listTasks(filters: TaskListFilters = {}) {
 
 export async function listCompletedDealers() {
   return apiGet<{ data: CompletedDealerOption[] }>('/tasks/completed-dealers');
+}
+
+export type WorkerTaskLock =
+  | { kind: 'open' }
+  | { kind: 'needs_receive'; fromStageName: string }
+  | { kind: 'locked'; reason: 'PREDECESSOR_NOT_COMPLETE'; waitingOnStageName: string }
+  | { kind: 'done' };
+
+export type WorkerOrderLaneNode = {
+  id: string;
+  kind: 'task' | 'context';
+  taskId: string | null;
+  assignedToMe: boolean;
+  stageCode: string;
+  stageName: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  status: string;
+  sortOrder: number;
+  dependsOnIds: string[];
+  dependsOnCodes: string[];
+  dependsOnNames: string[];
+  lockState: WorkerTaskLock;
+  plannedStart: string | null;
+  plannedCompletion: string | null;
+  estimatedMinutes?: number | null;
+  elapsedMinutes?: number;
+  actualSeconds?: number;
+  openStartedAt?: string | null;
+};
+
+export type MyOrderSegment = 'open' | 'today' | 'active';
+
+export type WorkerMyOrder = {
+  id: string;
+  number: string;
+  salesOrderNumber: string | null;
+  externalOrderNumber?: string | null;
+  status: string;
+  quantity: string | number | null;
+  productDescription: string | null;
+  product: {
+    id: string;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  } | null;
+  productImageUrl: string | null;
+  dealer?: {
+    code?: string | null;
+    name?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    companyName?: string | null;
+  } | null;
+  assignedStages?: Array<{
+    code: string;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  }>;
+  priority: string;
+  deadline: string | null;
+  myTaskCount: number;
+  actionableCount: number;
+  blockedCount: number;
+};
+
+export type WorkerOrderWorkflow = WorkerMyOrder & {
+  lane: WorkerOrderLaneNode[];
+};
+
+export async function listMyOrders(segment: MyOrderSegment = 'open', q?: string) {
+  const qs = new URLSearchParams({ segment });
+  const needle = q?.trim();
+  if (needle) qs.set('q', needle);
+  return apiGet<{ data: WorkerMyOrder[] }>(`/tasks/my-orders?${qs.toString()}`);
+}
+
+export async function getMyOrderWorkflow(productionOrderId: string) {
+  return apiGet<WorkerOrderWorkflow>(
+    `/tasks/my-orders/${encodeURIComponent(productionOrderId)}/workflow`,
+  );
 }
 
 export async function getTask(id: string) {
@@ -204,6 +308,8 @@ export type TaskMaterialUsageLine = {
   isExtra?: boolean;
   issueWarehouseId?: string | null;
   returnWarehouseId?: string | null;
+  issueLocationId?: string | null;
+  returnLocationId?: string | null;
   issueWarehouse?: {
     id: string;
     code: string;
@@ -247,6 +353,8 @@ export type TaskMaterialIdentifyResult =
       returnedQty: number;
       scrapQty: number;
       usageId: string | null;
+      warehouses?: TaskMaterialUsageWarehouse[];
+      suggestedWarehouseId?: string | null;
     }
   | {
       status: 'WRONG';
@@ -265,6 +373,8 @@ export type TaskMaterialIdentifyResult =
       imageUrl: string | null;
       unit: string;
       message: string;
+      warehouses?: TaskMaterialUsageWarehouse[];
+      suggestedWarehouseId?: string | null;
     }
   | { status: 'NOT_FOUND'; code: string };
 
@@ -294,6 +404,8 @@ export async function saveTaskMaterialUsage(
     sku?: string;
     issueWarehouseId?: string | null;
     returnWarehouseId?: string | null;
+    issueLocationId?: string | null;
+    returnLocationId?: string | null;
   }>,
 ) {
   return apiPut<TaskMaterialUsageLine[]>(
@@ -304,7 +416,13 @@ export async function saveTaskMaterialUsage(
 
 export async function blockTask(
   id: string,
-  body: { category: TaskBlockerCategory; reason: string; idempotencyKey?: string },
+  body: {
+    category: TaskBlockerCategory;
+    reason: string;
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
+    idempotencyKey?: string;
+  },
 ) {
   return apiPost<TaskDetail>(`/tasks/${encodeURIComponent(id)}/block`, body);
 }
@@ -498,6 +616,8 @@ export type TaskWipOutputPiece = {
 export type TaskWipOutput = {
   producesSemiFinished: boolean;
   expectedPieceCount: number;
+  expectedKitCount?: number;
+  piecesPerKit?: number;
   requiresPhotos: boolean;
   kitId: string | null;
   qrCode: string | null;
@@ -518,6 +638,13 @@ export type TaskWipOutput = {
     nameHe: string | null;
   }>;
   pieces: TaskWipOutputPiece[];
+  expectedPieces?: Array<{
+    index: number;
+    label: string;
+    nameEn?: string;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  }>;
 };
 
 export async function getTaskWipOutput(taskId: string) {
@@ -526,7 +653,7 @@ export async function getTaskWipOutput(taskId: string) {
 
 export async function addTaskWipPiece(
   taskId: string,
-  body: { photoDocumentId: string; label?: string | null },
+  body: { photoDocumentId: string; label?: string | null; expectedIndex?: number | null },
 ) {
   return apiPost<TaskWipOutput>(
     `/tasks/${encodeURIComponent(taskId)}/wip-output/pieces`,

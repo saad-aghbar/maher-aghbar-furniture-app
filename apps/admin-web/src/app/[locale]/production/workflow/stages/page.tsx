@@ -12,7 +12,14 @@ import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { stageLabel } from '@/lib/workflow-labels';
-import { isLockedAnchorStageCode, OPENING_STAGE_CODE, TERMINAL_STAGE_CODES } from '@maher/types';
+import { isQualityGateStageCode } from '@/lib/workflow-terminal';
+import {
+  isLockedAnchorStageCode,
+  isProtectedStageCode,
+  isRecoveryStageCode,
+  OPENING_STAGE_CODE,
+  TERMINAL_STAGE_CODES,
+} from '@maher/types';
 import {
   Alert,
   Button,
@@ -154,9 +161,12 @@ export default function WorkflowStageLibraryPage() {
   const finishing = TERMINAL_STAGE_CODES.map(
     (code) => filtered.find((row) => row.code === code) ?? null,
   );
-  const production = filtered.filter((row) => !isLockedAnchorStageCode(row.code));
+  const recovery = filtered.find((row) => isRecoveryStageCode(row.code)) ?? null;
+  const production = filtered.filter(
+    (row) => !isLockedAnchorStageCode(row.code) && !isRecoveryStageCode(row.code),
+  );
   const filters: Filter[] = ['all', 'inspection', 'photos'];
-  const lockedEditing = editing ? isLockedAnchorStageCode(editing.code) : false;
+  const lockedEditing = editing ? isProtectedStageCode(editing.code) : false;
 
   function openRow(row: StageRow) {
     setEditing(row);
@@ -254,6 +264,23 @@ export default function WorkflowStageLibraryPage() {
             </section>
           ) : null}
 
+          {recovery ? (
+            <section className="space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-text-primary">{t('workflow.recoverySection')}</h2>
+                <p className="text-xs text-text-secondary">{t('workflow.recoveryHint')}</p>
+              </div>
+              <div className="max-w-xl">
+                <StageGalleryTile
+                  row={recovery}
+                  locked
+                  caption={t('workflow.alwaysAvailable')}
+                  onClick={() => openRow(recovery)}
+                />
+              </div>
+            </section>
+          ) : null}
+
           <section className="space-y-3">
             <div>
               <h2 className="text-sm font-semibold text-text-primary">{t('workflow.productionSection')}</h2>
@@ -331,7 +358,11 @@ export default function WorkflowStageLibraryPage() {
                 <Button
                   loading={updateMutation.isPending}
                   onClick={() => {
-                    const hours = edit.hours.trim() ? Number(edit.hours) : undefined;
+                    const hours = isQualityGateStageCode(editing.code)
+                      ? 0
+                      : edit.hours.trim()
+                        ? Number(edit.hours)
+                        : undefined;
                     updateMutation.mutate({
                       id: editing.id,
                       body: {
@@ -363,7 +394,11 @@ export default function WorkflowStageLibraryPage() {
                     loading={updateMutation.isPending}
                     disabled={!edit.nameEn.trim() || !edit.nameAr.trim()}
                     onClick={() => {
-                      const hours = edit.hours.trim() ? Number(edit.hours) : undefined;
+                      const hours = isQualityGateStageCode(editing.code)
+                        ? 0
+                        : edit.hours.trim()
+                          ? Number(edit.hours)
+                          : undefined;
                       updateMutation.mutate({
                         id: editing.id,
                         body: {
@@ -391,7 +426,12 @@ export default function WorkflowStageLibraryPage() {
           ) : null
         }
       >
-        <CreateStageForm value={edit} onChange={setEdit} lockNames={lockedEditing} />
+        <CreateStageForm
+          value={edit}
+          onChange={setEdit}
+          lockNames={lockedEditing}
+          stageCode={editing?.code}
+        />
       </WorkflowDrawer>
 
       <ConfirmDialog

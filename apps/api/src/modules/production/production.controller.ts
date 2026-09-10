@@ -207,6 +207,7 @@ export class ProductionController {
 
   @RequireAnyPermissions(
     'production-order.assign',
+    'schedule.manage',
     'production.workflow.manage',
     'production.workflow.stage.manage',
   )
@@ -249,6 +250,16 @@ export class ProductionController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.planSetup.putPlanSetup(id, dto, user);
+  }
+
+  @RequireAnyPermissions(
+    'production-order.update',
+    'production.setup.edit',
+    'production-order.assign',
+  )
+  @Post(':id/plan-setup/resync')
+  resyncPlanSetup(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.planSetup.resyncPlanFromCatalog(id, user);
   }
 
   @RequirePermissions('production-order.update')

@@ -8,11 +8,17 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
+import {
+  locationsForWarehouse,
+  WarehouseBinStrip,
+} from '@/features/inventory/components/WarehouseBinBoard';
+import { pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
+  coerceSetupConsumeSemi,
   coerceSetupProduceKind,
   deriveSetupBehavior,
   produceKindFromBehavior,
@@ -46,6 +52,14 @@ type Props = {
     nameHe?: string | null;
     type: string;
     isDefault: boolean;
+    locations?: Array<{
+      id: string;
+      code: string;
+      name?: string | null;
+      isDefault?: boolean;
+      isActive?: boolean;
+      qrCode?: string | null;
+    }>;
   }>;
   bomLines?: Array<{
     sku: string;
@@ -346,6 +360,7 @@ export function ProductionStageSetupSheet({
     { key: 'p0', nameEn: '', nameAr: '', nameHe: '' },
   ]);
   const [warehouseId, setWarehouseId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [consumeIds, setConsumeIds] = useState<string[]>([]);
   const [materialInputs, setMaterialInputs] = useState<Array<{ sku: string; qtyPerUnit: number }>>(
     [],
@@ -372,11 +387,10 @@ export function ProductionStageSetupSheet({
       (Boolean(stage.consumesRawMaterials) || stage.behavior === 'USES_MATERIALS');
     setConsumeRaw(wantMaterials);
     const wantSemi =
-      mode === 'delivery'
+      mode === 'delivery' || mode === 'inspection'
         ? false
         : canTakeSemi &&
-          (mode === 'inspection' ||
-            mode === 'packaging' ||
+          (mode === 'packaging' ||
             Boolean(stage.consumesSemiFinished) ||
             stage.behavior === 'USES_SEMI_FINISHED' ||
             stage.behavior === 'USES_AND_PRODUCES');
@@ -507,7 +521,7 @@ export function ProductionStageSetupSheet({
           style={{ flex: 1 }}
           contentContainerStyle={{
             gap: theme.spacing.md,
-            paddingBottom: theme.spacing.xl,
+            paddingBottom: 120,
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -847,7 +861,57 @@ export function ProductionStageSetupSheet({
           />
 
           <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
-            {isDelivery ? (
+            {isInspection ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceSecondary,
+                  padding: theme.spacing.md,
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: theme.spacing.md,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.brandSoft,
+                      borderWidth: 1,
+                      borderColor: colors.brand,
+                    }}
+                  >
+                    <Ionicons name="eye-outline" size={20} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <AppText
+                      variant="body"
+                      weight="semibold"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t('production.setup.inspectionTakesNothingTitle')}
+                    </AppText>
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t('production.setup.inspectionTakesInHint')}
+                    </AppText>
+                  </View>
+                </View>
+              </View>
+            ) : isDelivery ? (
               <View
                 style={{
                   borderRadius: theme.radius.lg,
@@ -926,15 +990,13 @@ export function ProductionStageSetupSheet({
               </View>
             ) : canTakeSemi ? (
               <>
-                {isInspection || isPackaging ? (
+                {isPackaging ? (
                   <AppText
                     variant="caption"
                     color="muted"
                     style={{ textAlign: isRTL ? 'right' : 'left' }}
                   >
-                    {isInspection
-                      ? t('production.setup.inspectionTakesInHint')
-                      : t('production.setup.packagingTakesInHint')}
+                    {t('production.setup.packagingTakesInHint')}
                   </AppText>
                 ) : (
                   <StageToggleRow
@@ -946,7 +1008,7 @@ export function ProductionStageSetupSheet({
                   />
                 )}
 
-                {effectiveConsumeSemi || isInspection || isPackaging ? (
+                {effectiveConsumeSemi || isPackaging ? (
                   <View
                     style={{
                       borderRadius: theme.radius.lg,
@@ -1444,25 +1506,41 @@ export function ProductionStageSetupSheet({
                 icon="flash-outline"
                 title={t('production.setup.warehouseAutomatic')}
                 hint={t('production.setup.warehouseAutomaticHint')}
-                onPress={() => setWarehouseId('')}
-              />
-              <ScrollView
-                nestedScrollEnabled
-                style={{ maxHeight: 260 }}
-                contentContainerStyle={{ gap: theme.spacing.sm }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {typedWarehouses.map((w) => (
-                  <ChoiceCard
-                    key={w.id}
-                    active={warehouseId === w.id}
-                    icon="home-outline"
-                    title={`${localizedName(locale, w)}${w.isDefault ? ' ★' : ''}`}
-                    hint={w.type.replace(/_/g, ' ')}
-                    onPress={() => setWarehouseId(w.id)}
+                    onPress={() => setWarehouseId('')}
                   />
-                ))}
-              </ScrollView>
+                  <ScrollView
+                    nestedScrollEnabled
+                    style={{ maxHeight: 260 }}
+                    contentContainerStyle={{ gap: theme.spacing.sm }}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {typedWarehouses.map((w) => (
+                      <ChoiceCard
+                        key={w.id}
+                        active={warehouseId === w.id}
+                        icon="home-outline"
+                        title={`${localizedName(locale, w)}${w.isDefault ? ' ★' : ''}`}
+                        hint={w.type.replace(/_/g, ' ')}
+                        onPress={() => {
+                          setWarehouseId(w.id);
+                          setLocationId(pickDefaultLocationId(locationsForWarehouse(w)));
+                        }}
+                      />
+                    ))}
+                  </ScrollView>
+                  {warehouseId ? (
+                    <WarehouseBinStrip
+                      locations={locationsForWarehouse(
+                        typedWarehouses.find((w) => w.id === warehouseId),
+                      )}
+                      selectedId={pickDefaultLocationId(
+                        locationsForWarehouse(typedWarehouses.find((w) => w.id === warehouseId)),
+                        locationId,
+                      )}
+                      onSelect={setLocationId}
+                      label={t('production.setup.warehouseBin')}
+                    />
+                  ) : null}
             </View>
           </View>
         ) : null}
@@ -1485,14 +1563,14 @@ export function ProductionStageSetupSheet({
             onPress={() => {
               const mode = terminalSetupMode(stage.stageCode);
               const nextProduce = coerceSetupProduceKind(produce, stage.stageCode);
-              const nextConsumeRaw = mode === 'inspection' || mode === 'delivery' ? false : consumeRaw;
-              // Inspection / Packaging: when upstream SEMI exists, force take-in on.
+              const nextConsumeRaw =
+                mode === 'inspection' || mode === 'delivery' ? false : consumeRaw;
               const forceSemi =
-                mode === 'delivery'
+                mode === 'delivery' || mode === 'inspection'
                   ? false
-                  : (mode === 'inspection' || mode === 'packaging') && canTakeSemi
+                  : mode === 'packaging' && canTakeSemi
                     ? true
-                    : canTakeSemi && consumeSemi;
+                    : coerceSetupConsumeSemi(canTakeSemi && consumeSemi, stage.stageCode);
               const nextBehavior = deriveSetupBehavior({
                 consumeRaw: nextConsumeRaw,
                 consumeSemi: forceSemi,
@@ -1536,9 +1614,10 @@ export function ProductionStageSetupSheet({
                   consumeWorkflowNodeIds.push(row.workflowNodeId);
                 }
               }
-              // Auto-select all upstream when Inspection/Packaging force SEMI and none picked.
+              // Auto-select all upstream when Packaging forces SEMI and none picked.
               if (
                 effectiveSemi &&
+                mode === 'packaging' &&
                 consumeOutputIds.length === 0 &&
                 consumeWorkflowNodeIds.length === 0 &&
                 upstream.length

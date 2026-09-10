@@ -15,6 +15,7 @@ import type {
   WorkerCandidate,
 } from './types';
 import { listEligibleWorkers } from './worker-assignment';
+import { isMilestoneStage } from './milestone';
 import type { WorkingCalendar } from './working-calendar';
 
 export function resourceCapacityKey(stageDefinitionId: string, slot: number): string {
@@ -105,6 +106,38 @@ function maxDate(dates: Array<Date | null | undefined>): Date {
   return max;
 }
 
+function placeMilestone(args: {
+  order: PlannerOrderInput;
+  stage: PlannerOrderInput['stages'][number];
+  instant: Date;
+  calendar: WorkingCalendar;
+}): PlannedAllocation {
+  const { order, stage, instant, calendar } = args;
+  const gate = calendar.nextWorkingInstant(instant);
+  return {
+    orderId: order.id,
+    stageCode: stage.code,
+    stageDefinitionId: stage.stageDefinitionId,
+    productionTaskId: stage.productionTaskId ?? null,
+    stageInstanceId: stage.stageInstanceId ?? null,
+    resourceType: 'EMPLOYEE',
+    employeeId: null,
+    departmentCode: stage.departmentCode,
+    plannedStart: gate,
+    plannedEnd: gate,
+    estimatedMinutes: 0,
+    isPinned: !!stage.isPinned,
+    resourceSlot: null,
+  };
+}
+
+function stageIsMilestone(stage: PlannerOrderInput['stages'][number]): boolean {
+  return Boolean(stage.isMilestone) || isMilestoneStage({
+    code: stage.code,
+    estimatedMinutes: stage.estimatedMinutes,
+  });
+}
+
 function placeForwardStage(args: {
   order: PlannerOrderInput;
   stage: PlannerOrderInput['stages'][number];
@@ -115,6 +148,10 @@ function placeForwardStage(args: {
   horizon: Date;
 }): PlannedAllocation | null {
   const { order, stage, earliestStart, calendar, workers, capacity, horizon } = args;
+
+  if (stageIsMilestone(stage) && !(stage.isPinned && stage.pinnedStart && stage.pinnedEnd)) {
+    return placeMilestone({ order, stage, instant: earliestStart, calendar });
+  }
 
   if (stage.isPinned && stage.pinnedStart && stage.pinnedEnd) {
     const { eligible } = placementCandidates(stage, workers, capacity);
@@ -296,6 +333,14 @@ function placeBackwardStage(args: {
   notBefore: Date;
 }): PlannedAllocation | null {
   const { order, stage, latestEnd, calendar, workers, capacity, notBefore } = args;
+
+  if (stageIsMilestone(stage) && !(stage.isPinned && stage.pinnedStart && stage.pinnedEnd)) {
+    const instant = calendar.previousWorkingInstant(latestEnd);
+    const gate = instant.getTime() < notBefore.getTime()
+      ? calendar.nextWorkingInstant(notBefore)
+      : instant;
+    return placeMilestone({ order, stage, instant: gate, calendar });
+  }
 
   if (stage.isPinned && stage.pinnedStart && stage.pinnedEnd) {
     const { eligible } = placementCandidates(stage, workers, capacity);

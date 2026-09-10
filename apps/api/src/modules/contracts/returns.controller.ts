@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   NotFoundException,
@@ -26,48 +27,123 @@ import { Prisma, ReturnReason, ReturnResolution } from '@maher/database';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { roundMoney } from '../../common/helpers/money.util';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { InventoryService } from '../inventory/inventory.service';
-import { ProductionReworkService } from '../production/production-rework.service';
-
-/** Pack one or many storage keys into the existing String column (JSON array when >1). */
-function packPhotoKeys(keys: Array<string | null | undefined>): string | null {
-  const clean = keys
-    .map((k) => (typeof k === 'string' ? k.trim() : ''))
-    .filter(Boolean);
-  if (!clean.length) return null;
-  if (clean.length === 1) return clean[0]!;
-  return JSON.stringify(clean);
-}
-
-/** Unpack legacy single key or JSON array of keys. */
-function unpackPhotoKeys(raw: string | null | undefined): string[] {
-  if (!raw?.trim()) return [];
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
-          .map((s) => s.trim());
-      }
-    } catch {
-      /* fall through — treat as literal key */
-    }
-  }
-  return [trimmed];
-}
+import { ManufacturingCostService } from '../production/manufacturing-cost.service';
+import { ReturnsService } from './returns.service';
+import { ReturnLifecycleState, ReturnResponsibility } from '@maher/database';
+import { approvedReturnResolution } from './return-lifecycle';
+import { packPhotoKeys, unpackPhotoKeys } from '../../common/helpers/photo-keys.util';
+import { ReturnPieceService } from './return-piece.service';
+import { summarizePieces } from './return-case-aggregate';
+import { ReturnInspectionResult, ReturnRecoveryOutcome } from '@maher/database';
 
 const RETURN_INCLUDE = {
   customer: true,
+  product: {
+    select: {
+      id: true,
+      sku: true,
+      nameAr: true,
+      nameEn: true,
+      nameHe: true,
+      imageUrl: true,
+    },
+  },
+  salesOrderLine: {
+    select: {
+      id: true,
+      description: true,
+      quantity: true,
+      productId: true,
+      product: {
+        select: {
+          id: true,
+          sku: true,
+          nameAr: true,
+          nameEn: true,
+          nameHe: true,
+          imageUrl: true,
+        },
+      },
+    },
+  },
+  workOrders: {
+    select: {
+      id: true,
+      number: true,
+      originType: true,
+      status: true,
+      releasedToFactoryAt: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 5,
+  },
   delivery: { select: { id: true, number: true, status: true } },
+  reshipDeliveries: {
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      purpose: true,
+      deliveryDate: true,
+      deliveryAddress: true,
+      notes: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 5,
+  },
+  pieces: {
+    include: {
+      product: {
+        select: { id: true, sku: true, nameAr: true, nameEn: true, nameHe: true, imageUrl: true },
+      },
+      salesOrder: { select: { id: true, number: true } },
+      productionOrder: {
+        select: {
+          id: true,
+          number: true,
+          originType: true,
+          status: true,
+          progressPercent: true,
+          releasedToFactoryAt: true,
+        },
+      },
+      recoveryOrder: {
+        select: {
+          id: true,
+          number: true,
+          originType: true,
+          status: true,
+          progressPercent: true,
+          releasedToFactoryAt: true,
+        },
+      },
+      inventoryLot: {
+        select: { id: true, status: true, qrCode: true, warehouseId: true, locationId: true },
+      },
+      recoveryLines: { orderBy: { recordedAt: 'asc' as const } },
+    },
+    orderBy: { pieceNo: 'asc' as const },
+  },
+  chargeInvoices: {
+    where: { status: { not: 'CANCELLED' }, archivedAt: null },
+    select: {
+      id: true,
+      number: true,
+      total: true,
+      status: true,
+      outstandingAmount: true,
+      dueDate: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 5,
+  },
   salesOrder: {
     include: {
       lines: {
@@ -99,6 +175,10 @@ class CreateReturnDto {
   @IsUUID()
   salesOrderId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  salesOrderLineId?: string;
+
   /** Optional link to the outbound delivery this return refers to. */
   @IsOptional()
   @IsUUID()
@@ -107,10 +187,11 @@ class CreateReturnDto {
   @IsString()
   productDesc!: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0.001)
-  quantity!: number;
+  quantity?: number;
 
   @IsEnum(ReturnReason)
   reason!: ReturnReason;
@@ -138,16 +219,20 @@ class CreateReturnDto {
   @IsArray()
   @IsString({ each: true })
   issuePhotoKeys?: string[];
+
+  @IsOptional()
+  @IsArray()
+  items?: Array<{ salesOrderLineId?: string; quantity: number }>;
 }
 
 class ResolveReturnDto {
   @IsIn(['APPROVED', 'REJECTED', 'NEED_INFO'])
   approvalStatus!: 'APPROVED' | 'REJECTED' | 'NEED_INFO';
 
-  /** On APPROVED: REPAIR or REPLACEMENT (default REPLACEMENT). Not applied as stock. */
+  /** On APPROVED: REPAIR or REPLACEMENT (default REPLACEMENT). CREDIT_NOTE/REFUND are blocked. */
   @IsOptional()
-  @IsIn(['REPAIR', 'REPLACEMENT', 'CREDIT_NOTE', 'REFUND'])
-  resolution?: 'REPAIR' | 'REPLACEMENT' | 'CREDIT_NOTE' | 'REFUND';
+  @IsIn(['REPAIR', 'REPLACEMENT'])
+  resolution?: 'REPAIR' | 'REPLACEMENT';
 
   @IsOptional()
   @IsString()
@@ -177,8 +262,9 @@ export class ReturnsController {
     private readonly sequences: SequenceService,
     private readonly storage: LocalStorageService,
     private readonly notifications: NotificationsService,
-    private readonly inventory: InventoryService,
-    private readonly rework: ProductionReworkService,
+    private readonly returns: ReturnsService,
+    private readonly manufacturingCost: ManufacturingCostService,
+    private readonly pieces: ReturnPieceService,
   ) {}
 
   private photoUrl(key: string | null | undefined): string | null {
@@ -199,9 +285,12 @@ export class ReturnsController {
         product?: { id?: string; imageUrl?: string | null } | null;
       }>;
     } | null;
+    salesOrderLine?: {
+      product?: { id?: string; imageUrl?: string | null } | null;
+    } | null;
+    product?: { id?: string; imageUrl?: string | null } | null;
   }>(row: T) {
-    const firstLine = row.salesOrder?.lines?.[0];
-    const product = firstLine?.product;
+    const product = row.product ?? row.salesOrderLine?.product ?? row.salesOrder?.lines?.[0]?.product;
     const productImageUrl = product?.imageUrl?.trim() || null;
     const { reasonPhotoKey, issuePhotoKey, ...rest } = row;
     const reasonKeys = unpackPhotoKeys(reasonPhotoKey);
@@ -222,11 +311,14 @@ export class ReturnsController {
       issuePhotoUrls,
       productImageUrl,
       productId: product?.id ?? null,
+      pieceSummary: summarizePieces(('pieces' in row && Array.isArray((row as { pieces?: unknown[] }).pieces)
+        ? (row as { pieces: Array<{ state?: string; decision?: string; outboundEligible?: boolean }> }).pieces
+        : [])),
     };
   }
 
   @Get()
-  @RequirePermissions('sales-order.read')
+  @RequireAnyPermissions('return.read', 'sales-order.read')
   async list(@Query() query: ListReturnsDto, @CurrentUser() user: AuthUser) {
     const q = query.q?.trim();
     const and: Prisma.ReturnRequestWhereInput[] = [];
@@ -289,7 +381,7 @@ export class ReturnsController {
   }
 
   @Post()
-  @RequirePermissions('sales-order.read')
+  @RequireAnyPermissions('return.create', 'sales-order.read')
   async create(@Body() dto: CreateReturnDto, @CurrentUser() user: AuthUser) {
     const customerId = user.customerId ?? dto.customerId;
     if (!customerId) {
@@ -314,6 +406,39 @@ export class ReturnsController {
         });
       }
     }
+
+    const items = (dto.items ?? []).filter((item) => Number(item.quantity) > 0);
+    const derivedQty = items.length
+      ? items.reduce((sum, item) => sum + Math.max(1, Math.round(Number(item.quantity) || 0)), 0)
+      : Number(dto.quantity ?? 0);
+    if (!(derivedQty > 0)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'quantity or items[] is required.',
+      });
+    }
+    if (items.length) {
+      for (const item of items) {
+        await this.returns.assertReturnQuantity({
+          customerId,
+          salesOrderId: dto.salesOrderId,
+          salesOrderLineId: item.salesOrderLineId ?? dto.salesOrderLineId,
+          quantity: Math.max(1, Math.round(Number(item.quantity) || 0)),
+        });
+      }
+    } else {
+      await this.returns.assertReturnQuantity({
+        customerId,
+        salesOrderId: dto.salesOrderId,
+        salesOrderLineId: dto.salesOrderLineId,
+        quantity: derivedQty,
+      });
+    }
+    const identity = await this.returns.resolveLineAndProduct({
+      customerId,
+      salesOrderId: dto.salesOrderId,
+      salesOrderLineId: items[0]?.salesOrderLineId ?? dto.salesOrderLineId,
+    });
 
     if (dto.deliveryId) {
       const delivery = await this.prisma.delivery.findFirst({
@@ -347,24 +472,42 @@ export class ReturnsController {
         number,
         customerId,
         salesOrderId: dto.salesOrderId,
+        salesOrderLineId: identity.salesOrderLineId,
+        productId: identity.productId,
+        sourceProductionOrderId: identity.sourceProductionOrderId,
         deliveryId: dto.deliveryId,
         productDesc: dto.productDesc,
-        quantity: roundMoney(dto.quantity),
+        quantity: roundMoney(derivedQty),
         reason: dto.reason,
         description: dto.description,
         reasonPhotoKey: reasonPacked,
         issuePhotoKey: issuePacked,
         approvalStatus: 'PENDING',
         physicalStatus: 'NONE',
+        lifecycleState: ReturnLifecycleState.REQUESTED,
         inventoryFate: 'PENDING',
       },
       include: RETURN_INCLUDE,
     });
-    return this.enrichReturn(created);
+    await this.pieces.materializePieces(
+      created.id,
+      items.length
+        ? items.map((item) => ({
+            salesOrderLineId: item.salesOrderLineId ?? dto.salesOrderLineId,
+            quantity: Math.max(1, Math.round(Number(item.quantity) || 0)),
+            productDesc: dto.productDesc,
+          }))
+        : undefined,
+    );
+    const withPieces = await this.prisma.returnRequest.findUniqueOrThrow({
+      where: { id: created.id },
+      include: RETURN_INCLUDE,
+    });
+    return this.enrichReturn(withPieces);
   }
 
   @Get(':id')
-  @RequirePermissions('sales-order.read')
+  @RequireAnyPermissions('return.read', 'sales-order.read')
   async getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const row = await this.prisma.returnRequest.findFirst({
       where: { id, ...customerScopeFilter(user) },
@@ -394,7 +537,110 @@ export class ReturnsController {
     if (!row) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
     }
-    return this.enrichReturn(row);
+    const reworkCost = await this.manufacturingCost.summaryForReturn(id, user);
+    return { ...this.enrichReturn(row), reworkCost };
+  }
+
+  @Get(':id/capabilities')
+  @RequireAnyPermissions('return.read', 'sales-order.read')
+  capabilities(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pieces.capabilities(id, user);
+  }
+
+  @Get(':id/pieces')
+  @RequireAnyPermissions('return.read', 'sales-order.read')
+  listPieces(@Param('id') id: string) {
+    return this.pieces.listForReturn(id);
+  }
+
+  @Post(':id/decisions')
+  @RequireAnyPermissions('return.inspect', 'return.work', 'sales-order.update')
+  async decidePieces(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      items: Array<{
+        pieceId: string;
+        decision: 'REPAIR' | 'REPLACEMENT' | 'SCRAP_RECOVERY';
+        inspectionNotes?: string;
+        workflowId?: string;
+      }>;
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.pieces.decidePieces(id, user, body ?? { items: [] });
+    const decided = await this.prisma.returnRequest.findUniqueOrThrow({
+      where: { id: row.id },
+      include: RETURN_INCLUDE,
+    });
+    await this.notifyDealerReturn(decided.customerId, 'RETURN_DECISION', decided.number, decided.id);
+    if (decided.workOrders.length) {
+      await this.notifyDealerReturn(
+        decided.customerId,
+        'RETURN_WORK_STARTED',
+        decided.number,
+        decided.id,
+      );
+    }
+    return this.enrichReturn(decided);
+  }
+
+  @Post(':id/pieces/:pid/recovery-lines')
+  @RequireAnyPermissions('return.inspect', 'return.recovery.post', 'sales-order.update')
+  recordRecoveryLine(
+    @Param('id') id: string,
+    @Param('pid') pid: string,
+    @Body()
+    body: {
+      productionTaskId?: string;
+      inventoryItemId?: string;
+      label: string;
+      quantity: number;
+      unit?: string;
+      condition?: ReturnInspectionResult;
+      outcome: ReturnRecoveryOutcome;
+      destinationWarehouseId?: string;
+      destinationLocationId?: string;
+      unitCost?: number;
+      notes?: string;
+      photoKeys?: string[];
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    void id;
+    return this.pieces.recordRecoveryLine(pid, user, body);
+  }
+
+  @Post(':id/recovery-lines/:lid/post')
+  @RequireAnyPermissions('return.recovery.post', 'return.inspect', 'sales-order.update')
+  postRecoveryLine(@Param('lid') lid: string, @CurrentUser() user: AuthUser) {
+    return this.pieces.postRecoveryLine(lid, user);
+  }
+
+  @Patch(':id/recovery-lines/:lid')
+  @RequireAnyPermissions('return.inspect', 'return.recovery.post', 'sales-order.update')
+  updateRecoveryLine(
+    @Param('lid') lid: string,
+    @Body()
+    body: {
+      inventoryItemId?: string | null;
+      label?: string;
+      quantity?: number;
+      unit?: string;
+      outcome?: ReturnRecoveryOutcome;
+      destinationWarehouseId?: string;
+      destinationLocationId?: string | null;
+      notes?: string;
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.pieces.updateRecoveryLine(lid, user, body);
+  }
+
+  @Delete(':id/recovery-lines/:lid')
+  @RequireAnyPermissions('return.inspect', 'return.recovery.post', 'sales-order.update')
+  deleteRecoveryLine(@Param('lid') lid: string, @CurrentUser() user: AuthUser) {
+    return this.pieces.deleteRecoveryLine(lid, user);
   }
 
   /**
@@ -402,7 +648,7 @@ export class ReturnsController {
    * APPROVED sets WAITING_RETURN — does NOT quarantine stock (receive does).
    */
   @Patch(':id/resolve')
-  @RequirePermissions('sales-order.update')
+  @RequireAnyPermissions('return.approve', 'sales-order.update')
   async resolve(
     @Param('id') id: string,
     @Body() body: ResolveReturnDto,
@@ -421,9 +667,8 @@ export class ReturnsController {
       const updated = await this.prisma.returnRequest.update({
         where: { id },
         data: {
-          approvalStatus: 'REJECTED',
+          ...this.returns.applyState(existing.lifecycleState, ReturnLifecycleState.REJECTED),
           resolution: ReturnResolution.REJECTED,
-          physicalStatus: existing.physicalStatus === 'NONE' ? 'NONE' : existing.physicalStatus,
         },
         include: RETURN_INCLUDE,
       });
@@ -447,23 +692,14 @@ export class ReturnsController {
     }
 
     // APPROVED — no quarantine; wait for physical receive.
-    const resolution =
-      body.resolution === 'REPAIR'
-        ? ReturnResolution.REPAIR
-        : body.resolution === 'CREDIT_NOTE'
-          ? ReturnResolution.CREDIT_NOTE
-          : body.resolution === 'REFUND'
-            ? ReturnResolution.REFUND
-            : body.resolution === 'REPLACEMENT'
-              ? ReturnResolution.REPLACEMENT
-              : ReturnResolution.REPLACEMENT;
+    // CREDIT_NOTE / REFUND stay readable on existing rows but cannot be opened here.
+    const resolution = approvedReturnResolution(body.resolution) as ReturnResolution;
 
     const updated = await this.prisma.returnRequest.update({
       where: { id },
       data: {
-        approvalStatus: 'APPROVED',
+        ...this.returns.applyState(existing.lifecycleState, ReturnLifecycleState.APPROVED),
         resolution,
-        physicalStatus: 'WAITING_RETURN',
         inventoryFate: 'PENDING',
         needInfoNote: null,
       },
@@ -493,7 +729,7 @@ export class ReturnsController {
   }
 
   @Patch(':id/need-info')
-  @RequirePermissions('sales-order.update')
+  @RequireAnyPermissions('return.approve', 'sales-order.update')
   async needInfo(
     @Param('id') id: string,
     @Body() body: NeedInfoDto,
@@ -511,60 +747,33 @@ export class ReturnsController {
    * Idempotent when already received.
    */
   @Post(':id/receive')
-  @RequirePermissions('sales-order.update')
-  async receive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+  @RequireAnyPermissions('return.receive', 'sales-order.update')
+  async receive(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      pieceIds?: string[];
+      receivedQuantity?: number;
+      receivedCondition?: string;
+      receivedLocationId?: string;
+      warehouseId?: string;
+      receivedNotes?: string;
+      photoKeys?: string[];
+    } = {},
+    @CurrentUser() user: AuthUser,
+  ) {
     const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
     }
 
-    if (existing.receivedAt || existing.physicalStatus === 'RETURNED') {
-      const row = await this.prisma.returnRequest.findUniqueOrThrow({
-        where: { id },
-        include: RETURN_INCLUDE,
-      });
-      return this.enrichReturn(row);
-    }
-
-    if (existing.approvalStatus !== 'APPROVED') {
-      throw new BadRequestException({
-        code: 'RETURN_NOT_APPROVED',
-        message: 'Return must be approved before physical receive.',
-      });
-    }
-
-    try {
-      await this.inventory.quarantineReturn(
-        existing.id,
-        existing.salesOrderId,
-        Number(existing.quantity),
-        user.id,
-      );
-    } catch (err) {
-      if (err instanceof BadRequestException) throw err;
-      throw err;
-    }
-
-    const updated = await this.prisma.returnRequest.update({
-      where: { id },
-      data: {
-        receivedAt: new Date(),
-        receivedById: user.id,
-        physicalStatus: 'RETURNED',
-      },
-      include: RETURN_INCLUDE,
-    });
-    await this.prisma.auditEvent.create({
-      data: {
-        userId: user.id,
-        action: 'return.receive',
-        entityType: 'ReturnRequest',
-        entityId: id,
-        newValues: {
-          physicalStatus: 'RETURNED',
-          receivedAt: updated.receivedAt?.toISOString() ?? null,
-        },
-      },
+    const updated = await this.pieces.receivePieces(id, user, {
+      pieceIds: body.pieceIds,
+      receivedCondition: body.receivedCondition,
+      conditionNotes: body.receivedNotes,
+      photoKeys: body.photoKeys,
+      warehouseId: body.warehouseId,
+      locationId: body.receivedLocationId,
     });
     await this.notifications
       .notifyCustomerUsers(updated.customerId, {
@@ -573,156 +782,167 @@ export class ReturnsController {
         linkUrl: `/returns/${updated.id}`,
       })
       .catch(() => undefined);
-    return this.enrichReturn(updated);
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id }, include: RETURN_INCLUDE }),
+    );
   }
 
-  @Patch(':id/inventory-fate')
-  @RequirePermissions('sales-order.update')
-  async setInventoryFate(
+  @Post(':id/mark-sent')
+  @RequireAnyPermissions('return.create', 'return.receive', 'sales-order.read')
+  async markSent(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const updated = await this.returns.markInTransit(id, user);
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/inspect')
+  @RequireAnyPermissions('return.inspect', 'sales-order.update')
+  async inspect(
+    @Param('id') id: string,
+    @Body() body: { notes?: string; responsibility?: ReturnResponsibility },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const updated = await this.returns.inspect(id, user, body ?? {});
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/ready-to-return')
+  @RequireAnyPermissions('return.inspect', 'return.work', 'sales-order.update')
+  async markReadyToReturn(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    await this.pieces.markCaseReady(id, user);
+    const updated = await this.returns.markReadyToReturn(id);
+    const ready = await this.prisma.returnRequest.findUniqueOrThrow({
+      where: { id: updated.id },
+      include: RETURN_INCLUDE,
+    });
+    await this.notifyDealerReturn(ready.customerId, 'RETURN_READY', ready.number, ready.id);
+    return this.enrichReturn(ready);
+  }
+
+  @Post(':id/cancel')
+  @RequireAnyPermissions('return.inspect', 'return.work', 'sales-order.update')
+  async cancelReturn(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const row = await this.pieces.cancelCase(id, user);
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: row.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/pieces/:pid/cancel')
+  @RequireAnyPermissions('return.inspect', 'return.work', 'sales-order.update')
+  async cancelPiece(
+    @Param('id') id: string,
+    @Param('pid') pid: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.pieces.cancelPiece(id, pid, user);
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: row.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/reship')
+  @RequireAnyPermissions('return.work', 'delivery.update', 'sales-order.update')
+  async scheduleReship(
+    @Param('id') id: string,
+    @Body() body: { address?: string; notes?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const result = await this.returns.scheduleReship(id, user, body ?? {});
+    const row = await this.prisma.returnRequest.findUnique({
+      where: { id },
+      select: { customerId: true, number: true },
+    });
+    if (row) {
+      await this.notifyDealerReturn(
+        row.customerId,
+        'RETURN_RESHIP_SCHEDULED',
+        row.number,
+        id,
+        { delivery: result.delivery.number },
+      );
+    }
+    return result;
+  }
+
+  @Patch(':id/responsibility')
+  @RequireAnyPermissions('return.inspect', 'sales-order.update')
+  async setResponsibility(
     @Param('id') id: string,
     @Body()
     body: {
-      inventoryFate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
-      reentryStageInstanceId?: string;
-      notes?: string;
+      responsibility: ReturnResponsibility;
+      dealerAmount?: number;
+      factoryAmount?: number;
+      chargeAmount?: number;
     },
     @CurrentUser() user: AuthUser,
   ) {
-    if (!['RETURN_TO_STOCK', 'REWORK', 'DAMAGED', 'SCRAP'].includes(body.inventoryFate)) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid inventory fate.',
-      });
-    }
-    const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
-    if (!existing) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
-    }
-    if (!existing.receivedAt && existing.physicalStatus !== 'RETURNED') {
-      throw new BadRequestException({
-        code: 'RETURN_NOT_RECEIVED',
-        message: 'Inspect / fate only after physical receive.',
-      });
-    }
-    await this.applyReturnFate(id, body.inventoryFate, user.id, {
-      stageInstanceId: body.reentryStageInstanceId,
-      notes: body.notes,
-    });
-    await this.prisma.auditEvent.create({
-      data: {
-        userId: user.id,
-        action: 'return.fate',
-        entityType: 'ReturnRequest',
-        entityId: id,
-        newValues: { inventoryFate: body.inventoryFate },
-      },
-    });
-    const row = await this.prisma.returnRequest.findUniqueOrThrow({
-      where: { id },
-      include: RETURN_INCLUDE,
-    });
-    return this.enrichReturn(row);
+    const updated = await this.returns.setResponsibility(id, user, body);
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
+    );
   }
 
-  /**
-   * Create a new ProductionOrder for REPLACEMENT — never mutates the original PO.
-   * Requires approved + received return with resolution REPLACEMENT (sets if missing).
-   */
-  @Post(':id/create-replacement')
-  @RequirePermissions('sales-order.update')
-  async createReplacement(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+  @Post(':id/charge/send')
+  @RequireAnyPermissions('return.inspect', 'sales-order.update')
+  async sendCharge(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const updated = await this.returns.sendCharge(id, user);
+    await this.notifyDealerReturn(updated.customerId, 'RETURN_CHARGE_PROPOSED', updated.number, id, {
+      amount: String(updated.chargeAmount ?? ''),
+    });
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/charge/respond')
+  @RequireAnyPermissions('return.read', 'return.inspect', 'sales-order.read')
+  async respondCharge(
+    @Param('id') id: string,
+    @Body() body: { accept: boolean; note?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const updated = await this.returns.respondCharge(id, user, body ?? { accept: false });
+    if (!body?.accept) {
+      await this.notifications
+        .notifyAdminUsers({
+          templateCode: 'RETURN_CHARGE_REJECTED',
+          vars: {
+            number: updated.number,
+            note: updated.chargeRejectionNote ?? '',
+          },
+          linkUrl: `/returns/${id}`,
+        })
+        .catch(() => undefined);
+    }
+    return this.enrichReturn(
+      await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
+    );
+  }
+
+  @Post(':id/charge')
+  @RequireAnyPermissions('return.inspect', 'invoice.create', 'sales-order.update')
+  async chargeDealer(
+    @Param('id') id: string,
+    @Body() body: { amount?: number; description?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const charged = await this.returns.chargeDealer(id, user, body ?? {});
     const row = await this.prisma.returnRequest.findUnique({
       where: { id },
-      include: {
-        salesOrder: {
-          include: {
-            lines: { orderBy: { sortOrder: 'asc' }, take: 1 },
-            productionOrders: {
-              where: {
-                OR: [
-                  { notes: { contains: `REPLACEMENT — ${id}` } },
-                  { productDescription: { contains: 'REPLACEMENT —' } },
-                ],
-              },
-              take: 5,
-            },
-          },
-        },
-      },
+      select: { customerId: true, number: true },
     });
-    if (!row) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
-    }
-    if (row.approvalStatus !== 'APPROVED') {
-      throw new BadRequestException({
-        code: 'RETURN_NOT_APPROVED',
-        message: 'Return must be approved before creating a replacement PO.',
+    if (row) {
+      await this.notifyDealerReturn(row.customerId, 'RETURN_CHARGED', row.number, id, {
+        invoice: charged.invoice.number,
+        total: String(charged.invoice.total ?? body.amount ?? ''),
       });
     }
-    if (!row.receivedAt && row.physicalStatus !== 'RETURNED') {
-      throw new BadRequestException({
-        code: 'RETURN_NOT_RECEIVED',
-        message: 'Receive the return before creating a replacement production order.',
-      });
-    }
-    if (!row.salesOrderId || !row.salesOrder) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Return has no sales order to attach a replacement PO.',
-      });
-    }
-
-    const label = `REPLACEMENT — ${row.number}`;
-    const existingPo = await this.prisma.productionOrder.findFirst({
-      where: {
-        salesOrderId: row.salesOrderId,
-        OR: [
-          { notes: { contains: label } },
-          { productDescription: { contains: label } },
-          { notes: { contains: `REPLACEMENT — ${id}` } },
-        ],
-      },
-    });
-    if (existingPo) {
-      return { productionOrder: existingPo, created: false };
-    }
-
-    if (row.resolution !== ReturnResolution.REPLACEMENT) {
-      await this.prisma.returnRequest.update({
-        where: { id },
-        data: { resolution: ReturnResolution.REPLACEMENT },
-      });
-    }
-
-    const line = row.salesOrder.lines[0];
-    const poNumber = await this.sequences.next('PO', 'PO');
-    const productionOrder = await this.prisma.productionOrder.create({
-      data: {
-        number: poNumber,
-        salesOrderId: row.salesOrderId,
-        salesOrderLineId: line?.id,
-        customerId: row.customerId,
-        productId: line?.productId ?? undefined,
-        productDescription: `${label} — ${row.productDesc}`,
-        quantity: row.quantity,
-        status: 'PLANNED',
-        createdById: user.id,
-        notes: `${label}; returnId=${id}; original return ${row.number}`,
-      },
-    });
-    await this.prisma.auditEvent.create({
-      data: {
-        userId: user.id,
-        action: 'return.replacement-po',
-        entityType: 'ReturnRequest',
-        entityId: id,
-        newValues: {
-          productionOrderId: productionOrder.id,
-          productionOrderNumber: productionOrder.number,
-        },
-      },
-    });
-    return { productionOrder, created: true };
+    return charged;
   }
 
   private async applyNeedInfo(id: string, needInfoNote: string, user: AuthUser) {
@@ -736,7 +956,10 @@ export class ReturnsController {
     const updated = await this.prisma.returnRequest.update({
       where: { id },
       data: {
-        approvalStatus: 'NEED_INFO',
+        ...this.returns.applyState(
+          (await this.prisma.returnRequest.findUnique({ where: { id } }))?.lifecycleState,
+          ReturnLifecycleState.NEED_INFO,
+        ),
         needInfoNote: note,
       },
       include: RETURN_INCLUDE,
@@ -760,28 +983,20 @@ export class ReturnsController {
     return this.enrichReturn(updated);
   }
 
-  private async applyReturnFate(
+  private async notifyDealerReturn(
+    customerId: string,
+    templateCode: string,
+    number: string,
     returnId: string,
-    fate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP',
-    userId: string,
-    opts?: { stageInstanceId?: string; notes?: string },
+    extra: Record<string, string> = {},
   ) {
-    await this.inventory.resolveReturnFate(returnId, fate, userId);
-    if (fate !== 'REWORK') return;
-    const row = await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: returnId } });
-    const created = await this.rework.createForReturn({
-      returnId,
-      salesOrderId: row.salesOrderId,
-      description: opts?.notes || `Customer return ${row.number}`,
-      userId,
-    });
-    if (opts?.stageInstanceId) {
-      await this.rework.startRework({
-        reworkId: created.id,
-        stageInstanceId: opts.stageInstanceId,
-        notes: opts.notes,
-        userId,
-      });
-    }
+    await this.notifications
+      .notifyCustomerUsers(customerId, {
+        templateCode,
+        vars: { number, ...extra },
+        linkUrl: `/returns/${returnId}`,
+      })
+      .catch(() => undefined);
   }
+
 }

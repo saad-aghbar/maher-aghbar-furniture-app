@@ -119,6 +119,8 @@ export type ListMyDeliveriesParams = {
   scope?: 'open' | 'completed' | 'all';
   status?: string;
   q?: string;
+  dealerId?: string;
+  warehouseId?: string;
   page?: number;
   pageSize?: number;
 };
@@ -139,6 +141,8 @@ export function listMyDeliveries(params: ListMyDeliveriesParams = {}) {
       scope: params.scope ?? 'open',
       status: params.status,
       q: params.q,
+      dealerId: params.dealerId,
+      warehouseId: params.warehouseId,
       page: params.page ?? 1,
       pageSize: params.pageSize ?? 40,
     })}`,

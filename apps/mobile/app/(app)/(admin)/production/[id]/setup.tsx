@@ -40,6 +40,14 @@ export default function AdminProductionSetupRedirect() {
     );
   }
 
+  const returnOrigin =
+    po?.originType === 'RETURN_WORK' || po?.originType === 'REPLACEMENT';
+  if (!released && !soId && returnOrigin) {
+    return (
+      <Redirect href={`/(app)/(admin)/production/${String(id ?? '')}/plan` as Href} />
+    );
+  }
+
   return (
     <Redirect href={`/(app)/(admin)/production/${String(id ?? '')}` as Href} />
   );

@@ -184,8 +184,7 @@ function progressForRecent(daysAgoCreated: number, rng: Rng): {
       priority: Priority.HIGH,
     };
   }
-  if (roll < 0.9) return { soStatus: SalesOrderStatus.DELIVERED, progress: 100, priority: Priority.NORMAL };
-  return { soStatus: SalesOrderStatus.COMPLETED, progress: 100, priority: Priority.NORMAL };
+  return { soStatus: SalesOrderStatus.DELIVERED, progress: 100, priority: Priority.NORMAL };
 }
 
 function productionStatusFor(progress: number): ProductionOrderStatus {
@@ -339,7 +338,7 @@ async function ensureFactoryCalendar(prisma: PrismaClient) {
         workingWeekdays: DEFAULT_WORKING_WEEKDAYS,
         shiftStart: '08:00',
         shiftEnd: '16:00',
-        breaks: [{ start: '12:00', end: '13:00' }] as unknown as Prisma.InputJsonValue,
+        breaks: [{ start: '12:00', end: '12:30' }] as unknown as Prisma.InputJsonValue,
         isDefault: true,
       },
     });

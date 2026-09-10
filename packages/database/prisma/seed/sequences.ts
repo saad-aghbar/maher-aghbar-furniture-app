@@ -17,6 +17,8 @@ export async function seedSequences(prisma: PrismaClient) {
     'task',
     'contract',
     'return_request',
+    'spay',
+    'sinv',
   ];
 
   for (const key of keys) {

@@ -1,12 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import {
+  buildInspectionDealerDetails,
+  buildManufacturingSpecForFloor,
   isQcFailResult,
   isQcPassResult,
   recommendReworkStage,
   type QualityTimelineEvent,
 } from './quality-floor';
 import { pieceLabelsFromJson, pieceLabelsFromMetadata } from '../production/piece-labels';
+import { QualityInspectionService } from './quality-inspection.service';
+import {
+  compositionFromIncomingPieces,
+  resolveExpectedPackages,
+} from './prior-stage-packages';
 
 function personName(
   u: { firstName?: string | null; lastName?: string | null; username?: string | null } | null | undefined,
@@ -18,7 +25,10 @@ function personName(
 
 @Injectable()
 export class QualityFloorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inspections: QualityInspectionService,
+  ) {}
 
   async listEligibleReworkStages(productionOrderId: string, category?: string | null) {
     const stages = await this.prisma.productionStageInstance.findMany({
@@ -174,8 +184,46 @@ export class QualityFloorService {
       where: { id: productionOrderId },
       include: {
         product: true,
-        salesOrder: { include: { customer: true } },
-        salesOrderLine: { include: { productionSetup: true } },
+        salesOrder: {
+          include: {
+            customer: true,
+            documents: { orderBy: { createdAt: 'desc' }, take: 24 },
+            quotation: {
+              include: {
+                request: {
+                  include: {
+                    items: { orderBy: { sortOrder: 'asc' } },
+                    documents: { orderBy: { createdAt: 'desc' }, take: 24 },
+                  },
+                },
+                lines: { orderBy: { sortOrder: 'asc' } },
+              },
+            },
+          },
+        },
+        salesOrderLine: {
+          include: {
+            productionSetup: {
+              include: {
+                materialRequirements: {
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        sku: true,
+                        nameEn: true,
+                        nameAr: true,
+                        nameHe: true,
+                        category: true,
+                        unit: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         stages: {
           include: {
             stageDefinition: true,
@@ -226,10 +274,12 @@ export class QualityFloorService {
         );
       });
 
+    const incomingPieces = await this.inspections.piecesForOrder(productionOrderId, 'INSPECTION');
     const packagingStage = po.stages.find((s) =>
       ['PACKAGING', 'PACK'].includes(s.stageDefinition.code.toUpperCase()),
     );
-    let expectedPackages: Array<{ code: string; labelEn: string; labelAr?: string }> = [];
+    let snapshotLabels: Array<{ nameEn: string; nameAr?: string | null }> = [];
+    let snapshotCount = 1;
     if (packagingStage) {
       const snap = await this.prisma.productionOrderWorkflowSnapshotNode.findFirst({
         where: { stageInstanceId: packagingStage.id },
@@ -240,31 +290,74 @@ export class QualityFloorService {
         | null
         | undefined;
       const fromSetup = pieceLabelsFromJson(packExp?.pieceLabels);
-      const labels = fromSnap.length ? fromSnap : fromSetup;
-      expectedPackages = labels.map((l, i) => ({
-        code: `P${i + 1}`,
-        labelEn: l.nameEn,
-        labelAr: l.nameAr,
-      }));
-      if (!expectedPackages.length) {
-        const n = Math.max(
-          1,
-          Math.floor(Number(snap?.expectedPieceCount ?? packExp?.expectedPieceCount ?? 1)),
-        );
-        expectedPackages = Array.from({ length: n }, (_, i) => ({
-          code: `P${i + 1}`,
-          labelEn: `Package ${i + 1}`,
-        }));
-      }
+      snapshotLabels = fromSnap.length ? fromSnap : fromSetup;
+      snapshotCount = Math.max(
+        1,
+        Math.floor(Number(snap?.expectedPieceCount ?? packExp?.expectedPieceCount ?? 1)),
+      );
     }
+    const expectedPackages = resolveExpectedPackages({
+      incoming: incomingPieces,
+      snapshotLabels,
+      snapshotCount,
+    });
 
     const setup = po.salesOrderLine?.productionSetup;
-    const complexity = String(
-      setup?.manufacturingComplexity ?? po.salesOrderLine?.manufacturingComplexity ?? '',
-    ).toUpperCase();
-    const isCustom = complexity === 'CUSTOM' || complexity === 'MODIFIED';
-    const orderDims = (setup?.orderDimensions ?? null) as Record<string, unknown> | null;
-    const measurements = setup?.measurements ?? null;
+    const manufacturingSpec = buildManufacturingSpecForFloor({
+      setup: setup
+        ? {
+            manufacturingComplexity: setup.manufacturingComplexity,
+            orderDimensions: setup.orderDimensions,
+            catalogDimensions: setup.catalogDimensions,
+            measurements: setup.measurements,
+            factoryNotes: setup.factoryNotes,
+            requestedFabricLabel: setup.requestedFabricLabel,
+            manufacturingName: setup.manufacturingName,
+            materialRequirements: setup.materialRequirements,
+          }
+        : null,
+      salesOrderLine: po.salesOrderLine
+        ? {
+            manufacturingComplexity: po.salesOrderLine.manufacturingComplexity,
+            specifications: po.salesOrderLine.specifications,
+            orderSpec: po.salesOrderLine.orderSpec,
+          }
+        : null,
+      product: po.product
+        ? {
+            width: po.product.width,
+            height: po.product.height,
+            depth: po.product.depth,
+            seatHeight: po.product.seatHeight,
+            customMeasurements: po.product.customMeasurements,
+          }
+        : null,
+    });
+    const requestItems = po.salesOrder?.quotation?.request?.items ?? [];
+    const requestItem =
+      (po.productId
+        ? requestItems.find((item) => item.productId === po.productId)
+        : null) ?? requestItems[0] ?? null;
+    const quoteLine = po.salesOrder?.quotation?.lines?.[0] ?? null;
+    const dealerDetails = buildInspectionDealerDetails({
+      productName: po.product?.nameEn ?? po.productDescription,
+      productImageUrl: po.product?.imageUrl ?? po.product?.galleryUrls?.[0] ?? null,
+      productGalleryUrls: po.product?.galleryUrls ?? [],
+      projectName: po.salesOrder?.projectName ?? po.salesOrder?.quotation?.request?.projectName,
+      dealerNotes: po.salesOrder?.notes ?? po.salesOrder?.quotation?.request?.notes,
+      orderSpec: po.salesOrderLine?.orderSpec,
+      specifications: po.salesOrderLine?.specifications,
+      quantity: po.quantity,
+      requestItem,
+      quotationLine: quoteLine,
+      documents: [
+        ...(po.salesOrder?.quotation?.request?.documents ?? []),
+        ...(po.salesOrder?.documents ?? []),
+      ],
+    });
+    const latestItems = latest?.items ?? [];
+    const passedCount = latestItems.filter((i) => String(i.result ?? '').toUpperCase() === 'PASS').length;
+    const failedCount = latestItems.filter((i) => String(i.result ?? '').toUpperCase() === 'FAIL').length;
 
     const lightAnalytics = {
       inspectionAttempts: inspections.filter((i) => i.result).length,
@@ -283,9 +376,19 @@ export class QualityFloorService {
       productionOrderId: po.id,
       productionOrderNumber: po.number,
       salesOrderNumber: po.salesOrder?.number ?? null,
-      dealerName: po.salesOrder?.customer?.nameEn ?? po.salesOrder?.customer?.nameAr ?? null,
+      dealerName:
+        po.salesOrder?.customer?.nameEn ??
+        po.salesOrder?.customer?.name ??
+        po.salesOrder?.customer?.nameAr ??
+        null,
+      dealerNameAr: po.salesOrder?.customer?.nameAr ?? null,
+      dealerNameHe: po.salesOrder?.customer?.nameHe ?? null,
+      productId: po.productId ?? po.product?.id ?? null,
       productName: po.product?.nameEn ?? po.productDescription,
-      productImageUrl: po.product?.imageUrl ?? null,
+      productNameAr: po.product?.nameAr ?? null,
+      productNameHe: po.product?.nameHe ?? null,
+      productImageUrl: po.product?.imageUrl ?? po.product?.galleryUrls?.[0] ?? null,
+      composition: compositionFromIncomingPieces(incomingPieces),
       quantity: Number(po.quantity) || 1,
       orderStatus: po.status,
       currentStageCode: po.currentStageCode,
@@ -293,20 +396,14 @@ export class QualityFloorService {
         ? {
             stageCode: priorProduction.stageDefinition.code,
             stageNameEn: priorProduction.stageDefinition.nameEn,
+            stageNameAr: priorProduction.stageDefinition.nameAr,
+            stageNameHe: priorProduction.stageDefinition.nameHe,
             completedAt: priorProduction.actualEnd,
             workerName: personName(completedWorker?.assignedEmployee),
           }
         : null,
-      manufacturingSpec: isCustom
-        ? {
-            complexity,
-            orderDimensions: orderDims,
-            measurements,
-            factoryNotes: setup?.factoryNotes ?? null,
-            requestedFabricLabel: setup?.requestedFabricLabel ?? null,
-            manufacturingName: setup?.manufacturingName ?? null,
-          }
-        : null,
+      manufacturingSpec,
+      dealerDetails,
       latestInspection: latest,
       inspections,
       openRework,
@@ -314,9 +411,16 @@ export class QualityFloorService {
       packagingUnlocked: Boolean(
         latest?.result && isQcPassResult(String(latest.result)) && !openRework,
       ),
+      inspectionProgress: {
+        passed: passedCount,
+        failed: failedCount,
+        pending: Math.max(0, latestItems.length - passedCount - failedCount),
+        total: latestItems.length,
+      },
+      pieceChecklist: [],
       lightAnalytics,
       timeline: await this.buildTimeline(productionOrderId),
-      partialFailurePolicy: 'PO_LEVEL_ALL_OR_NOTHING' as const,
+      partialFailurePolicy: 'PER_PIECE' as const,
     };
   }
 

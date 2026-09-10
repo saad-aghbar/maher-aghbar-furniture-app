@@ -239,6 +239,7 @@ describe('selectPurchaseDetail', () => {
         unitPrice: '12.5',
         lineTotal: '4582',
         inventoryItemId: 'mat-vel-navy',
+        fabricProcurementId: 'fp-velvet',
       },
     ],
     goodsReceipts: [
@@ -275,9 +276,31 @@ describe('selectPurchaseDetail', () => {
       unitPrice: 12.5,
       receivedQty: 316,
       remainingQty: 0,
+      fabricProcurementId: 'fp-velvet',
     });
     expect(detail.receipts).toHaveLength(1);
     expect(detail.receipts[0].number).toBe('GRN-2026-00023');
+  });
+
+  it('leaves fabricProcurementId null when the line is not fabric', () => {
+    const detail = selectPurchaseDetail(
+      {
+        ...velvet,
+        lines: [
+          {
+            id: 'ln-foam',
+            description: 'Foam 28',
+            quantity: '4',
+            unit: 'pcs',
+            unitPrice: '22',
+            inventoryItemId: 'mat-foam',
+          },
+        ],
+        goodsReceipts: [],
+      },
+      'en',
+    );
+    expect(detail.lines[0]?.fabricProcurementId).toBeNull();
   });
 
   it('does not treat tax-inclusive lineTotal as expected net', () => {

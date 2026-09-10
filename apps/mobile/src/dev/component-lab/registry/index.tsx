@@ -392,7 +392,13 @@ function buildFromClassifications(): LabRegistryEntry[] {
         variants: hasRich
           ? id.includes('notification-board')
             ? ['unread', 'read']
-            : ['default']
+            : id.includes('return-piece-decision')
+              ? ['default', 'empty', 'single']
+              : id.includes('return-pieces-board')
+                ? ['default', 'empty', 'dealer']
+                : id.includes('task-recovery')
+                  ? ['default', 'empty']
+                  : ['default']
           : undefined,
         interactive: hasRich || Boolean(domainMeta?.openUsageTarget),
         tags: [

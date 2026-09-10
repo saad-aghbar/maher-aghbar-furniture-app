@@ -49,7 +49,17 @@ export function validateSchedule(input: ValidateScheduleInput): ScheduleValidati
     list.push(alloc);
     byOrder.set(alloc.orderId, list);
 
-    if (alloc.plannedEnd.getTime() <= alloc.plannedStart.getTime()) {
+    if (alloc.plannedEnd.getTime() < alloc.plannedStart.getTime()) {
+      add({
+        code: 'INVALID_WINDOW',
+        severity: 'CONFLICT',
+        message: 'plannedEnd must be after plannedStart',
+        allocationKey: alloc.key,
+      });
+    } else if (
+      alloc.plannedEnd.getTime() === alloc.plannedStart.getTime() &&
+      alloc.employeeId
+    ) {
       add({
         code: 'INVALID_WINDOW',
         severity: 'CONFLICT',

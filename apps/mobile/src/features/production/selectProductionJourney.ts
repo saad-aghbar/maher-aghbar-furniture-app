@@ -29,6 +29,8 @@ export type ProductionJourneyStage = {
   primaryTaskId: string | null;
   /** Parallel when other stages share no exclusive dependency chain — UI hint */
   parallelGroup: number;
+  inspectionProgress?: { passed: number; total: number } | null;
+  backForRework?: boolean;
 };
 
 export type ProductionWhereNow = {
@@ -171,6 +173,8 @@ export function selectProductionJourney(
         problemLabel: openBlockers[0]?.reason ?? null,
         primaryTaskId: primary.id,
         parallelGroup: index,
+        inspectionProgress: null,
+        backForRework: false,
       };
     });
   }
@@ -219,6 +223,10 @@ export function selectProductionJourney(
           : null,
       primaryTaskId: primaryTask?.id ?? null,
       parallelGroup: groups[index] ?? index,
+      inspectionProgress: stage.inspectionProgress
+        ? { passed: stage.inspectionProgress.passed, total: stage.inspectionProgress.total }
+        : null,
+      backForRework: Boolean(stage.backForRework),
     };
   });
 }

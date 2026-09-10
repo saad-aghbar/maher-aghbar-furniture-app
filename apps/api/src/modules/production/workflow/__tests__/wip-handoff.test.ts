@@ -3,6 +3,8 @@ import {
   custodyFilterForKit,
   incomingWorkStatus,
   kitFeedsConsumerNode,
+  nextHopsSkippingQuality,
+  passthroughSnapshotNodeIds,
   remainingReceivable,
 } from '../domain/wip-handoff';
 
@@ -142,5 +144,66 @@ describe('custodyFilterForKit', () => {
     expect(custodyFilterForKit({ status: 'CLAIMED', handoffCount: 1 })).toBe(
       'RECEIVED',
     );
+  });
+});
+
+describe('quality-gate handoff skip', () => {
+  const nodes = [
+    { id: 'n-mix', stageCode: 'UPHOLSTERY', executionKind: 'PRODUCTION' },
+    { id: 'n-insp', stageCode: 'INSPECTION', executionKind: 'QUALITY' },
+    { id: 'n-pack', stageCode: 'PACKAGING', executionKind: 'PACKAGING' },
+  ];
+  const edges = [
+    { fromSnapshotNodeId: 'n-mix', toSnapshotNodeId: 'n-insp' },
+    { fromSnapshotNodeId: 'n-insp', toSnapshotNodeId: 'n-pack' },
+  ];
+  const passthrough = passthroughSnapshotNodeIds(nodes);
+
+  it('walks mix → inspection → packaging onto packaging', () => {
+    expect(nextHopsSkippingQuality({ fromSnapshotNodeId: 'n-mix', edges, nodes })).toEqual([
+      'n-pack',
+    ]);
+    expect(
+      kitFeedsConsumerNode({
+        nextSnapshotNodeIds: ['n-pack'],
+        snapshotNodeId: 'n-mix',
+        consumerSnapshotNodeId: 'n-pack',
+        edges,
+        passthroughNodeIds: passthrough,
+      }),
+    ).toBe(true);
+  });
+
+  it('empty next-hops still feed packaging through inspection', () => {
+    expect(
+      kitFeedsConsumerNode({
+        nextSnapshotNodeIds: [],
+        snapshotNodeId: 'n-mix',
+        consumerSnapshotNodeId: 'n-pack',
+        edges,
+        passthroughNodeIds: passthrough,
+      }),
+    ).toBe(true);
+  });
+
+  it('legacy kits pointing at inspection still match inspection and packaging', () => {
+    expect(
+      kitFeedsConsumerNode({
+        nextSnapshotNodeIds: ['n-insp'],
+        snapshotNodeId: 'n-mix',
+        consumerSnapshotNodeId: 'n-insp',
+        edges,
+        passthroughNodeIds: passthrough,
+      }),
+    ).toBe(true);
+    expect(
+      kitFeedsConsumerNode({
+        nextSnapshotNodeIds: ['n-insp'],
+        snapshotNodeId: 'n-mix',
+        consumerSnapshotNodeId: 'n-pack',
+        edges,
+        passthroughNodeIds: passthrough,
+      }),
+    ).toBe(true);
   });
 });

@@ -50,7 +50,9 @@ interface Balance {
   onHandQty?: number;
   freeQty?: number;
   warehouseId?: string;
+  locationId?: string | null;
   warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string };
+  location?: { id: string; code: string; name?: string | null } | null;
 }
 
 interface Row {
@@ -174,7 +176,32 @@ interface Warehouse {
   nameEn: string;
   nameAr?: string;
   type?: string;
-  locations?: Array<{ id: string; code: string; name?: string | null }>;
+  locations?: Array<{
+    id: string;
+    code: string;
+    name?: string | null;
+    isDefault?: boolean;
+    isActive?: boolean;
+  }>;
+}
+
+function binsForWarehouse(
+  warehouses: Warehouse[],
+  warehouseId: string,
+): NonNullable<Warehouse['locations']> {
+  return (warehouses.find((w) => w.id === warehouseId)?.locations ?? []).filter(
+    (loc) => loc.isActive !== false,
+  );
+}
+
+function defaultBinId(
+  warehouses: Warehouse[],
+  warehouseId: string,
+  current?: string,
+): string {
+  const bins = binsForWarehouse(warehouses, warehouseId);
+  if (current && bins.some((b) => b.id === current)) return current;
+  return bins.find((b) => b.isDefault)?.id ?? bins[0]?.id ?? '';
 }
 
 interface LowStockItem {
@@ -331,19 +358,23 @@ export default function InventoryPage() {
   const [fgPage, setFgPage] = useState(1);
   const [inspectFinishedOrder, setInspectFinishedOrder] = useState<FinishedOrderGroup | null>(null);
   const [page, setPage] = useState(1);
+  const [receiveQueueOpen, setReceiveQueueOpen] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [moveOpen, setMoveOpen] = useState<'receive' | 'issue' | null>(null);
   const [selectedItem, setSelectedItem] = useState<Row | null>(null);
   const [warehouseId, setWarehouseId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const [transferOpen, setTransferOpen] = useState(false);
   const [fromWarehouseId, setFromWarehouseId] = useState('');
+  const [fromLocationId, setFromLocationId] = useState('');
   const [toWarehouseId, setToWarehouseId] = useState('');
+  const [toLocationId, setToLocationId] = useState('');
   const [transferItemId, setTransferItemId] = useState('');
   const [transferQty, setTransferQty] = useState('1');
   const [transferNotes, setTransferNotes] = useState('');
@@ -351,6 +382,7 @@ export default function InventoryPage() {
 
   const [countOpen, setCountOpen] = useState(false);
   const [countWarehouseId, setCountWarehouseId] = useState('');
+  const [countLocationId, setCountLocationId] = useState('');
   const [countNotes, setCountNotes] = useState('');
   const [countLines, setCountLines] = useState<Array<{ itemId: string; qty: string }>>([
     { itemId: '', qty: '' },
@@ -407,6 +439,23 @@ export default function InventoryPage() {
       ),
     placeholderData: keepPreviousData,
     enabled: tab === 'items' && lifecycle === 'materials',
+  });
+
+  const receivableQuery = useQuery({
+    queryKey: ['purchase-orders-receivable'],
+    queryFn: () =>
+      apiFetch<
+        Array<{
+          id: string;
+          number: string;
+          status: string;
+          remainingQty?: number;
+          expectedDeliveryDate?: string | null;
+          isOverdue?: boolean;
+          supplier?: { name: string; nameEn?: string | null; nameAr?: string | null };
+        }>
+      >('/api/v1/purchase-orders/receivable'),
+    enabled: canReceive,
   });
 
   const wipQuery = useQuery({
@@ -586,6 +635,7 @@ export default function InventoryPage() {
       setReceiptKind('po');
       if (only.suggestedWarehouseId) {
         setWarehouseId(only.suggestedWarehouseId);
+        setLocationId(defaultBinId(warehouses, only.suggestedWarehouseId));
       }
     } else if (openReceipts.length === 0) {
       setSelectedPoId('');
@@ -601,7 +651,7 @@ export default function InventoryPage() {
     queryKey: ['suppliers-pick-inv'],
     queryFn: () =>
       apiFetch<{ data: Array<{ id: string; name: string; nameAr?: string; nameEn?: string }> }>(
-        '/api/v1/suppliers?pageSize=100',
+        '/api/v1/suppliers?pageSize=100&status=ACTIVE',
       ).then((r) => r.data),
   });
 
@@ -738,6 +788,7 @@ export default function InventoryPage() {
                 inventoryItemId: selectedItem.id,
                 orderedQty: Number(selectedPo?.orderedQty ?? quantity),
                 receivedQty: Number(quantity),
+                locationId: locationId || undefined,
               },
             ],
           }),
@@ -749,6 +800,7 @@ export default function InventoryPage() {
         body: JSON.stringify({
           inventoryItemId: selectedItem.id,
           warehouseId,
+          locationId: locationId || undefined,
           quantity: Number(quantity),
           notes: notes.trim() || undefined,
         }),
@@ -780,7 +832,14 @@ export default function InventoryPage() {
           fromWarehouseId,
           toWarehouseId,
           notes: transferNotes.trim() || undefined,
-          lines: [{ inventoryItemId: transferItemId, quantity: Number(transferQty) }],
+          lines: [
+            {
+              inventoryItemId: transferItemId,
+              quantity: Number(transferQty),
+              fromLocationId: fromLocationId || undefined,
+              toLocationId: toLocationId || undefined,
+            },
+          ],
         }),
       });
     },
@@ -815,6 +874,7 @@ export default function InventoryPage() {
         .map((l) => ({
           inventoryItemId: l.itemId,
           countedQty: Number(l.qty),
+          locationId: countLocationId || undefined,
         }));
       if (!countWarehouseId || lines.length === 0) {
         throw new ApiClientError(ti('countRequired'), 400);
@@ -962,7 +1022,9 @@ export default function InventoryPage() {
 
   function openMove(kind: 'receive' | 'issue', row: Row) {
     setSelectedItem(row);
-    setWarehouseId(warehousesForItem(warehouses, row)[0]?.id ?? '');
+    const nextWarehouseId = warehousesForItem(warehouses, row)[0]?.id ?? '';
+    setWarehouseId(nextWarehouseId);
+    setLocationId(defaultBinId(warehouses, nextWarehouseId));
     setQuantity('1');
     setNotes('');
     setScanCode('');
@@ -973,8 +1035,12 @@ export default function InventoryPage() {
   }
 
   function openTransfer() {
-    setFromWarehouseId(warehouses[0]?.id ?? '');
-    setToWarehouseId(warehouses[1]?.id ?? warehouses[0]?.id ?? '');
+    const fromId = warehouses[0]?.id ?? '';
+    const toId = warehouses[1]?.id ?? warehouses[0]?.id ?? '';
+    setFromWarehouseId(fromId);
+    setFromLocationId(defaultBinId(warehouses, fromId));
+    setToWarehouseId(toId);
+    setToLocationId(defaultBinId(warehouses, toId));
     setTransferItemId('');
     setTransferQty('1');
     setTransferNotes('');
@@ -997,6 +1063,7 @@ export default function InventoryPage() {
               size="sm"
               onClick={() => {
                 setCountWarehouseId(warehouses[0]?.id ?? '');
+                setCountLocationId(defaultBinId(warehouses, warehouses[0]?.id ?? ''));
                 setCountNotes('');
                 setCountLines([{ itemId: '', qty: '' }]);
                 setFormError(null);
@@ -1208,6 +1275,14 @@ export default function InventoryPage() {
                 }
               />
             </label>
+            {lifecycle === 'materials' && canReceive ? (
+            <Button size="sm" variant="secondary" onClick={() => setReceiveQueueOpen(true)}>
+              {tc('receiveOrders')}
+              {(receivableQuery.data?.length ?? 0) > 0
+                ? ` (${receivableQuery.data!.length})`
+                : ''}
+            </Button>
+            ) : null}
             {lifecycle === 'materials' && canAdjust ? (
             <Button
               size="sm"
@@ -1597,13 +1672,14 @@ export default function InventoryPage() {
                                   <ul className="space-y-1">
                                     {(row.balances ?? []).map((b, idx) => (
                                       <li
-                                        key={b.warehouse?.id ?? b.warehouseId ?? idx}
+                                        key={`${b.warehouse?.id ?? b.warehouseId ?? idx}-${b.locationId ?? 'bin'}`}
                                         className="flex gap-3"
                                       >
                                         <span>
                                           {b.warehouse
                                             ? `${b.warehouse.code} — ${localizedName(locale, b.warehouse)}`
                                             : (b.warehouseId ?? '—')}
+                                          {b.location?.code ? ` · ${b.location.code}` : ''}
                                         </span>
                                         <span dir="ltr">
                                           {ti('onHand')} {Number(b.onHandQty ?? b.availableQty)} · {ti('reserved')} {Number(b.reservedQty ?? 0)} · {ti('available')} {Number(b.freeQty ?? Number(b.availableQty) - Number(b.reservedQty ?? 0))}
@@ -1814,11 +1890,27 @@ export default function InventoryPage() {
           <Select
             label={ti('warehouse')}
             value={countWarehouseId}
-            onChange={(e) => setCountWarehouseId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCountWarehouseId(next);
+              setCountLocationId(defaultBinId(warehouses, next));
+            }}
           >
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.code} — {localizedName(locale, w)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label={ti('bin')}
+            value={countLocationId}
+            onChange={(e) => setCountLocationId(e.target.value)}
+          >
+            {binsForWarehouse(warehouses, countWarehouseId).map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.code}
+                {loc.name ? ` — ${loc.name}` : ''}
               </option>
             ))}
           </Select>
@@ -1928,7 +2020,9 @@ export default function InventoryPage() {
                       `/api/v1/inventory/items/by-code/${encodeURIComponent(scanCode.trim())}`,
                     );
                     setSelectedItem(found);
-                    setWarehouseId(warehousesForItem(warehouses, found)[0]?.id ?? '');
+                    const nextWarehouseId = warehousesForItem(warehouses, found)[0]?.id ?? '';
+                    setWarehouseId(nextWarehouseId);
+                    setLocationId(defaultBinId(warehouses, nextWarehouseId));
                     setScanCode('');
                     setFormError(null);
                   } catch (err) {
@@ -1949,7 +2043,9 @@ export default function InventoryPage() {
                     `/api/v1/inventory/items/by-code/${encodeURIComponent(scanCode.trim())}`,
                   );
                   setSelectedItem(found);
-                  setWarehouseId(warehousesForItem(warehouses, found)[0]?.id ?? '');
+                  const nextWarehouseId = warehousesForItem(warehouses, found)[0]?.id ?? '';
+                  setWarehouseId(nextWarehouseId);
+                  setLocationId(defaultBinId(warehouses, nextWarehouseId));
                   setScanCode('');
                   setFormError(null);
                 } catch (err) {
@@ -1978,7 +2074,10 @@ export default function InventoryPage() {
                     onChange={() => {
                       setReceiptKind('po');
                       setSelectedPoId(row.purchaseOrderId);
-                      if (row.suggestedWarehouseId) setWarehouseId(row.suggestedWarehouseId);
+                      if (row.suggestedWarehouseId) {
+                        setWarehouseId(row.suggestedWarehouseId);
+                        setLocationId(defaultBinId(warehouses, row.suggestedWarehouseId, locationId));
+                      }
                     }}
                   />
                   <span>
@@ -2009,11 +2108,27 @@ export default function InventoryPage() {
           <Select
             label={ti('warehouse')}
             value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setWarehouseId(next);
+              setLocationId(defaultBinId(warehouses, next));
+            }}
           >
             {moveWarehouses.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.code} — {localizedName(locale, w)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label={ti('bin')}
+            value={locationId}
+            onChange={(e) => setLocationId(e.target.value)}
+          >
+            {binsForWarehouse(warehouses, warehouseId).map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.code}
+                {loc.name ? ` — ${loc.name}` : ''}
               </option>
             ))}
           </Select>
@@ -2055,7 +2170,11 @@ export default function InventoryPage() {
           <Select
             label={ti('fromWarehouse')}
             value={fromWarehouseId}
-            onChange={(e) => setFromWarehouseId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setFromWarehouseId(next);
+              setFromLocationId(defaultBinId(warehouses, next));
+            }}
           >
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>
@@ -2064,13 +2183,41 @@ export default function InventoryPage() {
             ))}
           </Select>
           <Select
+            label={ti('fromBin')}
+            value={fromLocationId}
+            onChange={(e) => setFromLocationId(e.target.value)}
+          >
+            {binsForWarehouse(warehouses, fromWarehouseId).map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.code}
+                {loc.name ? ` — ${loc.name}` : ''}
+              </option>
+            ))}
+          </Select>
+          <Select
             label={ti('toWarehouse')}
             value={toWarehouseId}
-            onChange={(e) => setToWarehouseId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setToWarehouseId(next);
+              setToLocationId(defaultBinId(warehouses, next));
+            }}
           >
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.code} — {localizedName(locale, w)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label={ti('toBin')}
+            value={toLocationId}
+            onChange={(e) => setToLocationId(e.target.value)}
+          >
+            {binsForWarehouse(warehouses, toWarehouseId).map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.code}
+                {loc.name ? ` — ${loc.name}` : ''}
               </option>
             ))}
           </Select>
@@ -2625,6 +2772,49 @@ export default function InventoryPage() {
             )}
           </div>
         ) : null}
+      </Modal>
+      <Modal
+        open={receiveQueueOpen}
+        onClose={() => setReceiveQueueOpen(false)}
+        title={tc('receiveOrders')}
+        className="max-w-xl"
+      >
+        {receivableQuery.isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : receivableQuery.isError ? (
+          <ErrorState title={tc('receiveOrders')} onRetry={() => receivableQuery.refetch()} />
+        ) : (receivableQuery.data ?? []).length === 0 ? (
+          <EmptyState title={tc('noPurchaseOrders')} />
+        ) : (
+          <ul className="space-y-2">
+            {(receivableQuery.data ?? []).map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-start"
+                  onClick={() => {
+                    setReceiveQueueOpen(false);
+                    router.push(`/purchasing/${row.id}`);
+                  }}
+                >
+                  <span>
+                    <span className="block font-medium" dir="ltr">
+                      {row.number}
+                    </span>
+                    <span className="block text-sm text-text-secondary">
+                      {row.supplier
+                        ? localizedName(locale, row.supplier, row.supplier.name)
+                        : '—'}
+                    </span>
+                  </span>
+                  <span className="text-sm text-text-secondary" dir="ltr">
+                    {row.remainingQty ?? 0}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </div>
   );

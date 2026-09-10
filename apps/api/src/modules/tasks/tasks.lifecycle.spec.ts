@@ -93,7 +93,7 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
         findMany: jest.Mock;
         updateMany: jest.Mock;
       };
-      taskTimeEntry: { findMany: jest.Mock; update: jest.Mock };
+      taskTimeEntry: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
     } = {
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
       productionTask: {
@@ -115,6 +115,7 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
       taskTimeEntry: {
         findMany: taskTimeEntryFindMany,
         update: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
 

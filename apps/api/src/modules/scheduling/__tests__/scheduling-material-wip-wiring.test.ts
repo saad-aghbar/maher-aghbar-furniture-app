@@ -2,6 +2,8 @@
  * Generate + inventory arrival wiring for material/WIP readiness.
  * Mocked Prisma only — not live proof.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { InventoryService } from '../../inventory/inventory.service';
 import { SchedulingService } from '../scheduling.service';
 import { zonedLocalToUtc } from '../domain/working-calendar';
@@ -38,7 +40,14 @@ function makePrisma() {
     scheduleAllocation: {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 'alloc-1' }),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    wipKit: { findMany: jest.fn().mockResolvedValue([]) },
+    fabricProcurement: { findMany: jest.fn().mockResolvedValue([]) },
+    productionTaskMaterialUsage: { findMany: jest.fn().mockResolvedValue([]) },
+    salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
+    productStageEstimate: { findMany: jest.fn().mockResolvedValue([]) },
     factoryCalendar: {
       findFirst: jest.fn().mockResolvedValue(calendarRow()),
       create: jest.fn(),
@@ -260,7 +269,7 @@ describe('material generate wiring', () => {
         allocations: [],
       });
 
-    await service.generateForProductionOrder('po-1', 'user-1', { mode: 'forward' });
+    await service.generateForProductionOrder('po-1', 'user-1', { mode: 'forward', persist: true });
 
     const persist = prisma.productionSchedule.create.mock.calls.find((call: unknown[]) => {
       const data = (call[0] as { data?: { materialReadyAt?: Date } }).data;
@@ -338,7 +347,7 @@ describe('material generate wiring', () => {
         allocations: [{ id: 'alloc-1' }],
       });
 
-    await service.generateForProductionOrder('po-1', 'user-1', { mode: 'forward' });
+    await service.generateForProductionOrder('po-1', 'user-1', { mode: 'forward', persist: true });
 
     expect(prisma.productionSchedule.create).toHaveBeenCalled();
     const unschedulable = prisma.productionSchedule.create.mock.calls.some((call: unknown[]) => {
@@ -404,10 +413,10 @@ describe('material generate wiring', () => {
   });
 
   it('wires consume-by-output and BOM reservation into generate', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../scheduling.service.ts'),
+    const src = readFileSync(
+      join(__dirname, '../scheduling.service.ts'),
       'utf8',
-    ) as string;
+    );
     expect(src).toContain('bomReservationNeeds');
     expect(src).toContain('applyStageOrOrderMaterialFloors');
     expect(src).toContain('frozenInputsFromSnapshotNodes');

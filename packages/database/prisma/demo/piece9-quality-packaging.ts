@@ -23,6 +23,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -266,6 +267,9 @@ export async function seedPiece9QualityPackagingExamples(
         inventoryTracking: InventoryTracking.PRODUCES_FINISHED,
         consumesSemiFinished: true,
       };
+    }
+    if (code === 'INSPECTION') {
+      return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: true };
     }
     return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: false };
   }
@@ -1422,6 +1426,7 @@ export async function seedPiece9QualityPackagingExamples(
           type: InventoryTxType.FINISHED_GOODS_RECEIPT,
           inventoryItemId: fgItem.id,
           warehouseId: finWh.id,
+          locationId: await defaultBinIdForWarehouse(prisma, finWh.id),
           quantity: money(1),
           createdById: opts.adminUserId,
           createdAt: asOf,
@@ -1435,6 +1440,7 @@ export async function seedPiece9QualityPackagingExamples(
         data: {
           inventoryItemId: fgItem.id,
           warehouseId: finWh.id,
+          locationId: await defaultBinIdForWarehouse(prisma, finWh.id),
           quantity: 1,
           status: 'AVAILABLE',
           productionOrderId: k.poId,

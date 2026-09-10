@@ -10,6 +10,7 @@ import {
 } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { resolveBinId } from '../inventory/bin-resolve';
 import { skuPrefixForItemClass } from '../../common/helpers/inventory-lifecycle.util';
 import { nextSkuFromExisting } from '../../common/helpers/inventory-category.util';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
@@ -21,7 +22,12 @@ import {
 import { jsonIdList } from '../../common/helpers/inventory-stage-behavior.util';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import { fabricStageIsReady } from './fabric-readiness';
-import { loadFabricReadinessForSalesOrder } from './fabric-readiness-load';
+import { positiveUnitCost, resolveIssueUnitCost } from '../inventory/issue-unit-cost';
+import { isQualityPassthroughStage } from './workflow/domain/wip-handoff';
+import {
+  loadFabricReadinessForProductionOrder,
+  loadFabricReadinessForSalesOrder,
+} from './fabric-readiness-load';
 
 const QC_PASS: QualityResult[] = [QualityResult.PASSED, QualityResult.PASSED_WITH_NOTES];
 
@@ -148,7 +154,7 @@ export class ProductionInventoryService {
         qtyDelta,
       );
     }
-    if (snap.consumesSemiFinished) {
+    if (snap.consumesSemiFinished && !isQualityPassthroughStage(snap)) {
       await this.consumeSemiFinished(
         {
           tx: params.tx,
@@ -250,7 +256,7 @@ export class ProductionInventoryService {
     if (snap.consumesRawMaterials) {
       await this.assertRawReady(db, po, qty, params.stageInstanceId);
     }
-    if (snap.consumesSemiFinished) {
+    if (snap.consumesSemiFinished && !isQualityPassthroughStage(snap)) {
       await this.assertSemiFinishedReady(db, po.id, qty, snap);
     }
   }
@@ -353,7 +359,12 @@ export class ProductionInventoryService {
 
   async listMaterialActivity(productionOrderId: string) {
     const txs = await this.prisma.inventoryTransaction.findMany({
-      where: { referenceType: 'ProductionOrder', referenceId: productionOrderId },
+      where: {
+        OR: [
+          { productionOrderId },
+          { referenceType: 'ProductionOrder', referenceId: productionOrderId },
+        ],
+      },
       include: {
         inventoryItem: {
           select: {
@@ -478,15 +489,26 @@ export class ProductionInventoryService {
       const key =
         params.idempotencyKey?.trim() ||
         `prod-return:${params.productionOrderId}:${params.inventoryItemId}:${qty}`;
+      const unitCost = resolveIssueUnitCost({
+        lotUnitCost: activity.lastIssueUnitCost,
+        standardCost: item.standardCost,
+      });
+      const po = await tx.productionOrder.findUnique({
+        where: { id: params.productionOrderId },
+        select: { salesOrderId: true },
+      });
       return this.inventory.applyMovement({
         type: InventoryTxType.PRODUCTION_RETURN,
         inventoryItemId: item.id,
         warehouseId: warehouse.id,
         quantity: qty,
+        unitCost: unitCost ?? undefined,
         userId: params.userId,
         idempotencyKey: key,
         referenceType: 'ProductionOrder',
         referenceId: params.productionOrderId,
+        productionOrderId: params.productionOrderId,
+        salesOrderId: po?.salesOrderId ?? undefined,
         notes: 'Unused material returned from production',
         db: tx,
       });
@@ -503,7 +525,9 @@ export class ProductionInventoryService {
       select: { quantity: true },
     });
     const qty = Number(po?.quantity) || 1;
-    const consume = snaps.filter((s) => s.consumesSemiFinished);
+    const consume = snaps.filter(
+      (s) => s.consumesSemiFinished && !isQualityPassthroughStage(s),
+    );
     if (!consume.length) return true;
     for (const node of consume) {
       const needs = await this.semiFinishedNeeds(db, productionOrderId, qty, node);
@@ -541,24 +565,34 @@ export class ProductionInventoryService {
   ) {
     const rows = await tx.inventoryTransaction.findMany({
       where: {
-        referenceType: 'ProductionOrder',
-        referenceId: productionOrderId,
         inventoryItemId,
         type: { in: [InventoryTxType.PRODUCTION_ISSUE, InventoryTxType.PRODUCTION_RETURN] },
+        OR: [
+          { productionOrderId },
+          { referenceType: 'ProductionOrder', referenceId: productionOrderId },
+        ],
       },
     });
     let issued = 0;
     let returned = 0;
     let warehouseId: string | null = null;
+    let lastIssueUnitCost: number | null = null;
     for (const row of rows) {
       const qty = Math.abs(Number(row.quantity));
       if (row.type === InventoryTxType.PRODUCTION_ISSUE) {
         issued += qty;
         warehouseId = row.warehouseId;
+        lastIssueUnitCost = positiveUnitCost(row.unitCost) ?? lastIssueUnitCost;
       }
       if (row.type === InventoryTxType.PRODUCTION_RETURN) returned += qty;
     }
-    return { issued, returned, returnable: Math.max(0, issued - returned), warehouseId };
+    return {
+      issued,
+      returned,
+      returnable: Math.max(0, issued - returned),
+      warehouseId,
+      lastIssueUnitCost,
+    };
   }
 
   private async assertRawReady(
@@ -591,7 +625,9 @@ export class ProductionInventoryService {
     );
 
     if (fabricInputs.length || po.salesOrderId) {
-      const fabric = await loadFabricReadinessForSalesOrder(db as never, po.salesOrderId);
+      const fabric = po.salesOrderId
+        ? await loadFabricReadinessForSalesOrder(db as never, po.salesOrderId)
+        : await loadFabricReadinessForProductionOrder(db as never, po.id);
       const stageCode = snap?.stageDefinition?.code ?? (snap as { stageCode?: string })?.stageCode ?? null;
       const gate = fabricStageIsReady(fabric.items, stageCode, {
         applyUnscoped: fabricInputs.length > 0,
@@ -661,7 +697,7 @@ export class ProductionInventoryService {
       productionOrderId: string;
       progressKey?: string;
     },
-    po: { id: string; product: { bomDefaults: Prisma.JsonValue } | null },
+    po: { id: string; salesOrderId?: string | null; product: { bomDefaults: Prisma.JsonValue } | null },
     qty: number,
   ) {
     const progress = params.progressKey?.trim() || 'full';
@@ -727,14 +763,32 @@ export class ProductionInventoryService {
       reserved: number;
     }> = [];
     for (const need of needs) {
-      const balance = await params.tx.inventoryBalance.findFirst({
+      const balances = await params.tx.inventoryBalance.findMany({
         where: {
           inventoryItemId: need.itemId,
           warehouse: { type: 'RAW_MATERIALS', isActive: true },
         },
-        orderBy: { availableQty: 'desc' },
       });
-      if (!balance || Number(balance.availableQty) + 1e-9 < need.qty) {
+      const byWh = new Map<string, number>();
+      const reservedByWh = new Map<string, number>();
+      for (const b of balances) {
+        byWh.set(b.warehouseId, (byWh.get(b.warehouseId) ?? 0) + Number(b.availableQty));
+        reservedByWh.set(
+          b.warehouseId,
+          (reservedByWh.get(b.warehouseId) ?? 0) + Number(b.reservedQty),
+        );
+      }
+      let warehouseId: string | null = null;
+      let available = 0;
+      let reserved = 0;
+      for (const [id, qty] of byWh) {
+        if (qty > available) {
+          available = qty;
+          warehouseId = id;
+          reserved = reservedByWh.get(id) ?? 0;
+        }
+      }
+      if (!warehouseId || available + 1e-9 < need.qty) {
         throw new BadRequestException({
           code: 'INSUFFICIENT_STOCK',
           message: 'Not enough raw material to consume for this stage.',
@@ -742,22 +796,44 @@ export class ProductionInventoryService {
       }
       planned.push({
         itemId: need.itemId,
-        warehouseId: balance.warehouseId,
+        warehouseId,
         qty: need.qty,
-        reserved: Number(balance.reservedQty),
+        reserved,
       });
     }
 
     for (const line of planned) {
+      const [lot, item] = await Promise.all([
+        params.tx.inventoryLot.findFirst({
+          where: {
+            inventoryItemId: line.itemId,
+            warehouseId: line.warehouseId,
+            unitCost: { gt: 0 },
+          },
+          orderBy: { producedAt: 'desc' },
+          select: { unitCost: true },
+        }),
+        params.tx.inventoryItem.findUnique({
+          where: { id: line.itemId },
+          select: { standardCost: true },
+        }),
+      ]);
+      const unitCost = resolveIssueUnitCost({
+        lotUnitCost: lot?.unitCost,
+        standardCost: item?.standardCost,
+      });
       await this.inventory.applyMovement({
         type: InventoryTxType.PRODUCTION_ISSUE,
         inventoryItemId: line.itemId,
         warehouseId: line.warehouseId,
         quantity: line.qty,
+        unitCost: unitCost ?? undefined,
         userId: params.userId,
         idempotencyKey: `raw-issue:${params.productionOrderId}:${params.stageInstanceId}:${line.itemId}:${progress}`,
         referenceType: 'ProductionOrder',
         referenceId: po.id,
+        productionOrderId: po.id,
+        salesOrderId: po.salesOrderId ?? undefined,
         reservedDelta: -Math.min(line.qty, line.reserved),
         db: params.tx,
       });
@@ -1062,10 +1138,13 @@ export class ProductionInventoryService {
       orderBy: { producedAt: 'asc' },
     });
 
+    const locationId = await resolveBinId(params.tx, warehouse.id, activeLot?.locationId);
+
     await this.inventory.applyMovement({
       type: txType,
       inventoryItemId: resolvedItem.id,
       warehouseId: warehouse.id,
+      locationId,
       quantity: outputQty,
       userId: params.userId,
       idempotencyKey: movementKey,
@@ -1088,27 +1167,45 @@ export class ProductionInventoryService {
           ...(fgQrCode && !activeLot.qrCode ? { qrCode: fgQrCode } : {}),
         },
       });
-      return;
+    } else {
+      await params.tx.inventoryLot.create({
+        data: {
+          inventoryItemId: resolvedItem.id,
+          warehouseId: warehouse.id,
+          locationId,
+          productionOrderId: po.id,
+          salesOrderId: po.salesOrderId,
+          salesOrderLineId: po.salesOrderLineId,
+          stageInstanceId: params.stageInstanceId,
+          outputDefinitionId: snap.outputDefinitionId,
+          quantity: outputQty,
+          status: reserved ? InventoryLotStatus.RESERVED : InventoryLotStatus.AVAILABLE,
+          allocationMode: po.salesOrderId
+            ? InventoryAllocationMode.ORDER_ALLOCATED
+            : InventoryAllocationMode.GENERAL_STOCK,
+          sourceKey: baseKey,
+          producedAt: new Date(),
+          ...(fgQrCode ? { qrCode: fgQrCode } : {}),
+        },
+      });
     }
 
-    await params.tx.inventoryLot.create({
-      data: {
-        inventoryItemId: resolvedItem.id,
-        warehouseId: warehouse.id,
-        productionOrderId: po.id,
-        salesOrderId: po.salesOrderId,
-        salesOrderLineId: po.salesOrderLineId,
-        stageInstanceId: params.stageInstanceId,
-        outputDefinitionId: snap.outputDefinitionId,
-        quantity: outputQty,
-        status: reserved ? InventoryLotStatus.RESERVED : InventoryLotStatus.AVAILABLE,
-        allocationMode: po.salesOrderId
-          ? InventoryAllocationMode.ORDER_ALLOCATED
-          : InventoryAllocationMode.GENERAL_STOCK,
-        sourceKey: baseKey,
-        producedAt: new Date(),
-        ...(fgQrCode ? { qrCode: fgQrCode } : {}),
-      },
+    if (itemClass === InventoryItemClass.FINISHED_GOOD) {
+      await this.clearReplacementQuarantine(params.tx, po.id, params.userId);
+    }
+  }
+
+  private async clearReplacementQuarantine(tx: Tx, productionOrderId: string, userId: string) {
+    const origin = await tx.productionOrder.findUnique({
+      where: { id: productionOrderId },
+      select: { originType: true, returnPieceId: true },
+    });
+    if (origin?.originType !== 'REPLACEMENT' || !origin.returnPieceId) return;
+    await this.inventory.writeOffReturnPieceQuarantine({
+      pieceId: origin.returnPieceId,
+      userId,
+      reason: 'Replacement finished good produced',
+      db: tx,
     });
   }
 

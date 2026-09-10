@@ -16,6 +16,8 @@ import {
 import type { WhatsAppProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
 import { hasPermission } from '@maher/permissions';
+import { peekFabricUnitCost } from './fabric-cost';
+import { resolveIssueUnitCost } from '../inventory/issue-unit-cost';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { WHATSAPP_PROVIDER } from '../../integrations/integrations.module';
@@ -41,6 +43,7 @@ const PROCUREMENT_INCLUDE = {
           category: true,
           unit: true,
           imageUrl: true,
+          standardCost: true,
         },
       },
       lineSetup: {
@@ -70,6 +73,9 @@ const PROCUREMENT_INCLUDE = {
       customer: { select: { id: true, nameEn: true, nameAr: true, code: true } },
     },
   },
+  productionOrder: {
+    select: { id: true, number: true },
+  },
   salesOrderLine: {
     select: {
       id: true,
@@ -82,6 +88,24 @@ const PROCUREMENT_INCLUDE = {
   lots: {
     include: {
       location: { select: { id: true, code: true, name: true } },
+    },
+  },
+  purchaseOrder: {
+    select: {
+      id: true,
+      number: true,
+      supplierInvoices: {
+        select: { id: true, number: true },
+        orderBy: { createdAt: 'desc' as const },
+        take: 1,
+      },
+      lines: {
+        select: {
+          unitPrice: true,
+          fabricProcurementId: true,
+          inventoryItemId: true,
+        },
+      },
     },
   },
 } satisfies Prisma.FabricProcurementInclude;
@@ -100,9 +124,14 @@ export class FabricProcurementService {
     if (!user) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Forbidden.' });
   }
 
-  async list(query: { q?: string; state?: string; salesOrderId?: string }, user?: AuthUser) {
+  async list(
+    query: { q?: string; state?: string; salesOrderId?: string; productionOrderId?: string; supplierId?: string },
+    user?: AuthUser,
+  ) {
     const where: Prisma.FabricProcurementWhereInput = {};
     if (query.salesOrderId) where.salesOrderId = query.salesOrderId;
+    if (query.productionOrderId) where.productionOrderId = query.productionOrderId;
+    if (query.supplierId) where.supplierId = query.supplierId;
     if (query.state && query.state !== 'ALL') {
       where.state = query.state as FabricProcurementState;
     }
@@ -110,6 +139,7 @@ export class FabricProcurementService {
       const q = query.q.trim();
       where.OR = [
         { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
+        { productionOrder: { number: { contains: q, mode: 'insensitive' } } },
         { salesOrder: { customer: { nameEn: { contains: q, mode: 'insensitive' } } } },
         { requirement: { requestedFabricLabel: { contains: q, mode: 'insensitive' } } },
         { requirement: { sku: { contains: q, mode: 'insensitive' } } },
@@ -134,6 +164,21 @@ export class FabricProcurementService {
     return this.toTrackerItem(row, user);
   }
 
+  async getByQrCode(code: string, user?: AuthUser) {
+    const trimmed = code.trim();
+    if (!trimmed) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Fabric bundle not found.' });
+    }
+    const lot = await this.prisma.inventoryLot.findFirst({
+      where: { qrCode: trimmed },
+      select: { fabricProcurementId: true },
+    });
+    if (!lot?.fabricProcurementId) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Fabric bundle not found.' });
+    }
+    return this.getById(lot.fabricProcurementId, user);
+  }
+
   async trackerForSalesOrder(salesOrderId: string, user?: AuthUser) {
     const items = await this.list({ salesOrderId }, user);
     return { salesOrderId, ...summarizeFabricReadiness(items.map((i) => i.readiness)), items };
@@ -149,13 +194,23 @@ export class FabricProcurementService {
     }
     const supplier = await this.prisma.supplier.findUniqueOrThrow({ where: { id: supplierId } });
     const first = rows[0]!;
+    const customer = first.salesOrder?.customer;
     const body = buildFabricProcurementWhatsAppBody({
-      orderNumber: first.salesOrder.number,
-      productName: first.salesOrderLine.description,
-      dealerName: first.salesOrder.customer.nameEn ?? first.salesOrder.customer.nameAr,
+      orderNumber: first.salesOrder?.number ?? first.productionOrder?.number ?? 'WO',
+      productName:
+        first.salesOrderLine?.product?.nameAr?.trim() ||
+        first.salesOrderLine?.description ||
+        first.salesOrderLine?.product?.nameEn,
+      dealerName: customer?.nameAr?.trim() || customer?.nameEn,
       lines: rows.map((r) => ({
         procurementId: r.id,
-        label: r.requirement.requestedFabricLabel || r.requirement.displayName || r.requirement.sku || 'Fabric',
+        label:
+          r.requirement.inventoryItem?.nameAr?.trim() ||
+          r.requirement.requestedFabricLabel ||
+          r.requirement.displayName ||
+          r.requirement.inventoryItem?.nameEn ||
+          r.requirement.sku ||
+          'قماش',
         role: r.requirement.fabricRole,
         qty: r.orderedQty != null ? Number(r.orderedQty) : r.requirement.expectedQty != null ? Number(r.requirement.expectedQty) : null,
         unit: r.unit || r.requirement.unit,
@@ -193,6 +248,17 @@ export class FabricProcurementService {
           error: err instanceof Error ? err.message : 'WhatsApp send failed.',
         };
       }
+    }
+
+    if (!sendResult.ok) {
+      return {
+        ...draft,
+        body,
+        whatsapp: sendResult,
+        purchaseRequestId: null,
+        purchaseOrderId: null,
+        purchaseOrderNumber: null,
+      };
     }
 
     const existing = await this.prisma.fabricProcurement.findMany({
@@ -277,7 +343,16 @@ export class FabricProcurementService {
       );
     }
 
-    return { ...draft, body, whatsapp: sendResult, purchaseRequestId, purchaseOrderId };
+    let purchaseOrderNumber: string | null = null;
+    if (purchaseOrderId) {
+      const poRow = await this.prisma.purchaseOrder.findUnique({
+        where: { id: purchaseOrderId },
+        select: { number: true },
+      });
+      purchaseOrderNumber = poRow?.number ?? null;
+    }
+
+    return { ...draft, body, whatsapp: sendResult, purchaseRequestId, purchaseOrderId, purchaseOrderNumber };
   }
 
   async setSupplierState(
@@ -392,7 +467,7 @@ export class FabricProcurementService {
     const lot = await this.prisma.inventoryLot.findFirst({
       where: { qrCode: code },
       include: {
-        inventoryItem: { select: { id: true, sku: true, nameEn: true, category: true } },
+        inventoryItem: { select: { id: true, sku: true, nameEn: true, category: true, standardCost: true } },
         fabricProcurement: { include: { requirement: true } },
       },
     });
@@ -403,10 +478,17 @@ export class FabricProcurementService {
       });
     }
     const soId = task.productionOrder.salesOrderId;
+    const poId = task.productionOrder.id;
     if (lot.salesOrderId && soId && lot.salesOrderId !== soId) {
       throw new BadRequestException({
         code: 'FABRIC_WRONG_ORDER',
         message: 'This fabric belongs to another order.',
+      });
+    }
+    if (lot.productionOrderId && lot.productionOrderId !== poId && !soId) {
+      throw new BadRequestException({
+        code: 'FABRIC_WRONG_ORDER',
+        message: 'This fabric belongs to another work order.',
       });
     }
     const proc = lot.fabricProcurement;
@@ -447,16 +529,26 @@ export class FabricProcurementService {
     const existing = await this.prisma.productionTaskMaterialUsage.findUnique({
       where: { taskId_inventoryItemId: { taskId: task.id, inventoryItemId: itemId } },
     });
+    const unitCost = resolveIssueUnitCost({
+      lotUnitCost: lot.unitCost,
+      standardCost: lot.inventoryItem.standardCost,
+    });
+    const valuedAt = unitCost != null ? new Date() : null;
 
     await this.prisma.$transaction(async (tx) => {
       await this.inventory.applyMovement({
         type: InventoryTxType.PRODUCTION_ISSUE,
         inventoryItemId: itemId,
         warehouseId: lot.warehouseId,
+        locationId: lot.locationId,
         quantity: qty,
+        unitCost: unitCost ?? undefined,
         userId: params.user.id,
         referenceType: 'ProductionTask',
         referenceId: task.id,
+        productionTaskId: task.id,
+        productionOrderId: task.productionOrderId,
+        salesOrderId: soId ?? undefined,
         notes: `Fabric take-in ${lot.qrCode}`,
         idempotencyKey: `fabric-takein:${lot.id}:${task.id}`,
         db: tx,
@@ -475,6 +567,7 @@ export class FabricProcurementService {
             actualQty: Number(existing.actualQty ?? 0) + qty,
             inventoryLotId: lot.id,
             recordedById: params.user.id,
+            ...(unitCost != null ? { unitCost, valuedAt } : {}),
           },
         });
       } else {
@@ -488,6 +581,8 @@ export class FabricProcurementService {
             actualQty: qty,
             inventoryLotId: lot.id,
             recordedById: params.user.id,
+            unitCost: unitCost ?? undefined,
+            valuedAt,
           },
         });
       }
@@ -514,14 +609,17 @@ export class FabricProcurementService {
     const task = await this.prisma.productionTask.findUnique({
       where: { id: taskId },
       include: {
-        productionOrder: { select: { salesOrderId: true } },
+        productionOrder: { select: { id: true, salesOrderId: true } },
         stageDefinition: { select: { code: true } },
       },
     });
     if (!task) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Task not found.' });
     const soId = task.productionOrder.salesOrderId;
-    if (!soId) return { taskId, taken: 0, total: 0, items: [] as unknown[] };
-    const items = await this.list({ salesOrderId: soId });
+    const poId = task.productionOrder.id;
+    const items = soId
+      ? await this.list({ salesOrderId: soId })
+      : await this.list({ productionOrderId: poId });
+    if (!items.length) return { taskId, taken: 0, total: 0, items: [] as unknown[] };
     const stageCode = task.stageDefinition?.code ?? null;
     const forStage = items.filter((i) => {
       const itemCode = String(i.readiness.stageCode ?? '').toUpperCase();
@@ -606,14 +704,22 @@ export class FabricProcurementService {
 
     await this.prisma.$transaction(async (tx) => {
       if (returnedQty > 0) {
+        const returnUnitCost = resolveIssueUnitCost({
+          lotUnitCost: lot.unitCost,
+          mappedUnitCost: usage.unitCost,
+        });
         await this.inventory.applyMovement({
           type: InventoryTxType.PRODUCTION_RETURN,
           inventoryItemId: lot.inventoryItemId,
           warehouseId: lot.warehouseId,
           quantity: returnedQty,
+          unitCost: returnUnitCost ?? undefined,
           userId: params.user.id,
           referenceType: 'ProductionTask',
           referenceId: task.id,
+          productionTaskId: task.id,
+          productionOrderId: task.productionOrderId,
+          salesOrderId: task.productionOrder.salesOrderId ?? undefined,
           notes: `Fabric leftover ${lot.qrCode}`,
           locationId: lot.locationId,
           idempotencyKey: `fabric-return:${lot.id}:${task.id}:${returnedQty}`,
@@ -653,10 +759,12 @@ export class FabricProcurementService {
   async assessForProductionOrder(productionOrderId: string): Promise<FabricReadinessResult[]> {
     const po = await this.prisma.productionOrder.findUnique({
       where: { id: productionOrderId },
-      select: { salesOrderId: true },
+      select: { salesOrderId: true, id: true },
     });
-    if (!po?.salesOrderId) return [];
-    const items = await this.list({ salesOrderId: po.salesOrderId });
+    if (!po) return [];
+    const items = po.salesOrderId
+      ? await this.list({ salesOrderId: po.salesOrderId })
+      : await this.list({ productionOrderId: po.id });
     return items.map((i) => i.readiness);
   }
 
@@ -708,6 +816,7 @@ export class FabricProcurementService {
       requirement: {
         id: row.requirementId,
         salesOrderId: row.salesOrderId,
+        productionOrderId: row.productionOrderId,
         label:
           row.requirement.requestedFabricLabel ||
           row.requirement.displayName ||
@@ -733,6 +842,7 @@ export class FabricProcurementService {
         status: l.status,
         allocationMode: l.allocationMode,
         salesOrderId: l.salesOrderId,
+        productionOrderId: l.productionOrderId,
         locationId: l.locationId,
         inventoryItemId: l.inventoryItemId,
       })),
@@ -742,20 +852,41 @@ export class FabricProcurementService {
     const perms = user?.permissions ?? [];
     const showSupplier = hasPermission(perms, 'supplier.read');
     const showCost = hasPermission(perms, 'inventory.cost.read');
+    const poLine =
+      row.purchaseOrder?.lines.find((l) => l.fabricProcurementId === row.id) ??
+      row.purchaseOrder?.lines.find((l) => l.inventoryItemId === row.requirement.inventoryItemId);
+    const lotWithCost = row.lots.find((l) => l.unitCost != null && Number(l.unitCost) > 0);
+    const resolvedUnitCost = peekFabricUnitCost({
+      lotUnitCost: lotWithCost?.unitCost != null ? Number(lotWithCost.unitCost) : null,
+      poUnitPrice: poLine?.unitPrice != null ? Number(poLine.unitPrice) : null,
+      standardCost:
+        row.requirement.inventoryItem?.standardCost != null
+          ? Number(row.requirement.inventoryItem.standardCost)
+          : null,
+    });
     return {
       id: row.id,
       salesOrderId: row.salesOrderId,
-      salesOrderNumber: row.salesOrder.number,
-      dealerName: row.salesOrder.customer.nameEn ?? row.salesOrder.customer.nameAr,
-      productName: row.salesOrderLine.description || row.requirement.lineSetup.manufacturingName,
-      productImageUrl: row.salesOrderLine.product?.imageUrl ?? null,
+      salesOrderNumber: row.salesOrder?.number ?? row.productionOrder?.number ?? null,
+      dealerName: row.salesOrder?.customer.nameEn ?? row.salesOrder?.customer.nameAr ?? null,
+      productName:
+        row.salesOrderLine?.description ||
+        row.requirement.lineSetup?.manufacturingName ||
+        row.requirement.displayName ||
+        null,
+      productImageUrl: row.salesOrderLine?.product?.imageUrl ?? null,
       imageUrl: row.requirement.inventoryItem?.imageUrl ?? null,
+      inventoryItemId: row.requirement.inventoryItemId,
+      sku: row.requirement.sku,
       supplier: showSupplier
         ? row.supplier
           ? { id: row.supplier.id, name: row.supplier.name, phone: row.supplier.whatsappPhone || row.supplier.phone }
           : null
         : null,
       purchaseOrderId: row.purchaseOrderId,
+      purchaseOrderNumber: row.purchaseOrder?.number ?? null,
+      supplierInvoiceId: row.purchaseOrder?.supplierInvoices[0]?.id ?? null,
+      supplierInvoiceNumber: row.purchaseOrder?.supplierInvoices[0]?.number ?? null,
       purchaseRequestId: row.purchaseRequestId,
       whatsappSentAt: row.whatsappSentAt,
       whatsappLastBody: row.whatsappLastBody,
@@ -773,6 +904,8 @@ export class FabricProcurementService {
         status: l.status,
         unitCost: showCost && l.unitCost != null ? Number(l.unitCost) : null,
       })),
+      costOnFile: resolvedUnitCost != null,
+      resolvedUnitCost: showCost ? resolvedUnitCost : null,
       readiness,
     };
   }

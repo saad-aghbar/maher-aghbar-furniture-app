@@ -1789,6 +1789,113 @@ export async function buildInventoryItemReportPdf(
   return report.finish();
 }
 
+export type BinLabelSheetItem = {
+  title: string;
+  subtitle?: string;
+  scanCode: string;
+  warehouse: string;
+  bin: string;
+};
+
+/**
+ * Printable sheet of shelf QR labels — 2×4 tiles per A4 page.
+ */
+export async function buildBinLabelSheetPdf(opts: {
+  locale?: PdfLocale;
+  theme?: PdfTheme;
+  title: string;
+  items: BinLabelSheetItem[];
+}): Promise<Buffer> {
+  const locale = resolveLocale(opts.locale);
+  const theme = resolveTheme(opts.theme);
+  const rtl = locale === 'ar' || locale === 'he';
+  const palette = THEME[theme];
+  const contact = companyContact(locale);
+  const cols = 2;
+  const rows = 4;
+  const perPage = cols * rows;
+  const pageW = 595.28;
+  const pageH = 841.89;
+  const top = HEADER_BOTTOM + 8;
+  const bottom = pageH - FOOTER_TOP_OFFSET - 10;
+  const usableW = pageW - PAGE_MARGIN * 2;
+  const usableH = bottom - top;
+  const cellW = (usableW - TILE_GAP) / cols;
+  const cellH = (usableH - TILE_GAP * (rows - 1)) / rows;
+  const qrSize = Math.min(110, cellH - 52);
+
+  const pngs = await Promise.all(
+    opts.items.map((item) => qrPngBuffer(item.scanCode, Math.round(qrSize * 3))),
+  );
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 0,
+      autoFirstPage: false,
+      bufferPages: true,
+    });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    const fonts = loadFonts();
+    doc.on('pageAdded', () => {
+      drawPageChrome(doc, { theme, contact, fonts });
+    });
+
+    if (!opts.items.length) {
+      doc.addPage();
+    }
+
+    for (let i = 0; i < opts.items.length; i += perPage) {
+      doc.addPage();
+      const slice = opts.items.slice(i, i + perPage);
+      slice.forEach((item, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const x = PAGE_MARGIN + col * (cellW + TILE_GAP);
+        const y = top + row * (cellH + TILE_GAP);
+        doc.save();
+        doc.roundedRect(x, y, cellW, cellH, 8).lineWidth(0.8).strokeColor(palette.rule).stroke();
+        const png = pngs[i + idx];
+        const qrX = x + (cellW - qrSize) / 2;
+        if (png) {
+          doc.image(png, qrX, y + 10, { width: qrSize, height: qrSize });
+        }
+        const textY = y + 10 + qrSize + 6;
+        drawMixedText(doc, item.title, {
+          x: x + 8,
+          y: textY,
+          width: cellW - 16,
+          align: 'center',
+          height: 12,
+          size: 9,
+          color: palette.text,
+          fonts,
+          rtl,
+          lineBreak: false,
+        });
+        drawMixedText(doc, item.scanCode, {
+          x: x + 8,
+          y: textY + 12,
+          width: cellW - 16,
+          align: 'center',
+          height: 10,
+          size: 8,
+          color: palette.muted,
+          fonts,
+          rtl,
+          lineBreak: false,
+        });
+        doc.restore();
+      });
+    }
+
+    doc.end();
+  });
+}
+
 export function sendPdf(
   res: {
     setHeader: (k: string, v: string) => void;
@@ -1799,6 +1906,7 @@ export function sendPdf(
 ) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
   res.send(buffer);
 }
 

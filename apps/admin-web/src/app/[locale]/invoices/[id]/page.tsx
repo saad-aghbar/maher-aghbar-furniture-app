@@ -41,10 +41,6 @@ interface InvoiceDetail {
   total?: string | number;
   paidAmount?: string | number;
   outstandingAmount?: string | number;
-  jofotaraUuid?: string | null;
-  jofotaraQr?: string | null;
-  jofotaraStatus?: string | null;
-  jofotaraClearedAt?: string | null;
   customerId?: string;
   customer?: { id: string; name: string; code?: string };
   salesOrderId?: string | null;
@@ -53,6 +49,11 @@ interface InvoiceDetail {
     number: string;
     status: string;
     externalOrderNumber?: string | null;
+  } | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    productDesc?: string | null;
   } | null;
   lines?: Array<{
     id: string;
@@ -90,14 +91,6 @@ type ApplyCreditPreview = {
 
 function money(value: string | number | undefined | null) {
   return Number(value ?? 0).toFixed(2);
-}
-
-function qrImageSrc(qr: string): string | null {
-  if (qr.startsWith('data:image/')) return qr;
-  if (/^[A-Za-z0-9+/=]+$/.test(qr) && qr.length > 100) {
-    return `data:image/png;base64,${qr}`;
-  }
-  return null;
 }
 
 export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
@@ -295,6 +288,17 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               {tSales('dealerOrderNumber')}: {invoice.salesOrder.externalOrderNumber}
             </p>
           ) : null}
+          {invoice.returnRequest ? (
+            <p className="mt-1 text-xs text-text-secondary">
+              <Link
+                href={`/returns`}
+                className="text-brand hover:underline"
+                dir="ltr"
+              >
+                {invoice.returnRequest.number}
+              </Link>
+            </p>
+          ) : null}
         </Card>
         <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{ta('invoiceDate')}</p>
@@ -309,58 +313,6 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           </p>
         </Card>
       </div>
-
-      <MotionSection className="maher-form-section" as="div">
-      <Card title={ta('jofotara')} className="space-y-3">
-        {invoice.jofotaraUuid || invoice.jofotaraStatus || invoice.jofotaraQr ? (
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-text-secondary">{ta('jofotaraUuid')}</dt>
-              <dd className="mt-1 break-all font-mono text-sm" dir="ltr">
-                {invoice.jofotaraUuid ?? '—'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-text-secondary">{ta('jofotaraStatus')}</dt>
-              <dd className="mt-1 font-semibold" dir="ltr">
-                {invoice.jofotaraStatus ?? '—'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-text-secondary">{ta('jofotaraClearedAt')}</dt>
-              <dd className="mt-1 font-semibold" dir="ltr">
-                {invoice.jofotaraClearedAt?.slice(0, 19).replace('T', ' ') ?? '—'}
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="mb-2 text-xs text-text-secondary">{ta('jofotaraQr')}</dt>
-              <dd>
-                {invoice.jofotaraQr ? (
-                  (() => {
-                    const imgSrc = qrImageSrc(invoice.jofotaraQr);
-                    return imgSrc ? (
-                      <img
-                        src={imgSrc}
-                        alt={ta('jofotaraQr')}
-                        className="h-32 w-32 rounded border border-[var(--maher-border)] bg-white p-2"
-                      />
-                    ) : (
-                      <p className="break-all rounded border border-[var(--maher-border)] bg-[var(--maher-surface-muted)] p-2 font-mono text-xs" dir="ltr">
-                        {invoice.jofotaraQr}
-                      </p>
-                    );
-                  })()
-                ) : (
-                  '—'
-                )}
-              </dd>
-            </div>
-          </dl>
-        ) : (
-          <EmptyState title={ta('jofotaraNotCleared')} description={ta('jofotaraNotClearedHint')} />
-        )}
-      </Card>
-      </MotionSection>
 
       <MotionSection className="maher-form-section" as="div">
       <Card title={ta('total')} className="space-y-0">

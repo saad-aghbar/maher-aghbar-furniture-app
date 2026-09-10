@@ -45,6 +45,11 @@ export function isInspectionSetupStage(stageCode?: string | null): boolean {
   return String(stageCode ?? '').toUpperCase() === 'INSPECTION';
 }
 
+export function isQualityGateSetupStage(stageCode?: string | null): boolean {
+  const c = String(stageCode ?? '').toUpperCase();
+  return c === 'INSPECTION' || c === 'QC' || c === 'QUALITY';
+}
+
 export function isDeliverySetupStage(stageCode?: string | null): boolean {
   return String(stageCode ?? '').toUpperCase() === 'DELIVERY';
 }
@@ -73,4 +78,28 @@ export function coerceSetupProduceKind(
     return 'finished';
   }
   return kind === 'finished' ? 'semi' : kind;
+}
+
+/** Inspection / Delivery never take kits. */
+export function coerceSetupConsumeSemi(
+  consumeSemi: boolean,
+  stageCode?: string | null,
+): boolean {
+  const mode = terminalSetupMode(stageCode);
+  if (mode === 'inspection' || mode === 'delivery') return false;
+  return consumeSemi;
+}
+
+/** Inspection / QC / Delivery are milestones — 0 minutes is valid, not “needs time”. */
+export function stageNeedsTimeApproval(stage: {
+  code?: string | null;
+  estimateReviewRequired?: boolean;
+  estimatedMinutes?: number | null;
+}): boolean {
+  const code = String(stage.code ?? '').toUpperCase();
+  if (isQualityGateSetupStage(code) || isDeliverySetupStage(code) || code === 'LOGISTICS') {
+    return false;
+  }
+  if (stage.estimateReviewRequired === false) return false;
+  return Boolean(stage.estimateReviewRequired) || !(stage.estimatedMinutes && stage.estimatedMinutes > 0);
 }

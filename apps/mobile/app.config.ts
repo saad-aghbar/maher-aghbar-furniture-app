@@ -53,7 +53,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       bundleIdentifier: BUNDLE_ID,
       appleTeamId,
+      // Bump so SpringBoard drops the cached home-screen icon after a logo change.
+      buildNumber: '2',
       infoPlist: {
+        NSMicrophoneUsageDescription:
+          'Allow Maher Al-Aghbar Furniture to record a short voice note when reporting a production problem.',
         NSCameraUsageDescription:
           'Allow Maher Al-Aghbar Furniture to use the camera for QR/barcode scanning, order photos, and returns.',
         NSPhotoLibraryUsageDescription:
@@ -84,6 +88,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       edgeToEdgeEnabled: true,
       permissions: [
         'CAMERA',
+        'RECORD_AUDIO',
         'READ_MEDIA_IMAGES',
         'READ_EXTERNAL_STORAGE',
         'POST_NOTIFICATIONS',
@@ -134,6 +139,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       [
+        'expo-audio',
+        {
+          microphonePermission:
+            'Allow Maher Al-Aghbar Furniture to record a short voice note when reporting a production problem.',
+        },
+      ],
+      [
         'expo-camera',
         {
           cameraPermission:
@@ -148,7 +160,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           iCloudContainerEnvironment: 'Production',
         },
       ],
-      ...(stripIosPush
+      ...((stripIosPush
         ? ['./plugins/withPersonalTeamIosCapabilities']
         : [
             [
@@ -159,7 +171,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
                 defaultChannel: 'default',
               },
             ],
-          ]),
+          ]) as Array<string | [string, Record<string, string>]>),
     ],
     experiments: {
       typedRoutes: true,

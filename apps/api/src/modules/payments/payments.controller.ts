@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -15,7 +15,7 @@ import { PaymentMethod } from '@maher/database';
 import { PaymentsService } from './payments.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListPaymentsDto } from './dto/payment.dto';
+import { ListPaymentsDto, UpdatePaymentDto } from './dto/payment.dto';
 import type { AuthUser } from '@maher/types';
 
 class AllocationDto {
@@ -95,5 +95,37 @@ export class PaymentsController {
   @RequirePermissions('payment.record')
   record(@Body() dto: RecordPaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.record(dto, user.id);
+  }
+
+  @Patch('allocations/:id')
+  @RequirePermissions('payment.record')
+  updateAllocation(
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.updateAllocation(id, dto, user.id);
+  }
+
+  @Delete('allocations/:id')
+  @RequirePermissions('payment.record')
+  removeAllocation(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.removeAllocation(id, user.id);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('payment.record')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('payment.record')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.remove(id, user.id);
   }
 }

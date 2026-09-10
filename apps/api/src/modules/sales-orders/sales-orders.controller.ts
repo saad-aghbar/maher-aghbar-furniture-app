@@ -11,9 +11,13 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { AuthUser } from '@maher/types';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import {
+  ListReturnWorkDto,
+  ListSalesOrdersDto,
+  UpdateSalesOrderDto,
+} from './dto/sales-order.dto';
 import { SalesOrdersService } from './sales-orders.service';
 
 class ReasonDto {
@@ -61,6 +65,18 @@ export class SalesOrdersController {
   @Get()
   list(@Query() query: ListSalesOrdersDto, @CurrentUser() user: AuthUser) {
     return this.salesOrders.list(query, user);
+  }
+
+  @RequireAnyPermissions('sales-order.read', 'return.read')
+  @Get('returned-cases')
+  listReturnedCases(@Query() query: ListReturnWorkDto, @CurrentUser() user: AuthUser) {
+    return this.salesOrders.listReturnedCases(query, user);
+  }
+
+  @RequireAnyPermissions('sales-order.read', 'return.read')
+  @Get('return-work')
+  listReturnWork(@Query() query: ListReturnWorkDto, @CurrentUser() user: AuthUser) {
+    return this.salesOrders.listReturnedCases(query, user);
   }
 
   @RequirePermissions('sales-order.read')

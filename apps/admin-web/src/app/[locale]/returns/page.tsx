@@ -159,6 +159,11 @@ function ReturnBoardCard({
             {physicalLabel}
           </span>
           <StatusBadge status={resolution} />
+          {row.pieceSummary?.total ? (
+            <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 text-text-tertiary">
+              {row.pieceSummary.readyToReturn}/{row.pieceSummary.total}
+            </span>
+          ) : null}
         </div>
 
         {attentionLabel ? (
@@ -168,7 +173,7 @@ function ReturnBoardCard({
         ) : null}
 
         <div className="mt-auto maher-card-rule-t pt-2">
-          <Button size="sm" className="w-full" variant="secondary" onClick={onOpen}>
+          <Button className="h-10 w-full rounded-full" variant="secondary" onClick={onOpen}>
             {openLabel}
           </Button>
         </div>

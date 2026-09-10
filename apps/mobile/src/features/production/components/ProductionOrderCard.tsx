@@ -1,5 +1,4 @@
 import { View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { ProductThumb } from '@/components/desk/ProductThumb';
@@ -9,11 +8,14 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
-import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 import {
   productionFloorStatusLabel,
   type ProductionCardModel,
 } from '../selectProduction';
+import {
+  ProductionOriginChip,
+  productionOriginTraceLine,
+} from './ProductionOriginChip';
 
 type ProductionOrderCardProps = {
   order: ProductionCardModel;
@@ -34,7 +36,6 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
 export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const router = useRouter();
 
   const pct = Math.max(0, Math.min(100, Math.round(order.progressPercent || 0)));
   const urgent = order.priority === 'URGENT' || order.priority === 'HIGH';
@@ -150,6 +151,7 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
               {t('mobile.production.late')}
             </AppText>
           ) : null}
+          {order.origin ? <ProductionOriginChip origin={order.origin} compact /> : null}
         </View>
         <AppText variant="caption" color="brand" weight={titleWeight}>
           {t('common.details')}
@@ -183,6 +185,17 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
             >
               {order.number}
             </AppText>
+            {order.origin ? (
+              <AppText
+                variant="caption"
+                color="muted"
+                dir="ltr"
+                numberOfLines={1}
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {productionOriginTraceLine(order.origin, t)}
+              </AppText>
+            ) : null}
             <AppText
               variant="caption"
               color="secondary"
@@ -259,8 +272,8 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
                 flex: 1,
                 textAlign: isRTL ? 'right' : 'left',
                 fontSize: 10,
-                letterSpacing: locale === 'ar' ? 0 : 0.45,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                letterSpacing: locale === 'en' ? 0.45 : 0,
+                textTransform: locale === 'en' ? 'uppercase' : 'none',
               }}
             >
               {t('mobile.production.progress')}
@@ -276,11 +289,7 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
           <WorkflowProgressHit
             progressPercent={pct}
             height={5}
-            accessibilityLabel={t('mobile.productionFlow.openWorkflow')}
-            onPress={() => {
-              void haptics.selection();
-              router.push(adminProductionFlowHref(order.id));
-            }}
+            accessibilityLabel={t('mobile.production.progress')}
           />
         </View>
       </View>
@@ -321,8 +330,8 @@ function MetaRow({
         variant="caption"
         color="muted"
         style={{
-          textTransform: locale === 'ar' ? 'none' : 'uppercase',
-          letterSpacing: locale === 'ar' ? 0 : 0.5,
+          textTransform: locale === 'en' ? 'uppercase' : 'none',
+          letterSpacing: locale === 'en' ? 0.5 : 0,
           fontSize: 10,
           flexShrink: 0,
           textAlign: isRTL ? 'right' : 'left',

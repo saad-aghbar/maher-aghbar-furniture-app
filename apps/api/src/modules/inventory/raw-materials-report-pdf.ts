@@ -74,8 +74,12 @@ export async function buildRawMaterialsReportPdf(
 
   report.drawHeading(rm.title, 16);
   report.drawLine(contact.name, { bold: true, size: 10 });
+  const sectionsLabel = payload.allSections
+    ? rm.allSections
+    : payload.sections.map((g) => categoryLabel(g, rm)).join(' · ');
   report.drawPairs([
     [rm.period, periodLabel],
+    [rm.sections, sectionsLabel],
     [rm.generatedAt, fmtDateTime(payload.generatedAt, tz, locale)],
     [rm.generatedBy, payload.generatedBy],
     [rm.timezone, tz],
@@ -145,12 +149,13 @@ export async function buildRawMaterialsReportPdf(
     report.drawLine(rm.none, { muted: true });
   } else {
     report.drawTable(
-      [m.date, rm.grnPo, m.supplier, rm.material, m.qty, rm.value],
+      [m.date, rm.grnPo, m.supplier, rm.material, m.warehouse, m.qty, rm.value],
       payload.purchases.slice(0, 80).map((p) => [
         fmtDate(p.date, tz, locale),
         [p.grnNumber, p.poNumber].filter(Boolean).join(' · ') || '—',
         p.supplierName ?? '—',
         `${p.sku} · ${p.material}`,
+        [p.warehouseCode, p.locationCode].filter(Boolean).join(' · ') || '—',
         fmtQty(p.qty, p.unit),
         fmtMoney(p.value, currency),
       ]),

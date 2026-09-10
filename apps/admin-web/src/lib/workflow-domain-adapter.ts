@@ -1,3 +1,4 @@
+import { workflowGraphChainRequirements } from '@maher/types';
 import {
   applyParallelBandLink,
   canonicalizeWorkflowGraph,
@@ -13,9 +14,20 @@ import {
 } from '@maher/workflow-domain';
 import type { WorkflowEdge, WorkflowNode, WorkflowVersion } from '@/components/workflow/workflow-types';
 
+function chainFlagsFor(version: {
+  nodes: WorkflowNode[];
+  scope?: string | null;
+}) {
+  return workflowGraphChainRequirements(
+    version.scope,
+    version.nodes.map((n) => n.stageDefinition?.code ?? ''),
+  );
+}
+
 export function toDomainGraph(version: {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  scope?: string | null;
 }): CanonicalWorkflowGraph {
   const nodes = version.nodes
     .filter((n) => n.stageDefinition?.code)
@@ -28,7 +40,7 @@ export function toDomainGraph(version: {
     from: e.fromNodeId,
     to: e.toNodeId,
   }));
-  return fromRawGraph(nodes, edges);
+  return fromRawGraph(nodes, edges, chainFlagsFor(version));
 }
 
 export function simulateParallelBandLink(
@@ -121,7 +133,11 @@ export function canonicalizeDraftVersion(version: WorkflowVersion): {
     from: e.fromNodeId,
     to: e.toNodeId,
   }));
-  const after = canonicalizeWorkflowGraph({ nodes, edges: rawEdges });
+  const after = canonicalizeWorkflowGraph({
+    nodes,
+    edges: rawEdges,
+    ...chainFlagsFor(version),
+  });
   const before = toDomainGraph(version);
   // Diff raw preds vs canonical: rebuild before from raw without TR
   const rawPreds: Record<string, string[]> = {};

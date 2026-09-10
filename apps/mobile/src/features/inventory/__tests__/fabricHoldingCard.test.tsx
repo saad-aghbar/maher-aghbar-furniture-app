@@ -45,10 +45,19 @@ function row(partial: Partial<FabricTrackerRow> & { id: string; label: string })
     productName: '3-Seater Sofa',
     productImageUrl: null,
     supplierName: null,
+    inventoryItemId: null,
+    sku: null,
+    purchaseOrderId: null,
+    purchaseOrderNumber: null,
+    supplierInvoiceId: null,
+    supplierInvoiceNumber: null,
     imageUrl: null,
     locationLabel: partial.locationLabel ?? 'Holding A-3',
     qrCodes: partial.qrCodes ?? [],
     lots: [],
+    expectedAvailableAt: null,
+    costOnFile: false,
+    resolvedUnitCost: null,
   };
 }
 
@@ -100,7 +109,20 @@ describe('order fabric desk wiring', () => {
   it('groups by sales order instead of listing holding cards', () => {
     expect(desk).toContain('OrderFabricGroupCard');
     expect(desk).toContain('groupFabricRowsBySalesOrder');
+    expect(desk).toContain('listFabricHolding');
+    expect(desk).toContain('FabricGeneralStockCard');
     expect(desk).not.toContain('FabricHoldingCard');
     expect(desk).not.toContain('FabricLaneRail');
+    expect(desk).not.toContain('InventoryMaterialRow');
+  });
+
+  it('filters the desk with a local search field', () => {
+    expect(desk).toContain('onChangeSearch');
+    expect(desk).toContain('filterFabricRowsByQuery');
+    const summary = readFileSync(
+      join(__dirname, '../../fabric/FabricDeskSummary.tsx'),
+      'utf8',
+    );
+    expect(summary).toContain('InventorySearchField');
   });
 });

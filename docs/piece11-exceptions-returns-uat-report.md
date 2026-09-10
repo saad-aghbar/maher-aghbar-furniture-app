@@ -26,10 +26,10 @@ Dealers: **balqis** (F–J), **nile** (cross-deny). Password `123`.
 
 - PASS 1. admin login
 - PASS 2. P11 demo rows present (SO A–L + RET F–J) — missingSO=none missingRET=none
-- PASS 3. CASE1 P11-C cancel-impact shows consumption — status=200 materials=46 openTasks=3 semi=1
+- PASS 3. CASE1 P11-C cancel-impact shows consumption — status=200 materials=46 openTasks=6 semi=1
 - PASS 4. CASE1 P11-C cancel with reason → CANCELLED — status=201 so=CANCELLED reason=Unable to manufacture: P11 smoke cancel — material / capacity code=
 - PASS 5. CASE1 RAW PRODUCTION_ISSUE txs remain — before=1 after=1
-- PASS 6. CASE1 open tasks cancelled — openLeft=0 cancelled=3
+- PASS 6. CASE1 open tasks cancelled — openLeft=0 cancelled=6
 - PASS 7. CASE1 SEMI still exists (REQUIRES_REVIEW or present) — status=REQUIRES_REVIEW
 - PASS 8. CASE2 P11-G already APPROVED + WAITING_RETURN — approval=APPROVED physical=WAITING_RETURN
 - PASS 9. CASE2 approve alone had 0 CUSTOMER_RETURN before receive — count=0

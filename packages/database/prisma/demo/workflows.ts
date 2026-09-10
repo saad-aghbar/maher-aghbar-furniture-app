@@ -2,6 +2,8 @@ import type { PrismaClient } from '@prisma/client';
 import {
   STANDARD_FURNITURE_STAGE_CODES,
   STANDARD_FURNITURE_WORKFLOW_CODE,
+  seedReturnRecoveryWorkflow,
+  seedReturnRepairWorkflow,
 } from '../seed/workflow';
 
 export const WF_PAINTED_WOOD = 'PAINTED_WOOD';
@@ -208,7 +210,9 @@ export async function disableDemoPhotoGates(prisma: PrismaClient) {
 
 export async function seedDemoWorkflows(prisma: PrismaClient) {
   await prisma.productionStageDefinition.updateMany({
-    where: { code: { notIn: [...STANDARD_FURNITURE_STAGE_CODES] } },
+    where: {
+      code: { notIn: [...STANDARD_FURNITURE_STAGE_CODES, 'DISMANTLE_RECOVER'] },
+    },
     data: { isActive: false },
   });
   await prisma.workerSkill.deleteMany({
@@ -217,6 +221,8 @@ export async function seedDemoWorkflows(prisma: PrismaClient) {
   for (const graph of GRAPHS) {
     await publishGraph(prisma, graph);
   }
+  await seedReturnRecoveryWorkflow(prisma);
+  await seedReturnRepairWorkflow(prisma);
   await disableDemoPhotoGates(prisma);
   const count = await prisma.productionWorkflow.count({ where: { status: 'ACTIVE' } });
   console.log(`  workflows: ${count} active (incl. ${STANDARD_FURNITURE_WORKFLOW_CODE})`);

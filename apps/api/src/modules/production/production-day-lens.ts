@@ -19,6 +19,9 @@ import {
 
 export type ProductionDateMode = 'planned' | 'actual';
 
+export const PRODUCTION_DAY_FOCUSES = ['late_missed', 'at_risk'] as const;
+export type ProductionDayFocus = (typeof PRODUCTION_DAY_FOCUSES)[number];
+
 export type FactoryDayBounds = {
   onDate: string;
   timezone: string;
@@ -228,6 +231,58 @@ export function productionDayLensWhere(
   return mode === 'planned'
     ? productionDayLensPlannedWhere(bounds)
     : productionDayLensActualWhere(bounds);
+}
+
+/** Planned-day tasks that missed their planned end and have not started. */
+export function lateMissedTasksWhere(
+  bounds: FactoryDayBounds,
+  now: Date,
+): Prisma.ProductionTaskWhereInput {
+  return {
+    ...plannedTasksOverlapDayWhere(bounds.start, bounds.endExclusive),
+    actualStart: null,
+    status: { notIn: ['COMPLETED', 'CANCELLED'] },
+    plannedCompletion: { lt: now, not: null },
+  };
+}
+
+/** Orders with at least one late / missed planned task on the factory day. */
+export function productionDayLensLateMissedWhere(
+  bounds: FactoryDayBounds,
+  now: Date,
+): Prisma.ProductionOrderWhereInput {
+  return {
+    tasks: { some: lateMissedTasksWhere(bounds, now) },
+  };
+}
+
+/** Orders overdue on delivery or carrying an open task blocker. */
+export function productionDayLensAtRiskWhere(
+  now: Date,
+): Prisma.ProductionOrderWhereInput {
+  return {
+    OR: [
+      {
+        requiredDeliveryDate: { lt: now },
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      {
+        tasks: {
+          some: { blockers: { some: { resolvedAt: null } } },
+        },
+      },
+    ],
+  };
+}
+
+export function productionDayLensFocusWhere(
+  bounds: FactoryDayBounds,
+  focus: ProductionDayFocus | null | undefined,
+  now: Date,
+): Prisma.ProductionOrderWhereInput | null {
+  if (focus === 'late_missed') return productionDayLensLateMissedWhere(bounds, now);
+  if (focus === 'at_risk') return productionDayLensAtRiskWhere(now);
+  return null;
 }
 
 export function assertValidOnDate(onDate: string | undefined): string | null {

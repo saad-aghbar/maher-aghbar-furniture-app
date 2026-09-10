@@ -455,6 +455,22 @@ export class ListCalendarQuery {
   view?: 'day' | 'week' | 'month';
 }
 
+export class ListFactoryDayQuery {
+  @ApiProperty({ example: '2026-09-12' })
+  @IsString()
+  date!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  dealerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  stageId?: string;
+}
+
 export class ReviewedAllocationMoveDto {
   @ApiPropertyOptional()
   @IsOptional()

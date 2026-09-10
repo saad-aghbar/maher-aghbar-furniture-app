@@ -124,7 +124,7 @@ type Props = {
   onRefresh: () => void;
   onEndReached: () => void;
   isFetchingNextPage: boolean;
-  onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPressItem: (id: string, kind?: 'order' | 'rfq' | 'returnWork') => void;
   onPrimaryCta?: (order: OrdersProgressCardModel) => void;
   banner?: ReactNode;
 };
@@ -169,6 +169,7 @@ function toStream(
       sellerPrice: o.sellerPrice,
       kind: o.kind,
       quantity: o.quantity,
+      hasReturn: o.hasReturn,
     }));
   }
   return adminItems.map((o) => ({
@@ -198,6 +199,9 @@ function toStream(
     primaryProductionOrderId: o.primaryProductionOrderId,
     plannedStartDate: o.plannedStartDate,
     journeyLogistics: o.journeyLogistics,
+    hasReturn: o.hasReturn,
+    originKind: o.originKind,
+    originalOrderNumber: o.originalOrderNumber,
   }));
 }
 
@@ -387,7 +391,20 @@ export function OrdersSignatureHome({
 
   const adminSections: BoardSection[] = useMemo(() => {
     if (!isAdmin || deskMode !== 'orders') return [];
-    const salesOnly = allStream.filter((o) => o.kind !== 'rfq');
+    const returnWork = allStream.filter((o) => o.kind === 'returnWork');
+    if (returnWork.length) {
+      const sorted = [...returnWork].sort(sortForFloor);
+      return [
+        {
+          key: 'return_work',
+          title: t('mobile.orders.journey.returnWorkSection'),
+          totalCount: sorted.length,
+          data: sorted,
+          kind: 'lifecycle' as const,
+        },
+      ];
+    }
+    const salesOnly = allStream.filter((o) => o.kind !== 'rfq' && o.kind !== 'returnWork');
 
     // Focused lane is already server-scoped via journeyBucket — do not re-filter.
     if (adminLifecycleFocus !== 'all') {
@@ -511,6 +528,7 @@ export function OrdersSignatureHome({
                       value={orderTypeFocus}
                       counts={orderTypeCounts}
                       onChange={onOrderTypeFocusChange}
+                      includeReturned
                     />
                   ) : null}
                   <AdminLifecycleChips
@@ -527,6 +545,7 @@ export function OrdersSignatureHome({
                       value={orderTypeFocus}
                       counts={orderTypeCounts}
                       onChange={onOrderTypeFocusChange}
+                      includeReturned={false}
                     />
                   ) : null}
                   <OrdersRfqInboxChips

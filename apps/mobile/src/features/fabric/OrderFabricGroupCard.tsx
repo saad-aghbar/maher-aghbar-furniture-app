@@ -8,7 +8,14 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { FabricRowBody } from './FabricRowBody';
 import { resolveFabricTone } from './fabricToneVisuals';
-import type { FabricOrderGroup, FabricStatusSurface, FabricTrackerRow } from './selectFabricTracker';
+import {
+  fabricAwaitsSupply,
+  fabricRemainingNeed,
+  fabricStockCoverage,
+  type FabricOrderGroup,
+  type FabricStatusSurface,
+  type FabricTrackerRow,
+} from './selectFabricTracker';
 
 type Props = {
   group: FabricOrderGroup;
@@ -18,6 +25,8 @@ type Props = {
   /** Purchasing shows supplier on child rows. */
   showSupplier?: boolean;
   index?: number;
+  /** Free general-stock qty keyed by inventory item id. */
+  stockFreeByItemId?: Record<string, number>;
 };
 
 /**
@@ -30,6 +39,7 @@ export function OrderFabricGroupCard({
   onPressFabric,
   surface = 'desk',
   showSupplier = false,
+  stockFreeByItemId,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -147,6 +157,16 @@ export function OrderFabricGroupCard({
                 {group.dealerName}
               </AppText>
             ) : null}
+            {showSupplier && group.purchaseOrderNumber ? (
+              <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('mobile.purchasing.fabricPoNumber')} {group.purchaseOrderNumber}
+              </AppText>
+            ) : null}
+            {showSupplier && group.supplierInvoiceNumber ? (
+              <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('mobile.purchasing.fabricInvoice')} {group.supplierInvoiceNumber}
+              </AppText>
+            ) : null}
             {group.attention ? (
               <AppText variant="caption" style={{ color: colors.warning }}>
                 {t('mobile.inventory.fabricOrderAttention')}
@@ -209,6 +229,7 @@ export function OrderFabricGroupCard({
                 showOrder={false}
                 showSupplier={showSupplier}
                 surface={surface}
+                stockHint={stockHintForRow(row, stockFreeByItemId, t)}
               />
             </AnimatedPressable>
           </View>
@@ -216,4 +237,20 @@ export function OrderFabricGroupCard({
       </View>
     </View>
   );
+}
+
+function stockHintForRow(
+  row: FabricTrackerRow,
+  freeById: Record<string, number> | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string | null {
+  if (!freeById || !fabricAwaitsSupply(row) || !row.inventoryItemId) return null;
+  const free = freeById[row.inventoryItemId] ?? 0;
+  if (!(free > 0)) return null;
+  const need = fabricRemainingNeed(row);
+  const cover = fabricStockCoverage({ need, free });
+  if (cover === 'partial' && need != null) {
+    return t('mobile.inventory.fabricCoversPartial', { free, need, unit: row.unit });
+  }
+  return t('mobile.inventory.fabricInGeneralStock');
 }

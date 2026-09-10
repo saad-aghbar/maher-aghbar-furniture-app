@@ -146,6 +146,13 @@ describe('Piece 2 order production setup', () => {
           reservedQty: 0,
           warehouseId: 'wh-1',
         }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            availableQty: 100,
+            reservedQty: 0,
+            warehouseId: 'wh-1',
+          },
+        ]),
       },
       auditEvent: { create: jest.fn() },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
@@ -433,6 +440,13 @@ describe('Piece 4 manufacturing specification', () => {
           reservedQty: 0,
           warehouseId: 'wh-1',
         }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            availableQty: 100,
+            reservedQty: 0,
+            warehouseId: 'wh-1',
+          },
+        ]),
       },
       auditEvent: { create: jest.fn() },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),

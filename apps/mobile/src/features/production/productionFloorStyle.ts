@@ -7,10 +7,11 @@ export function productionBoardShadow(colorScheme: 'light' | 'dark'): ViewStyle 
 }
 
 export function productionSectionLabelStyle(locale: string, brandColor: string) {
+  const englishEyebrow = locale === 'en';
   return {
     color: brandColor,
-    letterSpacing: locale === 'ar' ? 0 : 0.5,
-    textTransform: (locale === 'ar' ? 'none' : 'uppercase') as 'none' | 'uppercase',
+    letterSpacing: englishEyebrow ? 0.5 : 0,
+    textTransform: (englishEyebrow ? 'uppercase' : 'none') as 'none' | 'uppercase',
     fontSize: 11,
   };
 }

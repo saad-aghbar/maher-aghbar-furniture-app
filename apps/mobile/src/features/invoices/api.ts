@@ -1,7 +1,8 @@
-export type { Invoice, InvoiceLine, InvoicePayment } from '@/api/modules/invoices';
+export type { Invoice, InvoiceAllocation, InvoiceLine, InvoicePayment } from '@/api/modules/invoices';
 export {
   createInvoiceFromSalesOrder,
   getInvoice,
+  listCreatableInvoiceSources,
   listInvoices,
   openInvoicePdf,
   updateInvoice,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
@@ -7,11 +7,13 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { shouldSeedInvoiceSheet } from '../invoiceSheetSeed';
 
 const METHODS: PaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'OTHER'];
 
@@ -22,6 +24,7 @@ type Props = {
   customerId: string;
   /** Invoice remaining (outstanding) — overpay above this becomes account credit. */
   defaultAmount: number;
+  onRecorded?: () => void;
 };
 
 function round3(n: number) {
@@ -37,6 +40,7 @@ export function RecordPaymentSheet({
   invoiceId,
   customerId,
   defaultAmount,
+  onRecorded,
 }: Props) {
   const { t, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
@@ -47,15 +51,18 @@ export function RecordPaymentSheet({
   const [method, setMethod] = useState<PaymentMethod>('BANK_TRANSFER');
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
+  const wasOpen = useRef(false);
 
   const remaining = Math.max(0, defaultAmount);
   const sheetHeight = Math.min(Math.round(height * 0.72), 620);
 
   useEffect(() => {
-    if (!open) return;
-    setMethod('BANK_TRANSFER');
-    setAmount(remaining > 0 ? String(Number(remaining.toFixed(3))) : '');
-    setReference('');
+    if (shouldSeedInvoiceSheet(open, wasOpen.current)) {
+      setMethod('BANK_TRANSFER');
+      setAmount(remaining > 0 ? String(Number(remaining.toFixed(3))) : '');
+      setReference('');
+    }
+    wasOpen.current = open;
   }, [open, remaining]);
 
   const payN = Number(amount);
@@ -129,11 +136,14 @@ export function RecordPaymentSheet({
           </View>
         </View>
 
-        <TextField
-          label={t('accounting.amountJod')}
+        <QtyStepperField
+          label={t('mobile.invoices.amount')}
           value={amount}
           onChangeText={setAmount}
-          keyboardType="decimal-pad"
+          unit="₪"
+          step={1}
+          decimals={2}
+          min={0.001}
         />
         <TextField
           label={t('accounting.referenceOptional')}
@@ -208,6 +218,7 @@ export function RecordPaymentSheet({
                 onSuccess: () => {
                   void haptics.confirmMedium();
                   onClose();
+                  onRecorded?.();
                   showToast({
                     variant: 'success',
                     message: t('accounting.paymentRecorded'),

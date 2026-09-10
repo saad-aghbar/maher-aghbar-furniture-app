@@ -128,15 +128,15 @@ describe('windowFromFreeBlock', () => {
     });
   });
 
-  it('caps end to the free slot when duration is longer', () => {
+  it('returns null when the free slot is shorter than the stage', () => {
     const picked = windowFromFreeBlock(start, end, 180);
-    expect(picked).toEqual({ startMs: start, endMs: end });
+    expect(picked).toBeNull();
   });
 
-  it('uses the full tiny slot when duration exceeds it', () => {
+  it('returns null for a tiny slot shorter than the duration', () => {
     const tinyEnd = start + 15 * 60_000;
     const picked = windowFromFreeBlock(start, tinyEnd, 120);
-    expect(picked).toEqual({ startMs: start, endMs: tinyEnd });
+    expect(picked).toBeNull();
   });
 
   it('returns null for inverted or empty ranges', () => {
@@ -166,6 +166,23 @@ describe('pickSlotsFromFreeWindows / buildDayPickTimeline', () => {
     expect(timeline).toHaveLength(4);
   });
 
+  it('splits an empty 8h day into 30-minute Available picks', () => {
+    const bounds = localDayBounds('2026-09-01')!;
+    const plan = buildWorkerDayPlan({
+      dayStartMs: bounds.dayStartMs,
+      dayEndMs: bounds.dayEndMs,
+      busy: [],
+      capacityMinutes: 480,
+    });
+    const slots = pickSlotsFromFreeWindows(plan.freeWindows, 30);
+    expect(slots).toHaveLength(16);
+    expect(slots.every((s) => s.durationMinutes === 30)).toBe(true);
+    expect(formatHm(slots[0]!.startMs)).toBe('08:00');
+    expect(formatHm(slots[0]!.endMs)).toBe('08:30');
+    expect(formatHm(slots[15]!.startMs)).toBe('15:30');
+    expect(formatHm(slots[15]!.endMs)).toBe('16:00');
+  });
+
   it('keeps busy blocks and fills free gaps with picks for any worker day', () => {
     const bounds = localDayBounds('2026-09-01')!;
     const busyStart = new Date(2026, 8, 1, 10, 0).getTime();
@@ -189,5 +206,33 @@ describe('pickSlotsFromFreeWindows / buildDayPickTimeline', () => {
       endMs: busyStart,
     });
     expect(timeline[1]).toMatchObject({ kind: 'busy', label: 'SO-1' });
+  });
+
+  it('treats a paused tail as a hole — stopped is visual only', () => {
+    const bounds = localDayBounds('2026-09-01')!;
+    const workEnd = new Date(2026, 8, 1, 10, 4).getTime();
+    const stopEnd = new Date(2026, 8, 1, 10, 41).getTime();
+    const plan = buildWorkerDayPlan({
+      dayStartMs: bounds.dayStartMs,
+      dayEndMs: bounds.dayEndMs,
+      busy: [
+        {
+          startMs: bounds.dayStartMs,
+          endMs: workEnd,
+          label: 'SO-1',
+          kind: 'work',
+        },
+        {
+          startMs: workEnd,
+          endMs: stopEnd,
+          label: 'stopped',
+          kind: 'stopped',
+        },
+      ],
+      capacityMinutes: 480,
+    });
+    expect(plan.plannedMinutes).toBe(124);
+    expect(plan.freeWindows.some((w) => w.startMs === workEnd)).toBe(true);
+    expect(plan.blocks.some((b) => b.kind === 'stopped')).toBe(true);
   });
 });

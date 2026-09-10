@@ -83,7 +83,14 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
   }
 
   if (surface === 'employee') {
-    if (segments.includes('tasks')) return 'tasks';
+    if (
+      segments.includes('tasks') ||
+      segments.includes('lane') ||
+      segments.includes('take-in') ||
+      segments.includes('orders')
+    ) {
+      return 'tasks';
+    }
     if (segments.includes('completed')) return 'completed';
     if (segments.includes('notifications')) return 'notifications';
     if (segments.includes('profile')) return 'profile';

@@ -3,6 +3,7 @@ export type {
   ParallelBand,
   PlacementIntent,
   PredecessorPatch,
+  WorkflowChainOptions,
   WorkflowDomainEdge,
   WorkflowDomainNode,
   WorkflowMutation,

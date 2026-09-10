@@ -9,6 +9,10 @@ import { useTheme } from '@/theme';
 import type { ProductionOrderListItem } from '../api';
 import { productionFloorStatusLabel, selectProductionCard } from '../selectProduction';
 import { productionInsetStyle } from '../productionFloorStyle';
+import {
+  ProductionOriginChip,
+  productionOriginTraceLine,
+} from './ProductionOriginChip';
 
 type Props = {
   order: ProductionOrderListItem;
@@ -21,7 +25,22 @@ function eventLabel(
 ): string {
   const key = `mobile.production.dayLens.event.${kind}`;
   const label = t(key);
-  return label === key ? kind.replace(/_/g, ' ') : label;
+  return label === key ? t('mobile.production.dayLens.event.unknown') : label;
+}
+
+function eventStage(
+  ev: { stage?: string | null; stageNameEn?: string | null; stageNameAr?: string | null; stageNameHe?: string | null },
+  locale: string,
+): string | null {
+  const named =
+    locale === 'ar'
+      ? ev.stageNameAr || ev.stage
+      : locale === 'he'
+        ? ev.stageNameHe || ev.stage
+        : ev.stageNameEn || ev.stage;
+  if (!named?.trim()) return null;
+  if (/^[A-Z][A-Z0-9_]{2,}$/.test(named.trim())) return null;
+  return named;
 }
 
 /**
@@ -33,7 +52,9 @@ export function ProductionDayOrderCard({ order, onPress }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const card = selectProductionCard(order, locale);
   const lens = order.dayLens;
-  const soPo = [order.salesOrder?.number, order.number].filter(Boolean).join(' · ');
+  const soPo = card.origin
+    ? productionOriginTraceLine(card.origin, t)
+    : [order.salesOrder?.number, order.number].filter(Boolean).join(' · ');
 
   return (
     <AnimatedPressable
@@ -74,6 +95,7 @@ export function ProductionDayOrderCard({ order, onPress }: Props) {
             {t('mobile.production.late')}
           </AppText>
         ) : null}
+        {card.origin ? <ProductionOriginChip origin={card.origin} compact /> : null}
       </View>
 
       <View
@@ -135,18 +157,21 @@ export function ProductionDayOrderCard({ order, onPress }: Props) {
                 })
               : null}
             {lens?.mode === 'actual'
-              ? (lens.events ?? []).map((ev, i) => (
-                  <View key={`${ev.kind}:${ev.at}:${i}`} style={{ marginBottom: 6, gap: 2 }}>
-                    <AppText variant="caption" weight={titleWeight}>
-                      {eventLabel(ev.kind, t)}
-                      {ev.stage ? ` · ${ev.stage}` : ''}
-                      {ev.worker ? ` · ${ev.worker}` : ''}
-                    </AppText>
-                    <AppText variant="caption" color="muted" dir="ltr">
-                      {formatDateTime(ev.at)}
-                    </AppText>
-                  </View>
-                ))
+              ? (lens.events ?? []).map((ev, i) => {
+                  const stage = eventStage(ev, locale);
+                  return (
+                    <View key={`${ev.kind}:${ev.at}:${i}`} style={{ marginBottom: 6, gap: 2 }}>
+                      <AppText variant="caption" weight={titleWeight}>
+                        {eventLabel(ev.kind, t)}
+                        {stage ? ` · ${stage}` : ''}
+                        {ev.worker ? ` · ${ev.worker}` : ''}
+                      </AppText>
+                      <AppText variant="caption" color="muted" dir="ltr">
+                        {formatDateTime(ev.at)}
+                      </AppText>
+                    </View>
+                  );
+                })
               : null}
             {!lens?.plannedTasks?.length && !lens?.events?.length ? (
               <AppText variant="caption" color="muted">

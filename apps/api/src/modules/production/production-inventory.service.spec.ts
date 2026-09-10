@@ -5,6 +5,21 @@ import type { InventoryService } from '../inventory/inventory.service';
 
 describe('ProductionInventoryService', () => {
   function service(tx: Record<string, unknown>, applyMovement = jest.fn()) {
+    if (!tx.warehouseLocation) {
+      tx.warehouseLocation = {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'loc-default',
+          warehouseId: 'semi-wh',
+          isDefault: true,
+          code: 'SEMI-MAIN',
+          qrCode: 'BIN-SEMI-MAIN',
+        }),
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'loc-default' }),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      };
+    }
     return {
       service: new ProductionInventoryService(
         {} as PrismaService,
@@ -248,7 +263,7 @@ describe('ProductionInventoryService', () => {
             quantity: 1,
             inventoryItemId: 'frame-item',
             warehouseId: 'semi-wh',
-            locationId: null,
+            locationId: 'semi-loc',
             status: 'AVAILABLE',
           },
         ]),
@@ -340,6 +355,9 @@ describe('ProductionInventoryService', () => {
       warehouse: {
         findUnique: jest.fn().mockResolvedValue({ id: 'raw-wh', type: 'RAW_MATERIALS' }),
         findFirst: jest.fn(),
+      },
+      productionOrder: {
+        findUnique: jest.fn().mockResolvedValue({ salesOrderId: 'so-1' }),
       },
     };
     const prisma = {
@@ -476,7 +494,7 @@ describe('ProductionInventoryService', () => {
                 quantity: 1,
                 inventoryItemId: 'frame-item',
                 warehouseId: 'semi-wh',
-                locationId: null,
+                locationId: 'semi-loc',
                 status: 'AVAILABLE',
               },
             ]);

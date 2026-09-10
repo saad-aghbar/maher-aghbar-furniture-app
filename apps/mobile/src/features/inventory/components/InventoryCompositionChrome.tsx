@@ -41,6 +41,10 @@ type Props = {
   warehouseLabel?: string;
   onCreateWarehouse?: () => void;
   canCreateWarehouse?: boolean;
+  receiveOrdersLabel?: string;
+  onReceiveOrders?: () => void;
+  canReceiveOrders?: boolean;
+  receiveOrdersCount?: number;
   scanLabel?: string;
   onScan?: () => void;
   canScan?: boolean;
@@ -73,6 +77,10 @@ export function InventoryCompositionChrome({
   warehouseLabel,
   onCreateWarehouse,
   canCreateWarehouse,
+  receiveOrdersLabel,
+  onReceiveOrders,
+  canReceiveOrders,
+  receiveOrdersCount = 0,
   scanLabel,
   onScan,
   canScan,
@@ -87,6 +95,8 @@ export function InventoryCompositionChrome({
   const createVisible = Boolean(canCreate && onCreate && createLabel);
   const warehouseVisible =
     onMaterialsItems && Boolean(canCreateWarehouse && onCreateWarehouse && warehouseLabel);
+  const receiveVisible =
+    onMaterialsItems && Boolean(canReceiveOrders && onReceiveOrders && receiveOrdersLabel);
   const scanVisible = Boolean(canScan && onScan && scanLabel);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const rowDir = isRTL ? 'row-reverse' : 'row';
@@ -205,7 +215,7 @@ export function InventoryCompositionChrome({
         ) : null}
       </InventoryBoardCard>
 
-      {createVisible || warehouseVisible ? (
+      {createVisible || warehouseVisible || receiveVisible ? (
         <View
           style={{
             flexDirection: rowDir,
@@ -231,6 +241,20 @@ export function InventoryCompositionChrome({
               tone="soft"
               style={{ flex: 1, minWidth: 0 }}
               onPress={() => onCreateWarehouse?.()}
+            />
+          ) : null}
+          {receiveVisible ? (
+            <FloorActionButton
+              label={
+                receiveOrdersCount > 0
+                  ? `${receiveOrdersLabel!} (${receiveOrdersCount})`
+                  : receiveOrdersLabel!
+              }
+              accessibilityLabel={receiveOrdersLabel!}
+              icon="cube-outline"
+              tone="soft"
+              style={{ flex: 1, minWidth: 0 }}
+              onPress={() => onReceiveOrders?.()}
             />
           ) : null}
         </View>

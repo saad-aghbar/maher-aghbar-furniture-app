@@ -8,7 +8,18 @@ import {
   type TodayFloorBucket,
   type TodayQualityStamp,
 } from '@/features/tasks/floorPhase';
+import { type Href } from 'expo-router';
 import type { WorkerHomeNotification, WorkerHomePayload, WorkerHomeTask } from './api';
+
+export function workerHomeLaneHref(task: {
+  id: string;
+  productionOrderId?: string | null;
+}): Href {
+  if (task.productionOrderId) {
+    return `/(app)/(employee)/lane/${task.productionOrderId}` as Href;
+  }
+  return `/(app)/(employee)/tasks/${task.id}` as Href;
+}
 
 export type { TodayFloorBucket, TodayQualityStamp };
 
@@ -77,6 +88,7 @@ export function mapTaskListItemToWorkerHomeTask(
 
   return {
     id: item.id,
+    productionOrderId: item.productionOrder?.id ?? null,
     number: item.number,
     name: stage?.nameEn || item.name,
     nameEn: stage?.nameEn ?? null,

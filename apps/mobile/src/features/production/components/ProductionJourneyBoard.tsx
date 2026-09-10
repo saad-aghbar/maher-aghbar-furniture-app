@@ -145,6 +145,24 @@ export function ProductionJourneyBoard({ stages, onOpenStage }: Props) {
                       tone="warning"
                     />
                   ) : null}
+                  {stage.inspectionProgress && stage.inspectionProgress.total > 0 ? (
+                    <Meta
+                      label={t('mobile.production.dossier.inspection')}
+                      value={t('mobile.production.dossier.inspectionPartial', {
+                        passed: stage.inspectionProgress.passed,
+                        total: stage.inspectionProgress.total,
+                      })}
+                      isRTL={isRTL}
+                    />
+                  ) : null}
+                  {stage.backForRework ? (
+                    <Meta
+                      label={t('mobile.production.dossier.rework')}
+                      value={t('mobile.production.dossier.backForRework')}
+                      isRTL={isRTL}
+                      tone="warning"
+                    />
+                  ) : null}
                 </View>
                 <AppText variant="caption" color="brand" style={{ marginTop: 4 }}>
                   {t('mobile.production.dossier.tapExecution')}

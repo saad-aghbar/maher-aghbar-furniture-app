@@ -11,14 +11,17 @@ import { TextField } from '@/components/forms/TextField';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import type { WorkflowScope } from '@/api/modules/workflow';
 import { useAssignOrderWorkflowMutation, useWorkflowsQuery } from '@/features/workflow/query';
+import { workflowScopeLabelKey } from '@/features/workflow/workflowScope';
 import { WorkflowFloorBoard, WorkflowFloorRow } from './WorkflowFloorList';
 
 type Props = {
   productionOrderId: string;
+  preferredScope?: WorkflowScope;
 };
 
-export function AssignOrderWorkflowCard({ productionOrderId }: Props) {
+export function AssignOrderWorkflowCard({ productionOrderId, preferredScope }: Props) {
   const { t, locale } = useLocale();
   const { theme } = useTheme();
   const { showToast } = useToast();
@@ -29,14 +32,21 @@ export function AssignOrderWorkflowCard({ productionOrderId }: Props) {
   const assignMutation = useAssignOrderWorkflowMutation(productionOrderId);
 
   const filtered = useMemo(() => {
-    const rows = (workflowsQuery.data ?? []).filter((wf) => Boolean(wf.activeVersion));
+    const rows = (workflowsQuery.data ?? [])
+      .filter((wf) => Boolean(wf.activeVersion))
+      .sort((a, b) => {
+        if (!preferredScope) return 0;
+        const aMatch = (a.scope ?? 'STANDARD') === preferredScope ? 0 : 1;
+        const bMatch = (b.scope ?? 'STANDARD') === preferredScope ? 0 : 1;
+        return aMatch - bMatch;
+      });
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((wf) => {
       const name = localizedName(locale, wf, wf.code).toLowerCase();
       return name.includes(q) || wf.code.toLowerCase().includes(q);
     });
-  }, [locale, query, workflowsQuery.data]);
+  }, [locale, preferredScope, query, workflowsQuery.data]);
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -72,14 +82,15 @@ export function AssignOrderWorkflowCard({ productionOrderId }: Props) {
               <WorkflowFloorRow
                 key={wf.id}
                 label={localizedName(locale, wf, wf.code)}
-                meta={
+                meta={[
+                  t(workflowScopeLabelKey(wf.scope)),
                   wf.activeVersion
                     ? t('mobile.production.workflow.cardMeta', {
                         version: wf.activeVersion.versionNumber,
                         stages: wf.activeVersion._count?.nodes ?? 0,
                       })
-                    : t('mobile.production.workflow.draftVersion')
-                }
+                    : t('mobile.production.workflow.draftVersion'),
+                ].join(' · ')}
                 active={active}
                 showChevron={false}
                 onPress={() => {

@@ -109,6 +109,52 @@ export type SalesOrderListItem = {
   /** Presentation-safe logistics facts for RFD / Shipped / Delivered cards. */
   journeyLogistics?: SalesOrderJourneyLogistics | null;
   workerAssignmentRequired?: boolean;
+  /** True when this sales order has at least one return request. */
+  hasReturn?: boolean;
+  hasPendingReturn?: boolean;
+  returnSummary?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+  } | null;
+};
+
+export type ReturnWorkOrderRow = {
+  id: string;
+  number: string;
+  kind: 'RETURN_WORK' | 'REPLACEMENT' | 'returnCase' | string;
+  originType?: string | null;
+  originLabel?: string | null;
+  status?: string;
+  lifecycleState?: string | null;
+  quantity?: number | string | null;
+  productDescription?: string | null;
+  requiredDeliveryDate?: string | null;
+  plannedStartDate?: string | null;
+  createdAt?: string | null;
+  releasedToFactoryAt?: string | null;
+  progressPercent?: number | null;
+  pieceSummary?: {
+    total: number;
+    repair: number;
+    replacement: number;
+    scrapRecovery: number;
+    progressPercent: number;
+  } | null;
+  customer?: {
+    id: string;
+    name?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    code?: string | null;
+  } | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+  } | null;
+  originalOrder?: { id: string; number: string } | null;
 };
 
 export type AdminOrderJourneyCounts = {
@@ -141,6 +187,8 @@ export type SalesOrderListFilters = PageParams & {
   customerId?: string;
   /** Admin Standard / Modified / Custom lens — server rollup; COUNT=DATASET. */
   orderType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+  /** Admin Returned axis — not a 4th orderType. */
+  returned?: boolean;
 };
 
 export type AdminOrderTypeCounts = {
@@ -156,6 +204,7 @@ export async function listSalesOrders(
     meta: PaginatedResponse<SalesOrderListItem>['meta'] & {
       journeyCounts?: AdminOrderJourneyCounts;
       orderTypeCounts?: AdminOrderTypeCounts;
+      returned?: number;
     };
   }
 > {
@@ -172,8 +221,21 @@ export async function listSalesOrders(
     deliveryTo: filters.deliveryTo,
     customerId: filters.customerId,
     orderType: filters.orderType,
+    returned: filters.returned,
   });
   return apiGet(`/sales-orders${qs}`);
+}
+
+export async function listReturnWorkOrders(
+  filters: PageParams & { q?: string; customerId?: string } = {},
+): Promise<PaginatedResponse<ReturnWorkOrderRow>> {
+  const qs = toSearchParams({
+    page: filters.page,
+    pageSize: filters.pageSize,
+    q: filters.q,
+    customerId: filters.customerId,
+  });
+  return apiGet(`/sales-orders/returned-cases${qs}`);
 }
 
 export type SalesOrderDocument = {

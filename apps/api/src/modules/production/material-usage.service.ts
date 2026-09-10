@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InventoryTxType, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -6,6 +6,15 @@ import { scaleMaterialQty } from '../scheduling/domain/material-readiness';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import { buildMaterialCostMap } from '../../common/helpers/order-costing.util';
 import { roundMoney } from '../../common/helpers/money.util';
+import { resolveIssueUnitCost } from '../inventory/issue-unit-cost';
+import { NotificationsService } from '../notifications/notifications.service';
+import { materialVarianceNotifyCode } from './material-variance-notify';
+import {
+  issueWarehousesFromBalances,
+  issueWarehousesFromCatalog,
+  pickSuggestedIssueWarehouseId,
+  type IssueWarehouseOption,
+} from './material-issue-warehouse';
 
 type Tx = Prisma.TransactionClient;
 
@@ -54,6 +63,8 @@ export type MaterialIdentifyResult =
       returnedQty: number;
       scrapQty: number;
       usageId: string | null;
+      warehouses: IssueWarehouseOption[];
+      suggestedWarehouseId: string | null;
     }
   | {
       status: 'WRONG';
@@ -72,14 +83,19 @@ export type MaterialIdentifyResult =
       imageUrl: string | null;
       unit: string;
       message: string;
+      warehouses: IssueWarehouseOption[];
+      suggestedWarehouseId: string | null;
     }
   | { status: 'NOT_FOUND'; code: string };
 
 @Injectable()
 export class MaterialUsageService {
+  private readonly varianceNotifyAt = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -294,36 +310,79 @@ export class MaterialUsageService {
           orderBy: { availableQty: 'desc' },
         })
       : [];
-    const warehousesByItem = new Map<
-      string,
-      Array<{
-        id: string;
-        code: string;
-        nameEn: string;
-        nameAr: string;
-        nameHe: string | null;
-        availableQty: number;
-        isDefault: boolean;
-      }>
-    >();
+    const warehousesByItem = new Map<string, IssueWarehouseOption[]>();
+    const byItem = new Map<string, typeof balances>();
     for (const bal of balances) {
-      const list = warehousesByItem.get(bal.inventoryItemId) ?? [];
-      list.push({
-        id: bal.warehouse.id,
-        code: bal.warehouse.code,
-        nameEn: bal.warehouse.nameEn,
-        nameAr: bal.warehouse.nameAr,
-        nameHe: bal.warehouse.nameHe,
-        availableQty: Number(bal.availableQty),
-        isDefault: bal.warehouse.isDefault,
-      });
-      warehousesByItem.set(bal.inventoryItemId, list);
+      const list = byItem.get(bal.inventoryItemId) ?? [];
+      list.push(bal);
+      byItem.set(bal.inventoryItemId, list);
     }
+    for (const [itemId, rows] of byItem) {
+      warehousesByItem.set(itemId, issueWarehousesFromBalances(rows));
+    }
+
+    const missingBalances = rows.some(
+      (row) => (warehousesByItem.get(row.inventoryItemId) ?? []).length === 0,
+    );
+    const fallbackRaw = missingBalances
+      ? issueWarehousesFromCatalog(
+          await this.prisma.warehouse.findMany({
+            where: { type: 'RAW_MATERIALS', isActive: true },
+            select: {
+              id: true,
+              code: true,
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              isDefault: true,
+            },
+            orderBy: { code: 'asc' },
+          }),
+        )
+      : [];
 
     return rows.map((row) => ({
       ...row,
-      warehouses: warehousesByItem.get(row.inventoryItemId) ?? [],
+      warehouses: warehousesByItem.get(row.inventoryItemId) ?? fallbackRaw,
     }));
+  }
+
+  private async loadIssueWarehouses(inventoryItemId: string): Promise<IssueWarehouseOption[]> {
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: {
+        inventoryItemId,
+        warehouse: { type: 'RAW_MATERIALS', isActive: true },
+      },
+      include: {
+        warehouse: {
+          select: {
+            id: true,
+            code: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+            isDefault: true,
+          },
+        },
+      },
+      orderBy: { availableQty: 'desc' },
+    });
+    const fromStock = issueWarehousesFromBalances(balances);
+    if (fromStock.length) return fromStock;
+    return issueWarehousesFromCatalog(
+      await this.prisma.warehouse.findMany({
+        where: { type: 'RAW_MATERIALS', isActive: true },
+        select: {
+          id: true,
+          code: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+          isDefault: true,
+        },
+        orderBy: { code: 'asc' },
+      }),
+    );
   }
 
   /**
@@ -364,6 +423,9 @@ export class MaterialUsageService {
       };
     }
 
+    const warehouses = await this.loadIssueWarehouses(item.id);
+    const suggestedWarehouseId = pickSuggestedIssueWarehouseId(warehouses);
+
     const match = lines.find((l) => l.inventoryItemId === item.id);
     if (match) {
       return {
@@ -380,10 +442,13 @@ export class MaterialUsageService {
         returnedQty: Number(match.returnedQty),
         scrapQty: Number(match.scrapQty),
         usageId: match.id,
+        warehouses,
+        suggestedWarehouseId,
       };
     }
 
     // Not on the expected list — allow as extra (RAW substitute only).
+    // Printed material QR is SKU-only; warehouse is inferred from stock.
     return {
       status: 'EXTRA',
       inventoryItemId: item.id,
@@ -394,6 +459,8 @@ export class MaterialUsageService {
       imageUrl: item.imageUrl,
       unit: item.unit,
       message: 'Not on the expected list; can add as extra with a reason.',
+      warehouses,
+      suggestedWarehouseId,
     };
   }
 
@@ -411,6 +478,8 @@ export class MaterialUsageService {
       sku?: string;
       issueWarehouseId?: string | null;
       returnWarehouseId?: string | null;
+      issueLocationId?: string | null;
+      returnLocationId?: string | null;
     }>,
   ) {
     await this.ensureExpectedLines(taskId);
@@ -455,6 +524,8 @@ export class MaterialUsageService {
         isExtra || actualQty > expectedQty + 1e-9 || (actualQty > 0 && expectedQty <= 0);
       const issueWarehouseId = line.issueWarehouseId?.trim() || null;
       const returnWarehouseId = line.returnWarehouseId?.trim() || null;
+      const issueLocationId = line.issueLocationId?.trim() || null;
+      const returnLocationId = line.returnLocationId?.trim() || null;
 
       if (returnedQty > 0 && !returnWarehouseId) {
         throw new BadRequestException({
@@ -523,6 +594,8 @@ export class MaterialUsageService {
           isExtra,
           issueWarehouseId,
           returnWarehouseId,
+          issueLocationId,
+          returnLocationId,
           recordedById: userId,
         },
         update: {
@@ -536,10 +609,73 @@ export class MaterialUsageService {
           isExtra,
           issueWarehouseId,
           returnWarehouseId,
+          issueLocationId,
+          returnLocationId,
         },
       });
+
+      const status = classifyOrderMaterialUsageStatus(expectedQty, actualQty);
+      const templateCode = materialVarianceNotifyCode(status);
+      if (templateCode) {
+        await this.notifyMaterialVariance({
+          taskId,
+          inventoryItemId: line.inventoryItemId,
+          sku,
+          expectedQty,
+          actualQty,
+          reason: line.reasonNotes ?? line.scrapReason ?? '',
+          templateCode,
+          userId,
+        });
+      }
     }
     return this.listForTask(taskId);
+  }
+
+  private async notifyMaterialVariance(opts: {
+    taskId: string;
+    inventoryItemId: string;
+    sku: string;
+    expectedQty: number;
+    actualQty: number;
+    reason: string;
+    templateCode: string;
+    userId: string;
+  }) {
+    if (!this.notifications) return;
+    const key = `${opts.taskId}:${opts.inventoryItemId}:${opts.templateCode}`;
+    const now = Date.now();
+    const last = this.varianceNotifyAt.get(key) ?? 0;
+    if (now - last < 10 * 60_000) return;
+    this.varianceNotifyAt.set(key, now);
+
+    const [task, worker] = await Promise.all([
+      this.prisma.productionTask.findUnique({
+        where: { id: opts.taskId },
+        select: {
+          name: true,
+          productionOrder: { select: { id: true, number: true } },
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: opts.userId },
+        select: { firstName: true, lastName: true },
+      }),
+    ]);
+    const workerName = [worker?.firstName, worker?.lastName].filter(Boolean).join(' ').trim() || opts.userId;
+    await this.notifications.notifyAdminUsers({
+      templateCode: opts.templateCode,
+      vars: {
+        workerName,
+        sku: opts.sku,
+        actual: String(opts.actualQty),
+        expected: String(opts.expectedQty),
+        orderNumber: task?.productionOrder.number ?? '',
+        taskName: task?.name ?? opts.taskId,
+        reason: opts.reason,
+      },
+      linkUrl: task?.productionOrder.id ? `/production-orders/${task.productionOrder.id}` : undefined,
+    });
   }
 
   private async assertRawWarehouse(
@@ -619,10 +755,16 @@ export class MaterialUsageService {
       const issueQty = actual + returned + scrap;
       const costedQty = actual + scrap - returned;
       const mapped = costMap.has(row.sku) ? costMap.get(row.sku)! : null;
-      const unitCost =
-        mapped != null && Number.isFinite(mapped) && mapped > 0
-          ? Number(roundMoney(mapped))
-          : null;
+      const lot = row.inventoryLotId
+        ? await params.tx.inventoryLot.findUnique({
+            where: { id: row.inventoryLotId },
+            select: { unitCost: true },
+          })
+        : null;
+      const unitCost = resolveIssueUnitCost({
+        lotUnitCost: lot?.unitCost,
+        mappedUnitCost: mapped,
+      });
       const extendedCost =
         unitCost != null && costedQty > 0 ? Number(roundMoney(unitCost * costedQty)) : null;
 
@@ -644,34 +786,40 @@ export class MaterialUsageService {
       }
 
       let warehouseId = row.issueWarehouseId ?? null;
-      let balance =
-        warehouseId != null
-          ? await params.tx.inventoryBalance.findFirst({
-              where: {
-                inventoryItemId: row.inventoryItemId,
-                warehouseId,
-                warehouse: { type: 'RAW_MATERIALS', isActive: true },
-              },
-            })
-          : null;
-      if (!balance) {
-        balance = await params.tx.inventoryBalance.findFirst({
-          where: {
-            inventoryItemId: row.inventoryItemId,
-            warehouse: { type: 'RAW_MATERIALS', isActive: true },
-          },
-          orderBy: { availableQty: 'desc' },
-        });
-        warehouseId = balance?.warehouseId ?? null;
+      const balances = await params.tx.inventoryBalance.findMany({
+        where: {
+          inventoryItemId: row.inventoryItemId,
+          ...(warehouseId
+            ? { warehouseId }
+            : { warehouse: { type: 'RAW_MATERIALS', isActive: true } }),
+        },
+      });
+      if (!warehouseId) {
+        const byWh = new Map<string, number>();
+        for (const b of balances) {
+          byWh.set(b.warehouseId, (byWh.get(b.warehouseId) ?? 0) + Number(b.availableQty));
+        }
+        let best = 0;
+        for (const [id, qty] of byWh) {
+          if (qty > best) {
+            best = qty;
+            warehouseId = id;
+          }
+        }
       }
-      if (!balance || !warehouseId) {
+      const warehouseRows = warehouseId
+        ? balances.filter((b) => b.warehouseId === warehouseId)
+        : [];
+      const available = warehouseRows.reduce((s, b) => s + Number(b.availableQty), 0);
+      const reservedQty = warehouseRows.reduce((s, b) => s + Number(b.reservedQty), 0);
+      if (!warehouseId || !warehouseRows.length) {
         throw new BadRequestException({
           code: 'INSUFFICIENT_STOCK',
           message: `No raw warehouse balance for ${row.sku}.`,
         });
       }
 
-      if (Number(balance.availableQty) + 1e-9 < issueQty) {
+      if (available + 1e-9 < issueQty) {
         throw new BadRequestException({
           code: 'INSUFFICIENT_STOCK',
           message: `Not enough stock to finalize usage for ${row.sku}.`,
@@ -681,13 +829,16 @@ export class MaterialUsageService {
         type: InventoryTxType.PRODUCTION_ISSUE,
         inventoryItemId: row.inventoryItemId,
         warehouseId,
+        locationId: row.issueLocationId ?? undefined,
         quantity: issueQty,
         unitCost: unitCost ?? undefined,
         userId: params.userId,
         idempotencyKey: `${key}:issue:${row.inventoryItemId}`,
         referenceType: 'ProductionTask',
         referenceId: params.taskId,
-        reservedDelta: -Math.min(issueQty, Number(balance.reservedQty)),
+        productionTaskId: params.taskId,
+        productionOrderId: row.productionOrderId,
+        reservedDelta: -Math.min(issueQty, reservedQty),
         notes:
           scrap > 0
             ? `Includes scrap ${scrap}${row.scrapReason ? ` (${row.scrapReason})` : ''}`
@@ -700,12 +851,15 @@ export class MaterialUsageService {
           type: InventoryTxType.PRODUCTION_RETURN,
           inventoryItemId: row.inventoryItemId,
           warehouseId: returnWhId,
+          locationId: row.returnLocationId ?? undefined,
           quantity: returned,
           unitCost: unitCost ?? undefined,
           userId: params.userId,
           idempotencyKey: `${key}:return:${row.inventoryItemId}`,
           referenceType: 'ProductionTask',
           referenceId: params.taskId,
+          productionTaskId: params.taskId,
+          productionOrderId: row.productionOrderId,
           reservedDelta: 0,
           db: params.tx,
         });

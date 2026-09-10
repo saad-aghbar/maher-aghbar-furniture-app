@@ -72,6 +72,16 @@ export function WarehousePickList({
 
   const showNone = allowNone && !q.trim();
   const empty = filtered.length === 0 && !showNone;
+  const rowCount =
+    (onAddWarehouse ? 1 : 0) + (showNone ? 1 : 0) + filtered.length;
+  const rowStride = theme.sizes.touch.min + theme.spacing.sm;
+  const listPad = theme.spacing.sm * 2 + theme.spacing.md;
+  const viewportHeight = empty
+    ? listHeight
+    : Math.min(
+        listHeight,
+        Math.max(theme.sizes.touch.min + listPad, rowCount * rowStride + listPad),
+      );
 
   function warehouseLabel(wh: Warehouse) {
     const name = locale === 'ar' ? wh.nameAr || wh.nameEn : wh.nameEn || wh.nameAr;
@@ -161,31 +171,33 @@ export function WarehousePickList({
         </AppText>
       ) : null}
 
-      <SearchBarShell>
-        <AppTextInput
-          value={q}
-          onChangeText={setQ}
-          placeholder={t('mobile.inventory.searchWarehouses')}
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-          accessibilityLabel={t('mobile.inventory.searchWarehouses')}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: theme.sizes.touch.min - 8,
-            paddingVertical: 0,
-            color: colors.textPrimary,
-            writingDirection: isRTL ? 'rtl' : 'ltr',
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        />
-      </SearchBarShell>
+      {warehouses.length > 4 || q.trim() ? (
+        <SearchBarShell>
+          <AppTextInput
+            value={q}
+            onChangeText={setQ}
+            placeholder={t('mobile.inventory.searchWarehouses')}
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            accessibilityLabel={t('mobile.inventory.searchWarehouses')}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: theme.sizes.touch.min - 8,
+              paddingVertical: 0,
+              color: colors.textPrimary,
+              writingDirection: isRTL ? 'rtl' : 'ltr',
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          />
+        </SearchBarShell>
+      ) : null}
 
       <View
         style={{
-          height: listHeight,
+          height: viewportHeight,
           borderRadius: theme.radius.xl,
           borderWidth: 1,
           borderColor: colors.borderStrong,

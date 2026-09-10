@@ -176,7 +176,7 @@ function behaviorOptionsForStage(
   all: Array<{ value: Behavior; label: string }>,
 ) {
   if (isInspectionStage(stageCode)) {
-    return all.filter((o) => o.value === 'NONE' || o.value === 'USES_SEMI_FINISHED');
+    return all.filter((o) => o.value === 'NONE');
   }
   if (isDeliveryStage(stageCode)) {
     return all.filter((o) => o.value === 'NONE');
@@ -267,10 +267,11 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
     if (!setupQuery.data) return;
     const next: Record<string, Draft> = {};
     for (const stage of setupQuery.data.stages) {
+      const inspect = isInspectionStage(stage.stageCode);
       next[stage.workflowNodeId] = {
-        behavior: stage.behavior,
-        consumesRawMaterials: stage.consumesRawMaterials,
-        consumesSemiFinished: stage.consumesSemiFinished,
+        behavior: inspect ? 'NONE' : stage.behavior,
+        consumesRawMaterials: inspect ? false : stage.consumesRawMaterials,
+        consumesSemiFinished: inspect ? false : stage.consumesSemiFinished,
         outputNameEn: stage.output?.nameEn ?? '',
         outputNameAr: stage.output?.nameAr ?? '',
         outputNameHe: stage.output?.nameHe ?? '',
@@ -291,7 +292,7 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
           ),
         ),
         defaultWarehouseId: stage.output?.defaultWarehouseId ?? '',
-        consumeOutputIds: stage.consumeOutputIds ?? [],
+        consumeOutputIds: inspect ? [] : (stage.consumeOutputIds ?? []),
         materialInputs: (stage.materialInputs ?? []).map((row) => ({
           sku: row.sku,
           qtyPerUnit: String(row.qtyPerUnit),
@@ -311,6 +312,17 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
       for (const stage of setupQuery.data?.stages ?? []) {
         const d = clampedDrafts[stage.workflowNodeId];
         if (!d) continue;
+        if (isInspectionStage(stage.stageCode)) {
+          exclusiveDrafts[stage.workflowNodeId] = {
+            ...d,
+            behavior: 'NONE',
+            consumesSemiFinished: false,
+            consumesRawMaterials: false,
+            consumeOutputIds: [],
+            materialInputs: [],
+          };
+          continue;
+        }
         const keep: string[] = [];
         for (const id of d.consumeOutputIds) {
           if (claimedOutputs.has(id)) continue;
@@ -322,32 +334,35 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
       setDrafts({ ...clampedDrafts, ...exclusiveDrafts });
       const stages = (setupQuery.data?.stages ?? []).map((stage) => {
         const d = exclusiveDrafts[stage.workflowNodeId] ?? clampedDrafts[stage.workflowNodeId];
+        const inspect = isInspectionStage(stage.stageCode);
         return {
           workflowNodeId: stage.workflowNodeId,
           stageDefinitionId: stage.stageDefinitionId,
-          behavior: d?.behavior ?? 'NONE',
-          consumesRawMaterials: d?.consumesRawMaterials ?? false,
-          consumesSemiFinished:
-            d?.behavior === 'PRODUCES_FINISHED'
+          behavior: inspect ? 'NONE' : (d?.behavior ?? 'NONE'),
+          consumesRawMaterials: inspect ? false : (d?.consumesRawMaterials ?? false),
+          consumesSemiFinished: inspect
+            ? false
+            : d?.behavior === 'PRODUCES_FINISHED'
               ? Boolean(d.consumesSemiFinished)
               : usesSemi(d?.behavior ?? 'NONE'),
-          outputNameEn: d?.outputNameEn || null,
-          outputNameAr: d?.outputNameAr || null,
-          outputNameHe: d?.outputNameHe || null,
+          outputNameEn: inspect ? null : d?.outputNameEn || null,
+          outputNameAr: inspect ? null : d?.outputNameAr || null,
+          outputNameHe: inspect ? null : d?.outputNameHe || null,
           outputQtyPerUnit: Number(d?.outputQtyPerUnit || 1),
-          expectedPieceCount: Number(d?.expectedPieceCount || 1),
-          pieceLabels:
-            d?.behavior === 'PRODUCES_FINISHED'
-              ? (d.pieceLabels ?? [])
-                  .map((row) => ({
-                    nameEn: row.nameEn.trim(),
-                    nameAr: row.nameAr.trim() || row.nameEn.trim(),
-                    nameHe: row.nameHe.trim() || null,
-                  }))
-                  .filter((row) => row.nameEn)
-              : undefined,
-          defaultWarehouseId: d?.defaultWarehouseId || null,
-          consumeOutputIds: d?.consumeOutputIds ?? [],
+          expectedPieceCount: inspect ? 1 : Number(d?.expectedPieceCount || 1),
+          pieceLabels: inspect
+            ? undefined
+            : produces(d?.behavior ?? 'NONE')
+            ? (d?.pieceLabels ?? [])
+                .map((row) => ({
+                  nameEn: row.nameEn.trim(),
+                  nameAr: row.nameAr.trim() || row.nameEn.trim(),
+                  nameHe: row.nameHe.trim() || null,
+                }))
+                .filter((row) => row.nameEn)
+            : undefined,
+          defaultWarehouseId: inspect ? null : d?.defaultWarehouseId || null,
+          consumeOutputIds: inspect ? [] : (d?.consumeOutputIds ?? []),
           materialInputs: (d?.materialInputs ?? [])
             .filter((row) => row.sku && Number(row.qtyPerUnit) > 0)
             .map((row) => ({ sku: row.sku, qtyPerUnit: Number(row.qtyPerUnit) })),
@@ -366,7 +381,7 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
   });
 
   const behaviorOptions = useMemo(
-    () => [
+    (): Array<{ value: Behavior; label: string }> => [
       { value: 'NONE', label: t('setup.behaviorNone') },
       { value: 'USES_MATERIALS', label: t('setup.behaviorUsesMaterials') },
       { value: 'PRODUCES_SEMI_FINISHED', label: t('setup.behaviorProducesSemi') },
@@ -542,6 +557,7 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                     <Select
                       label={t('setup.stageBehavior')}
                       value={d.behavior}
+                      disabled={isInspectionStage(stage.stageCode)}
                       onChange={(e) =>
                         setDrafts((prev) => ({
                           ...prev,
@@ -655,21 +671,35 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                             }));
                           }}
                         />
-                        {d.behavior === 'PRODUCES_FINISHED' ? (
+                        {produces(d.behavior) ? (
                           <div className="sm:col-span-2 space-y-2 rounded-xl border border-border p-3">
-                            <p className="text-sm font-semibold">{t('setup.packPiecesTitle')}</p>
+                            <p className="text-sm font-semibold">
+                              {d.behavior === 'PRODUCES_FINISHED'
+                                ? t('setup.packPiecesTitle')
+                                : t('setup.piecesTitle')}
+                            </p>
                             <p className="text-xs text-text-secondary">
-                              {t('setup.packPieceNamesHint')}
+                              {d.behavior === 'PRODUCES_FINISHED'
+                                ? t('setup.packPieceNamesHint')
+                                : t('setup.piecesHint')}
                             </p>
                             {(d.pieceLabels ?? []).map((row, index) => (
                               <div
-                                key={`pack-${stage.workflowNodeId}-${index}`}
+                                key={`piece-${stage.workflowNodeId}-${index}`}
                                 className="grid gap-2 sm:grid-cols-3"
                               >
                                 <Input
-                                  label={t('setup.packPieceN', { n: String(index + 1) })}
+                                  label={
+                                    d.behavior === 'PRODUCES_FINISHED'
+                                      ? t('setup.packPieceN', { n: String(index + 1) })
+                                      : t('setup.pieceN', { n: String(index + 1) })
+                                  }
                                   value={row.nameEn}
-                                  placeholder={t('setup.packPieceNamePlaceholder')}
+                                  placeholder={
+                                    d.behavior === 'PRODUCES_FINISHED'
+                                      ? t('setup.packPieceNamePlaceholder')
+                                      : t('setup.pieceNameEn')
+                                  }
                                   onChange={(e) =>
                                     setDrafts((prev) => ({
                                       ...prev,
@@ -857,7 +887,8 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                         </div>
                       )}
                     </div>
-                    {usesSemi(d.behavior) || d.consumesSemiFinished ? (
+                    {!isInspectionStage(stage.stageCode) &&
+                    (usesSemi(d.behavior) || d.consumesSemiFinished) ? (
                       <div>
                         <p className="mb-2 text-sm font-medium">{t('setup.consumeInputs')}</p>
                         <p className="mb-2 text-xs text-text-tertiary">

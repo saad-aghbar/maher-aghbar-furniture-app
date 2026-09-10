@@ -510,6 +510,20 @@ export class WorkingCalendar {
     throw new Error('Unable to subtract working minutes within search horizon');
   }
 
+  /** Working minutes in `[from, to)`, skipping breaks and closed days. */
+  workingMinutesBetween(from: Date, to: Date): number {
+    if (to.getTime() <= from.getTime()) return 0;
+    let total = 0;
+    let ymd = this.localYmd(from);
+    const endYmd = this.localYmd(to);
+    for (let i = 0; i < 400; i++) {
+      total += overlapWorkingMinutes(from, to, this.intervalsForLocalYmd(ymd));
+      if (ymd === endYmd) break;
+      ymd = addDaysYmd(ymd, 1);
+    }
+    return Math.round(total);
+  }
+
   /** Shift-end of the local working day containing `instant` (or previous working day if closed). */
   endOfWorkingDay(instant: Date): Date {
     const intervals = this.intervalsForLocalDay(instant);

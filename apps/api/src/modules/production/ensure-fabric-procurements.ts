@@ -1,6 +1,8 @@
-import { InventoryCategory, type Prisma } from '@maher/database';
+import { InventoryCategory, PrismaClient, type Prisma } from '@maher/database';
 
-type Db = Prisma.TransactionClient;
+/** PrismaService or an interactive transaction — both expose the same delegates. */
+
+type Db = PrismaClient | Prisma.TransactionClient;
 
 /** Create a FabricProcurement row for every FABRIC requirement that lacks one. */
 export async function ensureFabricProcurementsForSalesOrder(
@@ -21,11 +23,42 @@ export async function ensureFabricProcurementsForSalesOrder(
     },
   });
   for (const req of reqs) {
+    if (!req.lineSetup?.salesOrderLineId) continue;
     await db.fabricProcurement.create({
       data: {
         requirementId: req.id,
         salesOrderId,
         salesOrderLineId: req.lineSetup.salesOrderLineId,
+        unit: req.unit || 'm',
+        orderedQty: req.expectedQty ?? undefined,
+        state: 'NEEDS_ORDERING',
+      },
+    });
+  }
+  return reqs.length;
+}
+
+export async function ensureFabricProcurementsForProductionOrder(
+  db: Db,
+  productionOrderId: string,
+): Promise<number> {
+  const reqs = await db.salesOrderLineMaterialRequirement.findMany({
+    where: {
+      category: InventoryCategory.FABRIC,
+      fabricProcurement: null,
+      productionOrderId,
+    },
+    select: {
+      id: true,
+      unit: true,
+      expectedQty: true,
+    },
+  });
+  for (const req of reqs) {
+    await db.fabricProcurement.create({
+      data: {
+        requirementId: req.id,
+        productionOrderId,
         unit: req.unit || 'm',
         orderedQty: req.expectedQty ?? undefined,
         state: 'NEEDS_ORDERING',

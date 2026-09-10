@@ -17,6 +17,17 @@ export const LOCKED_ANCHOR_STAGE_CODES = [
 ] as const;
 export type LockedAnchorStageCode = (typeof LOCKED_ANCHOR_STAGE_CODES)[number];
 
+/** Free-position recovery stage — always in the library, not position-anchored. */
+export const RECOVERY_STAGE_CODE = 'DISMANTLE_RECOVER' as const;
+export type RecoveryStageCode = typeof RECOVERY_STAGE_CODE;
+
+/** Cannot be renamed or deleted: opening, finishing trio, and dismantle & recover. */
+export const PROTECTED_STAGE_CODES = [
+  ...LOCKED_ANCHOR_STAGE_CODES,
+  RECOVERY_STAGE_CODE,
+] as const;
+export type ProtectedStageCode = (typeof PROTECTED_STAGE_CODES)[number];
+
 export type DealerLifecycleTab =
   | 'all'
   | 'draft'
@@ -107,6 +118,53 @@ export function isTerminalStageCode(code: string): code is TerminalStageCode {
 
 export function isLockedAnchorStageCode(code: string): code is LockedAnchorStageCode {
   return (LOCKED_ANCHOR_STAGE_CODES as readonly string[]).includes(code);
+}
+
+export function isRecoveryStageCode(code: string): code is RecoveryStageCode {
+  return code === RECOVERY_STAGE_CODE;
+}
+
+export function isProtectedStageCode(code: string): code is ProtectedStageCode {
+  return (PROTECTED_STAGE_CODES as readonly string[]).includes(code);
+}
+
+export type ProductionWorkflowScope = 'STANDARD' | 'RETURN';
+
+export function isReturnWorkflowScope(
+  scope: ProductionWorkflowScope | string | null | undefined,
+): boolean {
+  return scope === 'RETURN' || scope === 'RECOVERY';
+}
+
+/** STANDARD locks Material Prep + finishing trio. RETURN locks none by position. */
+export function lockedAnchorStageCodesForScope(
+  scope: ProductionWorkflowScope | string | null | undefined,
+): readonly string[] {
+  if (isReturnWorkflowScope(scope)) return [];
+  return LOCKED_ANCHOR_STAGE_CODES;
+}
+
+/**
+ * Opening chain (Material Prep first) is STANDARD-only.
+ * Terminal chain (Inspection → Packaging → Delivery) is required unless the
+ * graph is a return/recovery workflow that contains DISMANTLE_RECOVER.
+ */
+export function workflowGraphChainRequirements(
+  scope: ProductionWorkflowScope | string | null | undefined,
+  stageCodes: readonly string[] = [],
+): { requiresOpeningChain: boolean; requiresTerminalChain: boolean } {
+  const returnScoped = isReturnWorkflowScope(scope);
+  return {
+    requiresOpeningChain: !returnScoped,
+    requiresTerminalChain: !returnScoped || !stageCodes.some((code) => isRecoveryStageCode(code)),
+  };
+}
+
+export function isLockedAnchorStageCodeForScope(
+  code: string,
+  scope: ProductionWorkflowScope | string | null | undefined,
+): boolean {
+  return lockedAnchorStageCodesForScope(scope).includes(code);
 }
 
 export function isLogisticsStage(code: string, executionKind?: string | null): boolean {

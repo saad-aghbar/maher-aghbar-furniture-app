@@ -21,6 +21,7 @@ import {
   resolveLinePlanType,
 } from './catalog-seed-preview';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
+import { ensureFabricProcurementsForProductionOrder } from './ensure-fabric-procurements';
 import {
   behaviorFromFlags,
   flagsFromBehaviorWithConsume,
@@ -28,15 +29,24 @@ import {
   type StageInventoryBehavior,
 } from '../../common/helpers/inventory-stage-behavior.util';
 import {
+  isInspectionStageCode,
   normalizePieceLabels,
   pieceLabelsFromMetadata,
 } from './piece-labels';
+import { stripInspectionGateStage } from './inspection-gate';
+import { detectPlanDrift, type ProductSetupRow } from './plan-drift';
+import { resolveProductStageOutput } from './product-inventory-output.resolver';
 import { taskHasPlannedTiming } from './production-readiness';
 import {
   buildMaterialCostMap,
   costBreakdownFromMaterialRows,
   productionPriceFromBreakdown,
 } from '../../common/helpers/order-costing.util';
+import {
+  PRODUCTION_RETURN_REQUEST_SELECT,
+  planAllowsWithoutLineSetup,
+  productionOriginLabel,
+} from './production-origin';
 
 export type OrderPlanBomLineInput = {
   inventoryItemId?: string | null;
@@ -118,6 +128,7 @@ export class OrderPlanSetupService {
             },
           },
         },
+        returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
         salesOrderLine: {
           include: {
             productionSetup: {
@@ -169,6 +180,7 @@ export class OrderPlanSetupService {
             assignedEmployeeId: true,
             plannedStart: true,
             plannedCompletion: true,
+            estimatedMinutes: true,
             notes: true,
             stageDefinitionId: true,
             stageDefinition: {
@@ -218,6 +230,7 @@ export class OrderPlanSetupService {
 
   private async describePlanTypeContext(
     po: {
+      originType?: string | null;
       productId?: string | null;
       product?: {
         id: string;
@@ -273,6 +286,9 @@ export class OrderPlanSetupService {
       requestedFabricLabel,
       requestedFabricNeedsReview: Boolean(requestedFabricLabel),
     };
+    if (po.originType === 'RETURN_WORK' || po.originType === 'REPLACEMENT' || po.originType === 'RETURN_RECOVERY') {
+      return { ...base, showBoard: true, catalogTemplateLocked: true };
+    }
     if (complexity === 'CUSTOM' || !po.productId) {
       return { ...base, showBoard: true };
     }
@@ -340,12 +356,34 @@ export class OrderPlanSetupService {
         nameHe: true,
         type: true,
         isDefault: true,
+        locations: {
+          where: { isActive: true },
+          orderBy: { code: 'asc' },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            isDefault: true,
+            isActive: true,
+            qrCode: true,
+          },
+        },
       },
     });
 
+    const poOwnedMaterials =
+      !lineSetup
+        ? await this.prisma.salesOrderLineMaterialRequirement.findMany({
+            where: { productionOrderId },
+            orderBy: { sortOrder: 'asc' },
+          })
+        : [];
+    const materialRows = lineSetup?.materialRequirements?.length
+      ? lineSetup.materialRequirements
+      : poOwnedMaterials;
     const itemIds = [
       ...new Set(
-        (lineSetup?.materialRequirements ?? [])
+        materialRows
           .map((m) => m.inventoryItemId)
           .filter((id): id is string => Boolean(id)),
       ),
@@ -372,7 +410,7 @@ export class OrderPlanSetupService {
       : [];
     const itemById = new Map(items.map((i) => [i.id, i]));
 
-    const bomLines = (lineSetup?.materialRequirements ?? []).map((m) => {
+    const bomLines = materialRows.map((m) => {
       const item = m.inventoryItemId ? itemById.get(m.inventoryItemId) : undefined;
       const unitCost = item?.standardCost != null ? Number(item.standardCost) : 0;
       return {
@@ -393,11 +431,6 @@ export class OrderPlanSetupService {
     });
 
     const nodes = snapshot?.nodes ?? [];
-    const nodeBySourceId = new Map(
-      nodes
-        .filter((n) => n.sourceWorkflowNodeId)
-        .map((n) => [n.sourceWorkflowNodeId as string, n]),
-    );
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
     const predsByNodeId = new Map<string, string[]>();
@@ -426,19 +459,24 @@ export class OrderPlanSetupService {
 
     const stages = nodes.map((node, index) => {
       const workflowNodeId = node.sourceWorkflowNodeId ?? node.id;
-      const behavior = behaviorFromFlags({
-        inventoryTracking: node.inventoryTracking as never,
-        consumesRawMaterials: node.consumesRawMaterials,
-        consumesSemiFinished: node.consumesSemiFinished,
-      });
+      const inspect = isInspectionStageCode(node.stageCode);
+      const behavior = inspect
+        ? ('NONE' as const)
+        : behaviorFromFlags({
+            inventoryTracking: node.inventoryTracking as never,
+            consumesRawMaterials: node.consumesRawMaterials,
+            consumesSemiFinished: node.consumesSemiFinished,
+          });
       const meta =
         node.metadata && typeof node.metadata === 'object' && !Array.isArray(node.metadata)
           ? (node.metadata as Record<string, unknown>)
           : {};
-      const consumeWorkflowNodeIds = Array.isArray(meta.consumeWorkflowNodeIds)
-        ? meta.consumeWorkflowNodeIds.map(String)
-        : [];
-      const pieceLabels = pieceLabelsFromMetadata(node.metadata);
+      const consumeWorkflowNodeIds = inspect
+        ? []
+        : Array.isArray(meta.consumeWorkflowNodeIds)
+          ? meta.consumeWorkflowNodeIds.map(String)
+          : [];
+      const pieceLabels = inspect ? [] : pieceLabelsFromMetadata(node.metadata);
       const preds = ancestorSourceIds(node.id);
       const upstreamOutputs = nodes
         .filter(
@@ -465,11 +503,13 @@ export class OrderPlanSetupService {
         nameAr: node.nameArSnapshot || node.stageDefinition?.nameAr || node.stageCode,
         nameHe: node.nameHeSnapshot ?? node.stageDefinition?.nameHe ?? null,
         behavior,
-        consumesRawMaterials: node.consumesRawMaterials,
-        consumesSemiFinished: node.consumesSemiFinished,
-        consumeOutputIds: Array.isArray(node.consumeOutputDefinitionIds)
-          ? (node.consumeOutputDefinitionIds as string[])
-          : [],
+        consumesRawMaterials: inspect ? false : node.consumesRawMaterials,
+        consumesSemiFinished: inspect ? false : node.consumesSemiFinished,
+        consumeOutputIds: inspect
+          ? []
+          : Array.isArray(node.consumeOutputDefinitionIds)
+            ? (node.consumeOutputDefinitionIds as string[])
+            : [],
         consumeWorkflowNodeIds,
         materialInputs: node.materialInputs.map((row) => {
           const item = itemById.get(row.inventoryItemId);
@@ -486,8 +526,9 @@ export class OrderPlanSetupService {
           };
         }),
         output:
-          node.inventoryTracking !== 'NONE'
-            ? {
+          inspect || node.inventoryTracking === 'NONE'
+            ? null
+            : {
                 id: node.outputInventoryItemId ?? node.id,
                 nameEn: node.outputNameEn,
                 nameAr: node.outputNameAr,
@@ -498,8 +539,7 @@ export class OrderPlanSetupService {
                 unit: node.outputUnit ?? 'pcs',
                 defaultWarehouseId: node.defaultWarehouseId,
                 inventoryItemId: node.outputInventoryItemId,
-              }
-            : null,
+              },
         upstreamOutputs,
         flowStep: index + 1,
         flowLevel: index,
@@ -520,6 +560,18 @@ export class OrderPlanSetupService {
     });
 
     const catalogTemplate = await this.describePlanTypeContext(po, planEditable);
+    const poCustomer = po.customerId
+      ? await this.prisma.customer.findUnique({
+          where: { id: po.customerId },
+          select: {
+            id: true,
+            name: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+          },
+        })
+      : null;
     const catalogDimensions = dimRefFromJson(lineSetup?.catalogDimensions);
     const orderDimensions = dimRefFromJson(lineSetup?.orderDimensions);
     const measurements = normalizeOrderMeasurements(lineSetup?.measurements);
@@ -542,6 +594,10 @@ export class OrderPlanSetupService {
 
     return {
       productionOrderId: po.id,
+      number: po.number,
+      originType: po.originType,
+      originLabel: productionOriginLabel(po.originType),
+      returnRequest: po.returnRequest ?? null,
       salesOrderId: po.salesOrderId,
       salesOrderLineId: po.salesOrderLineId,
       manufacturingComplexity,
@@ -573,6 +629,8 @@ export class OrderPlanSetupService {
             imageUrl: po.product.imageUrl,
           }
         : null,
+      productDescription: po.productDescription ?? null,
+      customer: poCustomer ?? po.salesOrder?.customer ?? null,
       salesOrder: po.salesOrder
         ? {
             id: po.salesOrder.id,
@@ -600,6 +658,7 @@ export class OrderPlanSetupService {
         assignedEmployeeId: t.assignedEmployeeId,
         plannedStart: t.plannedStart,
         plannedCompletion: t.plannedCompletion,
+        estimatedMinutes: t.estimatedMinutes,
         notes: t.notes ?? null,
         stageDefinitionId: t.stageDefinitionId,
         stageDefinition: t.stageDefinition,
@@ -643,7 +702,128 @@ export class OrderPlanSetupService {
             !materialsReviewRequired,
         };
       })(),
+      planDrift: await this.planDriftFor(po),
     };
+  }
+
+  private async planDriftFor(po: {
+    productId?: string | null;
+    workflowSnapshot?: {
+      nodes: Array<{
+        id: string;
+        stageCode: string;
+        stageDefinitionId?: string | null;
+        sourceWorkflowNodeId?: string | null;
+        inventoryTracking: string;
+        consumesSemiFinished: boolean;
+        expectedPieceCount?: number | null;
+        metadata?: unknown;
+      }>;
+    } | null;
+  }) {
+    if (!po.productId || !po.workflowSnapshot?.nodes.length) {
+      return { drifted: false, issues: [] as ReturnType<typeof detectPlanDrift> };
+    }
+    const catalog: ProductSetupRow[] = await this.prisma.productStageInventoryOutput.findMany({
+      where: { productId: po.productId },
+      select: {
+        workflowNodeId: true,
+        stageDefinitionId: true,
+        inventoryTracking: true,
+        consumesSemiFinished: true,
+        expectedPieceCount: true,
+        pieceLabels: true,
+      },
+    });
+    const issues = detectPlanDrift(
+      po.workflowSnapshot.nodes.map((n) => ({
+        snapshotNodeId: n.id,
+        stageCode: n.stageCode,
+        stageDefinitionId: n.stageDefinitionId ?? null,
+        sourceWorkflowNodeId: n.sourceWorkflowNodeId ?? null,
+        inventoryTracking: String(n.inventoryTracking),
+        consumesSemiFinished: Boolean(n.consumesSemiFinished),
+        expectedPieceCount: n.expectedPieceCount ?? 1,
+        pieceLabels: pieceLabelsFromMetadata(n.metadata),
+      })),
+      catalog,
+    );
+    return { drifted: issues.length > 0, issues };
+  }
+
+  async resyncPlanFromCatalog(productionOrderId: string, user?: AuthUser) {
+    this.assertStaff(user);
+    const po = await this.requireEditablePo(productionOrderId);
+    const snapshot = po.workflowSnapshot;
+    if (!snapshot?.nodes.length) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_REQUIRED',
+        message: 'Assign a workflow before re-syncing the production plan.',
+      });
+    }
+    if (!po.productId) {
+      throw new BadRequestException({
+        code: 'PRODUCT_REQUIRED',
+        message: 'This order has no catalog product to re-sync from.',
+      });
+    }
+    const outputs = await this.prisma.productStageInventoryOutput.findMany({
+      where: { productId: po.productId },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const node of snapshot.nodes) {
+        const resolved = resolveProductStageOutput(
+          {
+            sourceWorkflowNodeId: node.sourceWorkflowNodeId,
+            stageDefinitionId: node.stageDefinitionId,
+            inventoryTracking: node.inventoryTracking as never,
+            consumesRawMaterials: node.consumesRawMaterials,
+            consumesSemiFinished: node.consumesSemiFinished,
+            outputQtyPerUnit: node.outputQtyPerUnit,
+            expectedPieceCount: node.expectedPieceCount,
+            outputNameAr: node.outputNameAr,
+            outputNameEn: node.outputNameEn,
+            outputNameHe: node.outputNameHe,
+            defaultWarehouseId: node.defaultWarehouseId,
+          },
+          outputs,
+        );
+        const inspect = isInspectionStageCode(node.stageCode);
+        const consumesSemiFinished = inspect ? false : resolved.consumesSemiFinished;
+        const prevMeta =
+          node.metadata && typeof node.metadata === 'object' && !Array.isArray(node.metadata)
+            ? { ...(node.metadata as Record<string, unknown>) }
+            : {};
+        await tx.productionOrderWorkflowSnapshotNode.update({
+          where: { id: node.id },
+          data: {
+            inventoryTracking: inspect ? 'NONE' : resolved.tracking,
+            consumesRawMaterials: inspect ? false : resolved.consumesRawMaterials,
+            consumesSemiFinished,
+            expectedPieceCount: inspect ? 1 : resolved.expectedPieceCount,
+            outputNameEn: inspect ? null : resolved.nameEn,
+            outputNameAr: inspect ? null : resolved.nameAr,
+            outputNameHe: inspect ? null : resolved.nameHe,
+            outputQtyPerUnit:
+              inspect
+                ? null
+                : resolved.qtyPerUnit != null
+                  ? new Prisma.Decimal(resolved.qtyPerUnit)
+                  : undefined,
+            defaultWarehouseId: inspect ? null : resolved.warehouseId,
+            consumeInventoryItemIds: inspect ? Prisma.JsonNull : undefined,
+            consumeOutputDefinitionIds: inspect ? Prisma.JsonNull : undefined,
+            metadata: {
+              ...prevMeta,
+              pieceLabels: inspect ? [] : resolved.pieceLabels,
+              ...(inspect ? { consumeWorkflowNodeIds: [] } : {}),
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    });
+    return this.getPlanSetup(productionOrderId, user);
   }
 
   async putPlanSetup(
@@ -665,7 +845,7 @@ export class OrderPlanSetupService {
     }
 
     const lineSetup = po.salesOrderLine?.productionSetup;
-    if (!lineSetup || !po.salesOrderLineId) {
+    if ((!lineSetup || !po.salesOrderLineId) && !planAllowsWithoutLineSetup(po)) {
       throw new BadRequestException({
         code: 'SETUP_REQUIRED',
         message: 'Order line production setup is missing.',
@@ -766,40 +946,65 @@ export class OrderPlanSetupService {
 
       try {
         await this.prisma.$transaction(async (tx) => {
-          await tx.salesOrderLineMaterialRequirement.deleteMany({
-            where: { lineSetupId: lineSetup.id },
-          });
-          if (resolved.length) {
-            await tx.salesOrderLineMaterialRequirement.createMany({
-              data: resolved.map((m, idx) => ({
-                lineSetupId: lineSetup.id,
-                inventoryItemId: m.inventoryItemId,
-                sku: m.sku,
-                displayName: m.displayName,
-                category: m.category as InventoryCategory | null,
-                unit: m.unit,
-                expectedQty: m.expectedQty,
-                source: m.source,
-                needsReview: m.needsReview,
-                notes: null,
-                requestedFabricLabel: null,
-                sortOrder: idx,
-              })),
+          if (lineSetup) {
+            await tx.salesOrderLineMaterialRequirement.deleteMany({
+              where: { lineSetupId: lineSetup.id },
             });
+            if (resolved.length) {
+              await tx.salesOrderLineMaterialRequirement.createMany({
+                data: resolved.map((m, idx) => ({
+                  lineSetupId: lineSetup.id,
+                  inventoryItemId: m.inventoryItemId,
+                  sku: m.sku,
+                  displayName: m.displayName,
+                  category: m.category as InventoryCategory | null,
+                  unit: m.unit,
+                  expectedQty: m.expectedQty,
+                  source: m.source,
+                  needsReview: m.needsReview,
+                  notes: null,
+                  requestedFabricLabel: null,
+                  sortOrder: idx,
+                })),
+              });
+            }
+            await tx.salesOrderLineSetup.update({
+              where: { id: lineSetup.id },
+              data: {
+                materialsReviewedAt: resolved.some((m) => m.needsReview)
+                  ? null
+                  : String(lineSetup.manufacturingComplexity ?? '').toUpperCase() === 'MODIFIED'
+                    ? lineSetup.materialsReviewedAt
+                    : new Date(),
+                workflowConfirmedAt: lineSetup.workflowId
+                  ? new Date()
+                  : lineSetup.workflowConfirmedAt,
+              },
+            });
+          } else {
+            await tx.salesOrderLineMaterialRequirement.deleteMany({
+              where: { productionOrderId: po.id },
+            });
+            if (resolved.length) {
+              await tx.salesOrderLineMaterialRequirement.createMany({
+                data: resolved.map((m, idx) => ({
+                  productionOrderId: po.id,
+                  inventoryItemId: m.inventoryItemId,
+                  sku: m.sku,
+                  displayName: m.displayName,
+                  category: m.category as InventoryCategory | null,
+                  unit: m.unit,
+                  expectedQty: m.expectedQty,
+                  source: m.source,
+                  needsReview: m.needsReview,
+                  notes: null,
+                  requestedFabricLabel: null,
+                  sortOrder: idx,
+                })),
+              });
+            }
+            await ensureFabricProcurementsForProductionOrder(tx, po.id);
           }
-          await tx.salesOrderLineSetup.update({
-            where: { id: lineSetup.id },
-            data: {
-              materialsReviewedAt: resolved.some((m) => m.needsReview)
-                ? null
-                : String(lineSetup.manufacturingComplexity ?? '').toUpperCase() === 'MODIFIED'
-                  ? lineSetup.materialsReviewedAt
-                  : new Date(),
-              workflowConfirmedAt: lineSetup.workflowId
-                ? new Date()
-                : lineSetup.workflowConfirmedAt,
-            },
-          });
         });
       } catch (err) {
         const code =
@@ -829,55 +1034,64 @@ export class OrderPlanSetupService {
           .map((n) => [n.sourceWorkflowNodeId as string, n]),
       );
       const nodeById = new Map(snapshot.nodes.map((n) => [n.id, n]));
-
       await this.prisma.$transaction(async (tx) => {
         for (const stage of stages) {
           const node =
             nodeBySource.get(stage.workflowNodeId) ?? nodeById.get(stage.workflowNodeId);
           if (!node) continue;
+          stripInspectionGateStage(stage, node.stageCode);
+          const inspect = isInspectionStageCode(node.stageCode);
 
           const flags = flagsFromBehaviorWithConsume(stage.behavior, {
-            consumesRawMaterials: stage.consumesRawMaterials,
-            consumesSemiFinished: stage.consumesSemiFinished,
+            consumesRawMaterials: inspect ? false : stage.consumesRawMaterials,
+            consumesSemiFinished: inspect ? false : stage.consumesSemiFinished,
           });
-          const pieceLabels = normalizePieceLabels(stage.pieceLabels);
+          const pieceLabels = inspect ? [] : normalizePieceLabels(stage.pieceLabels);
           const prevMeta =
             node.metadata && typeof node.metadata === 'object' && !Array.isArray(node.metadata)
               ? { ...(node.metadata as Record<string, unknown>) }
               : {};
-          const consumeNodeIds = (stage.consumeWorkflowNodeIds ?? []).map(String);
+          const consumeNodeIds = inspect ? [] : (stage.consumeWorkflowNodeIds ?? []).map(String);
           const consumeItemIds: string[] = [];
-          for (const nid of consumeNodeIds) {
-            const producer = nodeBySource.get(nid) ?? nodeById.get(nid);
-            if (producer?.outputInventoryItemId) {
-              consumeItemIds.push(producer.outputInventoryItemId);
+          if (!inspect) {
+            for (const nid of consumeNodeIds) {
+              const producer = nodeBySource.get(nid) ?? nodeById.get(nid);
+              if (producer?.outputInventoryItemId) {
+                consumeItemIds.push(producer.outputInventoryItemId);
+              }
             }
           }
 
           await tx.productionOrderWorkflowSnapshotNode.update({
             where: { id: node.id },
             data: {
-              inventoryTracking: flags.inventoryTracking,
-              consumesRawMaterials: flags.consumesRawMaterials,
-              consumesSemiFinished: flags.consumesSemiFinished,
-              outputNameEn: stage.outputNameEn ?? null,
-              outputNameAr: stage.outputNameAr ?? null,
-              outputNameHe: stage.outputNameHe ?? null,
+              inventoryTracking: inspect ? 'NONE' : flags.inventoryTracking,
+              consumesRawMaterials: inspect ? false : flags.consumesRawMaterials,
+              consumesSemiFinished: inspect ? false : flags.consumesSemiFinished,
+              outputNameEn: inspect ? null : (stage.outputNameEn ?? null),
+              outputNameAr: inspect ? null : (stage.outputNameAr ?? null),
+              outputNameHe: inspect ? null : (stage.outputNameHe ?? null),
               outputQtyPerUnit:
-                stage.outputQtyPerUnit != null
-                  ? new Prisma.Decimal(stage.outputQtyPerUnit)
-                  : null,
-              expectedPieceCount: Math.max(
-                1,
-                Math.floor(Number(stage.expectedPieceCount) || pieceLabels.length || 1),
-              ),
+                inspect
+                  ? null
+                  : stage.outputQtyPerUnit != null
+                    ? new Prisma.Decimal(stage.outputQtyPerUnit)
+                    : null,
+              expectedPieceCount: inspect
+                ? 1
+                : Math.max(
+                    1,
+                    Math.floor(Number(stage.expectedPieceCount) || pieceLabels.length || 1),
+                  ),
               defaultWarehouseId: stage.defaultWarehouseId ?? null,
-              consumeInventoryItemIds: consumeItemIds.length
-                ? (consumeItemIds as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
-              consumeOutputDefinitionIds: (stage.consumeOutputIds ?? []).length
-                ? (stage.consumeOutputIds as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
+              consumeInventoryItemIds:
+                inspect || !consumeItemIds.length
+                  ? Prisma.JsonNull
+                  : (consumeItemIds as Prisma.InputJsonValue),
+              consumeOutputDefinitionIds:
+                inspect || !(stage.consumeOutputIds ?? []).length
+                  ? Prisma.JsonNull
+                  : (stage.consumeOutputIds as Prisma.InputJsonValue),
               metadata: {
                 ...prevMeta,
                 pieceLabels,

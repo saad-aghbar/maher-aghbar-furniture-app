@@ -7,6 +7,13 @@ import {
   archiveSupplier,
   convertPurchaseRequest,
   createPurchaseOrder,
+  createPurchaseRun,
+  getPurchaseRun,
+  approvePurchaseRun,
+  draftPurchaseRunWhatsApp,
+  sendPurchaseRun,
+  markPurchaseOrderSent,
+  getBuyAlert,
   createPurchaseRequest,
   createPurchaseRequestFromLowStock,
   createSupplier,
@@ -14,6 +21,10 @@ import {
   getPurchaseRequest,
   getSupplier,
   getSupplierInvoice,
+  createSupplierInvoice,
+  recordSupplierPayment,
+  updateSupplierPayment,
+  deleteSupplierPayment,
   listPurchaseOrders,
   listPurchaseRequests,
   listSupplierInvoices,
@@ -21,10 +32,16 @@ import {
   receivePurchaseOrder,
   sendPurchaseOrder,
   sendPurchaseRequestToSupplier,
+  draftPurchaseOrderWhatsApp,
+  createPurchaseOrdersBatch,
+  sendPurchaseOrdersBatch,
+  getLowStockDraft,
+  listReceivablePurchaseOrders,
   updateSupplier,
   updateSupplierInvoice,
   listFabricProcurements,
   getFabricProcurement,
+  getFabricProcurementByCode,
   getFabricTracker,
   draftFabricWhatsApp,
   sendFabricWhatsApp,
@@ -32,6 +49,8 @@ import {
   redirectFabricProcurement,
   setFabricSupplierState,
   overrideFabricHold,
+  receiveFabricProcurement,
+  allocateFabricFromStock,
   type CreatePurchaseOrderInput,
   type CreatePurchaseRequestInput,
   type CreateSupplierInput,
@@ -45,6 +64,8 @@ type ListFilters = {
   supplierId?: string;
   dateFrom?: string;
   dateTo?: string;
+  warehouseId?: string;
+  materialKind?: 'FABRIC' | 'RAW';
 };
 
 export function usePurchaseOrdersInfiniteQuery(filters: ListFilters, enabled: boolean) {
@@ -123,6 +144,66 @@ export function useSupplierInvoiceQuery(id: string | undefined, enabled: boolean
   });
 }
 
+export function useCreateSupplierInvoiceMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (purchaseOrderId: string) => createSupplierInvoice({ purchaseOrderId }),
+    onSuccess: async (invoice) => {
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceLists() });
+      await qc.invalidateQueries({ queryKey: queryKeys.invoices.lists() });
+      if (invoice?.id) {
+        await qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceDetail(invoice.id) });
+      }
+    },
+  });
+}
+
+export function useRecordSupplierPaymentMutation(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: recordSupplierPayment,
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceLists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceDetail(invoiceId) }),
+        qc.invalidateQueries({ queryKey: queryKeys.invoices.lists() }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateSupplierPaymentMutation(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: Parameters<typeof updateSupplierPayment>[1];
+    }) => updateSupplierPayment(id, body),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceLists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceDetail(invoiceId) }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteSupplierPaymentMutation(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteSupplierPayment(id),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceLists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceDetail(invoiceId) }),
+      ]);
+    },
+  });
+}
+
 export function useUpdateSupplierInvoiceMutation(invoiceId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -138,10 +219,14 @@ export function useUpdateSupplierInvoiceMutation(invoiceId: string) {
   });
 }
 
-export function useSuppliersQuery(enabled: boolean, q?: string) {
+export function useSuppliersQuery(
+  enabled: boolean,
+  filters: { q?: string; status?: string } = {},
+) {
   return useQuery({
-    queryKey: queryKeys.purchasing.suppliers({ q }),
-    queryFn: () => listSuppliers({ page: 1, pageSize: 100, q }),
+    queryKey: queryKeys.purchasing.suppliers(filters),
+    queryFn: () =>
+      listSuppliers({ page: 1, pageSize: 100, q: filters.q, status: filters.status }),
     enabled,
   });
 }
@@ -159,6 +244,63 @@ export function useCreatePurchaseMutation() {
   return useMutation({
     mutationFn: (body: CreatePurchaseOrderInput) => createPurchaseOrder(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() }),
+  });
+}
+
+export function useCreatePurchaseRunMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createPurchaseRun,
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() }),
+  });
+}
+
+export function usePurchaseRunQuery(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.runDetail(id ?? ''),
+    queryFn: () => getPurchaseRun(id!),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useBuyAlertQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.buyAlert(),
+    queryFn: getBuyAlert,
+    enabled,
+  });
+}
+
+export function usePurchaseRunActions(id: string) {
+  const qc = useQueryClient();
+  const invalidate = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.purchasing.runDetail(id) });
+    await qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() });
+    await qc.invalidateQueries({ queryKey: queryKeys.purchasing.buyAlert() });
+  };
+  return {
+    approve: useMutation({
+      mutationFn: () => approvePurchaseRun(id),
+      onSuccess: invalidate,
+    }),
+    draftWhatsApp: useMutation({
+      mutationFn: () => draftPurchaseRunWhatsApp(id),
+    }),
+    send: useMutation({
+      mutationFn: (orders?: Array<{ id: string; body?: string }>) => sendPurchaseRun(id, orders),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useMarkPurchaseOrderSentMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: markPurchaseOrderSent,
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() });
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.details() });
+    },
   });
 }
 
@@ -219,8 +361,11 @@ export function usePurchaseActionMutation(id: string) {
       onSuccess: invalidate,
     }),
     send: useMutation({
-      mutationFn: () => sendPurchaseOrder(id),
+      mutationFn: (body?: { body?: string }) => sendPurchaseOrder(id, body),
       onSuccess: invalidate,
+    }),
+    draftWhatsApp: useMutation({
+      mutationFn: () => draftPurchaseOrderWhatsApp(id),
     }),
     receive: useMutation({
       mutationFn: (body: GoodsReceiptInput) => receivePurchaseOrder(id, body),
@@ -268,7 +413,7 @@ export function usePurchaseRequestActionMutation(id: string) {
 }
 
 export function useFabricProcurementsQuery(
-  filters: { q?: string; state?: string },
+  filters: { q?: string; state?: string; supplierId?: string },
   enabled: boolean,
 ) {
   return useQuery({
@@ -286,6 +431,14 @@ export function useFabricProcurementQuery(id: string | undefined, enabled: boole
   });
 }
 
+export function useFabricProcurementByCodeQuery(code: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.fabricDetail(`code:${code ?? ''}`),
+    queryFn: () => getFabricProcurementByCode(code!),
+    enabled: Boolean(code) && enabled,
+  });
+}
+
 export function useFabricTrackerQuery(salesOrderId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.purchasing.fabricTracker(salesOrderId ?? ''),
@@ -297,9 +450,11 @@ export function useFabricTrackerQuery(salesOrderId: string | undefined, enabled:
 function invalidateFabric(qc: ReturnType<typeof useQueryClient>, id?: string) {
   const jobs = [
     qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricLists() }),
+    qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricDetails() }),
     qc.invalidateQueries({ queryKey: [...queryKeys.purchasing.all, 'fabric-tracker'] }),
     qc.invalidateQueries({ queryKey: [...queryKeys.inventory.all, 'fabric-holding'] }),
     qc.invalidateQueries({ queryKey: [...queryKeys.inventory.all, 'fabric-bundle'] }),
+    qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
     qc.invalidateQueries({ queryKey: queryKeys.production.all }),
   ];
   if (id) jobs.push(qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricDetail(id) }));
@@ -337,5 +492,52 @@ export function useFabricProcurementActions(id: string) {
       mutationFn: (reason: string) => overrideFabricHold(id, reason),
       onSuccess: () => invalidateFabric(qc, id),
     }),
+    receive: useMutation({
+      mutationFn: (input: Parameters<typeof receiveFabricProcurement>[1]) =>
+        receiveFabricProcurement(id, input),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
+    allocateFromStock: useMutation({
+      mutationFn: (input: Parameters<typeof allocateFabricFromStock>[1]) =>
+        allocateFabricFromStock(id, input),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
   };
+}
+
+export function useLowStockDraftQuery(enabled: boolean, q?: string) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.lowStockDraft(q),
+    queryFn: () => getLowStockDraft(q),
+    enabled,
+  });
+}
+
+export function useReceivablePurchaseOrdersQuery(enabled: boolean, filters: { q?: string } = {}) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.receivable(filters),
+    queryFn: () => listReceivablePurchaseOrders(filters),
+    enabled,
+  });
+}
+
+export function useCreatePurchaseOrdersBatchMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createPurchaseOrdersBatch,
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() });
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.lowStockDraft() });
+    },
+  });
+}
+
+export function useSendPurchaseOrdersBatchMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: sendPurchaseOrdersBatch,
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() });
+    },
+  });
 }

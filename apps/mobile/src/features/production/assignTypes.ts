@@ -7,6 +7,10 @@ export type AssignWorkerPayload = {
   plannedCompletion?: string;
   estimatedMinutes?: number;
   overrideConflict?: boolean;
+  overtime?: boolean;
+  acknowledge?: boolean;
+  reason?: string;
+  priority?: string;
 };
 
 /** Server WORKER_SCHEDULE_CONFLICT details for assign UX. */

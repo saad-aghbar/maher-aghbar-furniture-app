@@ -20,6 +20,7 @@ import { seedDealerOrdersRecent } from './seed/dealer-orders-recent';
 import { seedDealerFinance } from './seed/dealer-finance';
 import { seedPiece1LifecycleExamples } from './demo/piece1-lifecycle';
 import { seedPiece2ProductionSetupExamples } from './demo/piece2-production-setup';
+import { ensureAllDefaultWarehouseBins, ensureAllWarehouseBinQrCodes } from './seed/warehouse-bins';
 
 export { wipeOperationalData };
 
@@ -79,6 +80,8 @@ export async function seedLaunchWorld(
   passwordHash: string,
 ): Promise<void> {
   console.log('Seeding launch accounts (empty operational data)…');
+  await ensureAllDefaultWarehouseBins(prisma);
+  await ensureAllWarehouseBinQrCodes(prisma);
   await upsertCompany(prisma, 'launch-v1');
 
   const { dealers } = await seedPeople(prisma, passwordHash, { includeWorkers: false });
@@ -88,7 +91,7 @@ export async function seedLaunchWorld(
 
   await logCounts(prisma);
   console.log('Launch accounts ready.');
-  console.log('  Logins (password 123): admin | nile | oasis | balqis');
+  console.log('  Logins (password 123): admin | nile | oasis | balqis | floor');
 }
 
 /** Full demo catalog, inventory, orders, and finance — local QA only. */
@@ -97,6 +100,8 @@ export async function seedFullDemoWorld(
   passwordHash: string,
 ): Promise<void> {
   console.log('Seeding full demo world…');
+  await ensureAllDefaultWarehouseBins(prisma);
+  await ensureAllWarehouseBinQrCodes(prisma);
   await upsertCompany(prisma, 'catalog-v1');
 
   const { admin, dealers, workers, stageAssignees } = await seedPeople(prisma, passwordHash, {
@@ -169,7 +174,7 @@ export async function seedFullDemoWorld(
   await logCounts(prisma);
   console.log('Full demo world ready.');
   console.log(
-    '  Demo logins (password 123): admin, nile, oasis, balqis, carpenter, cutter, inspector, …',
+    '  Demo logins (password 123): admin, nile, oasis, balqis, floor, carpenter, cutter, inspector, …',
   );
 }
 

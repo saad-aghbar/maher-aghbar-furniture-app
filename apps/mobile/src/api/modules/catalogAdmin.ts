@@ -15,6 +15,7 @@ export type AdminBomLine = {
   /** Inventory item id (not Material.id). */
   inventoryItemId?: string | null;
   imageUrl?: string | null;
+  unit?: string | null;
 };
 
 export type AdminCustomMeasurement = {

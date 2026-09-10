@@ -62,6 +62,35 @@ async function ensureUser(
   });
 }
 
+/** Multi-skill floor tester — every active stage, password 123. */
+export async function ensureFloorWorker(prisma: PrismaClient, passwordHash: string) {
+  const existing = await prisma.user.findUnique({ where: { username: 'floor' } });
+  const user =
+    existing ??
+    (await ensureUser(prisma, passwordHash, {
+      username: 'floor',
+      email: `floor@${COMPANY_DOMAIN}`,
+      firstName: 'Floor',
+      lastName: 'Tester',
+      roleCode: 'PRODUCTION_WORKER',
+      phone: '+962790100000',
+      departmentCode: 'PROD',
+    }));
+
+  const stages = await prisma.productionStageDefinition.findMany({
+    where: { isActive: true },
+    select: { id: true },
+  });
+  for (const stage of stages) {
+    await prisma.workerSkill.upsert({
+      where: { userId_stageDefinitionId: { userId: user.id, stageDefinitionId: stage.id } },
+      create: { userId: user.id, stageDefinitionId: stage.id, proficiency: 5, isActive: true },
+      update: { isActive: true, proficiency: 5 },
+    });
+  }
+  return user;
+}
+
 const DEALERS: Array<{
   username: string;
   code: string;
@@ -95,6 +124,8 @@ const WORKERS: Array<{
   { username: 'packer', firstName: 'Issa', lastName: 'Daoud', departmentCode: 'PACK', phone: '+962790100701' },
   { username: 'driver', firstName: 'Basel', lastName: 'Smadi', departmentCode: 'DEL', phone: '+962790100801' },
   { username: 'driver2', firstName: 'Anas', lastName: 'Freijat', departmentCode: 'DEL', phone: '+962790100802' },
+  { username: 'recovery1', firstName: 'Suhaib', lastName: 'Zaid', departmentCode: 'WH', phone: '+962790100901' },
+  { username: 'recovery2', firstName: 'Murad', lastName: 'Btoush', departmentCode: 'WH', phone: '+962790100902' },
 ];
 
 export async function seedPeople(
@@ -177,6 +208,9 @@ export async function seedPeople(
     }
   }
 
+  const floorWorker = await ensureFloorWorker(prisma, passwordHash);
+  workers.push({ id: floorWorker.id, username: 'floor', departmentCode: 'PROD' });
+
   /** Stage code → preferred assignee user ids */
   const stageAssignees: Record<string, string[]> = {
     MATERIAL_PREP: byDept.WH ?? [],
@@ -188,6 +222,7 @@ export async function seedPeople(
     INSPECTION: byDept.QC ?? [],
     PACKAGING: byDept.PACK ?? [],
     DELIVERY: byDept.DEL ?? [],
+    DISMANTLE_RECOVER: byDept.WH ?? [],
   };
 
   return { admin, dealers, workers, stageAssignees };

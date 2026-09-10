@@ -119,5 +119,8 @@ describe('compileWorkflow terminal chain', () => {
     expect(compiled.included.find((n) => n.stageCode === 'INSPECTION')?.executionKind).toBe(
       'QUALITY',
     );
+    const inspection = compiled.included.find((n) => n.stageCode === 'INSPECTION');
+    expect(inspection?.estimatedMinutes).toBe(0);
+    expect(inspection?.estimateReviewRequired).toBe(false);
   });
 });

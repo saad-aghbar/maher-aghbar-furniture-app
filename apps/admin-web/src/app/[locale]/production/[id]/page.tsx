@@ -38,8 +38,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
 import { AlertTriangle, Pin, PinOff, RefreshCw } from 'lucide-react';
+import { productionOrderHasRunningTimer, withLiveProductionOrder } from '@/lib/live-task-progress';
+import { isQualityGateStageCode } from '@/lib/workflow-terminal';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface Worker {
   id: string;
@@ -77,6 +79,7 @@ interface Task {
   timing?: {
     status: string;
     actualMinutes: number;
+    actualSeconds?: number;
     openStartedAt: string | null;
     estimatedMinutes: number | null;
     plannedCompletion: string | null;
@@ -210,6 +213,28 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       setPlannedEnd(toDateInput(order.plannedCompletionDate));
       return order;
     },
+  });
+  const planSetupQuery = useQuery({
+    queryKey: ['production-order-plan-setup', params.id],
+    queryFn: () =>
+      apiFetch<{
+        planDrift?: {
+          drifted: boolean;
+          issues: Array<{ stageCode: string; field: string }>;
+        };
+      }>(`/api/v1/production-orders/${params.id}/plan-setup`),
+  });
+  const resyncPlanMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/production-orders/${params.id}/plan-setup/resync`, { method: 'POST' }),
+    onSuccess: async () => {
+      setBanner(tp('planResynced'));
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['production-order-plan-setup', params.id] }),
+        qc.invalidateQueries({ queryKey: ['production-order', params.id] }),
+      ]);
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
   });
 
   const deliveryQuery = useQuery({
@@ -527,6 +552,16 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     );
   }
 
+  const [now, setNow] = useState(() => Date.now());
+  const rawOrder = detailQuery.data;
+  const timerRunning = rawOrder ? productionOrderHasRunningTimer(rawOrder) : false;
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+  const liveOrder = rawOrder ? withLiveProductionOrder(rawOrder, now) : undefined;
+
   if (detailQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -546,7 +581,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     );
   }
 
-  const order = detailQuery.data;
+  const order = liveOrder ?? detailQuery.data;
   const PRE_START_STATUSES = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'];
   const LOCKED_STAGE_STATUSES = [
     'COMPLETED',
@@ -566,8 +601,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   ];
   const isCompleted =
     order.status === 'COMPLETED' ||
-    order.status === 'CANCELLED' ||
-    Number(order.progressPercent) >= 100;
+    order.status === 'CANCELLED';
   const canStart = !isCompleted && PRE_START_STATUSES.includes(order.status);
   const isInProduction = !isCompleted && !PRE_START_STATUSES.includes(order.status);
 
@@ -660,6 +694,19 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error && !confirmStart ? <Alert variant="error">{error}</Alert> : null}
       {isCompleted ? <Alert variant="info">{tp('orderCompletedReadOnly')}</Alert> : null}
+      {planSetupQuery.data?.planDrift?.drifted ? (
+        <Alert variant="warning">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>{tp('planDriftBody')}</p>
+            <Button
+              onClick={() => resyncPlanMutation.mutate()}
+              disabled={resyncPlanMutation.isPending}
+            >
+              {tp('planResync')}
+            </Button>
+          </div>
+        </Alert>
+      ) : null}
 
       <ProductionLifecyclePanel
         poStatus={order.status}
@@ -915,6 +962,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
             const docs = documentsForTask(task.id);
             const canAssign = stageAssignable(stage, task);
             const showWorkerReadOnly = !canAssign;
+            const qualityGate = isQualityGateStageCode(stage.stageDefinition.code);
             return (
               <TableRow key={stage.id}>
                 <TableCell className="font-medium">
@@ -1000,6 +1048,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         }
                       />
                     </div>
+                    {!qualityGate ? (
                     <div className="grid grid-cols-2 gap-1">
                       <input
                         type="number"
@@ -1029,6 +1078,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         }
                       />
                     </div>
+                    ) : null}
                     </div>
                   )}
                 </TableCell>
@@ -1083,10 +1133,12 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                                   draft.dueHour,
                                   draft.dueMinute,
                                 ),
-                                estimatedMinutes: draftEstimateMinutes(
-                                  draft.estHours,
-                                  draft.estMinutes,
-                                ),
+                                estimatedMinutes: qualityGate
+                                  ? 0
+                                  : draftEstimateMinutes(
+                                      draft.estHours,
+                                      draft.estMinutes,
+                                    ),
                               })
                             }
                           >

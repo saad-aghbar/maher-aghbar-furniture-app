@@ -3,7 +3,7 @@ import { Image, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { can } from '@maher/permissions';
+import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { uploadFile } from '@/api/modules/uploads';
 import {
@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useToast } from '@/components/feedback/Toast';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
@@ -23,12 +24,13 @@ import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCam
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics } from '@/motion';
+import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useQuery } from '@tanstack/react-query';
 import { ReturnOrderPickerSheet } from './components/ReturnOrderPickerSheet';
 import { ReturnPhotoBoard } from './components/ReturnPhotoBoard';
+import { returnCtaStyle } from './components/returnFloorCta';
 import { useCreateReturnMutation, type ReturnReason } from './query';
 
 const REASONS: ReturnReason[] = [
@@ -68,14 +70,13 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
   const { showToast } = useToast();
   const router = useRouter();
   const { openAccessoryCamera } = useAccessoryCamera();
-  const allowed = can(user, 'sales-order.read');
+  const allowed = canAny(user, ['return.create', 'return.read', 'sales-order.read']);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const [orderOpen, setOrderOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrderListItem | null>(null);
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [qtyByLine, setQtyByLine] = useState<Record<string, number>>({});
   const [productDesc, setProductDesc] = useState('');
-  const [quantity, setQuantity] = useState('1');
   const [reason, setReason] = useState<ReturnReason>('MANUFACTURING_DEFECT');
   const [description, setDescription] = useState('');
   const [reasonPhotos, setReasonPhotos] = useState<PhotoSlot[]>([]);
@@ -202,15 +203,14 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
       });
       return;
     }
-    if (!productDesc.trim()) {
+    const items = Object.entries(qtyByLine)
+      .filter(([, qty]) => qty > 0)
+      .map(([salesOrderLineId, quantity]) => ({ salesOrderLineId, quantity }));
+    if (!items.length && !productDesc.trim()) {
       showToast({ variant: 'error', message: t('mobile.returns.itemRequired') });
       return;
     }
-    const qty = Number(quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      showToast({ variant: 'error', message: t('mobile.returns.qtyInvalid') });
-      return;
-    }
+    const qty = items.reduce((sum, item) => sum + item.quantity, 0) || 1;
     if (reasonPhotos.length === 0 || issuePhotos.length === 0) {
       showToast({
         variant: 'error',
@@ -222,8 +222,18 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
       {
         customerId: user?.customerId || undefined,
         salesOrderId,
-        productDesc: productDesc.trim(),
+        salesOrderLineId: items[0]?.salesOrderLineId,
+        productDesc:
+          productDesc.trim() ||
+          items
+            .map((item) => lines.find((line) => line.id === item.salesOrderLineId))
+            .map((line) => line?.productName || line?.description)
+            .filter(Boolean)
+            .join(' · ') ||
+          selectedOrder?.title ||
+          '',
         quantity: qty,
+        items: items.length ? items : undefined,
         reason,
         description: description.trim() || undefined,
         reasonPhotoKeys: reasonPhotos.map((p) => p.key),
@@ -320,19 +330,24 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
               </AppText>
             ) : lines.length > 0 ? (
               <View style={{ gap: theme.spacing.sm }}>
-                {lines.map((line) => {
-                  const selected = selectedLineId === line.id;
+                {lines.map((line, index) => {
+                  const maxQty = Math.max(1, Math.round(Number(line.quantity) || 1));
+                  const selectedQty = qtyByLine[line.id] ?? 0;
+                  const selected = selectedQty > 0;
                   const meta = lineMeta(line);
                   const thumb = resolveOrderMediaUri(orderImageUrl);
                   return (
+                    <ListItemEnter key={line.id} index={index}>
                     <AnimatedPressable
-                      key={line.id}
-                      variant="button"
+                      variant="card"
+                      accessibilityLabel={line.productName || line.description || t('mobile.returns.item')}
                       onPress={() => {
                         void haptics.selection();
-                        setSelectedLineId(line.id);
-                        setProductDesc(line.productName || line.description || '');
-                        setQuantity(String(line.quantity ?? '1'));
+                        setQtyByLine((prev) => ({
+                          ...prev,
+                          [line.id]: prev[line.id] ? 0 : 1,
+                        }));
+                        setProductDesc(line.productName || line.description || productDesc);
                       }}
                       style={{
                         borderRadius: theme.radius.xl,
@@ -414,12 +429,28 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
                               {meta}
                             </AppText>
                           ) : null}
+                          {selected ? (
+                            <QtyStepperField
+                              label={t('mobile.returns.quantity')}
+                              accessibilityLabel={t('mobile.returns.quantity')}
+                              value={String(selectedQty)}
+                              min={0}
+                              max={maxQty}
+                              decimals={0}
+                              step={1}
+                              onChangeText={(next) => {
+                                const n = Math.max(0, Math.min(maxQty, Math.round(Number(next) || 0)));
+                                setQtyByLine((prev) => ({ ...prev, [line.id]: n }));
+                              }}
+                            />
+                          ) : null}
                         </View>
                         {selected ? (
                           <Ionicons name="checkmark-circle" size={22} color={colors.brand} />
                         ) : null}
                       </View>
                     </AnimatedPressable>
+                    </ListItemEnter>
                   );
                 })}
               </View>
@@ -428,7 +459,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
                 variant="button"
                 onPress={() => {
                   void haptics.selection();
-                  setSelectedLineId(null);
+                  setQtyByLine({});
                   setProductDesc(selectedOrder.title || '');
                 }}
                 style={{
@@ -442,7 +473,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
                   ...orderBoardShadow(colorScheme),
                 }}
               >
-                <AppText color="brand" weight="semibold">
+                <AppText color="brand" weight={titleWeight}>
                   {t('mobile.returns.useOrderTitle')}
                 </AppText>
               </AnimatedPressable>
@@ -457,12 +488,6 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
                 label={t('mobile.returns.item')}
                 value={productDesc}
                 onChangeText={setProductDesc}
-              />
-              <TextField
-                label={t('mobile.returns.quantity')}
-                value={quantity}
-                onChangeText={setQuantity}
-                keyboardType="decimal-pad"
               />
             </View>
           </FloorSection>
@@ -564,7 +589,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
           label={t('mobile.returns.submit')}
           loading={createMutation.isPending}
           onPress={submit}
-          style={{ borderRadius: theme.radius.xl }}
+          style={returnCtaStyle(theme)}
         />
       </ScrollView>
 
@@ -575,9 +600,8 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
         selectedOrder={selectedOrder}
         onConfirm={(order) => {
           setSelectedOrder(order);
-          setSelectedLineId(null);
+          setQtyByLine({});
           setProductDesc('');
-          setQuantity('1');
         }}
       />
     </AppScreen>
@@ -641,7 +665,7 @@ function FloorSection({
   count?: number;
   children: ReactNode;
 }) {
-  const { isRTL } = useLocale();
+  const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
 
   return (
@@ -667,7 +691,7 @@ function FloorSection({
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <AppText variant="caption" weight="semibold" color="brand">
+        <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
           {title}
         </AppText>
         {typeof count === 'number' ? (
@@ -796,7 +820,7 @@ function SelectedOrderPreview({
           alignItems: 'center',
         }}
       >
-        <AppText variant="caption" color="brand" weight="semibold">
+        <AppText variant="caption" color="brand" weight={locale === 'ar' ? 'medium' : 'semibold'}>
           {t('mobile.returns.changeOrder')}
         </AppText>
       </AnimatedPressable>

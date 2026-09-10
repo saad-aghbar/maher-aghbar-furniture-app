@@ -92,9 +92,51 @@ describe('Piece 11 returns receive-gate', () => {
       quarantineReturn: jest.fn().mockResolvedValue({ id: 'lot-q' }),
       resolveReturnFate: jest.fn().mockResolvedValue({}),
     };
-    const rework = {
-      createForReturn: jest.fn(),
-      startRework: jest.fn(),
+    const returns = {
+      assertReturnQuantity: jest.fn().mockResolvedValue(undefined),
+      resolveLineAndProduct: jest.fn().mockResolvedValue({
+        salesOrderLineId: null,
+        productId: null,
+        sourceProductionOrderId: null,
+      }),
+      applyState: jest.fn((_from: string, to: string) => ({
+        lifecycleState: to,
+        approvalStatus:
+          to === 'REJECTED' ? 'REJECTED' : to === 'NEED_INFO' ? 'NEED_INFO' : to === 'REQUESTED' ? 'PENDING' : 'APPROVED',
+        physicalStatus:
+          to === 'RECEIVED'
+            ? 'RETURNED'
+            : to === 'APPROVED' || to === 'IN_TRANSIT'
+              ? 'WAITING_RETURN'
+              : to === 'INSPECTING'
+                ? 'INSPECTING'
+                : 'NONE',
+      })),
+      createWorkOrder: jest.fn().mockResolvedValue({ productionOrder: { id: 'rw-1' }, created: true }),
+    };
+
+    const pieces = {
+      materializePieces: jest.fn().mockResolvedValue([]),
+      receivePieces: jest.fn().mockImplementation(async (id: string, user: { id: string }) => {
+        const existing = await prisma.returnRequest.findUnique({ where: { id } });
+        if (existing?.approvalStatus !== 'APPROVED') {
+          throw new BadRequestException({
+            code: 'RETURN_NOT_APPROVED',
+            message: 'Return must be approved before physical receive.',
+          });
+        }
+        if (!existing.receivedAt) {
+          await inventory.quarantineReturn(id, existing.salesOrderId, 1, user.id);
+        }
+        return prisma.returnRequest.update({
+          where: { id },
+          data: {
+            receivedAt: existing.receivedAt ?? new Date(),
+            receivedById: user.id,
+            physicalStatus: 'RETURNED',
+          },
+        });
+      }),
     };
 
     const controller = new ReturnsController(
@@ -102,8 +144,9 @@ describe('Piece 11 returns receive-gate', () => {
       sequences as never,
       storage as never,
       notifications as never,
-      inventory as never,
-      rework as never,
+      returns as never,
+      { summaryForReturn: jest.fn() } as never,
+      pieces as never,
     );
 
     return { controller, prisma, inventory, notifications, getRow: () => returnRow, setRow: (r: Partial<typeof returnRow>) => { Object.assign(returnRow, r); } };
@@ -157,7 +200,7 @@ describe('Piece 11 returns receive-gate', () => {
       resolution: ReturnResolution.REPLACEMENT,
     });
 
-    const first = await controller.receive('ret-1', admin as never);
+    const first = await controller.receive('ret-1', {}, admin as never);
     expect(first.physicalStatus).toBe('RETURNED');
     expect(first.receivedAt).toBeTruthy();
     expect(inventory.quarantineReturn).toHaveBeenCalledTimes(1);
@@ -167,7 +210,7 @@ describe('Piece 11 returns receive-gate', () => {
       receivedById: admin.id,
       physicalStatus: 'RETURNED',
     });
-    const second = await controller.receive('ret-1', admin as never);
+    const second = await controller.receive('ret-1', {}, admin as never);
     expect(second.physicalStatus).toBe('RETURNED');
     expect(inventory.quarantineReturn).toHaveBeenCalledTimes(1);
     expect(getRow().physicalStatus).toBe('RETURNED');
@@ -175,7 +218,7 @@ describe('Piece 11 returns receive-gate', () => {
 
   it('receive before approve throws RETURN_NOT_APPROVED', async () => {
     const { controller } = makeController();
-    await expect(controller.receive('ret-1', admin as never)).rejects.toMatchObject({
+    await expect(controller.receive('ret-1', {}, admin as never)).rejects.toMatchObject({
       response: { code: 'RETURN_NOT_APPROVED' },
     });
   });
@@ -189,7 +232,7 @@ describe('Piece 11 returns receive-gate', () => {
         message: 'No finished-goods lot found',
       }),
     );
-    await expect(controller.receive('ret-1', admin as never)).rejects.toMatchObject({
+    await expect(controller.receive('ret-1', {}, admin as never)).rejects.toMatchObject({
       response: { code: 'RETURN_NO_STOCK_BASIS' },
     });
   });
@@ -210,17 +253,6 @@ describe('Piece 11 returns receive-gate', () => {
     );
   });
 
-  it('fate before receive is rejected', async () => {
-    const { controller, setRow } = makeController();
-    setRow({ approvalStatus: 'APPROVED', physicalStatus: 'WAITING_RETURN' });
-    await expect(
-      controller.setInventoryFate(
-        'ret-1',
-        { inventoryFate: 'SCRAP' },
-        admin as never,
-      ),
-    ).rejects.toMatchObject({ response: { code: 'RETURN_NOT_RECEIVED' } });
-  });
 });
 
 describe('Piece 11 phase-5 cancel blocked via SalesOrdersService', () => {

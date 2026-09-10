@@ -41,7 +41,12 @@ export function DealerEmptyState({ title, body, actionLabel, onAction }: Props) 
         <PrimaryButton
           label={actionLabel}
           onPress={onAction}
-          style={{ borderRadius: theme.radius.xl, alignSelf: 'stretch' }}
+          style={{
+            borderRadius: theme.radius.full,
+            minHeight: theme.sizes.touch.min,
+            paddingVertical: 0,
+            alignSelf: 'stretch',
+          }}
         />
       ) : null}
     </View>

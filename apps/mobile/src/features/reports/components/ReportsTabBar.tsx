@@ -28,6 +28,7 @@ const FILL_DARK = [
 const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A'] as const;
 
 const TAB_ICON: Record<ReportsCategory, keyof typeof Ionicons.glyphMap> = {
+  orders: 'layers-outline',
   dashboard: 'grid-outline',
   sales: 'briefcase-outline',
   production: 'construct-outline',

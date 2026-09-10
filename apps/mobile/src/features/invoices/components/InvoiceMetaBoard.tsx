@@ -1,16 +1,18 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InvoiceDetailModel } from '../selectInvoice';
 import { InvoiceFloorBoard } from './InvoiceFloorBoard';
 
 type Props = {
   model: InvoiceDetailModel;
+  onOpenReturn?: (returnId: string) => void;
 };
 
 /** Slim dates & order refs board. */
-export function InvoiceMetaBoard({ model }: Props) {
+export function InvoiceMetaBoard({ model, onOpenReturn }: Props) {
   const { t } = useLocale();
   const { theme, colors } = useTheme();
 
@@ -24,6 +26,20 @@ export function InvoiceMetaBoard({ model }: Props) {
         hint={model.isOverdue ? t('accounting.overdueHint') : null}
         danger={model.isOverdue}
       />
+      {model.returnNumber ? (
+        <>
+          <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }} />
+          <MetaRow
+            label={t('mobile.invoices.returnChip')}
+            value={model.returnNumber}
+            onPress={
+              model.returnRequestId && onOpenReturn
+                ? () => onOpenReturn(model.returnRequestId!)
+                : undefined
+            }
+          />
+        </>
+      ) : null}
       {model.factoryOrderNumber ? (
         <>
           <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }} />
@@ -39,16 +55,28 @@ function MetaRow({
   value,
   hint,
   danger,
+  onPress,
 }: {
   label: string;
   value: string;
   hint?: string | null;
   danger?: boolean;
+  onPress?: () => void;
 }) {
   const { isRTL } = useLocale();
   const { colors } = useTheme();
+  const Row = onPress ? AnimatedPressable : View;
   return (
-    <View
+    <Row
+      {...(onPress
+        ? {
+            variant: 'button' as const,
+            onPress: () => {
+              void haptics.selection();
+              onPress();
+            },
+          }
+        : {})}
       style={{
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'flex-start',
@@ -95,6 +123,6 @@ function MetaRow({
           </AppText>
         ) : null}
       </View>
-    </View>
+    </Row>
   );
 }

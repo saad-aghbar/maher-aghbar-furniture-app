@@ -87,11 +87,13 @@ export function classifyPurchaseOrder(args: {
   const primaryAction =
     phase === 'DRAFT'
       ? 'EDIT'
-      : phase === 'ORDERED' || phase === 'PARTIALLY_RECEIVED'
-        ? 'RECEIVE'
-        : phase === 'RECEIVED' || phase === 'CLOSED'
-          ? 'VIEW'
-          : null;
+      : status === 'APPROVED'
+        ? 'PLACE'
+        : phase === 'ORDERED' || phase === 'PARTIALLY_RECEIVED'
+          ? 'RECEIVE'
+          : phase === 'RECEIVED' || phase === 'CLOSED'
+            ? 'VIEW'
+            : null;
 
   return { phase, labelKey, tone, progress, attentionReason, primaryAction };
 }

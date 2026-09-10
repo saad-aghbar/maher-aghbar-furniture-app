@@ -52,7 +52,8 @@ export async function runInventoryLabelVerify(args: {
     if (
       resolved.status === 'NOT_FOUND' ||
       resolved.status === 'FOUND_KIT' ||
-      resolved.status === 'FOUND_LOT'
+      resolved.status === 'FOUND_LOT' ||
+      resolved.status === 'FOUND_BIN'
     ) {
       qrLog(0, `VERIFY lookup ${resolved.status}`);
       return { kind: 'UNKNOWN', scanned: null };

@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Headers, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { hasPermission } from '@maher/permissions';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -14,10 +26,14 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryService } from './inventory.service';
+import {
+  inventoryItemListQueryForCaller,
+  warehouseListTypeForCaller,
+} from './inventory-list-scope';
 import { RawMaterialsReportService } from './raw-materials-report.service';
 import { parsePdfQuery } from '../../common/helpers/pdf.util';
-import { ListFinishedLotsDto } from './dto/finished-lots.dto';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { ListFinishedLotsDto, ListSemiFinishedDto } from './dto/finished-lots.dto';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
@@ -133,6 +149,12 @@ class CreateInventoryItemDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  reorderQty?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   standardCost?: number;
 
   @IsOptional()
@@ -211,6 +233,12 @@ class UpdateInventoryItemDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  reorderQty?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   standardCost?: number;
 
   @IsOptional()
@@ -259,6 +287,10 @@ class StockMovementDto {
   @IsUUID()
   warehouseId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
   @Type(() => Number)
   @IsNumber()
   @Min(0.001)
@@ -286,6 +318,14 @@ class TransferLineDto {
   @IsNumber()
   @Min(0.001)
   quantity!: number;
+
+  @IsOptional()
+  @IsUUID()
+  fromLocationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  toLocationId?: string;
 }
 
 class CreateTransferDto {
@@ -310,6 +350,10 @@ class CountLineDto {
   inventoryItemId!: string;
 
   @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   countedQty?: number;
@@ -332,6 +376,10 @@ class CreateCountDto {
 class ScanCountDto {
   @IsUUID()
   warehouseId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
 
   @IsString()
   @MinLength(1)
@@ -370,17 +418,18 @@ export class InventoryController {
     @Query('period') period: string | undefined,
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
+    @Query('sections') sections: string | string[] | undefined,
     @Query('lang') lang: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
     @CurrentUser() user: AuthUser,
   ) {
     const { locale } = parsePdfQuery({ lang, acceptLanguage });
-    return this.rawMaterialsReport.build({ period, from, to, locale, user });
+    return this.rawMaterialsReport.build({ period, from, to, sections, locale, user });
   }
 
   @Get('semi-finished')
   @RequirePermissions('inventory.read')
-  listSemiFinished(@Query() query: PaginationDto) {
+  listSemiFinished(@Query() query: ListSemiFinishedDto) {
     return this.inventory.listSemiFinished(query);
   }
 
@@ -426,14 +475,25 @@ export class InventoryController {
   }
 
   @Get('items')
-  @RequirePermissions('inventory.read')
+  @RequireAnyPermissions('inventory.read', 'production.material-usage.record')
   list(@Query() query: ListInventoryItemsDto, @CurrentUser() user: AuthUser) {
-    return this.inventory.listItems(query, user.permissions);
+    return this.inventory.listItems(
+      inventoryItemListQueryForCaller(query, user.permissions),
+      user.permissions,
+    );
   }
 
   @Post('items')
-  @RequirePermissions('inventory.adjust')
+  @RequireAnyPermissions('inventory.adjust', 'production.setup.edit')
   createItem(@Body() dto: CreateInventoryItemDto, @CurrentUser() user: AuthUser) {
+    const canAdjust = hasPermission(user.permissions, 'inventory.adjust');
+    const category = String(dto.category ?? '').toUpperCase();
+    if (!canAdjust && category !== 'FABRIC') {
+      throw new BadRequestException({
+        code: 'ITEM_CATEGORY_FORBIDDEN',
+        message: 'Production setup can only add fabric items.',
+      });
+    }
     return this.inventory.createItem(dto, user.id);
   }
 
@@ -482,9 +542,15 @@ export class InventoryController {
   }
 
   @Get('warehouses')
-  @RequirePermissions('inventory.read')
-  warehouses(@Query('type') type?: string) {
-    return this.inventory.listWarehouses(type);
+  @RequireAnyPermissions(
+    'inventory.read',
+    'inventory.receive',
+    'production.material-usage.record',
+  )
+  warehouses(@Query('type') type?: string, @CurrentUser() user?: AuthUser) {
+    return this.inventory.listWarehouses(
+      warehouseListTypeForCaller(type, user?.permissions),
+    );
   }
 
   @Get('low-stock')

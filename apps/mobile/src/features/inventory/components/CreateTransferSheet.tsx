@@ -16,6 +16,12 @@ import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
 import { WarehousePickList } from './WarehousePickList';
+import {
+  locationsForWarehouse,
+  WarehouseBinStrip,
+} from './WarehouseBinBoard';
+import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import {
   ScanInventoryItemAction,
@@ -71,9 +77,12 @@ export function CreateTransferSheet({
   const copy = inventoryPickCopyKey(lifecycle);
   const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
   const scanRef = useRef<ScanInventoryItemActionHandle>(null);
+  const scanWarehouseBin = useScanWarehouseBin();
 
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
+  const [fromLocationId, setFromLocationId] = useState('');
+  const [toLocationId, setToLocationId] = useState('');
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
@@ -99,6 +108,8 @@ export function CreateTransferSheet({
     }
     setFromId('');
     setToId('');
+    setFromLocationId('');
+    setToLocationId('');
     setItem(initialItem ?? null);
     setQty(
       initialQty != null && Number.isFinite(initialQty) && initialQty > 0
@@ -141,7 +152,10 @@ export function CreateTransferSheet({
       setError(t(copy.transferRequired));
       return;
     }
-    if (fromId === toId) {
+    if (
+      fromId === toId &&
+      (!effectiveFromLoc || !effectiveToLoc || effectiveFromLoc === effectiveToLoc)
+    ) {
       setError(t('mobile.inventory.transferSameWarehouse'));
       return;
     }
@@ -160,11 +174,38 @@ export function CreateTransferSheet({
       fromWarehouseId: fromId,
       toWarehouseId: toId,
       notes: notes.trim() || undefined,
-      lines: [{ inventoryItemId: item.id, quantity }],
+      lines: [
+        {
+          inventoryItemId: item.id,
+          quantity,
+          fromLocationId: effectiveFromLoc || undefined,
+          toLocationId: effectiveToLoc || undefined,
+        },
+      ],
     });
   }
 
   const available = item ? transferableQty(item, fromId) : undefined;
+  const fromWarehouse = warehouses.find((wh) => wh.id === fromId);
+  const toWarehouse = warehouses.find((wh) => wh.id === toId);
+  const fromBins = locationsForWarehouse(fromWarehouse);
+  const toBins = locationsForWarehouse(toWarehouse);
+  const effectiveFromLoc = pickDefaultLocationId(fromBins, fromLocationId);
+  const effectiveToLoc = pickDefaultLocationId(toBins, toLocationId);
+
+  async function applyScannedBin(side: 'from' | 'to') {
+    const bin = await scanWarehouseBin();
+    if (!bin) return;
+    const whId = bin.warehouse?.id ?? bin.warehouseId;
+    if (!whId) return;
+    if (side === 'from') {
+      setFromId(whId);
+      setFromLocationId(bin.id);
+    } else {
+      setToId(whId);
+      setToLocationId(bin.id);
+    }
+  }
 
   return (
     <>
@@ -211,6 +252,9 @@ export function CreateTransferSheet({
                       );
                     }
                     setFromId(id);
+                    setFromLocationId(
+                      pickDefaultLocationId(locationsForWarehouse(warehouses.find((wh) => wh.id === id))),
+                    );
                   }}
                   label={t('mobile.inventory.fromWarehouse')}
                   listHeight={warehouseListHeight}
@@ -219,11 +263,25 @@ export function CreateTransferSheet({
                     canAddWarehouse ? () => setCreateWarehouseFor('from') : undefined
                   }
                 />
+                {fromBins.length > 0 ? (
+                  <WarehouseBinStrip
+                    locations={fromBins}
+                    selectedId={effectiveFromLoc}
+                    onSelect={setFromLocationId}
+                    label={t('mobile.inventory.binShelf')}
+                    onScanPress={() => void applyScannedBin('from')}
+                  />
+                ) : null}
 
                 <WarehousePickList
                   warehouses={warehouses}
                   selectedId={toId}
-                  onSelect={setToId}
+                  onSelect={(id) => {
+                    setToId(id);
+                    setToLocationId(
+                      pickDefaultLocationId(locationsForWarehouse(warehouses.find((wh) => wh.id === id))),
+                    );
+                  }}
                   label={t('mobile.inventory.toWarehouse')}
                   listHeight={warehouseListHeight}
                   resetToken={open ? `to-${lifecycle}` : 'to-closed'}
@@ -231,6 +289,15 @@ export function CreateTransferSheet({
                     canAddWarehouse ? () => setCreateWarehouseFor('to') : undefined
                   }
                 />
+                {toBins.length > 0 ? (
+                  <WarehouseBinStrip
+                    locations={toBins}
+                    selectedId={effectiveToLoc}
+                    onSelect={setToLocationId}
+                    label={t('mobile.inventory.binShelf')}
+                    onScanPress={() => void applyScannedBin('to')}
+                  />
+                ) : null}
 
                 <InventorySheetSectionLabel label={t(copy.item)} />
                 {item ? (

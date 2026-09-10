@@ -48,7 +48,25 @@ interface InvoiceRow {
     number: string;
     externalOrderNumber?: string | null;
   } | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    productDesc?: string | null;
+  } | null;
 }
+
+interface SupplierInvoiceRow {
+  id: string;
+  number: string;
+  status: string;
+  total?: string | number;
+  outstandingAmount?: string | number;
+  dueDate?: string | null;
+  supplier?: { name?: string | null; nameEn?: string | null; nameAr?: string | null } | null;
+  purchaseOrder?: { id: string; number: string } | null;
+}
+
+type InvoiceSection = 'all' | 'orders' | 'returns' | 'purchasing';
 
 interface CustomerOption {
   id: string;
@@ -135,6 +153,8 @@ function InvoicesPageInner() {
 
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
+  const [section, setSection] = useState<InvoiceSection>('all');
+  const [materialKind, setMaterialKind] = useState<'FABRIC' | 'RAW'>('FABRIC');
   const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
   const [customerId, setCustomerId] = useState('');
   const [page, setPage] = useState(1);
@@ -160,8 +180,10 @@ function InvoicesPageInner() {
     if (debouncedQ) params.set('q', debouncedQ);
     if (status) params.set('status', status);
     if (customerId) params.set('customerId', customerId);
+    if (section === 'orders') params.set('kind', 'ORDER');
+    if (section === 'returns') params.set('kind', 'RETURN');
     return params.toString();
-  }, [debouncedQ, status, customerId, page]);
+  }, [debouncedQ, status, customerId, page, section]);
 
   const listQuery = useQuery({
     queryKey: ['invoices', listParams],
@@ -169,6 +191,25 @@ function InvoicesPageInner() {
       apiFetch<{ data: InvoiceRow[]; meta: { page: number; totalPages: number } }>(
         `/api/v1/invoices?${listParams}`,
       ),
+    enabled: section !== 'purchasing',
+    placeholderData: keepPreviousData,
+  });
+
+  const supplierParams = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: '50' });
+    if (debouncedQ) params.set('q', debouncedQ);
+    if (status) params.set('status', status);
+    if (section === 'purchasing') params.set('materialKind', materialKind);
+    return params.toString();
+  }, [debouncedQ, status, page, section, materialKind]);
+
+  const supplierQuery = useQuery({
+    queryKey: ['supplier-invoices', supplierParams],
+    queryFn: () =>
+      apiFetch<{ data: SupplierInvoiceRow[]; meta: { page: number; totalPages: number } }>(
+        `/api/v1/supplier-invoices?${supplierParams}`,
+      ),
+    enabled: section === 'purchasing',
     placeholderData: keepPreviousData,
   });
 
@@ -229,9 +270,11 @@ function InvoicesPageInner() {
   });
 
   const customers = customersQuery.data ?? [];
+  const activeQuery = section === 'purchasing' ? supplierQuery : listQuery;
   const rows = listQuery.data?.data ?? [];
+  const supplierRows = supplierQuery.data?.data ?? [];
 
-  if (listQuery.isLoading && !listQuery.data) {
+  if (activeQuery.isLoading && !activeQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48 maher-animate-fade" />
@@ -243,17 +286,17 @@ function InvoicesPageInner() {
       </div>
     );
   }
-  if (listQuery.isError && !listQuery.data) {
+  if (activeQuery.isError && !activeQuery.data) {
     return (
       <ErrorState
         title={t('invoices')}
-        onRetry={() => listQuery.refetch()}
+        onRetry={() => activeQuery.refetch()}
         retryLabel={tCommon('retry')}
       />
     );
   }
 
-  const meta = listQuery.data?.meta;
+  const meta = activeQuery.data?.meta;
 
   return (
     <div className="space-y-6">
@@ -285,6 +328,46 @@ function InvoicesPageInner() {
       ) : null}
 
       <MotionSection enter="rise" delayMs={40} className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(['all', 'orders', 'returns', 'purchasing'] as InvoiceSection[]).map((key) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={section === key ? 'primary' : 'secondary'}
+              onClick={() => {
+                setSection(key);
+                setPage(1);
+              }}
+            >
+              {ta(
+                key === 'all'
+                  ? 'sectionAll'
+                  : key === 'orders'
+                    ? 'sectionOrders'
+                    : key === 'returns'
+                      ? 'sectionReturns'
+                      : 'sectionPurchasing',
+              )}
+            </Button>
+          ))}
+        </div>
+        {section === 'purchasing' ? (
+          <div className="flex flex-wrap gap-2">
+            {(['FABRIC', 'RAW'] as const).map((kind) => (
+              <Button
+                key={kind}
+                size="sm"
+                variant={materialKind === kind ? 'primary' : 'secondary'}
+                onClick={() => {
+                  setMaterialKind(kind);
+                  setPage(1);
+                }}
+              >
+                {ta(kind === 'FABRIC' ? 'purchasingFabric' : 'purchasingRaw')}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <div className="maher-invoices-filters maher-stagger flex flex-wrap items-end gap-3">
           <label className="relative min-w-[220px] flex-1">
             <Input
@@ -297,6 +380,7 @@ function InvoicesPageInner() {
               placeholder={ta('searchPlaceholder')}
             />
           </label>
+          {section === 'purchasing' ? null : (
           <Select
             label={tc('customer')}
             value={customerId}
@@ -315,6 +399,7 @@ function InvoicesPageInner() {
               </option>
             ))}
           </Select>
+          )}
           <Select
             label={tCommon('status')}
             value={status}
@@ -327,7 +412,7 @@ function InvoicesPageInner() {
           />
         </div>
 
-        {rows.length === 0 ? (
+        {(section === 'purchasing' ? supplierRows.length === 0 : rows.length === 0) ? (
           <div className="maher-invoices-results">
             <EmptyState title={ta('empty')} description={ta('emptyHint')} />
           </div>
@@ -335,15 +420,54 @@ function InvoicesPageInner() {
           <>
             <div
               className={`maher-invoices-results maher-stagger grid gap-3 md:grid-cols-2 ${
-                listQuery.isFetching ? 'opacity-70 transition-opacity' : ''
+                activeQuery.isFetching ? 'opacity-70 transition-opacity' : ''
               }`}
             >
-              {rows.map((row) => {
+              {section === 'purchasing'
+                ? supplierRows.map((row) => (
+                    <article
+                      key={row.id}
+                      className="maher-invoices-card flex flex-col rounded-xl border border-border bg-surface"
+                    >
+                      <div className="flex items-start justify-between gap-3 px-5 pt-5">
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold tracking-tight text-text-primary">
+                            <Ltr>{row.number}</Ltr>
+                          </p>
+                          <p className="mt-0.5 truncate text-sm text-text-secondary">
+                            {row.supplier?.nameAr || row.supplier?.nameEn || row.supplier?.name || '—'}
+                          </p>
+                        </div>
+                        <StatusBadge status={row.status} />
+                      </div>
+                      <div className="flex flex-1 flex-col justify-center px-5 py-5">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+                          {ta('outstanding')}
+                        </p>
+                        <p className="mt-1.5 text-[1.75rem] font-semibold leading-none tracking-tight">
+                          <Ltr>{money(row.outstandingAmount ?? row.total, currency)}</Ltr>
+                        </p>
+                      </div>
+                      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+                        <p className="min-w-0 truncate text-xs text-text-tertiary">
+                          {row.purchaseOrder?.number ?? '—'}
+                        </p>
+                        <Link
+                          href={`/purchasing/supplier-invoices/${row.id}`}
+                          className="rounded-md px-2.5 py-1.5 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
+                        >
+                          {ta('viewDetails')}
+                        </Link>
+                      </div>
+                    </article>
+                  ))
+                : rows.map((row) => {
                 const overdue = isOverdue(row);
                 const outstanding = Number(row.outstandingAmount ?? 0);
                 const settled = Number.isFinite(outstanding) && outstanding <= 0;
                 const factoryNo = row.salesOrder?.number ?? null;
                 const dealerNo = row.salesOrder?.externalOrderNumber?.trim() || null;
+                const returnNo = row.returnRequest?.number ?? null;
 
                 return (
                   <article
@@ -412,10 +536,11 @@ function InvoicesPageInner() {
                     <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
                       <p className="min-w-0 truncate text-xs text-text-tertiary">
                         {[
-                          factoryNo
+                          returnNo ? `${ta('returnInvoice')} ${returnNo}` : null,
+                          !returnNo && factoryNo
                             ? `${ta('factoryOrderShort')} ${factoryNo}`
                             : null,
-                          dealerNo ? `${ta('dealerOrderShort')} ${dealerNo}` : null,
+                          !returnNo && dealerNo ? `${ta('dealerOrderShort')} ${dealerNo}` : null,
                         ]
                           .filter(Boolean)
                           .join(' · ') || '—'}

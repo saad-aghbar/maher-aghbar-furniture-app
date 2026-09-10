@@ -4,6 +4,7 @@ import { ProductionFlowMap, type FlowMapStage } from '@/components/workflow/prod
 import { apiFetch } from '@/lib/api-client';
 import type { ProductStageEstimateRow } from '@/lib/scheduling';
 import { workflowVersionToFlowStages } from '@/lib/workflow-labels';
+import { isQualityGateStageCode } from '@/lib/workflow-terminal';
 import { localizedName } from '@maher/i18n';
 import { Card, EmptyState, Skeleton } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -89,20 +90,24 @@ export function ProductWorkflowTimes({
       const def = node?.stageDefinition;
       const displayCode = def?.code ?? s.id;
       const minutes = def?.id ? estimateMap.get(def.id) : undefined;
+      const qualityGate = isQualityGateStageCode(def?.code);
       return {
         ...s,
         // Keep layout code = node id so dependsOnCodes (node ids) still match.
+        libraryCode: def?.code ?? null,
         name: def ? localizedName(locale, def, displayCode) : displayCode,
-        status: minutes && minutes > 0 ? 'COMPLETED' : 'PENDING',
-        progressPercent: minutes && minutes > 0 ? 100 : 0,
-        estimatedMinutes: minutes ?? node?.estimatedMinutes ?? null,
+        status: qualityGate || (minutes && minutes > 0) ? 'COMPLETED' : 'PENDING',
+        progressPercent: qualityGate || (minutes && minutes > 0) ? 100 : 0,
+        estimatedMinutes: qualityGate ? 0 : (minutes ?? node?.estimatedMinutes ?? null),
       };
     });
   }, [estimateMap, locale, workflowQuery.data?.activeVersion]);
 
   const selected = stages.find((s) => s.id === selectedId) ?? null;
   const total = stages.reduce((sum, s) => sum + (s.estimatedMinutes ?? 0), 0);
-  const missing = stages.filter((s) => !s.estimatedMinutes).length;
+  const missing = stages.filter(
+    (s) => !isQualityGateStageCode(s.libraryCode) && !s.estimatedMinutes,
+  ).length;
 
   if (!workflowId) return null;
 
@@ -126,7 +131,10 @@ export function ProductWorkflowTimes({
           <ProductionFlowMap
             stages={stages}
             selectedId={selected?.id ?? null}
-            onStageClick={(stage) => setSelectedId(stage.id)}
+            onStageClick={(stage) => {
+              if (isQualityGateStageCode(stage.libraryCode)) return;
+              setSelectedId(stage.id);
+            }}
             rtl={rtl}
             showDurations
           />

@@ -1,26 +1,25 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { AppTextInput } from '@/components/forms/AppTextInput';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { InvoiceFloorBoard } from './InvoiceFloorBoard';
+import { InvoiceItemPickerSheet } from './InvoiceItemPickerSheet';
+import { InvoiceRowActionChip } from './InvoiceRowActionChip';
 import type { Invoice } from '../api';
+import {
+  applyInvoiceLinePick,
+  invoiceEditErrorMessage,
+  type InvoiceLineDraft,
+} from '../invoiceLineDraft';
+import { percentToStoredTaxRate, storedTaxRateToPercent } from '../invoiceTaxRate';
 import { useUpdateInvoiceMutation } from '../query';
-
-type LineDraft = {
-  key: string;
-  id?: string;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  taxRate: string;
-};
 
 type Props = {
   open: boolean;
@@ -36,23 +35,53 @@ function toYmd(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/**
- * Edit order invoice — notes, due date, and line amounts.
- */
+const STATUSES = ['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE', 'PAID'] as const;
+
 export function EditInvoiceSheet({ open, onClose, invoice, onSaved }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, isRTL, locale, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
+  const { height } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const mutation = useUpdateInvoiceMutation(invoice.id);
+  const paid = Number(invoice.paidAmount) || 0;
   const [notes, setNotes] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [lines, setLines] = useState<LineDraft[]>([]);
+  const [status, setStatus] = useState(invoice.status);
+  const [currency, setCurrency] = useState(invoice.currency ?? 'ILS');
+  const [subtotal, setSubtotal] = useState('0');
+  const [discount, setDiscount] = useState('0');
+  const [tax, setTax] = useState('0');
+  const [total, setTotal] = useState('0');
+  const [deriveFromLines, setDeriveFromLines] = useState(true);
+  const [lines, setLines] = useState<InvoiceLineDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [editingLineKey, setEditingLineKey] = useState<string | null>(null);
+  const [pickerMode, setPickerMode] = useState<'list' | 'custom'>('list');
+  const [pickerCustomName, setPickerCustomName] = useState('');
+  const pendingPicker = useRef(false);
+  const editingLineKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setEditVisible(false);
+      setPickerOpen(false);
+      pendingPicker.current = false;
+      return;
+    }
+    setEditVisible(true);
     setNotes(invoice.notes ?? '');
+    setInvoiceDate(toYmd(invoice.invoiceDate));
     setDueDate(toYmd(invoice.dueDate));
+    setStatus(invoice.status);
+    setCurrency(invoice.currency ?? 'ILS');
+    setSubtotal(String(Number(invoice.subtotal) || 0));
+    setDiscount(String(Number(invoice.discountTotal) || 0));
+    setTax(String(Number(invoice.taxTotal ?? invoice.taxAmount) || 0));
+    setTotal(String(Number(invoice.total) || 0));
+    setDeriveFromLines(true);
     setLines(
       (invoice.lines ?? []).map((l, i) => ({
         key: l.id || `new-${i}`,
@@ -60,15 +89,56 @@ export function EditInvoiceSheet({ open, onClose, invoice, onSaved }: Props) {
         description: l.description ?? '',
         quantity: String(Number(l.quantity) || 0),
         unitPrice: String(Number(l.unitPrice) || 0),
-        taxRate: String(Number(l.taxRate ?? 0) || 0),
+        taxPercent: String(storedTaxRateToPercent(l.taxRate)),
       })),
     );
     setError(null);
+    setPickerOpen(false);
   }, [open, invoice]);
+
+  const derived = useMemo(() => {
+    const sub = lines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0), 0);
+    const taxAmt = lines.reduce((sum, line) => {
+      const net = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
+      return sum + net * ((Number(line.taxPercent) || 0) / 100);
+    }, 0);
+    const disc = Number(discount) || 0;
+    return {
+      subtotal: Math.round(sub * 1000) / 1000,
+      tax: Math.round(taxAmt * 1000) / 1000,
+      total: Math.round((sub - disc + taxAmt) * 1000) / 1000,
+    };
+  }, [discount, lines]);
+
+  const nextTotal = deriveFromLines ? derived.total : Number(total) || 0;
+
+  const openPicker = (line?: InvoiceLineDraft) => {
+    void haptics.selection();
+    const key = line?.key ?? null;
+    editingLineKeyRef.current = key;
+    setEditingLineKey(key);
+    setPickerMode(line?.origin === 'custom' ? 'custom' : 'list');
+    setPickerCustomName(line?.description ?? '');
+    pendingPicker.current = true;
+    setEditVisible(false);
+  };
+
+  const applyPick = (pick: Parameters<typeof applyInvoiceLinePick>[1]) => {
+    setLines((prev) => applyInvoiceLinePick(prev, pick, editingLineKeyRef.current));
+  };
 
   const save = () => {
     if (lines.length === 0) {
       setError(t('mobile.invoices.editNeedLines'));
+      return;
+    }
+    if (nextTotal + 1e-9 < paid) {
+      setError(t('mobile.invoices.totalBelowPaid'));
+      return;
+    }
+    const outstanding = nextTotal - paid;
+    if (status === 'PAID' && outstanding > 0.001) {
+      setError(t('mobile.invoices.cannotMarkPaid'));
       return;
     }
     const payloadLines = lines.map((l) => ({
@@ -76,13 +146,24 @@ export function EditInvoiceSheet({ open, onClose, invoice, onSaved }: Props) {
       description: l.description.trim() || 'Line',
       quantity: Number(l.quantity) || 0,
       unitPrice: Number(l.unitPrice) || 0,
-      taxRate: Number(l.taxRate) || 0,
+      taxRate: percentToStoredTaxRate(l.taxPercent),
     }));
     mutation.mutate(
       {
         notes: notes.trim() || null,
+        invoiceDate: invoiceDate.trim() || undefined,
         dueDate: dueDate.trim() || null,
+        currency: currency.trim() || undefined,
+        status: status === 'PAID' && outstanding > 0.001 ? undefined : status,
         lines: payloadLines,
+        ...(deriveFromLines
+          ? {}
+          : {
+              subtotal: Number(subtotal) || 0,
+              discountTotal: Number(discount) || 0,
+              taxTotal: Number(tax) || 0,
+              total: Number(total) || 0,
+            }),
       },
       {
         onSuccess: () => {
@@ -90,220 +171,260 @@ export function EditInvoiceSheet({ open, onClose, invoice, onSaved }: Props) {
           onSaved?.();
           onClose();
         },
-        onError: () => {
+        onError: (err) => {
           void haptics.error();
-          setError(t('mobile.invoices.editFailed'));
+          setError(invoiceEditErrorMessage(err, t('mobile.invoices.editFailed')));
         },
       },
     );
   };
 
   return (
-    <BottomSheet
-      open={open}
-      onClose={onClose}
-      title={t('mobile.invoices.editTitle')}
-      fitContent
-      maxHeight={680}
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled
-        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}
+    <>
+      <BottomSheet
+        open={editVisible}
+        onClose={() => {
+          if (pendingPicker.current) {
+            setEditVisible(false);
+            return;
+          }
+          onClose();
+        }}
+        onClosed={() => {
+          if (!pendingPicker.current) return;
+          pendingPicker.current = false;
+          setTimeout(() => setPickerOpen(true), 80);
+        }}
+        title={t('mobile.invoices.editTitle')}
+        sheetHeight={Math.min(Math.round(height * 0.88), 760)}
       >
-        <InvoiceFloorBoard title={t('mobile.invoices.dueDate')}>
-          <TextField
-            value={dueDate}
-            onChangeText={setDueDate}
-            placeholder="YYYY-MM-DD"
-            autoCorrect={false}
-          />
-          <AppText variant="caption" color="muted">
-            {t('mobile.invoices.notes')}
-          </AppText>
-          <TextField
-            value={notes}
-            onChangeText={setNotes}
-            placeholder={t('mobile.invoices.notesPlaceholder')}
-            multiline
-            numberOfLines={3}
-            style={{ minHeight: 88, textAlignVertical: 'top' }}
-          />
-        </InvoiceFloorBoard>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}
+        >
+          <InvoiceFloorBoard title={t('mobile.invoices.editHeader')}>
+            <TextField value={invoiceDate} onChangeText={setInvoiceDate} placeholder="YYYY-MM-DD" />
+            <TextField value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" />
+            <TextField value={currency} onChangeText={setCurrency} placeholder="ILS" />
+            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 8 }}>
+              {STATUSES.map((row) => (
+                <AnimatedPressable
+                  key={row}
+                  variant="button"
+                  onPress={() => {
+                    void haptics.selection();
+                    setStatus(row);
+                  }}
+                  style={{
+                    minHeight: 36,
+                    paddingHorizontal: 12,
+                    borderRadius: theme.radius.full,
+                    borderWidth: 1.5,
+                    borderColor: status === row ? colors.brand : colors.border,
+                    backgroundColor: status === row ? colors.brandSoft : colors.surface,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="caption" weight={titleWeight} color={status === row ? 'brand' : 'secondary'}>
+                    {t(`mobile.invoices.chips.${row}`)}
+                  </AppText>
+                </AnimatedPressable>
+              ))}
+            </View>
+          </InvoiceFloorBoard>
 
-        <InvoiceFloorBoard
-          title={t('mobile.invoices.items')}
-          trailing={
+          <InvoiceFloorBoard title={t('mobile.invoices.editMoney')}>
             <AnimatedPressable
               variant="button"
               onPress={() => {
                 void haptics.selection();
-                setLines((prev) => [
-                  ...prev,
-                  {
-                    key: `new-${Date.now()}`,
-                    description: '',
-                    quantity: '1',
-                    unitPrice: '0',
-                    taxRate: '0',
-                  },
-                ]);
+                setDeriveFromLines((v) => !v);
               }}
               style={{
-                minHeight: 36,
-                paddingHorizontal: theme.spacing.md,
-                borderRadius: theme.radius.lg,
-                borderWidth: 1,
-                borderColor: colors.brand,
-                flexDirection: isRTL ? 'row-reverse' : 'row',
+                minHeight: 44,
+                borderRadius: theme.radius.full,
+                borderWidth: 1.5,
+                borderColor: deriveFromLines ? colors.brand : colors.border,
+                backgroundColor: deriveFromLines ? colors.brandSoft : colors.surface,
                 alignItems: 'center',
-                gap: 4,
+                justifyContent: 'center',
               }}
             >
-              <Ionicons name="add" size={16} color={colors.brand} />
-              <AppText variant="caption" weight={titleWeight} color="brand">
-                {t('mobile.invoices.addLine')}
+              <AppText variant="caption" weight={titleWeight} color={deriveFromLines ? 'brand' : 'secondary'}>
+                {t('mobile.invoices.deriveFromLines')}
               </AppText>
             </AnimatedPressable>
-          }
-        >
-          <View style={{ gap: theme.spacing.sm }}>
-            {lines.map((line) => (
-              <View
-                key={line.key}
-                style={{
-                  borderRadius: theme.radius.lg,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surfaceSecondary,
-                  padding: theme.spacing.sm,
-                  gap: theme.spacing.xs,
-                }}
-              >
+            <QtyStepperField
+              label={t('accounting.subtotal')}
+              value={deriveFromLines ? String(derived.subtotal) : subtotal}
+              onChangeText={setSubtotal}
+              disabled={deriveFromLines}
+              unit="₪"
+              step={1}
+              decimals={2}
+            />
+            <QtyStepperField
+              label={t('accounting.discount')}
+              value={discount}
+              onChangeText={setDiscount}
+              unit="₪"
+              step={1}
+              decimals={2}
+            />
+            <QtyStepperField
+              label={t('accounting.tax')}
+              value={deriveFromLines ? String(derived.tax) : tax}
+              onChangeText={setTax}
+              disabled={deriveFromLines}
+              unit="₪"
+              step={1}
+              decimals={2}
+            />
+            <QtyStepperField
+              label={t('accounting.total')}
+              value={deriveFromLines ? String(derived.total) : total}
+              onChangeText={setTotal}
+              disabled={deriveFromLines}
+              unit="₪"
+              step={1}
+              decimals={2}
+            />
+            <AppText variant="caption" color="muted">
+              {t('mobile.invoices.paidReadOnly', { amount: formatCurrency(paid) })}
+            </AppText>
+          </InvoiceFloorBoard>
+
+          <InvoiceFloorBoard title={t('mobile.invoices.items')}>
+            <View style={{ gap: theme.spacing.sm }}>
+              {lines.map((line) => (
                 <View
+                  key={line.key}
                   style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.sm,
                     gap: theme.spacing.sm,
                   }}
                 >
-                  <AppTextInput
-                    value={line.description}
-                    onChangeText={(v) =>
-                      setLines((prev) =>
-                        prev.map((row) =>
-                          row.key === line.key ? { ...row, description: v } : row,
-                        ),
-                      )
-                    }
-                    placeholder={t('mobile.invoices.lineDescription')}
+                  <AnimatedPressable
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.invoices.changeItem')}
+                    onPress={() => openPicker(line)}
                     style={{
-                      flex: 1,
-                      minHeight: 40,
+                      minHeight: 44,
+                      paddingHorizontal: theme.spacing.md,
+                      borderRadius: theme.radius.lg,
                       borderWidth: 1,
-                      borderColor: colors.borderStrong,
-                      borderRadius: theme.radius.md,
-                      paddingHorizontal: theme.spacing.sm,
-                      color: colors.textPrimary,
+                      borderColor: colors.border,
                       backgroundColor: colors.surface,
-                      textAlign: isRTL ? 'right' : 'left',
+                      justifyContent: 'center',
                     }}
-                  />
-                  {lines.length > 1 ? (
-                    <AnimatedPressable
-                      variant="button"
-                      onPress={() => {
-                        void haptics.selection();
-                        setLines((prev) => prev.filter((row) => row.key !== line.key));
-                      }}
-                      style={{ padding: 6 }}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={colors.error} />
-                    </AnimatedPressable>
-                  ) : null}
-                </View>
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <Field
+                  >
+                    <AppText numberOfLines={1} color={line.description.trim() ? 'primary' : 'muted'}>
+                      {line.description.trim() || t('mobile.invoices.lineDescription')}
+                    </AppText>
+                  </AnimatedPressable>
+                  <QtyStepperField
                     label={t('mobile.invoices.qty')}
                     value={line.quantity}
-                    onChange={(v) =>
+                    onChangeText={(v) =>
                       setLines((prev) =>
-                        prev.map((row) =>
-                          row.key === line.key ? { ...row, quantity: v } : row,
-                        ),
+                        prev.map((row) => (row.key === line.key ? { ...row, quantity: v } : row)),
                       )
                     }
+                    step={1}
+                    decimals={2}
                   />
-                  <Field
+                  <QtyStepperField
                     label={t('mobile.invoices.unitPrice')}
                     value={line.unitPrice}
-                    onChange={(v) =>
+                    onChangeText={(v) =>
                       setLines((prev) =>
-                        prev.map((row) =>
-                          row.key === line.key ? { ...row, unitPrice: v } : row,
-                        ),
+                        prev.map((row) => (row.key === line.key ? { ...row, unitPrice: v } : row)),
                       )
                     }
+                    unit="₪"
+                    step={1}
+                    decimals={2}
                   />
+                  <QtyStepperField
+                    label={t('mobile.invoices.taxPercent')}
+                    value={line.taxPercent}
+                    onChangeText={(v) =>
+                      setLines((prev) =>
+                        prev.map((row) => (row.key === line.key ? { ...row, taxPercent: v } : row)),
+                      )
+                    }
+                    unit="%"
+                    step={1}
+                    decimals={2}
+                  />
+                  {lines.length > 1 ? (
+                    <InvoiceRowActionChip
+                      label={t('common.delete')}
+                      icon="trash-outline"
+                      tone="danger"
+                      onPress={() => setLines((prev) => prev.filter((row) => row.key !== line.key))}
+                    />
+                  ) : null}
                 </View>
-              </View>
-            ))}
-          </View>
-        </InvoiceFloorBoard>
+              ))}
+              <PrimaryButton
+                label={t('mobile.invoices.addItem')}
+                onPress={() => openPicker()}
+                style={{ borderRadius: theme.radius.full, minHeight: 44 }}
+              />
+            </View>
+          </InvoiceFloorBoard>
 
-        {error ? (
-          <AppText variant="caption" color="error" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-            {error}
-          </AppText>
-        ) : null}
+          <InvoiceFloorBoard title={t('mobile.invoices.notes')}>
+            <TextField
+              value={notes}
+              onChangeText={setNotes}
+              placeholder={t('mobile.invoices.notesPlaceholder')}
+              multiline
+              numberOfLines={3}
+              style={{ minHeight: 88, textAlignVertical: 'top' }}
+            />
+          </InvoiceFloorBoard>
 
-        <PrimaryButton
-          label={t('mobile.invoices.saveEdit')}
-          loading={mutation.isPending}
-          onPress={save}
-          style={{ borderRadius: theme.radius.xl }}
-        />
-      </ScrollView>
-    </BottomSheet>
-  );
-}
+          {error ? (
+            <AppText variant="caption" color="error" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+              {error}
+            </AppText>
+          ) : null}
 
-function Field({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const { colors, theme } = useTheme();
-  const { isRTL } = useLocale();
-  return (
-    <View style={{ flex: 1, gap: 4 }}>
-      <AppText variant="caption" color="muted">
-        {label}
-      </AppText>
-      <AppTextInput
-        value={value}
-        onChangeText={onChange}
-        keyboardType="decimal-pad"
-        style={{
-          minHeight: 40,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          borderRadius: theme.radius.md,
-          paddingHorizontal: theme.spacing.sm,
-          color: colors.textPrimary,
-          backgroundColor: colors.surface,
-          textAlign: isRTL ? 'right' : 'left',
+          <PrimaryButton
+            label={t('mobile.invoices.saveEdit')}
+            loading={mutation.isPending}
+            onPress={save}
+            style={{ borderRadius: theme.radius.full, minHeight: 44 }}
+          />
+          <SecondaryButton
+            label={t('common.cancel')}
+            onPress={onClose}
+            style={{ borderRadius: theme.radius.full, minHeight: 44 }}
+          />
+        </ScrollView>
+      </BottomSheet>
+      <InvoiceItemPickerSheet
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onClosed={() => {
+          editingLineKeyRef.current = null;
+          setEditingLineKey(null);
+          if (open) setTimeout(() => setEditVisible(true), 80);
         }}
+        source="catalog"
+        title={editingLineKey ? t('mobile.invoices.changeItem') : t('mobile.invoices.addItem')}
+        initialMode={pickerMode}
+        initialCustomName={pickerCustomName}
+        onPick={applyPick}
       />
-    </View>
+    </>
   );
 }

@@ -178,4 +178,44 @@ describe('RawMaterialsReportService', () => {
     });
     expect(payload.timezone).toBe('Asia/Amman');
   });
+
+  it('filters items and balances when a section is selected', async () => {
+    const { service, prisma } = makeService();
+    const payload = await service.build({ locale: 'en', user, period: 'month', sections: 'fabric' });
+    expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          itemClass: 'RAW_MATERIAL',
+          category: { in: ['FABRIC'] },
+        }),
+      }),
+    );
+    expect(prisma.inventoryBalance.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          inventoryItemId: { in: ['i1'] },
+        }),
+      }),
+    );
+    expect(payload.sections).toEqual(['fabric']);
+    expect(payload.allSections).toBe(false);
+    expect(payload.categories.map((c) => c.group)).toEqual(['fabric']);
+  });
+
+  it('skips category filters when sections are omitted', async () => {
+    const { service, prisma } = makeService();
+    const payload = await service.build({ locale: 'en', user, period: 'month' });
+    expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ category: expect.anything() }),
+      }),
+    );
+    expect(prisma.inventoryBalance.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ inventoryItemId: expect.anything() }),
+      }),
+    );
+    expect(payload.allSections).toBe(true);
+    expect(payload.sections).toEqual(['fabric', 'foam', 'wood', 'accessories']);
+  });
 });

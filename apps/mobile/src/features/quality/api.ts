@@ -4,6 +4,7 @@ export type {
   EligibleReworkStage,
   ExpectedPackage,
   ItemUnderInspection,
+  InspectionDealerDetails,
   ManufacturingSpec,
   QualityChecklistItem,
   QualityDefect,

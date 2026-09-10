@@ -322,6 +322,20 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
               />
             </>
           ) : null}
+          {item.pieceTotal > 0 ? (
+            <>
+              <Divider compact />
+              <MetaRow
+                icon="layers-outline"
+                label={t('mobile.returns.piecesTitle')}
+                value={t('mobile.returns.pieceCount', {
+                  ready: item.pieceReady,
+                  total: item.pieceTotal,
+                })}
+                isRTL={isRTL}
+              />
+            </>
+          ) : null}
           <Divider compact />
           <MetaRow
             icon="cube-outline"

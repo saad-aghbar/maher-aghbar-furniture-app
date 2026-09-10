@@ -37,6 +37,8 @@ describe('TasksService assign permissions & visibility', () => {
       status: 'NOT_STARTED',
       assignedEmployeeId: null,
       productionOrderId: 'po-1',
+      stageInstanceId: 'si-1',
+      estimatedMinutes: 60,
       productionOrder: { id: 'po-1', number: 'PO-1', status: 'IN_PROGRESS' },
       stageInstance: { status: 'READY' },
       stageDefinition: { code: 'CUT', dependsOnCodes: [] },
@@ -72,8 +74,13 @@ describe('TasksService assign permissions & visibility', () => {
         findUnique: jest.Mock;
         findUniqueOrThrow: jest.Mock;
         update: jest.Mock;
+        updateMany: jest.Mock;
         findMany: jest.Mock;
         count: jest.Mock;
+      };
+      productionOrderWorkflowSnapshotNode: {
+        findUnique: jest.Mock;
+        update: jest.Mock;
       };
       user: { findFirst: jest.Mock };
       document: { findMany: jest.Mock };
@@ -88,8 +95,16 @@ describe('TasksService assign permissions & visibility', () => {
         findUnique: productionTaskFindUnique,
         findUniqueOrThrow: jest.fn().mockResolvedValue(task),
         update: productionTaskUpdate,
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: productionTaskFindMany,
         count: productionTaskCount,
+      },
+      productionOrderWorkflowSnapshotNode: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'snap-1',
+          estimatedMinutes: 60,
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'snap-1', estimatedMinutes: 60 }),
       },
       user: { findFirst: userFindFirst },
       document: { findMany: jest.fn().mockResolvedValue([]) },

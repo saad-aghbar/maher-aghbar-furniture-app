@@ -95,7 +95,7 @@ export function AdminHomeSignalMarquee({ data }: Props) {
         count: data.pendingReturns,
         titleKey: 'mobile.adminHome.queue.returns.title',
         actionKey: 'mobile.adminHome.queue.returns.action',
-        href: '/(app)/(admin)/(tabs)/orders',
+        href: '/(app)/(admin)/returns',
         icon: 'return-down-back-outline',
       },
       {

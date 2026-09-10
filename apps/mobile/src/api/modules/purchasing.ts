@@ -1,6 +1,8 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPatch, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
+import { openAuthedPdf, withPdfOptions } from '../openPdf';
+import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type Supplier = {
   id: string;
@@ -36,7 +38,7 @@ export type CreateSupplierInput = {
   paymentTermsDays?: number;
   leadTimeDays?: number;
   rating?: number;
-  isCertified?: boolean;
+  status?: string;
   notes?: string;
 };
 
@@ -53,7 +55,7 @@ export type UpdateSupplierInput = {
   paymentTermsDays?: number;
   leadTimeDays?: number;
   rating?: number;
-  isCertified?: boolean;
+  status?: string;
   notes?: string;
 };
 
@@ -89,9 +91,23 @@ export type PurchaseOrderLine = {
   unitPrice: number | string;
   lineTotal?: number | string;
   inventoryItemId?: string | null;
-  inventoryItem?: { id: string; sku: string; nameEn: string; nameAr: string; unit: string } | null;
+  inventoryItem?: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    unit: string;
+    category?: string | null;
+    imageUrl?: string | null;
+  } | null;
   receivedQty?: number | string;
   remainingQty?: number | string;
+  fabricProcurementId?: string | null;
+  warehouseId?: string | null;
+  locationId?: string | null;
+  warehouse?: NamedRef | null;
+  location?: { id: string; code?: string | null; name?: string | null } | null;
+  isFabric?: boolean;
 };
 
 export type GoodsReceiptLine = {
@@ -110,6 +126,8 @@ export type GoodsReceipt = {
   createdAt?: string;
   receiptDate?: string;
   notes?: string | null;
+  warehouseId?: string | null;
+  warehouse?: NamedRef | null;
   lines?: GoodsReceiptLine[];
 };
 
@@ -126,6 +144,8 @@ export type PurchaseOrder = {
   id: string;
   number: string;
   status: string;
+  createdAt?: string | null;
+  origin?: string | null;
   notes?: string | null;
   expectedDeliveryDate?: string | null;
   subtotal?: number | string;
@@ -134,6 +154,7 @@ export type PurchaseOrder = {
   supplierId: string;
   warehouseId?: string | null;
   supplier?: Supplier | null;
+  warehouse?: NamedRef | null;
   lines?: PurchaseOrderLine[];
   goodsReceipts?: GoodsReceipt[];
   presentation?: PurchaseOrderPresentation;
@@ -144,6 +165,57 @@ export type PurchaseOrder = {
   whatsappSentAt?: string | null;
   whatsappLastBody?: string | null;
   whatsappLastTo?: string | null;
+  purchaseRunId?: string | null;
+  runId?: string | null;
+  runNumber?: string | null;
+  runSupplierCount?: number | null;
+};
+
+export type PurchaseRunPhase =
+  | 'DRAFT'
+  | 'APPROVED'
+  | 'SENT'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'CANCELLED';
+
+export type PurchaseRun = {
+  id: string;
+  number: string;
+  origin?: string | null;
+  notes?: string | null;
+  expectedDeliveryDate?: string | null;
+  createdAt?: string;
+  phase: PurchaseRunPhase | string;
+  supplierCount: number;
+  total: number | string;
+  runId?: string;
+  runNumber?: string;
+  runSupplierCount?: number;
+  orders: PurchaseOrder[];
+};
+
+export type PurchaseRunWhatsAppMessage = {
+  orderId: string;
+  orderNumber: string;
+  supplierId: string;
+  supplierName: string;
+  to: string | null;
+  body: string;
+  templateBody: string;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    warehouseName?: string | null;
+    locationName?: string | null;
+  }>;
+};
+
+export type BuyAlert = {
+  count: number;
+  lowStockCount: number;
+  productionCount: number;
 };
 
 export type SupplierLastPurchase = {
@@ -157,9 +229,11 @@ export type SupplierLastPurchase = {
 };
 
 export type SupplierDetail = Supplier & {
-  openPurchaseOrders?: Array<{ id: string; number: string; status: string }>;
+  openPurchaseOrders?: Array<{ id: string; number: string; status: string; total?: number | string }>;
+  recentPurchaseOrders?: Array<{ id: string; number: string; status: string; total?: number | string }>;
   lastPurchase?: SupplierLastPurchase | null;
   previousPurchases?: SupplierLastPurchase[];
+  purchaseHistory?: SupplierLastPurchase[];
 };
 
 export type PurchaseRequestLine = {
@@ -207,15 +281,25 @@ export type SupplierInvoice = {
   number: string;
   status: string;
   supplierId: string;
+  invoiceDate?: string | null;
   dueDate?: string | null;
+  currency?: string | null;
   subtotal?: number | string | null;
   taxAmount?: number | string | null;
+  taxTotal?: number | string | null;
   total?: number | string | null;
   paidAmount?: number | string | null;
   outstandingAmount?: number | string | null;
   notes?: string | null;
+  materialKind?: 'FABRIC' | 'RAW' | string | null;
   supplier?: Supplier | null;
-  purchaseOrder?: { id: string; number: string; status?: string } | null;
+  purchaseOrder?: {
+    id: string;
+    number: string;
+    status?: string;
+    paymentTermsDays?: number | null;
+  } | null;
+  goodsReceipt?: { id: string; number?: string | null; receivedAt?: string | null } | null;
   lines?: Array<{
     id: string;
     description: string;
@@ -226,8 +310,12 @@ export type SupplierInvoice = {
   }>;
   payments?: Array<{
     id: string;
+    number?: string | null;
     amount: number | string;
     method?: string | null;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    paymentDate?: string | null;
     createdAt?: string;
   }>;
 };
@@ -237,13 +325,59 @@ export type CreatePurchaseOrderInput = {
   warehouseId?: string;
   notes?: string;
   expectedDeliveryDate?: string;
+  origin?: string;
   lines: Array<{
     description: string;
     quantity: number;
     unitPrice: number;
     inventoryItemId?: string;
     unit?: string;
+    warehouseId?: string;
+    locationId?: string;
   }>;
+};
+
+export type BatchPurchaseOrderInput = {
+  orders: CreatePurchaseOrderInput[];
+};
+
+export type LowStockDraftItem = {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  unit: string;
+  imageUrl?: string | null;
+  category?: string | null;
+  minStock: number;
+  reorderQty?: number | null;
+  onHandQty: number;
+  standardCost: number;
+  lastUnitCost?: number | null;
+  preferredSupplierId?: string | null;
+  defaultWarehouseId?: string | null;
+  suggestedQty: number;
+  coveredByOpenOrder?: boolean;
+  onOrderQty?: number;
+  stillNeeded?: number;
+  reason?: 'LOW_STOCK' | 'PRODUCTION' | 'BOTH';
+};
+
+export type LowStockDraftGroup = {
+  supplierId: string | null;
+  supplier: Supplier | null;
+  items: LowStockDraftItem[];
+};
+
+export type LowStockDraftResponse = {
+  groups: LowStockDraftGroup[];
+  unassigned: LowStockDraftGroup;
+};
+
+export type ReceivablePurchaseOrder = PurchaseOrder & {
+  remainingQty?: number;
+  isOverdue?: boolean;
 };
 
 export type CreatePurchaseRequestInput = {
@@ -259,7 +393,7 @@ export type CreatePurchaseRequestInput = {
 };
 
 export type GoodsReceiptInput = {
-  warehouseId: string;
+  warehouseId?: string;
   notes?: string;
   idempotencyKey?: string;
   locationId?: string;
@@ -270,6 +404,8 @@ export type GoodsReceiptInput = {
     receivedQty: number;
     rejectedQty?: number;
     unitCost?: number;
+    warehouseId?: string;
+    locationId?: string;
   }>;
 };
 
@@ -279,10 +415,19 @@ export type PurchasingListFilters = PageParams & {
   supplierId?: string;
   dateFrom?: string;
   dateTo?: string;
+  warehouseId?: string;
+  materialKind?: 'FABRIC' | 'RAW';
 };
 
-export async function listSuppliers(params: PageParams & { q?: string } = {}) {
-  const qs = toSearchParams({ page: params.page, pageSize: params.pageSize ?? 50, q: params.q });
+export async function listSuppliers(
+  params: PageParams & { q?: string; status?: string } = {},
+) {
+  const qs = toSearchParams({
+    page: params.page,
+    pageSize: params.pageSize ?? 50,
+    q: params.q,
+    status: params.status,
+  });
   return apiGet<PaginatedResponse<Supplier>>(`/suppliers${qs}`);
 }
 
@@ -311,6 +456,7 @@ export async function listPurchaseOrders(params: PurchasingListFilters = {}) {
     supplierId: params.supplierId,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    warehouseId: params.warehouseId,
   });
   return apiGet<PaginatedResponse<PurchaseOrder>>(`/purchase-orders${qs}`);
 }
@@ -327,8 +473,98 @@ export async function approvePurchaseOrder(id: string) {
   return apiPost<PurchaseOrder>(`/purchase-orders/${encodeURIComponent(id)}/approve`);
 }
 
-export async function sendPurchaseOrder(id: string) {
-  return apiPost<PurchaseOrderSendResponse>(`/purchase-orders/${encodeURIComponent(id)}/send`);
+export async function sendPurchaseOrder(id: string, body?: { body?: string }) {
+  return apiPost<PurchaseOrderSendResponse>(
+    `/purchase-orders/${encodeURIComponent(id)}/send`,
+    body ?? {},
+  );
+}
+
+export async function draftPurchaseOrderWhatsApp(id: string) {
+  return apiPost<{ to: string | null; body: string; supplier: Supplier }>(
+    `/purchase-orders/${encodeURIComponent(id)}/whatsapp-draft`,
+  );
+}
+
+export async function createPurchaseOrdersBatch(body: BatchPurchaseOrderInput) {
+  return apiPost<{ orders: PurchaseOrder[]; run?: PurchaseRun | null }>(
+    '/purchase-orders/batch',
+    body,
+  );
+}
+
+export async function createPurchaseRun(body: {
+  notes?: string;
+  expectedDeliveryDate?: string;
+  origin?: string;
+  orders: CreatePurchaseOrderInput[];
+}) {
+  return apiPost<PurchaseRun>('/purchase-runs', body);
+}
+
+export async function getPurchaseRun(id: string) {
+  return apiGet<PurchaseRun>(`/purchase-runs/${encodeURIComponent(id)}`);
+}
+
+export async function approvePurchaseRun(id: string) {
+  return apiPost<PurchaseRun>(`/purchase-runs/${encodeURIComponent(id)}/approve`);
+}
+
+export async function draftPurchaseRunWhatsApp(id: string) {
+  return apiPost<{
+    runId: string;
+    number: string;
+    phase: string;
+    messages: PurchaseRunWhatsAppMessage[];
+  }>(`/purchase-runs/${encodeURIComponent(id)}/whatsapp-drafts`);
+}
+
+export async function sendPurchaseRun(
+  id: string,
+  orders?: Array<{ id: string; body?: string }>,
+) {
+  return apiPost<{
+    results: Array<{
+      id: string;
+      ok: boolean;
+      to: string | null;
+      error?: string;
+      purchaseOrder?: PurchaseOrder;
+    }>;
+    run: PurchaseRun;
+  }>(`/purchase-runs/${encodeURIComponent(id)}/send`, { orders });
+}
+
+export async function markPurchaseOrderSent(id: string) {
+  return apiPost<PurchaseOrder>(`/purchase-orders/${encodeURIComponent(id)}/mark-sent`);
+}
+
+export async function getBuyAlert() {
+  return apiGet<BuyAlert>('/purchase-orders/buy-alert');
+}
+
+export async function sendPurchaseOrdersBatch(
+  orders: Array<{ id: string; body?: string }>,
+) {
+  return apiPost<{
+    results: Array<{
+      id: string;
+      ok: boolean;
+      to: string | null;
+      error?: string;
+      purchaseOrder?: PurchaseOrder;
+    }>;
+  }>('/purchase-orders/send-batch', { orders });
+}
+
+export async function getLowStockDraft(q?: string) {
+  const qs = toSearchParams({ q });
+  return apiGet<LowStockDraftResponse>(`/purchase-orders/low-stock-draft${qs}`);
+}
+
+export async function listReceivablePurchaseOrders(params: { warehouseId?: string; q?: string } = {}) {
+  const qs = toSearchParams(params);
+  return apiGet<ReceivablePurchaseOrder[]>(`/purchase-orders/receivable${qs}`);
 }
 
 export type PurchaseWhatsAppResult = {
@@ -395,6 +631,7 @@ export async function listSupplierInvoices(params: PurchasingListFilters = {}) {
     supplierId: params.supplierId,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    materialKind: params.materialKind,
   });
   return apiGet<PaginatedResponse<SupplierInvoice>>(`/supplier-invoices${qs}`);
 }
@@ -403,11 +640,24 @@ export async function getSupplierInvoice(id: string) {
   return apiGet<SupplierInvoice>(`/supplier-invoices/${encodeURIComponent(id)}`);
 }
 
+export async function createSupplierInvoice(body: {
+  purchaseOrderId: string;
+  goodsReceiptId?: string;
+  notes?: string;
+}) {
+  return apiPost<SupplierInvoice>('/supplier-invoices', body);
+}
+
 export async function updateSupplierInvoice(
   id: string,
   body: {
     notes?: string | null;
     dueDate?: string | null;
+    invoiceDate?: string;
+    subtotal?: number;
+    taxTotal?: number;
+    total?: number;
+    status?: string;
     lines?: Array<{
       id?: string;
       description: string;
@@ -418,6 +668,36 @@ export async function updateSupplierInvoice(
   },
 ) {
   return apiPatch<SupplierInvoice>(`/supplier-invoices/${encodeURIComponent(id)}`, body);
+}
+
+export async function recordSupplierPayment(body: {
+  supplierId: string;
+  supplierInvoiceId?: string;
+  amount: number;
+  method?: string;
+  referenceNumber?: string;
+  notes?: string;
+}) {
+  return apiPost('/supplier-payments', body);
+}
+
+export async function updateSupplierPayment(
+  id: string,
+  body: {
+    amount?: number;
+    method?: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    paymentDate?: string;
+  },
+) {
+  return apiPatch(`/supplier-payments/${encodeURIComponent(id)}`, body);
+}
+
+export async function deleteSupplierPayment(id: string) {
+  return apiDelete<{ ok: boolean; id: string }>(
+    `/supplier-payments/${encodeURIComponent(id)}`,
+  );
 }
 
 export type MaterialDemandIncoming = {
@@ -488,8 +768,13 @@ export type FabricTrackerItem = {
   productName?: string | null;
   productImageUrl?: string | null;
   imageUrl?: string | null;
+  inventoryItemId?: string | null;
+  sku?: string | null;
   supplier?: { id: string; name: string; phone?: string | null } | null;
   purchaseOrderId?: string | null;
+  purchaseOrderNumber?: string | null;
+  supplierInvoiceId?: string | null;
+  supplierInvoiceNumber?: string | null;
   purchaseRequestId?: string | null;
   whatsappSentAt?: string | null;
   whatsappLastBody?: string | null;
@@ -513,6 +798,10 @@ export type FabricTrackerItem = {
     status: string;
     unitCost?: number | null;
   }>;
+  /** True when a unit price is known (lot, PO, or standard cost). Safe without cost.read. */
+  costOnFile?: boolean;
+  /** Resolved unit price — only present when the caller can read cost. */
+  resolvedUnitCost?: number | null;
   readiness: FabricReadiness;
 };
 
@@ -560,17 +849,26 @@ export type FabricTaskBoard = {
   }>;
 };
 
-export async function listFabricProcurements(params: { q?: string; state?: string; salesOrderId?: string } = {}) {
+export async function listFabricProcurements(
+  params: { q?: string; state?: string; salesOrderId?: string; supplierId?: string } = {},
+) {
   const qs = toSearchParams({
     q: params.q,
     state: params.state,
     salesOrderId: params.salesOrderId,
+    supplierId: params.supplierId,
   });
   return apiGet<FabricTrackerItem[]>(`/fabric-procurements${qs}`);
 }
 
 export async function getFabricProcurement(id: string) {
   return apiGet<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}`);
+}
+
+export async function getFabricProcurementByCode(code: string) {
+  return apiGet<FabricTrackerItem>(
+    `/fabric-procurements/by-code/${encodeURIComponent(code)}`,
+  );
 }
 
 export async function getFabricTracker(salesOrderId: string) {
@@ -629,6 +927,38 @@ export async function overrideFabricHold(id: string, reason: string) {
   });
 }
 
+export async function receiveFabricProcurement(
+  id: string,
+  body: {
+    qty: number;
+    locationId: string;
+    unitCost?: number;
+    note?: string;
+    photoDocumentId?: string;
+    inventoryItemId?: string;
+    idempotencyKey?: string;
+  },
+) {
+  return apiPost<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}/receive`, body);
+}
+
+export async function allocateFabricFromStock(
+  id: string,
+  body: {
+    inventoryItemId: string;
+    qty: number;
+    locationId?: string;
+    warehouseId?: string;
+    replaceFabric?: boolean;
+    reason?: string;
+  },
+) {
+  return apiPost<FabricTrackerItem>(
+    `/fabric-procurements/${encodeURIComponent(id)}/allocate-from-stock`,
+    body,
+  );
+}
+
 export async function takeInFabricLot(taskId: string, qrCode: string) {
   return apiPost(`/fabric-procurements/tasks/${encodeURIComponent(taskId)}/take-in`, { qrCode });
 }
@@ -638,4 +968,36 @@ export async function dispositionFabricLot(
   body: { qrCode: string; returnedQty?: number; scrapQty?: number; scrapReason?: string },
 ) {
   return apiPost(`/fabric-procurements/tasks/${encodeURIComponent(taskId)}/disposition`, body);
+}
+
+export async function openPurchaseOrderPdf(id: string, opts?: PdfDownloadOptions) {
+  await openAuthedPdf(
+    withPdfOptions(`/purchasing/orders/${encodeURIComponent(id)}/pdf`, opts),
+    'Purchase order PDF failed',
+    'Purchase order PDF',
+  );
+}
+
+export async function openGoodsReceiptPdf(id: string, opts?: PdfDownloadOptions) {
+  await openAuthedPdf(
+    withPdfOptions(`/purchasing/goods-receipts/${encodeURIComponent(id)}/pdf`, opts),
+    'Goods receipt PDF failed',
+    'Goods receipt PDF',
+  );
+}
+
+export async function openSupplierPaymentPdf(id: string, opts?: PdfDownloadOptions) {
+  await openAuthedPdf(
+    withPdfOptions(`/supplier-payments/${encodeURIComponent(id)}/pdf`, opts),
+    'Supplier payment PDF failed',
+    'Supplier payment PDF',
+  );
+}
+
+export async function openSupplierStatementPdf(id: string, opts?: PdfDownloadOptions) {
+  await openAuthedPdf(
+    withPdfOptions(`/suppliers/${encodeURIComponent(id)}/statement/pdf`, opts),
+    'Supplier statement PDF failed',
+    'Supplier statement PDF',
+  );
 }

@@ -16,6 +16,7 @@ import {
 } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { WarehouseBinPlace } from './WarehouseBinBoard';
 
 type Props = {
   open: boolean;
@@ -195,21 +196,24 @@ export function InventoryScanResultSheet({
                 <AppText variant="caption" color="muted" weight="semibold">
                   {t('mobile.inventory.warehousesSection')}
                 </AppText>
-                {card.balances.map((row) => (
+                {card.balances.map((row, idx) => (
                   <View
-                    key={row.warehouseId}
+                    key={`${row.warehouseId}-${row.locationId ?? idx}`}
                     style={{
                       flexDirection: isRTL ? 'row-reverse' : 'row',
                       justifyContent: 'space-between',
-                      alignItems: 'center',
+                      alignItems: 'flex-start',
                       paddingVertical: theme.spacing.xs,
                       borderBottomWidth: 1,
                       borderBottomColor: colors.border,
                     }}
                   >
-                    <AppText variant="body" style={{ flex: 1 }}>
-                      {row.warehouseName}
-                    </AppText>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <WarehouseBinPlace
+                        warehouseName={row.warehouseName}
+                        binLabel={row.locationName}
+                      />
+                    </View>
                     <AppText variant="body" weight="semibold" dir="ltr">
                       {row.quantityLabel}
                     </AppText>

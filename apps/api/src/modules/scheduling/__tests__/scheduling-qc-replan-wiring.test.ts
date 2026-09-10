@@ -4,6 +4,7 @@
  */
 import { QualityResult } from '@maher/database';
 import { QualityController } from '../../quality/quality.controller';
+import { QualityInspectionService } from '../../quality/quality-inspection.service';
 import { ProductionReworkService } from '../../production/production-rework.service';
 import { SchedulingService } from '../scheduling.service';
 
@@ -11,7 +12,13 @@ function makeScheduling(prismaOverrides: Record<string, unknown> = {}) {
   const prisma = {
     product: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
-    scheduleAllocation: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+    scheduleAllocation: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    wipKit: { findMany: jest.fn().mockResolvedValue([]) },
     factoryCalendar: {
       findFirst: jest.fn().mockResolvedValue({
         id: 'cal-1',
@@ -82,7 +89,7 @@ function activeSchedule() {
 
 function makeQuality() {
   const tx = {
-    qualityInspectionItem: { updateMany: jest.fn() },
+    qualityInspectionItem: { update: jest.fn(), updateMany: jest.fn() },
     qualityInspection: {
       update: jest.fn().mockResolvedValue({
         id: 'insp-1',
@@ -92,7 +99,10 @@ function makeQuality() {
       }),
     },
     qualityDefect: { create: jest.fn() },
-    reworkRequest: { create: jest.fn() },
+    reworkRequest: {
+      create: jest.fn().mockResolvedValue({ id: 'rw-1' }),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     productionOrder: { update: jest.fn() },
     productionStageInstance: {
       findFirst: jest.fn().mockResolvedValue({
@@ -100,22 +110,49 @@ function makeQuality() {
         tasks: [{ id: 't-insp', status: 'READY' }],
         stageDefinition: { code: 'INSPECTION' },
       }),
+      update: jest.fn(),
     },
     productionTask: { update: jest.fn() },
+    document: { updateMany: jest.fn() },
     auditEvent: { create: jest.fn() },
   };
   const prisma = {
     qualityInspection: {
-      findUniqueOrThrow: jest.fn().mockResolvedValue({
-        id: 'insp-1',
-        productionOrderId: 'po-1',
-        result: null,
-        stageCode: 'INSPECTION',
-        notes: null,
-      }),
+      findUniqueOrThrow: jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'insp-1',
+          productionOrderId: 'po-1',
+          result: null,
+          stageCode: 'INSPECTION',
+          notes: null,
+          items: [],
+        })
+        .mockResolvedValueOnce({
+          id: 'insp-1',
+          productionOrderId: 'po-1',
+          result: null,
+          stageCode: 'INSPECTION',
+          notes: null,
+          items: [],
+        })
+        .mockResolvedValue({
+          id: 'insp-1',
+          productionOrderId: 'po-1',
+          result: QualityResult.PASSED,
+          number: 'QC-1',
+          stageCode: 'INSPECTION',
+          notes: null,
+          items: [],
+          defects: [],
+          rework: [],
+        }),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'insp-1', productionOrderId: 'po-1', result: null }),
     },
     qualityChecklistTemplate: { findFirst: jest.fn().mockResolvedValue(null) },
+    productionTask: { findFirst: jest.fn().mockResolvedValue(null) },
+    wipKit: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   } as any;
   const sequences = { next: jest.fn().mockResolvedValue('QC-1') } as any;
@@ -142,14 +179,19 @@ function makeQuality() {
   const notifications = {
     notifyAdminUsers: jest.fn().mockResolvedValue({ ok: true, count: 0 }),
   } as any;
-  const controller = new QualityController(
+  const inspections = new QualityInspectionService(
     prisma,
     sequences,
     pipeline,
     productionInventory,
     rework,
+  );
+  const controller = new QualityController(
+    prisma,
+    rework,
     scheduling,
     floor,
+    inspections,
     notifications,
   );
   return { controller, prisma, tx, scheduling, pipeline, productionInventory, sequences };
@@ -192,14 +234,43 @@ describe('QC submit wiring', () => {
     const { controller, scheduling, pipeline, productionInventory } = makeQuality();
     await controller.submit('insp-1', { result: QualityResult.PASSED }, user);
 
-    expect(scheduling.enqueueTargetedReplan).toHaveBeenCalledWith('po-1', 'qc-pass', 't-insp');
+    expect(scheduling.enqueueTargetedReplan).toHaveBeenCalledWith('po-1', 'qc-pass');
     expect(scheduling.generateForProductionOrder).not.toHaveBeenCalled();
     expect(pipeline.onTaskComplete).toHaveBeenCalled();
     expect(productionInventory.onInspectionPassed).toHaveBeenCalled();
   });
 
   it('QC fail enqueues qc-fail and reverses FG', async () => {
-    const { controller, scheduling, tx, productionInventory } = makeQuality();
+    const { controller, prisma, scheduling, tx, productionInventory } = makeQuality();
+    prisma.qualityInspection.findUniqueOrThrow
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: 'insp-1',
+        productionOrderId: 'po-1',
+        result: null,
+        stageCode: 'INSPECTION',
+        notes: null,
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'insp-1',
+        productionOrderId: 'po-1',
+        result: null,
+        stageCode: 'INSPECTION',
+        notes: null,
+        items: [],
+      })
+      .mockResolvedValue({
+        id: 'insp-1',
+        productionOrderId: 'po-1',
+        result: QualityResult.FAILED_REWORK_REQUIRED,
+        number: 'QC-1',
+        stageCode: 'INSPECTION',
+        notes: null,
+        items: [],
+        defects: [],
+        rework: [],
+      });
     tx.qualityInspection.update.mockResolvedValue({
       id: 'insp-1',
       result: QualityResult.FAILED_REWORK_REQUIRED,
@@ -220,12 +291,13 @@ describe('QC submit wiring', () => {
 
   it('second identical PASS submit does not enqueue again', async () => {
     const { controller, prisma, scheduling, tx } = makeQuality();
-    prisma.qualityInspection.findUniqueOrThrow.mockResolvedValue({
+    prisma.qualityInspection.findUniqueOrThrow.mockReset().mockResolvedValue({
       id: 'insp-1',
       productionOrderId: 'po-1',
       result: QualityResult.PASSED,
       stageCode: 'INSPECTION',
       notes: null,
+      items: [],
     });
     tx.productionStageInstance.findFirst.mockResolvedValue({
       id: 'stg-insp',
@@ -395,10 +467,13 @@ describe('startRework / createForReturn / completeRework', () => {
       reworkRequest: {
         findUniqueOrThrow: jest
           .fn()
-          .mockResolvedValueOnce({ id: 'rw-1', tasks: [{ status: 'COMPLETED' }] })
-          .mockResolvedValueOnce({ id: 'rw-1', inspection: null, tasks: [] }),
+          .mockResolvedValueOnce({ id: 'rw-1', productionOrderId: 'po-1', tasks: [{ status: 'COMPLETED' }] })
+          .mockResolvedValueOnce({ id: 'rw-1', productionOrderId: 'po-1', inspection: null, tasks: [] }),
         update: jest.fn(),
       },
+      productionStageInstance: { findFirst: jest.fn().mockResolvedValue(null), update: jest.fn() },
+      productionTask: { update: jest.fn() },
+      productionOrder: { update: jest.fn() },
       auditEvent: { create: jest.fn() },
     };
     const prisma = {

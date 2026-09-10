@@ -116,6 +116,9 @@ export type PeriodPlReport = {
     revenueOrders: number;
     revenueInvoiced: number;
     materialCogs: number;
+    reworkCost?: number;
+    replacementCost?: number;
+    returnWriteOff?: number;
     supplierSpend: number;
     laborHours: number;
     laborCost: number;

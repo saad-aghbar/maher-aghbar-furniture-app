@@ -47,7 +47,8 @@ export type ClassifiedTaskQualityKind =
   | 'inspection'
   | 'reinspection'
   | 'packaging'
-  | 'rework';
+  | 'rework'
+  | 'recovery';
 
 export function isQcFailResult(result: string | null | undefined): boolean {
   return Boolean(result && (QC_FAIL_RESULTS as readonly string[]).includes(result));
@@ -67,10 +68,17 @@ export function classifyTaskQualityKind(input: {
   priorFailCount?: number | null;
 }): ClassifiedTaskQualityKind {
   if (input.isRework) return 'rework';
+  if (normalize(input.stageCode) === 'DISMANTLE_RECOVER') return 'recovery';
   const resolved = resolveTaskQualityKind({
     stageCode: input.stageCode,
     executionKind: input.executionKind,
     isReinspection: (input.priorFailCount ?? 0) > 0,
   });
   return resolved ?? 'production';
+}
+
+export function isRecoveryFinishBlocked(
+  lines?: Array<{ postedAt?: string | null }> | null,
+): boolean {
+  return !lines?.length || lines.some((line) => !line.postedAt);
 }

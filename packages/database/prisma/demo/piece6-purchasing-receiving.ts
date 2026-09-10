@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { VAT, money } from '../seed/util';
 import { ammanLocal } from './clock';
+import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 
 type LineSpec = {
   item: { id: string; sku: string; nameEn: string; unit: string; standardCost?: unknown };
@@ -105,7 +106,7 @@ export async function seedPiece6PurchasingReceivingExamples(
           where: {
             inventoryItemId: tx.inventoryItemId,
             warehouseId: tx.warehouseId,
-            locationId: null,
+            locationId: tx.locationId ?? (await defaultBinIdForWarehouse(prisma, tx.warehouseId)),
           },
         });
         if (bal) {
@@ -234,12 +235,14 @@ export async function seedPiece6PurchasingReceivingExamples(
       const accepted = Math.max(0, l.receivedQty - rejected);
       if (accepted <= 0) continue;
       const txNumber = `ITX-${args.number}-${l.inventoryItemId.slice(0, 8)}`;
+      const locationId = await defaultBinIdForWarehouse(prisma, args.warehouseId);
       await prisma.inventoryTransaction.create({
         data: {
           number: txNumber,
           type: InventoryTxType.PURCHASE_RECEIPT,
           inventoryItemId: l.inventoryItemId,
           warehouseId: args.warehouseId,
+          locationId,
           quantity: money(accepted),
           unitCost: money(l.unitCost),
           referenceType: 'GoodsReceipt',
@@ -254,7 +257,7 @@ export async function seedPiece6PurchasingReceivingExamples(
         where: {
           inventoryItemId: l.inventoryItemId,
           warehouseId: args.warehouseId,
-          locationId: null,
+          locationId,
         },
       });
       if (existing) {
@@ -267,6 +270,7 @@ export async function seedPiece6PurchasingReceivingExamples(
           data: {
             inventoryItemId: l.inventoryItemId,
             warehouseId: args.warehouseId,
+            locationId,
             availableQty: money(accepted),
             reservedQty: money(0),
             onOrderQty: money(0),

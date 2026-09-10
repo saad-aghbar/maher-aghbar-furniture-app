@@ -87,6 +87,31 @@ export function workerReleasedToFactoryWhere(): Prisma.ProductionTaskWhereInput 
   };
 }
 
+/** Remaining work actually assigned to this worker — no factory-release or prereq gate. */
+export function workerAssignedRemainingTaskWhere(
+  assigneeId: string,
+): Prisma.ProductionTaskWhereInput {
+  return {
+    assignedEmployeeId: assigneeId,
+    status: { notIn: [TaskStatus.COMPLETED, TaskStatus.CANCELLED] },
+  };
+}
+
+/**
+ * Orders on a worker's My Tasks list. Source of truth is assignedEmployeeId.
+ * Home / GET /tasks stay floor-gated (released + unlocked); this list must not
+ * hide assigned carpentry just because Confirm has not released the PO yet.
+ */
+export function workerAssignedRemainingOrdersWhere(
+  assigneeId: string,
+): Prisma.ProductionOrderWhereInput {
+  return {
+    archivedAt: null,
+    status: { not: 'CANCELLED' },
+    tasks: { some: workerAssignedRemainingTaskWhere(assigneeId) },
+  };
+}
+
 /** Flat AND clauses for floor open lists (actionable + non-DELIVERY + released). */
 export function workerFloorOpenClauses(): Prisma.ProductionTaskWhereInput[] {
   return [

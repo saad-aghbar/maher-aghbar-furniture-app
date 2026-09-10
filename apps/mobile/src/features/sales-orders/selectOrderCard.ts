@@ -44,12 +44,21 @@ export type AdminOrderCardModel = {
   journeyReadiness?: JourneyReadiness;
   actionHint?: string | null;
   /** RFQ rows merged into admin Orders — look like normal orders in UI. */
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
   /** Commercial line kind: standard | modified | custom (worst of lines). */
   manufacturingKind?: 'standard' | 'modified' | 'custom';
   primaryProductionOrderId?: string | null;
   plannedStartDate?: string | null;
   journeyLogistics?: SalesOrderJourneyLogistics | null;
+  hasReturn?: boolean;
+  returnSummary?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+  } | null;
+  originKind?: 'RETURN_WORK' | 'REPLACEMENT';
+  originalOrderNumber?: string | null;
+  releasedToFactoryAt?: string | null;
 };
 
 export type DealerOrderCardModel = {
@@ -67,6 +76,7 @@ export type DealerOrderCardModel = {
   sellerPrice: number | null;
   kind?: 'order' | 'rfq';
   quantity?: string | number | null;
+  hasReturn?: boolean;
 };
 
 function toNumber(value: number | string | null | undefined): number | null {
@@ -132,6 +142,7 @@ export function toAdminOrderCard(
     productionReadinessSummary: item.productionReadinessSummary,
     progressPercent: item.progressPercent,
     currentStageLabel: progressLabel,
+    hasPendingReturn: Boolean(item.hasPendingReturn),
   };
   const journey = classifyAdminOrderJourney(lifecycleInput);
   const serverBucket = item.journeyBucket;
@@ -183,6 +194,8 @@ export function toAdminOrderCard(
       null,
     plannedStartDate: null,
     journeyLogistics: item.journeyLogistics ?? null,
+    hasReturn: Boolean(item.hasReturn),
+    returnSummary: item.returnSummary ?? null,
   };
 }
 
@@ -200,6 +213,7 @@ export function toDealerOrderCard(item: SalesOrderListItem): DealerOrderCardMode
     arrivedAt: item.createdAt ?? null,
     externalOrderNumber: item.externalOrderNumber ?? null,
     sellerPrice: toNumber(item.sellerPrice),
+    hasReturn: Boolean(item.hasReturn),
   };
 }
 

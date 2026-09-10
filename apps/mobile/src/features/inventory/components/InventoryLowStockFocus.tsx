@@ -28,17 +28,7 @@ export function InventoryLowStockFocus({
   const chevron = isRTL ? 'arrow-back' : 'arrow-forward';
 
   return (
-    <AnimatedPressable
-      variant="card"
-      accessibilityRole="button"
-      accessibilityLabel={t('mobile.inventory.lowStockFocusA11y', {
-        count,
-        group: groupLabel,
-      })}
-      onPress={() => {
-        void haptics.confirmLight();
-        onPress();
-      }}
+    <View
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
@@ -60,6 +50,19 @@ export function InventoryLowStockFocus({
           opacity: 0.9,
         }}
       />
+
+      <AnimatedPressable
+        variant="card"
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.inventory.lowStockFocusA11y', {
+          count,
+          group: groupLabel,
+        })}
+        onPress={() => {
+          void haptics.confirmLight();
+          onPress();
+        }}
+      >
 
       <View
         style={{
@@ -148,6 +151,7 @@ export function InventoryLowStockFocus({
           <Ionicons name={chevron} size={16} color={colors.brand} />
         </View>
       </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </View>
   );
 }

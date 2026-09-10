@@ -23,8 +23,9 @@ export function StageToggleRow({
   onChange: (next: boolean) => void;
   disabled?: boolean;
 }) {
-  const { isRTL } = useLocale();
+  const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <AnimatedPressable
@@ -43,14 +44,29 @@ export function StageToggleRow({
         alignItems: 'center',
         gap: theme.spacing.md,
         padding: theme.spacing.md,
+        paddingStart: value ? theme.spacing.md + 4 : theme.spacing.md,
         borderRadius: theme.radius.lg,
         borderWidth: 1,
         borderColor: value ? colors.brand : colors.border,
         backgroundColor: value ? colors.brandSoft : colors.surfaceSecondary,
+        overflow: 'hidden',
         opacity: disabled ? 0.55 : 1,
         ...(value && !disabled ? orderBoardShadow(colorScheme) : null),
       }}
     >
+      {value ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: 3,
+            backgroundColor: colors.brand,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+          }}
+        />
+      ) : null}
       <View
         style={{
           width: 36,
@@ -68,7 +84,7 @@ export function StageToggleRow({
       <View style={{ flex: 1, gap: 2 }}>
         <AppText
           variant="label"
-          weight="semibold"
+          weight={titleWeight}
           style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
           {label}
@@ -101,8 +117,9 @@ export function StageScheduleModePicker({
   onChange: (next: StageScheduleMode) => void;
   disabled?: boolean;
 }) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const options: {
     mode: StageScheduleMode;
@@ -146,14 +163,29 @@ export function StageScheduleModePicker({
               alignItems: 'flex-start',
               gap: theme.spacing.md,
               padding: theme.spacing.md,
+              paddingStart: active ? theme.spacing.md + 4 : theme.spacing.md,
               borderRadius: theme.radius.xl,
               borderWidth: active ? 1.5 : 1,
               borderColor: active ? colors.brand : colors.border,
               backgroundColor: active ? colors.brandSoft : colors.surface,
+              overflow: 'hidden',
               opacity: disabled ? 0.55 : 1,
               ...(active && !disabled ? orderBoardShadow(colorScheme) : null),
             }}
           >
+            {active ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  width: 3,
+                  backgroundColor: colors.brand,
+                  ...(isRTL ? { right: 0 } : { left: 0 }),
+                }}
+              />
+            ) : null}
             <View
               style={{
                 width: 40,
@@ -175,7 +207,7 @@ export function StageScheduleModePicker({
             <View style={{ flex: 1, gap: 4 }}>
               <AppText
                 variant="label"
-                weight="semibold"
+                weight={titleWeight}
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
                 {option.title}
@@ -219,8 +251,9 @@ export function StageSlotStepper({
   onChange: (next: string) => void;
   disabled?: boolean;
 }) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const n = Math.max(1, Math.min(20, Number(value) || 1));
 
   function step(delta: number) {
@@ -243,7 +276,7 @@ export function StageSlotStepper({
     >
       <AppText
         variant="label"
-        weight="semibold"
+        weight={titleWeight}
         style={{ textAlign: isRTL ? 'right' : 'left' }}
       >
         {t('mobile.production.workflow.resourceSlots')}

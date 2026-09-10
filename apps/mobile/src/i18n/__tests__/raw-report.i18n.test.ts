@@ -17,6 +17,10 @@ const KEYS = [
   'mobile.inventory.rawReport.failed',
   'mobile.inventory.rawReport.rangeInvalid',
   'mobile.inventory.rawReport.rangeRequired',
+  'mobile.inventory.rawReport.sectionsLabel',
+  'mobile.inventory.rawReport.periodLabel',
+  'mobile.inventory.rawReport.allSections',
+  'mobile.inventory.rawReport.sectionsRequired',
 ] as const;
 
 describe('raw materials report i18n', () => {

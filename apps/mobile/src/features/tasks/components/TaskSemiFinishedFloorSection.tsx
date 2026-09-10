@@ -15,6 +15,7 @@ type Props = {
   productionOrderId: string | null;
   expectedPieceCount: number;
   producesSemiFinished: boolean;
+  readOnly?: boolean;
   onIncomingChange?: (info: { required: boolean; allReceived: boolean }) => void;
   onReceived?: () => void;
 };
@@ -30,6 +31,7 @@ export const TaskSemiFinishedFloorSection = forwardRef<TaskSemiOutputFloorHandle
       productionOrderId,
       expectedPieceCount,
       producesSemiFinished,
+      readOnly = false,
       onIncomingChange,
       onReceived,
     },
@@ -104,6 +106,7 @@ export const TaskSemiFinishedFloorSection = forwardRef<TaskSemiOutputFloorHandle
             taskId={taskId}
             embedded
             showNoneWhenEmpty
+            readOnly={readOnly}
             onReceived={onReceived}
             onAvailabilityChange={handleAvailability}
           />
@@ -114,6 +117,7 @@ export const TaskSemiFinishedFloorSection = forwardRef<TaskSemiOutputFloorHandle
               productionOrderId={productionOrderId}
               expectedPieceCount={expectedPieceCount}
               embedded
+              readOnly={readOnly}
             />
           ) : null}
         </View>

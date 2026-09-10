@@ -14,6 +14,9 @@ type Props = {
   supplierLabel: string | null;
   onOpenSuppliers: () => void;
   onClearSupplier?: () => void;
+  warehouseLabel?: string | null;
+  onOpenWarehouse?: () => void;
+  onClearWarehouse?: () => void;
   statusActive: boolean;
   statusLabel: string;
   onOpenStatus: () => void;
@@ -24,6 +27,9 @@ export function PurchasingFilterTriggers({
   supplierLabel,
   onOpenSuppliers,
   onClearSupplier,
+  warehouseLabel,
+  onOpenWarehouse,
+  onClearWarehouse,
   statusActive,
   statusLabel,
   onOpenStatus,
@@ -31,32 +37,45 @@ export function PurchasingFilterTriggers({
   const { isRTL } = useLocale();
 
   return (
-    <View
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        gap: PURCHASING_CHROME_GAP,
-        alignItems: 'stretch',
-      }}
-    >
-      <FloorTrigger
-        flex={1}
-        icon="business-outline"
-        label={supplierLabel}
-        fallbackKey="mobile.purchasing.tabs.suppliers"
-        active={Boolean(supplierLabel)}
-        onPress={onOpenSuppliers}
-        onClear={supplierLabel && onClearSupplier ? onClearSupplier : undefined}
-        a11yKey="catalog.allSuppliers"
-      />
-      <FloorTrigger
-        flex={1}
-        icon="options-outline"
-        label={statusLabel}
-        fallbackKey="mobile.purchasing.filter"
-        active={statusActive}
-        onPress={onOpenStatus}
-        a11yKey="mobile.purchasing.filterTitle"
-      />
+    <View style={{ gap: PURCHASING_CHROME_GAP }}>
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          gap: PURCHASING_CHROME_GAP,
+          alignItems: 'stretch',
+        }}
+      >
+        <FloorTrigger
+          flex={1}
+          icon="business-outline"
+          label={supplierLabel}
+          fallbackKey="mobile.purchasing.tabs.suppliers"
+          active={Boolean(supplierLabel)}
+          onPress={onOpenSuppliers}
+          onClear={supplierLabel && onClearSupplier ? onClearSupplier : undefined}
+          a11yKey="catalog.allSuppliers"
+        />
+        <FloorTrigger
+          flex={1}
+          icon="options-outline"
+          label={statusLabel}
+          fallbackKey="mobile.purchasing.filter"
+          active={statusActive}
+          onPress={onOpenStatus}
+          a11yKey="mobile.purchasing.filterTitle"
+        />
+      </View>
+      {onOpenWarehouse ? (
+        <FloorTrigger
+          icon="cube-outline"
+          label={warehouseLabel ?? null}
+          fallbackKey="mobile.purchasing.warehouse"
+          active={Boolean(warehouseLabel)}
+          onPress={onOpenWarehouse}
+          onClear={warehouseLabel && onClearWarehouse ? onClearWarehouse : undefined}
+          a11yKey="mobile.purchasing.pickWarehouse"
+        />
+      ) : null}
     </View>
   );
 }

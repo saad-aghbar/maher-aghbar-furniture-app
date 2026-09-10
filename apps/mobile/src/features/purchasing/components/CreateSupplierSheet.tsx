@@ -7,6 +7,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -37,7 +38,7 @@ const empty = () => ({
   paymentTermsDays: '30',
   leadTimeDays: '7',
   rating: '',
-  isCertified: true,
+  isActive: true,
   notes: '',
 });
 
@@ -54,7 +55,7 @@ function formFromSupplier(supplier: Supplier) {
     paymentTermsDays: String(supplier.paymentTermsDays ?? 30),
     leadTimeDays: String(supplier.leadTimeDays ?? 7),
     rating: supplier.rating != null ? String(supplier.rating) : '',
-    isCertified: supplier.isCertified !== false,
+    isActive: (supplier.status || 'ACTIVE') !== 'INACTIVE',
     notes: supplier.notes ?? '',
   };
 }
@@ -114,7 +115,7 @@ export function CreateSupplierSheet({
       paymentTermsDays: Number(form.paymentTermsDays) || 30,
       leadTimeDays: Number(form.leadTimeDays) || 7,
       rating: form.rating.trim() ? Number(form.rating) : undefined,
-      isCertified: form.isCertified,
+      status: form.isActive ? 'ACTIVE' : 'INACTIVE',
       notes: form.notes.trim() || undefined,
     };
     try {
@@ -204,23 +205,30 @@ export function CreateSupplierSheet({
             value={form.address}
             onChangeText={(v) => set('address', v)}
           />
-          <TextField
+          <QtyStepperField
             label={t('catalog.paymentTermsDays')}
             value={form.paymentTermsDays}
             onChangeText={(v) => set('paymentTermsDays', v)}
-            keyboardType="number-pad"
+            min={0}
+            step={1}
+            decimals={0}
           />
-          <TextField
+          <QtyStepperField
             label={t('catalog.leadTimeDays')}
             value={form.leadTimeDays}
             onChangeText={(v) => set('leadTimeDays', v)}
-            keyboardType="number-pad"
+            min={0}
+            step={1}
+            decimals={0}
           />
-          <TextField
+          <QtyStepperField
             label={t('catalog.rating')}
             value={form.rating}
             onChangeText={(v) => set('rating', v)}
-            keyboardType="decimal-pad"
+            min={0}
+            max={5}
+            step={0.5}
+            decimals={1}
           />
           <View
             style={{
@@ -232,13 +240,13 @@ export function CreateSupplierSheet({
             }}
           >
             <AppText style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
-              {t('catalog.isCertified')}
+              {t('catalog.active')}
             </AppText>
             <Switch
-              value={form.isCertified}
-              onValueChange={(v) => set('isCertified', v)}
+              value={form.isActive}
+              onValueChange={(v) => set('isActive', v)}
               trackColor={{ false: colors.border, true: colors.brandSoft }}
-              thumbColor={form.isCertified ? colors.brand : colors.surfaceSecondary}
+              thumbColor={form.isActive ? colors.brand : colors.surfaceSecondary}
             />
           </View>
           <TextField

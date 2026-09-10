@@ -4,6 +4,7 @@ import {
   hasOpenTasks,
   isWorkerHomeEmpty,
   mapTaskListItemToWorkerHomeTask,
+  workerHomeLaneHref,
   selectCurrentTask,
   selectCurrentTaskFromOpen,
   selectTodayProgress,
@@ -107,6 +108,8 @@ describe('selectWorkerHome', () => {
     expect(mapped.productTitle).toBe('Armchair Club');
     expect(mapped.status).toBe('READY');
     expect(mapped.estimatedMinutes).toBe(30);
+    expect(mapped.productionOrderId).toBe('po-1');
+    expect(workerHomeLaneHref(mapped)).toBe('/(app)/(employee)/lane/po-1');
   });
 
   it('computes today progress breakdown without progressPercent', () => {

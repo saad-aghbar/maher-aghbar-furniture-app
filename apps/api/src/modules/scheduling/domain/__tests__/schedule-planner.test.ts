@@ -188,4 +188,45 @@ describe('schedule-planner', () => {
     expect(uph.plannedStart.getTime()).toBeGreaterThanOrEqual(byCode.get('CUT')!.plannedEnd.getTime());
     expect(uph.plannedStart.getTime()).toBeGreaterThanOrEqual(byCode.get('FOAM')!.plannedEnd.getTime());
   });
+
+  it('places inspection as a zero-duration milestone between timed stages', () => {
+    const result = forwardSchedule(
+      [
+        order({
+          id: 'o-insp',
+          stages: [
+            {
+              code: 'ASSEMBLY',
+              stageDefinitionId: 'stg-asm',
+              dependsOnCodes: [],
+              estimatedMinutes: 60,
+              departmentCode: 'CARPENTRY',
+            },
+            {
+              code: 'INSPECTION',
+              stageDefinitionId: 'stg-qc',
+              dependsOnCodes: ['ASSEMBLY'],
+              estimatedMinutes: 0,
+              isMilestone: true,
+              departmentCode: 'QC',
+            },
+            {
+              code: 'PACKAGING',
+              stageDefinitionId: 'stg-asm',
+              dependsOnCodes: ['INSPECTION'],
+              estimatedMinutes: 45,
+              departmentCode: 'CARPENTRY',
+            },
+          ],
+        }),
+      ],
+      { calendar, workers, now },
+    );
+    const byCode = new Map(result.allocations.map((a) => [a.stageCode, a]));
+    const inspection = byCode.get('INSPECTION')!;
+    const pack = byCode.get('PACKAGING')!;
+    expect(inspection.plannedStart.getTime()).toBe(inspection.plannedEnd.getTime());
+    expect(inspection.employeeId).toBeNull();
+    expect(pack.plannedStart.getTime()).toBeGreaterThanOrEqual(inspection.plannedEnd.getTime());
+  });
 });

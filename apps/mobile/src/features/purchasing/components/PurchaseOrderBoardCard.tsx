@@ -17,7 +17,10 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const warehouse = order.warehouseLabel ?? '—';
+  const warehouse =
+    (order.warehouseCount ?? 0) > 1
+      ? t('mobile.purchasing.warehouseCount', { count: String(order.warehouseCount) })
+      : humanizeWarehouseLabel(order.warehouseLabel, t) ?? order.warehouseLabel ?? '—';
   const phaseLabel = order.phaseLabelKey
     ? (() => {
         const translated = t(order.phaseLabelKey);
@@ -91,6 +94,20 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
           ) : (
             <StatusBadge status={order.status} dot />
           )}
+          {order.runNumber && (order.runSupplierCount ?? 0) > 1 ? (
+            <AppText variant="caption" color="brand" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+              {t('mobile.purchasing.runBadge', {
+                number: order.runNumber,
+                count: String(order.runSupplierCount),
+              })}
+            </AppText>
+          ) : null}
+          {order.origin && order.origin !== 'MANUAL' ? (
+            <StatusBadge
+              status={order.origin}
+              label={t(`mobile.purchasing.origin${order.origin === 'LOW_STOCK' ? 'LowStock' : order.origin === 'DEMAND' ? 'Demand' : order.origin === 'FABRIC' ? 'Fabric' : 'Request'}`)}
+            />
+          ) : null}
         </View>
         <AppText variant="caption" color="brand" weight="semibold">
           {t('common.details')}

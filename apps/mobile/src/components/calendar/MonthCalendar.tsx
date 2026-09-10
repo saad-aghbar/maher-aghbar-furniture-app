@@ -74,7 +74,7 @@ export function MonthCalendar({
   const { t, formatDate, isRTL, locale } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
   const today = todayYmd();
-  const cellH = compact ? DAY_CELL_COMPACT : DAY_CELL;
+  const cellH = compact ? DAY_CELL_COMPACT : variant === 'admin' ? 52 : DAY_CELL;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const rail = embedded ? false : showAccentRail;
@@ -302,7 +302,49 @@ export function MonthCalendar({
                   >
                     {String(day)}
                   </AppText>
-                  {meta?.markers && meta.markers.length > 0 && !selected ? (
+                  {variant === 'admin' && meta?.loadPercent != null && !meta.disabled ? (
+                    <AppText
+                      variant="caption"
+                      style={{
+                        color: cellColors.ink,
+                        fontSize: 9,
+                        opacity: 0.75,
+                      }}
+                    >
+                      {`${Math.round(meta.loadPercent)}%`}
+                    </AppText>
+                  ) : null}
+                  {variant === 'admin' && (meta?.overtime || meta?.conflict) && !selected ? (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: 2,
+                        height: 4,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {meta.conflict ? (
+                        <View
+                          style={{
+                            width: 4,
+                            height: 4,
+                            borderRadius: 2,
+                            backgroundColor: colors.warning,
+                          }}
+                        />
+                      ) : null}
+                      {meta.overtime ? (
+                        <View
+                          style={{
+                            width: 4,
+                            height: 4,
+                            borderRadius: 2,
+                            backgroundColor: colors.brand,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ) : meta?.markers && meta.markers.length > 0 && !selected ? (
                     <View
                       style={{
                         flexDirection: 'row',

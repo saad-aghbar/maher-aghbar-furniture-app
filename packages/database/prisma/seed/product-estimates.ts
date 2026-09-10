@@ -29,7 +29,7 @@ const STAGE_BASE: Record<
   FOAM: { mode: 'SETUP_PLUS_LINEAR', setupMinutes: 15, minutesPerUnit: 40, fixedMinutes: 0 },
   UPHOLSTERY: { mode: 'SETUP_PLUS_LINEAR', setupMinutes: 25, minutesPerUnit: 85, fixedMinutes: 0 },
   ASSEMBLY: { mode: 'SETUP_PLUS_LINEAR', setupMinutes: 15, minutesPerUnit: 45, fixedMinutes: 0 },
-  INSPECTION: { mode: 'FIXED', setupMinutes: 0, minutesPerUnit: 0, fixedMinutes: 35 },
+  INSPECTION: { mode: 'FIXED', setupMinutes: 0, minutesPerUnit: 0, fixedMinutes: 0 },
   PACKAGING: { mode: 'SETUP_PLUS_LINEAR', setupMinutes: 10, minutesPerUnit: 20, fixedMinutes: 0 },
   DELIVERY: { mode: 'FIXED', setupMinutes: 0, minutesPerUnit: 0, fixedMinutes: 60 },
 };

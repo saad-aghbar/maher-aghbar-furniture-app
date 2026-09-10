@@ -1,10 +1,12 @@
 import {
+  coerceSetupConsumeSemi,
   coerceSetupProduceKind,
   deriveSetupBehavior,
   isDeliverySetupStage,
   isInspectionSetupStage,
   isPackagingSetupStage,
   produceKindFromBehavior,
+  stageNeedsTimeApproval,
   terminalSetupMode,
 } from '../productionSetupBehavior';
 
@@ -69,5 +71,36 @@ describe('productionSetupBehavior', () => {
     expect(coerceSetupProduceKind('finished', 'INSPECTION')).toBe('none');
     expect(coerceSetupProduceKind('semi', 'DELIVERY')).toBe('none');
     expect(coerceSetupProduceKind('finished', 'DELIVERY')).toBe('none');
+  });
+
+  it('forces inspection and delivery to take no kits', () => {
+    expect(coerceSetupConsumeSemi(true, 'INSPECTION')).toBe(false);
+    expect(coerceSetupConsumeSemi(true, 'DELIVERY')).toBe(false);
+    expect(coerceSetupConsumeSemi(true, 'PACKAGING')).toBe(true);
+    expect(coerceSetupConsumeSemi(true, 'UPHOLSTERY')).toBe(true);
+  });
+
+  it('does not flag inspection or delivery as needing time approval', () => {
+    expect(
+      stageNeedsTimeApproval({
+        code: 'INSPECTION',
+        estimateReviewRequired: true,
+        estimatedMinutes: 0,
+      }),
+    ).toBe(false);
+    expect(
+      stageNeedsTimeApproval({
+        code: 'n-insp-node',
+        estimateReviewRequired: false,
+        estimatedMinutes: 0,
+      }),
+    ).toBe(false);
+    expect(
+      stageNeedsTimeApproval({
+        code: 'CARPENTRY',
+        estimateReviewRequired: true,
+        estimatedMinutes: null,
+      }),
+    ).toBe(true);
   });
 });

@@ -24,7 +24,6 @@ export type IntegrationsSettings = {
   smsProvider?: string;
   aiProvider: string;
   ocrProvider: string;
-  jofotaraConfigured?: boolean;
   smtpConfigured?: boolean;
   openaiConfigured?: boolean;
   ocrLiveConfigured?: boolean;
@@ -38,7 +37,6 @@ export type IntegrationsSettings = {
   mapsConfigured?: boolean;
   mapsProvider?: string;
   smtpFrom?: string;
-  jofotaraBaseUrl?: string;
 };
 
 export type SettingsMap = {

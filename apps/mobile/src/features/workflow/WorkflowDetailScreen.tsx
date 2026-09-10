@@ -52,9 +52,11 @@ import {
   isLockedAnchorNode,
   partitionWorkflowAnchors,
 } from './workflowTerminal';
+import { workflowScopeLabelKey } from './workflowScope';
 import { buildWorkflowLayoutLevels } from './workflowLayout';
 import { canonicalEdgesForLayout, toDomainGraph } from './toDomainGraph';
 import { ensureOpeningChain, ensureTerminalChain } from '@/api/modules/workflow';
+import { workflowGraphChainRequirements } from '@maher/types';
 import {
   useCreateDraftMutation,
   useDiscardWorkflowDraftMutation,
@@ -283,7 +285,10 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
       try {
         const next = await commitParallelBandLink({
           workflowId,
-          version,
+          version: {
+            ...version,
+            scope: version.scope ?? workflowQuery.data?.scope,
+          },
           fromBandNodeIds: link.fromBand.nodeIds,
           toBandNodeIds: link.toBand.nodeIds,
           mode,
@@ -314,14 +319,22 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
       t,
       version,
       workflowId,
+      workflowQuery.data?.scope,
     ],
   );
   const ensuredVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isDraft || !version || ensuredVersionRef.current === version.id) return;
-    const hasOpening = allNodes.some((n) => n.stageDefinition?.code === 'MATERIAL_PREP');
-    if (terminalNodes.length >= 3 && hasOpening) {
+    const stageCodes = allNodes
+      .map((n) => n.stageDefinition?.code)
+      .filter((code): code is string => Boolean(code));
+    const flags = workflowGraphChainRequirements(workflowQuery.data?.scope, stageCodes);
+    const hasOpening = stageCodes.includes('MATERIAL_PREP');
+    if (
+      (!flags.requiresOpeningChain || hasOpening) &&
+      (!flags.requiresTerminalChain || terminalNodes.length >= 3)
+    ) {
       ensuredVersionRef.current = version.id;
       return;
     }
@@ -329,11 +342,11 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
     void (async () => {
       try {
         let revision = version.revision;
-        if (!hasOpening) {
+        if (flags.requiresOpeningChain && !hasOpening) {
           const open = await ensureOpeningChain(workflowId, version.id, revision);
           revision = open.revision;
         }
-        if (terminalNodes.length < 3) {
+        if (flags.requiresTerminalChain && terminalNodes.length < 3) {
           await ensureTerminalChain(workflowId, version.id, revision);
         }
         await versionQuery.refetch();
@@ -342,7 +355,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
         /* publish will append */
       }
     })();
-  }, [allNodes, isDraft, terminalNodes.length, version, versionQuery, workflowId, workflowQuery]);
+  }, [allNodes, isDraft, terminalNodes.length, version, versionQuery, workflowId, workflowQuery, workflowQuery.data?.scope]);
 
   if (workflowQuery.isLoading || ensuringDraft || createDraftMutation.isPending) {
     return (
@@ -395,6 +408,10 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
                       })
                     : t('mobile.production.workflow.viewingPublished')
                 }
+              />
+              <WorkflowStatusPill
+                active={wf.scope === 'RETURN'}
+                label={t(workflowScopeLabelKey(wf.scope))}
               />
               {isDraft && dirty ? (
                 <AppText variant="caption" color="muted">
@@ -464,7 +481,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
                   ) : null}
                   {level.lanes.map((lane) => {
                     const rows = lane.nodes.map((node) => {
-                      const locked = isLockedAnchorNode(node);
+                      const locked = isLockedAnchorNode(node, wf.scope);
                       return (
                         <ListItemEnter key={node.id} index={0}>
                           <WorkflowFloorRow
@@ -620,7 +637,8 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
           open={addOpen}
           onClose={() => setAddOpen(false)}
           workflowId={workflowId}
-          version={version}
+          version={{ ...version, scope: wf.scope }}
+          scope={wf.scope}
           onDirty={markDirty}
         />
       ) : null}
@@ -630,8 +648,9 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
           open={Boolean(editNode)}
           onClose={() => setEditNode(null)}
           workflowId={workflowId}
-          version={version}
+          version={{ ...version, scope: wf.scope }}
           node={editNode}
+          scope={wf.scope}
           onDirty={markDirty}
         />
       ) : null}
@@ -659,7 +678,10 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
             try {
               const healed = await commitRemoveWorkflowStage({
                 workflowId,
-                version,
+                version: {
+                  ...version,
+                  scope: version.scope ?? workflowQuery.data?.scope,
+                },
                 nodeId: deleteNode.id,
               });
               await applyVersionCache(healed);
@@ -717,17 +739,29 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
           if (!version || !draftVersionId) return;
           void (async () => {
             try {
-              const healed = await commitCanonicalizeDraft({ workflowId, version });
+              const healed = await commitCanonicalizeDraft({
+                workflowId,
+                version: { ...version, scope: wf.scope },
+              });
               await applyVersionCache(healed);
               let revision = healed.revision;
-              const opened = await ensureOpeningChain(workflowId, draftVersionId, revision);
-              revision = opened.revision;
-              const appended = await ensureTerminalChain(
-                workflowId,
-                draftVersionId,
-                revision,
+              const flags = workflowGraphChainRequirements(
+                wf.scope,
+                healed.nodes.map((n) => n.stageDefinition?.code ?? ''),
               );
-              publishMutation.mutate(appended.revision, {
+              if (flags.requiresOpeningChain) {
+                const opened = await ensureOpeningChain(workflowId, draftVersionId, revision);
+                revision = opened.revision;
+              }
+              if (flags.requiresTerminalChain) {
+                const appended = await ensureTerminalChain(
+                  workflowId,
+                  draftVersionId,
+                  revision,
+                );
+                revision = appended.revision;
+              }
+              publishMutation.mutate(revision, {
                 onSuccess: () => {
                   setPublishOpen(false);
                   setDirty(false);

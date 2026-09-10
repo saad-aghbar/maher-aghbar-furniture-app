@@ -23,7 +23,7 @@ type StreamItem = {
   title: string;
   imageUrl: string | null;
   deliveryDate: string | null;
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
 };
 
 type Props = {
@@ -38,7 +38,7 @@ type Props = {
   onRefresh: () => void;
   onEndReached: () => void;
   isFetchingNextPage: boolean;
-  onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPressItem: (id: string, kind?: 'order' | 'rfq' | 'returnWork') => void;
   banner?: ReactNode;
   /** Unused on ledger — kept so parent can share props with pipeline/workbench. */
   stageFocus?: unknown;

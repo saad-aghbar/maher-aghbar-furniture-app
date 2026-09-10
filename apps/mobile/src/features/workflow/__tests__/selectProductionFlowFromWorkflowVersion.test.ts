@@ -240,6 +240,38 @@ describe('selectProductionFlowFromWorkflowVersion', () => {
       'prep',
     ]);
   });
+
+  it('treats inspection as a zero-minute milestone that does not need time review', () => {
+    const version = {
+      id: 'v1',
+      versionNumber: 1,
+      status: 'PUBLISHED',
+      revision: 1,
+      nodes: [
+        {
+          id: 'n-insp',
+          nodeKey: 'INSPECTION',
+          sortOrder: 0,
+          isRequiredByDefault: true,
+          canBeSkipped: false,
+          stageDefinition: {
+            id: 'sd-insp',
+            code: 'INSPECTION',
+            nameEn: 'Inspection',
+            nameAr: 'فحص',
+            nameHe: 'בדיקה',
+            sortOrder: 0,
+            isActive: true,
+          },
+        },
+      ],
+      edges: [],
+    } as WorkflowVersion;
+    const estimates = new Map([['sd-insp', 35]]);
+    const stages = selectProductionFlowFromWorkflowVersion(version, 'en', estimates);
+    expect(stages[0]?.estimatedMinutes).toBe(0);
+    expect(stages[0]?.estimateReviewRequired).toBe(false);
+  });
 });
 
 describe('selectProductionFlowFromStageEstimates', () => {

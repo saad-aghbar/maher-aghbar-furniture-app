@@ -32,11 +32,16 @@ async function main() {
     await seedFactoryUat(prisma);
   }
 
+  if (process.env.SEED_FLOOR_UAT === '1') {
+    const { seedFloorWorkerUat } = await import('./seed/floor-worker-uat');
+    await seedFloorWorkerUat(prisma, passwordHash);
+  }
+
   console.log('Seed complete.');
   if (process.env.SEED_FULL_DEMO === '1') {
     console.log('Full demo logins (password: 123): admin | nile | oasis | balqis | cutter | carpenter | …');
   } else {
-    console.log('Launch logins (password: 123): admin | nile | oasis | balqis');
+    console.log('Launch logins (password: 123): admin | nile | oasis | balqis | floor');
     console.log('  Empty catalog, inventory, orders, and invoices. Presentation dataset: pnpm demo:reset');
     console.log('  (pnpm db:seed:demo is a legacy 14-day world — do not use for owner demos)');
   }

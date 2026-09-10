@@ -2,16 +2,20 @@ import { isApiError } from '@/api/errors';
 import {
   getInventoryItemByCode,
   getInventoryLotByCode,
+  getWarehouseLocationByCode,
   getWipKitByCode,
   type InventoryItem,
   type SemiFinishedLot,
+  type WarehouseBinContents,
   type WipKitCard,
 } from '@/api/modules/inventory';
+import { parseBinScanCode } from '@maher/types';
 
 export type InventoryScanResolveStatus =
   | 'FOUND'
   | 'FOUND_KIT'
   | 'FOUND_LOT'
+  | 'FOUND_BIN'
   | 'ORDER_FABRIC'
   | 'NOT_FOUND'
   | 'ERROR';
@@ -20,6 +24,7 @@ export type InventoryScanResolve =
   | { status: 'FOUND'; item: InventoryItem }
   | { status: 'FOUND_KIT'; kit: WipKitCard }
   | { status: 'FOUND_LOT'; lot: SemiFinishedLot }
+  | { status: 'FOUND_BIN'; bin: WarehouseBinContents }
   | { status: 'ORDER_FABRIC'; lot: SemiFinishedLot }
   | { status: 'NOT_FOUND' }
   | { status: 'ERROR' };
@@ -42,6 +47,19 @@ function isNotFoundErr(err: unknown): boolean {
 export async function resolveInventoryScan(code: string): Promise<InventoryScanResolve> {
   const trimmed = code.trim();
   if (!trimmed) return { status: 'NOT_FOUND' };
+
+  if (parseBinScanCode(trimmed).kind === 'bin') {
+    try {
+      const bin = await getWarehouseLocationByCode(trimmed);
+      return { status: 'FOUND_BIN', bin };
+    } catch (err) {
+      if (!isNotFoundErr(err)) {
+        if (!(isApiError(err) && err.status >= 400 && err.status < 500)) {
+          return { status: 'ERROR' };
+        }
+      }
+    }
+  }
 
   try {
     const kit = await getWipKitByCode(trimmed);

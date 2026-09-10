@@ -9,7 +9,6 @@ import {
 import {
   LayoutAnimation,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   UIManager,
@@ -19,8 +18,10 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can, canAny } from '@maher/permissions';
+import { queryKeys } from '@/api/queryKeys';
 import { createRequestId } from '@/api/requestId';
 import { ApiError } from '@/api/errors';
 import { uploadFile } from '@/api/modules/uploads';
@@ -30,16 +31,13 @@ import { BackButton } from '@/components/BackButton';
 import { PriorityBadge } from '@/components/badges/PriorityBadge';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
-import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
@@ -47,12 +45,13 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import {
   classifyTaskQualityKind,
   countPriorFails,
-  isLastStageQualityFloor,
   isQcFailResult,
+  isRecoveryFinishBlocked,
+  type ClassifiedTaskQualityKind,
   type TaskQualityKind,
 } from '@/features/quality/taskQualityKind';
 import { useLocale } from '@/i18n';
-import { SuccessBurst, haptics } from '@/motion';
+import { AnimatedPressable, SuccessBurst, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
@@ -61,11 +60,15 @@ import {
   TaskMaterialsFloorSection,
   type TaskMaterialsFloorHandle,
 } from './components/TaskMaterialsFloorSection';
+import { useReturnQuery } from '@/features/returns/query';
+import { DismantleRecoverFloorPanel } from './components/DismantleRecoverFloorPanel';
+import { TaskRecoveryFloorSection } from './components/TaskRecoveryFloorSection';
 import { TaskFabricTakeInBoard } from './components/TaskFabricTakeInBoard';
-import {
-  TaskIncomingWorkFloorSection,
-  type TaskIncomingFloorHandle,
-} from './components/TaskIncomingWorkFloorSection';
+import { TaskConfirmedKitBoard } from './components/TaskConfirmedKitBoard';
+import { TaskCarryOverSheet } from './components/TaskCarryOverSheet';
+import { ReportProblemSheet } from './components/ReportProblemSheet';
+import { TaskProblemSheet } from './components/TaskProblemSheet';
+import { TaskProblemsBoard } from './components/TaskProblemsBoard';
 import {
   TaskSemiOutputFloorSection,
   type TaskSemiOutputFloorHandle,
@@ -75,6 +78,8 @@ import { TaskDetailSkeleton } from './components/TasksListSkeleton';
 import { TaskFilePreview } from './components/TaskFilePreview';
 import { TaskTimerBoard } from './components/TaskTimerBoard';
 import { flushTaskOutbox } from './flushOutbox';
+import { loadExpoSpeech } from './nativeSpeech';
+import { pickSpeechVoice, speechLanguageTag } from './speechLocale';
 import { enqueueTaskPhoto, listTaskOutbox, type TaskOutboxItem } from './outbox';
 import {
   getTaskWipIncoming,
@@ -96,17 +101,16 @@ import {
   createInspection,
   getFloorContext,
   submitInspection,
-  type DefectCategory,
   type QualityFloorContext,
   type QualityInspection,
 } from '@/features/quality/api';
 import { InspectionFloorPanel } from '@/features/quality/components/InspectionFloorPanel';
+import { QcFailSheet } from '@/features/quality/components/QcFailSheet';
 import {
   PackagingConfirmPanel,
   allPackagesConfirmed,
   confirmedPackageLabels,
 } from '@/features/quality/components/PackagingConfirmPanel';
-import { QcFailSheet } from '@/features/quality/components/QcFailSheet';
 import { ReinspectionBanner } from '@/features/quality/components/ReinspectionBanner';
 import { ReworkFloorBanner } from '@/features/quality/components/ReworkFloorBanner';
 
@@ -124,15 +128,6 @@ type TaskDetailScreenProps = {
   /** Override back target (e.g. admin PO hub → floor). */
   backFallback?: Href;
 };
-
-const BLOCK_CATEGORIES: TaskBlockerCategory[] = [
-  'MATERIAL_MISSING',
-  'MACHINE_PROBLEM',
-  'MEASUREMENT_ISSUE',
-  'DESIGN_ISSUE',
-  'PREVIOUS_STAGE_DEFECT',
-  'OTHER',
-];
 
 const TASKS_FALLBACK = '/(app)/(employee)/(tabs)/tasks' as Href;
 
@@ -153,6 +148,7 @@ export function TaskDetailScreen({
   const { width: windowW } = useWindowDimensions();
   const { showOfflineBanner, isConnected } = useNetwork();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const onBack = useSmartBack(backFallback);
   const { openAccessoryCamera } = useAccessoryCamera();
@@ -185,21 +181,23 @@ export function TaskDetailScreen({
 
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [problemSheetOpen, setProblemSheetOpen] = useState(false);
-  const [problemReason, setProblemReason] = useState('');
-  const [problemCategory, setProblemCategory] =
-    useState<TaskBlockerCategory>('OTHER');
+  const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
+  const [carryOverOpen, setCarryOverOpen] = useState(false);
+  const [carryRemaining, setCarryRemaining] = useState(30);
+  const [speaking, setSpeaking] = useState(false);
+  const [incomingLoaded, setIncomingLoaded] = useState(false);
+  const reduceMotion = useReducedMotion();
   const [uploading, setUploading] = useState(false);
   const [outbox, setOutbox] = useState<TaskOutboxItem[]>([]);
   const [flushing, setFlushing] = useState(false);
   const [finishedBurst, setFinishedBurst] = useState(false);
   const materialsRef = useRef<TaskMaterialsFloorHandle>(null);
   const semiOutputRef = useRef<TaskSemiOutputFloorHandle>(null);
-  const incomingRef = useRef<TaskIncomingFloorHandle>(null);
+  const incomingGateOnce = useRef(false);
   const completeKeyRef = useRef(`complete-${createRequestId()}`);
 
   const [qcContext, setQcContext] = useState<QualityFloorContext | null>(null);
   const [qcInspection, setQcInspection] = useState<QualityInspection | null>(null);
-  const [qcChecklist, setQcChecklist] = useState<Record<string, boolean>>({});
   const [qcNotes, setQcNotes] = useState('');
   const [qcFailOpen, setQcFailOpen] = useState(false);
   const [qcBusy, setQcBusy] = useState(false);
@@ -209,8 +207,22 @@ export function TaskDetailScreen({
 
   const raw: TaskDetail | undefined =
     forceState === 'success' || forceState === 'offline' ? fixture : query.data;
+  const recoveryReturnId =
+    raw?.stageDefinition?.code === 'DISMANTLE_RECOVER' ||
+    raw?.productionOrder?.originType === 'RETURN_RECOVERY'
+      ? raw.productionOrder?.returnRequestId ?? undefined
+      : undefined;
+  const recoveryQuery = useReturnQuery(recoveryReturnId, Boolean(recoveryReturnId));
+  const recoveryPiece = (recoveryQuery.data?.pieces ?? []).find(
+    (piece) => piece.id === raw?.productionOrder?.returnPieceId,
+  );
+  const recoveryBlocked =
+    (raw?.stageDefinition?.code === 'DISMANTLE_RECOVER' ||
+      raw?.productionOrder?.originType === 'RETURN_RECOVERY') &&
+    isRecoveryFinishBlocked(recoveryPiece?.recoveryLines);
 
   const vm = raw ? selectTaskDetail(raw, locale) : null;
+  const readOnly = Boolean(vm?.isTerminal);
   const refreshing = query.isRefetching && !query.isLoading;
   const busy =
     startMutation.isPending ||
@@ -228,11 +240,31 @@ export function TaskDetailScreen({
     lines: WipIncomingLine[];
   }>({ required: false, allReceived: true, lines: [] });
 
+  useEffect(() => {
+    if (!taskId || forceState) {
+      setIncomingLoaded(true);
+      return;
+    }
+    setIncomingLoaded(false);
+    void getTaskWipIncoming(taskId)
+      .then((board) => {
+        setIncomingInfo({
+          required: Boolean(board.required),
+          allReceived: Boolean(board.allReceived),
+          lines: board.lines ?? [],
+        });
+      })
+      .catch(() => {
+        setIncomingInfo({ required: false, allReceived: true, lines: [] });
+      })
+      .finally(() => setIncomingLoaded(true));
+  }, [taskId, forceState, query.dataUpdatedAt]);
+
   const floorHint: FloorTaskHint | null = useMemo(() => {
     if (!vm) return null;
     return floorHintFromIncoming({
       taskStatus: vm.status,
-      openBlockerCount: vm.openBlockers.length,
+      openBlockerCount: vm.problems.filter((p) => !p.answered).length,
       required: incomingInfo.required,
       allReceived: incomingInfo.allReceived,
       lines: incomingInfo.lines,
@@ -256,6 +288,17 @@ export function TaskDetailScreen({
     qualityKind === 'inspection' || qualityKind === 'reinspection';
   const isPackaging = qualityKind === 'packaging';
   const isReworkTask = qualityKind === 'rework';
+  const isRecovery = qualityKind === 'recovery';
+  const isProductionFloor = qualityKind === 'production';
+
+  useEffect(() => {
+    if (!vm || !incomingLoaded || incomingGateOnce.current || forceState) return;
+    if (vm.isTerminal) return;
+    if (incomingInfo.required && !incomingInfo.allReceived) {
+      incomingGateOnce.current = true;
+      router.replace(`/(app)/(employee)/tasks/${taskId}/take-in` as Href);
+    }
+  }, [forceState, incomingInfo, incomingLoaded, router, taskId, vm]);
 
   const packagesAllConfirmed = useMemo(() => {
     if (!isPackaging) return true;
@@ -287,14 +330,6 @@ export function TaskDetailScreen({
         if (open) {
           setQcInspection(open);
           setQcNotes(open.notes ?? '');
-          setQcChecklist(
-            Object.fromEntries(
-              (open.items ?? []).map((i) => [
-                i.checklistCode,
-                i.result === 'PASS' || i.result === 'NOT_APPLICABLE',
-              ]),
-            ),
-          );
         } else if (canPerformQc && !offline) {
           const created = await createInspection({
             productionOrderId: vm.productionOrderId,
@@ -303,11 +338,6 @@ export function TaskDetailScreen({
           });
           setQcInspection(created);
           setQcNotes(created.notes ?? '');
-          setQcChecklist(
-            Object.fromEntries(
-              (created.items ?? []).map((i) => [i.checklistCode, false]),
-            ),
-          );
         }
       }
     } catch {
@@ -547,6 +577,14 @@ export function TaskDetailScreen({
       await finishTaskAfterMaterials({ confirmedPackageLabels: labels });
       return;
     }
+    if (recoveryBlocked) {
+      void haptics.error();
+      showToast({
+        variant: 'error',
+        message: t('mobile.returns.recoveryFinishBlocked'),
+      });
+      return;
+    }
     await finishTaskAfterMaterials();
   }
 
@@ -596,6 +634,22 @@ export function TaskDetailScreen({
     }
   }
 
+  async function invalidateAfterQc() {
+    await Promise.all([
+      query.refetch(),
+      refreshQcContext(),
+      queryClient.invalidateQueries({ queryKey: queryKeys.production.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.quality.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.all }),
+      vm?.productionOrderId
+        ? queryClient.invalidateQueries({
+            queryKey: queryKeys.quality.floor(vm.productionOrderId),
+          })
+        : Promise.resolve(),
+    ]);
+  }
+
   async function onPassInspection() {
     if (offline) {
       void haptics.error();
@@ -609,14 +663,9 @@ export function TaskDetailScreen({
     }
     setQcBusy(true);
     try {
-      const items = qcInspection.items ?? [];
       await submitInspection(qcInspection.id, {
         result: 'PASSED',
         notes: qcNotes.trim() || undefined,
-        checklistResults: items.map((i) => ({
-          checklistCode: i.checklistCode,
-          result: qcChecklist[i.checklistCode] ? 'PASS' : 'FAIL',
-        })),
         photoDocumentIds: vm?.photos.map((p) => p.id),
         idempotencyKey: qcSubmitKeyRef.current,
       });
@@ -624,7 +673,7 @@ export function TaskDetailScreen({
       setFinishedBurst(true);
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.quality.inspectionPassed') });
-      await query.refetch();
+      await invalidateAfterQc();
       setTimeout(() => {
         router.replace('/(app)/(employee)/(tabs)/completed' as Href);
       }, 700);
@@ -636,12 +685,14 @@ export function TaskDetailScreen({
     }
   }
 
-  async function onConfirmQcFail(args: {
-    defectCategory: DefectCategory;
+  async function onConfirmInspectionFail(args: {
+    defectCategory: string;
     defectDescription: string;
     affectedQty: number;
     severity: string;
     reentryStageInstanceId?: string;
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
   }) {
     if (!qcInspection?.id) {
       void haptics.error();
@@ -650,27 +701,22 @@ export function TaskDetailScreen({
     }
     setQcBusy(true);
     try {
-      const items = qcInspection.items ?? [];
       await submitInspection(qcInspection.id, {
         result: 'FAILED_REWORK_REQUIRED',
         notes: qcNotes.trim() || undefined,
-        defectCategory: args.defectCategory,
         defectDescription: args.defectDescription,
+        defectCategory: args.defectCategory,
         affectedQty: args.affectedQty,
         severity: args.severity,
         reentryStageInstanceId: args.reentryStageInstanceId,
-        checklistResults: items.map((i) => ({
-          checklistCode: i.checklistCode,
-          result: qcChecklist[i.checklistCode] ? 'PASS' : 'FAIL',
-        })),
-        photoDocumentIds: vm?.photos.map((p) => p.id),
+        photoDocumentIds: args.photoDocumentIds,
+        voiceDocumentId: args.voiceDocumentId,
         idempotencyKey: `qc-fail-${createRequestId()}`,
       });
       setQcFailOpen(false);
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.quality.problemFound') });
-      await query.refetch();
-      await refreshQcContext();
+      await invalidateAfterQc();
     } catch (err) {
       void haptics.error();
       showToast({ variant: 'error', message: actionErrorMessage(err) });
@@ -679,9 +725,13 @@ export function TaskDetailScreen({
     }
   }
 
-  async function onReportProblem() {
-    const reason = problemReason.trim();
-    if (!reason) {
+  async function onReportProblem(body: {
+    category: TaskBlockerCategory;
+    reason: string;
+    voiceDocumentId?: string;
+    photoDocumentIds?: string[];
+  }) {
+    if (!body.reason.trim()) {
       showToast({ variant: 'error', message: t('mobile.tasks.problemReasonRequired') });
       return;
     }
@@ -692,18 +742,57 @@ export function TaskDetailScreen({
     }
     try {
       await blockMutation.mutateAsync({
-        category: problemCategory,
-        reason,
+        category: body.category,
+        reason: body.reason.trim(),
+        voiceDocumentId: body.voiceDocumentId,
+        photoDocumentIds: body.photoDocumentIds,
         idempotencyKey: `block-${createRequestId()}`,
       });
       void haptics.confirmMedium();
       setProblemSheetOpen(false);
-      setProblemReason('');
       showToast({ variant: 'success', message: t('mobile.tasks.problemReported') });
     } catch {
       void haptics.error();
       showToast({ variant: 'error', message: t('mobile.tasks.actionFailed') });
     }
+  }
+
+  async function onSpeakInstructions() {
+    if (speaking) {
+      const Speech = await loadExpoSpeech();
+      await Speech?.stop();
+      setSpeaking(false);
+      return;
+    }
+    const text = [vm?.notes, vm?.instructions].filter(Boolean).join('. ');
+    if (!text.trim()) {
+      showToast({ variant: 'warning', message: t('mobile.tasks.noInstructions') });
+      return;
+    }
+    const Speech = await loadExpoSpeech();
+    if (!Speech) {
+      showToast({ variant: 'warning', message: t('mobile.tasks.ttsUnavailable') });
+      return;
+    }
+    let language = speechLanguageTag(locale);
+    let voice: string | undefined;
+    try {
+      const voices = await Speech.getAvailableVoicesAsync();
+      const picked = pickSpeechVoice(voices, locale);
+      language = picked.language;
+      voice = picked.identifier;
+    } catch {
+      /* device voice list is optional — language tag is enough */
+    }
+    void haptics.selection();
+    setSpeaking(true);
+    Speech.speak(text, {
+      language,
+      voice,
+      onDone: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
   }
 
   async function uploadOrQueue(uri: string, fileName: string, mimeType: string) {
@@ -849,13 +938,6 @@ export function TaskDetailScreen({
         loading: qcBusy,
         disabled: busy || offline || qcBusy,
       });
-      actions.push({
-        key: 'qc-fail',
-        label: t('mobile.quality.reportProblem'),
-        icon: 'warning-outline',
-        onPress: () => setQcFailOpen(true),
-        disabled: busy || offline || qcBusy,
-      });
       if (canUpdate && vm.canUploadPhoto) {
         actions.push({
           key: 'photo',
@@ -874,7 +956,7 @@ export function TaskDetailScreen({
         label: t('mobile.tasks.dockReceiveSemi'),
         icon: 'download-outline',
         primary: true,
-        onPress: () => incomingRef.current?.openReceive(),
+        onPress: () => router.push(`/(app)/(employee)/tasks/${taskId}/take-in` as Href),
         disabled: busy || offline,
       });
     } else if (primary === 'START' && canUpdate && vm.canStart) {
@@ -886,6 +968,40 @@ export function TaskDetailScreen({
         onPress: () => void onStart(),
         loading: startMutation.isPending,
         disabled: busy,
+      });
+    }
+
+    // Finish stays in the first in-progress cell. Stop and Resume share the cell beside it
+    // so pausing does not swap Resume into Finish’s place.
+    if (primary === 'COMPLETE' && canComplete && vm.canFinish && !finishedBurst) {
+      const packagingBlocked = isPackaging && !packagesAllConfirmed;
+      actions.push({
+        key: 'finish',
+        label: isRecovery
+          ? t('mobile.returns.recoveryFinish')
+          : isPackaging
+            ? packagesAllConfirmed
+              ? t('mobile.quality.completePackaging')
+              : t('mobile.quality.confirmPackages')
+            : t('mobile.tasks.markFinished'),
+        holdLabel: t('mobile.tasks.holdToFinish'),
+        icon: 'checkmark-circle-outline',
+        holdConfirm: true,
+        primary: true,
+        onPress: () => void onFinish(),
+        loading: completeMutation.isPending,
+        disabled: busy || offline || packagingBlocked || Boolean(recoveryBlocked),
+      });
+    }
+
+    if (canUpdate && vm.canStop) {
+      actions.push({
+        key: 'stop',
+        label: t('mobile.tasks.stopTask'),
+        icon: 'pause',
+        onPress: () => void onStop(),
+        loading: pauseMutation.isPending,
+        disabled: busy || offline,
       });
     } else if (canUpdate && vm.canResume) {
       actions.push({
@@ -899,37 +1015,12 @@ export function TaskDetailScreen({
       });
     }
 
-    if (canUpdate && vm.canStop) {
-      actions.push({
-        key: 'stop',
-        label: t('mobile.tasks.stopTask'),
-        icon: 'pause',
-        onPress: () => void onStop(),
-        loading: pauseMutation.isPending,
-        disabled: busy || offline,
-      });
-    }
+    const leftoverEligible =
+      isProductionFloor &&
+      Boolean(vm.canCarryOver) &&
+      (vm.canStop || vm.canResume);
 
-    if (primary === 'COMPLETE' && canComplete && vm.canFinish && !finishedBurst) {
-      const packagingBlocked = isPackaging && !packagesAllConfirmed;
-      actions.push({
-        key: 'finish',
-        label: isPackaging
-          ? packagesAllConfirmed
-            ? t('mobile.quality.completePackaging')
-            : t('mobile.quality.confirmPackages')
-          : t('mobile.tasks.markFinished'),
-        holdLabel: t('mobile.tasks.holdToFinish'),
-        icon: 'checkmark-circle-outline',
-        holdConfirm: true,
-        primary: true,
-        onPress: () => void onFinish(),
-        loading: completeMutation.isPending,
-        disabled: busy || offline || packagingBlocked,
-      });
-    }
-
-    if (canUpdate && vm.canUploadPhoto && !vm.producesSemiFinished) {
+    if (canUpdate && vm.canUploadPhoto && !vm.producesSemiFinished && !leftoverEligible) {
       actions.push({
         key: 'photo',
         label: t('mobile.tasks.uploadPhoto'),
@@ -947,9 +1038,23 @@ export function TaskDetailScreen({
         disabled: busy,
       });
     }
+    if (leftoverEligible && canUpdate) {
+      actions.push({
+        key: 'leftover',
+        label: t('mobile.tasks.carryOver'),
+        icon: 'arrow-forward-circle-outline',
+        onPress: () => {
+          setCarryRemaining(
+            Math.max(1, vm.leftoverRemainingMinutes ?? 30),
+          );
+          setCarryOverOpen(true);
+        },
+        disabled: busy || offline,
+      });
+    }
 
-    // Cap secondary tiles — primary already included.
-    return actions.slice(0, 4);
+    // Finish + leftover + Report problem + Stop/Resume; photo yields when leftover shows.
+    return actions.slice(0, leftoverEligible ? 6 : 4);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers stable enough for dock
   }, [
     busy,
@@ -960,9 +1065,12 @@ export function TaskDetailScreen({
     finishedBurst,
     floorHint,
     isPackaging,
+    isProductionFloor,
     isQcGate,
+    isRecovery,
     offline,
     packagesAllConfirmed,
+    recoveryBlocked,
     pauseMutation.isPending,
     qcBusy,
     resumeMutation.isPending,
@@ -971,8 +1079,9 @@ export function TaskDetailScreen({
     vm,
   ]);
 
-  const dockRows = dockActions.length === 0 ? 0 : dockActions.length <= 2 ? 1 : 2;
-  const dockFallback = dockRows === 0 ? 0 : dockRows === 1 ? 80 : 148;
+  const dockRows =
+    dockActions.length === 0 ? 0 : Math.ceil(Math.min(dockActions.length, 6) / 2);
+  const dockFallback = dockRows === 0 ? 0 : dockRows === 1 ? 80 : dockRows === 2 ? 148 : 216;
   const dockScrollPad =
     dockActions.length > 0 ? (dockHeight > 0 ? dockHeight : dockFallback) : 0;
 
@@ -1031,13 +1140,6 @@ export function TaskDetailScreen({
   const deadlineLabel = vm.deadline
     ? formatDateTime(vm.deadline)
     : t('mobile.tasks.noDeadline');
-  const floorQualityKind: TaskQualityKind =
-    qualityKind === 'inspection' ||
-    qualityKind === 'reinspection' ||
-    qualityKind === 'packaging'
-      ? qualityKind
-      : null;
-  const hideProductionChrome = isLastStageQualityFloor(floorQualityKind);
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
@@ -1050,7 +1152,7 @@ export function TaskDetailScreen({
       <View style={{ paddingHorizontal: pad }}>
         <TaskDetailNav
           onBack={onBack}
-          title={taskDetailNavTitle(floorQualityKind, t)}
+          title={taskDetailNavTitle(qualityKind, t)}
           subtitle={vm.orderNumber}
           trailing={
             <StatusBadge
@@ -1106,6 +1208,26 @@ export function TaskDetailScreen({
             syncing={flushing}
             onRetry={() => void onFlushOutbox()}
           />
+
+          {readOnly ? (
+            <View
+              style={{
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
+                backgroundColor: colors.surfaceSecondary,
+                padding: theme.spacing.md,
+              }}
+            >
+              <AppText
+                variant="bodySecondary"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {t('mobile.tasks.viewOnlyCompleted')}
+              </AppText>
+            </View>
+          ) : null}
 
           <View
             style={{
@@ -1218,7 +1340,9 @@ export function TaskDetailScreen({
                           : t('mobile.quality.readyForInspection')
                         : isPackaging
                           ? t('mobile.quality.stampPackaging')
-                          : t(floorHint.labelKey)}
+                          : isRecovery
+                            ? t('mobile.returns.recoveryTitle')
+                            : t(floorHint.labelKey)}
                   </AppText>
                 </View>
               ) : null}
@@ -1300,22 +1424,29 @@ export function TaskDetailScreen({
               >
                 {t('mobile.tasks.whatYouNeed')}
               </AppText>
-              {canRecordUsage ? (
-                <TaskMaterialsFloorSection ref={materialsRef} taskId={taskId} />
+              {!isRecovery && canRecordUsage ? (
+                <TaskMaterialsFloorSection
+                  ref={materialsRef}
+                  taskId={taskId}
+                  readOnly={readOnly}
+                />
               ) : null}
-              {canRecordUsage ? <TaskFabricTakeInBoard taskId={taskId} /> : null}
-
-              <TaskIncomingWorkFloorSection
-                ref={incomingRef}
-                taskId={taskId}
-                showNoneWhenEmpty
-                onReceived={() => {
-                  /* availability callback refreshes floorHint */
-                }}
-                onAvailabilityChange={(info) => {
-                  setIncomingInfo(info);
-                }}
-              />
+              {isRecovery &&
+              raw?.productionOrder?.returnRequestId &&
+              raw.productionOrder.returnPieceId ? (
+                <TaskRecoveryFloorSection
+                  taskId={taskId}
+                  returnRequestId={raw.productionOrder.returnRequestId}
+                  returnPieceId={raw.productionOrder.returnPieceId}
+                  readOnly={readOnly}
+                />
+              ) : null}
+              {!isRecovery && canRecordUsage ? (
+                <TaskFabricTakeInBoard taskId={taskId} readOnly={readOnly} />
+              ) : null}
+              {!isRecovery && !isQcGate ? (
+                <TaskConfirmedKitBoard taskId={taskId} enabled={incomingLoaded} />
+              ) : null}
             </View>
           {isReworkTask ? (
             <ReworkFloorBanner
@@ -1351,17 +1482,31 @@ export function TaskDetailScreen({
             <InspectionFloorPanel
               itemUnderInspection={qcContext?.itemUnderInspection ?? null}
               manufacturingSpec={qcContext?.manufacturingSpec ?? null}
-              checklist={qcInspection?.items ?? []}
-              checked={qcChecklist}
-              onToggle={(code, next) =>
-                setQcChecklist((prev) => ({ ...prev, [code]: next }))
+              dealerDetails={qcContext?.dealerDetails ?? null}
+              order={
+                qcContext
+                  ? {
+                      productName: qcContext.productName,
+                      productNameAr: qcContext.productNameAr,
+                      productNameHe: qcContext.productNameHe,
+                      productionOrderNumber: qcContext.productionOrderNumber,
+                      salesOrderNumber: qcContext.salesOrderNumber,
+                      dealerName: qcContext.dealerName,
+                      dealerNameAr: qcContext.dealerNameAr,
+                      dealerNameHe: qcContext.dealerNameHe,
+                      quantity: qcContext.quantity,
+                      composition: qcContext.composition,
+                    }
+                  : null
               }
+              productImageUrl={qcContext?.productImageUrl ?? vm.imageUrl ?? null}
+              productId={qcContext?.productId ?? null}
               notes={qcNotes}
               onNotesChange={setQcNotes}
-              onPass={() => void onPassInspection()}
-              onReportProblem={() => setQcFailOpen(true)}
+              onConfirm={() => void onPassInspection()}
+              onFail={() => setQcFailOpen(true)}
               busy={qcBusy}
-              disabled={!canPerformQc || offline || Boolean(finishedBurst)}
+              disabled={!canPerformQc || offline || Boolean(finishedBurst) || readOnly}
             />
           ) : null}
 
@@ -1379,26 +1524,46 @@ export function TaskDetailScreen({
                   : undefined
               }
               completeBusy={completeMutation.isPending}
-              disabled={offline || Boolean(finishedBurst)}
+              disabled={offline || Boolean(finishedBurst) || readOnly}
             />
           ) : null}
 
-          {!isQcGate ? (
+          {isRecovery ? (
+            <DismantleRecoverFloorPanel
+              returnNumber={recoveryQuery.data?.number}
+              pieceCode={recoveryPiece?.code}
+              pieceNo={recoveryPiece?.pieceNo}
+              productDesc={recoveryPiece?.productDesc ?? vm.productTitle}
+              decision={recoveryPiece?.decision}
+              sourceOrderNumber={recoveryQuery.data?.salesOrder?.number}
+              recoveryOrderNumber={recoveryPiece?.recoveryOrder?.number}
+              specSnapshot={recoveryPiece?.specSnapshot}
+              quarantineWrittenOff={recoveryPiece?.state === 'RECOVERED'}
+              finishBlocked={Boolean(recoveryBlocked)}
+            />
+          ) : !isQcGate ? (
             <FloorSection
-              title={t('mobile.tasks.yourWork')}
+              title={
+                vm.notes ? t('mobile.tasks.yourWork') : t('mobile.tasks.instructions')
+              }
               isRTL={isRTL}
               locale={locale}
+              trailing={
+                vm.notes ? undefined : (
+                  <SpeakInstructionsButton
+                    speaking={speaking}
+                    label={
+                      speaking
+                        ? t('mobile.tasks.stopSpeaking')
+                        : t('mobile.tasks.speakInstructions')
+                    }
+                    onPress={() => void onSpeakInstructions()}
+                  />
+                )
+              }
             >
               {vm.notes ? (
-                <View style={{ gap: 4, marginBottom: theme.spacing.sm }}>
-                  <AppText
-                    variant="caption"
-                    weight="semibold"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'right' : 'left' }}
-                  >
-                    {t('mobile.tasks.workerInstructions')}
-                  </AppText>
+                <View style={{ gap: theme.spacing.sm }}>
                   <AppText
                     variant="body"
                     weight={titleWeight}
@@ -1406,24 +1571,38 @@ export function TaskDetailScreen({
                   >
                     {vm.notes}
                   </AppText>
+                  <InstructionInset
+                    title={t('mobile.tasks.instructions')}
+                    isRTL={isRTL}
+                    locale={locale}
+                    trailing={
+                      <SpeakInstructionsButton
+                        speaking={speaking}
+                        label={
+                          speaking
+                            ? t('mobile.tasks.stopSpeaking')
+                            : t('mobile.tasks.speakInstructions')
+                        }
+                        onPress={() => void onSpeakInstructions()}
+                      />
+                    }
+                  >
+                    <AppText
+                      variant="body"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {vm.instructions || t('mobile.tasks.noInstructions')}
+                    </AppText>
+                  </InstructionInset>
                 </View>
-              ) : null}
-              <AppText
-                variant="caption"
-                weight="semibold"
-                color="muted"
-                style={{ textAlign: isRTL ? 'right' : 'left', marginBottom: 4 }}
-              >
-                {vm.notes
-                  ? t('mobile.tasks.stageGuide')
-                  : t('mobile.tasks.instructions')}
-              </AppText>
-              <AppText
-                variant="body"
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {vm.instructions || t('mobile.tasks.noInstructions')}
-              </AppText>
+              ) : (
+                <AppText
+                  variant="body"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {vm.instructions || t('mobile.tasks.noInstructions')}
+                </AppText>
+              )}
             </FloorSection>
           ) : null}
 
@@ -1437,33 +1616,20 @@ export function TaskDetailScreen({
             </AppText>
           ) : null}
 
-          {vm.openBlockers.length > 0 ? (
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.error,
-                backgroundColor: colors.errorSoft,
-                padding: theme.spacing.md,
-                gap: theme.spacing.xs,
-              }}
-            >
-              <AppText variant="label" weight={titleWeight} style={{ color: colors.error }}>
-                {t('mobile.blockers')}
-              </AppText>
-              {vm.openBlockers.map((b) => (
-                <AppText key={b.id} variant="bodySecondary">
-                  {b.reason}
-                </AppText>
-              ))}
-            </View>
+          {vm.problems.length > 0 ? (
+            <TaskProblemsBoard
+              problems={vm.problems}
+              onOpen={(problem) => setSelectedProblemId(problem.id)}
+            />
           ) : null}
 
-          <TaskTimerBoard
-            timing={vm.timing}
-            formatDateTime={formatDateTime}
-            isScheduledToday={vm.isScheduledToday}
-          />
+          {!isQcGate ? (
+            <TaskTimerBoard
+              timing={vm.timing}
+              formatDateTime={formatDateTime}
+              isScheduledToday={vm.isScheduledToday}
+            />
+          ) : null}
 
           {vm.attachments.length > 0 ? (
             <TaskFilePreview
@@ -1484,14 +1650,15 @@ export function TaskDetailScreen({
             />
           ) : null}
 
-          {vm.producesSemiFinished ? (
+          {!isRecovery && vm.producesSemiFinished ? (
             <TaskSemiOutputFloorSection
               ref={semiOutputRef}
               taskId={taskId}
               productionOrderId={vm.productionOrderId}
               expectedPieceCount={vm.expectedPieceCount ?? 1}
+              readOnly={readOnly}
             />
-          ) : (
+          ) : !isRecovery ? (
             <FloorSection
               title={t('mobile.tasks.outputHandoffTitle')}
               isRTL={isRTL}
@@ -1501,7 +1668,7 @@ export function TaskDetailScreen({
                 {t('mobile.tasks.outputHandoffNone')}
               </AppText>
             </FloorSection>
-          )}
+          ) : null}
 
           {offline && canComplete && vm.canFinish ? (
             <AppText variant="caption" color="muted" align="center">
@@ -1525,86 +1692,37 @@ export function TaskDetailScreen({
         cancelLabel={t('mobile.tasks.cancel')}
       />
 
-      <BottomSheet
+      <ReportProblemSheet
         open={problemSheetOpen}
+        taskId={taskId}
+        submitting={blockMutation.isPending}
         onClose={() => setProblemSheetOpen(false)}
-        title={t('mobile.tasks.reportProblem')}
-        sheetHeight={420}
-      >
-        <View style={{ gap: theme.spacing.md }}>
-          <AppText variant="bodySecondary" color="secondary">
-            {t('mobile.blockReason')}
-          </AppText>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: theme.spacing.sm,
-            }}
-          >
-            {BLOCK_CATEGORIES.map((cat) => {
-              const active = problemCategory === cat;
-              return (
-                <Pressable
-                  key={cat}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => {
-                    void haptics.selection();
-                    setProblemCategory(cat);
-                  }}
-                  style={{
-                    paddingHorizontal: theme.spacing.lg,
-                    paddingVertical: theme.spacing.md,
-                    minHeight: theme.sizes.touch.min,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: active ? colors.brand : colors.surfaceSecondary,
-                    borderWidth: 1,
-                    borderColor: active ? colors.brand : colors.border,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <AppText
-                    variant="label"
-                    weight={active ? 'semibold' : 'medium'}
-                    style={{ color: active ? colors.onBrand : colors.textPrimary }}
-                  >
-                    {t(`mobile.tasks.blocker.${cat}`)}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          <TextField
-            label={t('mobile.tasks.problemDetails')}
-            value={problemReason}
-            onChangeText={setProblemReason}
-            multiline
-            numberOfLines={3}
-            placeholder={t('mobile.tasks.problemPlaceholder')}
-          />
-          <PrimaryButton
-            label={t('mobile.tasks.submitProblem')}
-            onPress={() => void onReportProblem()}
-            loading={blockMutation.isPending}
-            style={{ minHeight: theme.sizes.touch.min }}
-          />
-          <SecondaryButton
-            label={t('mobile.tasks.cancel')}
-            onPress={() => setProblemSheetOpen(false)}
-          />
-        </View>
-      </BottomSheet>
+        onSubmit={(body) => void onReportProblem(body)}
+      />
+      <TaskProblemSheet
+        problem={vm.problems.find((p) => p.id === selectedProblemId) ?? null}
+        onClose={() => setSelectedProblemId(null)}
+      />
+      <TaskCarryOverSheet
+        open={carryOverOpen}
+        taskId={taskId}
+        remainingMinutes={carryRemaining}
+        allowOvertime={Boolean(vm.carryOverAllowsOvertime)}
+        onClose={() => setCarryOverOpen(false)}
+        onCommitted={() => {
+          void query.refetch();
+        }}
+      />
 
       {vm.productionOrderId ? (
         <QcFailSheet
           open={qcFailOpen}
           onClose={() => setQcFailOpen(false)}
           productionOrderId={vm.productionOrderId}
-          quantity={Number(raw?.productionOrder?.quantity) || 1}
+          taskId={taskId}
+          quantity={qcContext?.quantity ?? 1}
           busy={qcBusy}
-          onConfirm={(args) => void onConfirmQcFail(args)}
+          onConfirm={(args) => void onConfirmInspectionFail(args)}
         />
       ) : null}
     </AppScreen>
@@ -1612,9 +1730,13 @@ export function TaskDetailScreen({
 }
 
 function taskDetailNavTitle(
-  qualityKind: TaskQualityKind,
+  qualityKind: ClassifiedTaskQualityKind | TaskQualityKind,
   t: (key: string, vars?: Record<string, string | number>) => string,
 ): string {
+  if (qualityKind === 'recovery') {
+    const label = t('production.stageLibrary.DISMANTLE_RECOVER');
+    if (label !== 'production.stageLibrary.DISMANTLE_RECOVER') return label;
+  }
   if (qualityKind === 'packaging') {
     const label = t('production.stageLibrary.PACKAGING');
     if (label !== 'production.stageLibrary.PACKAGING') return label;
@@ -1680,17 +1802,111 @@ function TaskDetailNav({
   );
 }
 
+function SpeakInstructionsButton({
+  speaking,
+  label,
+  onPress,
+}: {
+  speaking: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, theme } = useTheme();
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={{
+        width: theme.sizes.touch.min,
+        height: theme.sizes.touch.min,
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: speaking ? colors.brand : colors.borderStrong,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: speaking ? colors.brandSoft : colors.surface,
+      }}
+    >
+      <Ionicons
+        name={speaking ? 'stop' : 'volume-high-outline'}
+        size={20}
+        color={colors.brand}
+      />
+    </AnimatedPressable>
+  );
+}
+
+function InstructionInset({
+  title,
+  children,
+  isRTL,
+  locale,
+  trailing,
+}: {
+  title: string;
+  children: ReactNode;
+  isRTL: boolean;
+  locale: string;
+  trailing?: ReactNode;
+}) {
+  const { colors, theme } = useTheme();
+  return (
+    <View
+      style={{
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceSecondary,
+        overflow: 'hidden',
+      }}
+    >
+      <View
+        style={{
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight="semibold"
+          style={{
+            color: colors.brand,
+            letterSpacing: locale === 'ar' ? 0 : 0.4,
+            fontSize: 11,
+            textAlign: isRTL ? 'right' : 'left',
+            flex: 1,
+          }}
+        >
+          {title}
+        </AppText>
+        {trailing}
+      </View>
+      <View style={{ padding: theme.spacing.md }}>{children}</View>
+    </View>
+  );
+}
+
 function FloorSection({
   title,
   children,
   isRTL,
   locale,
+  trailing,
   sentenceCaseStamp = false,
 }: {
   title: string;
   children: ReactNode;
   isRTL: boolean;
   locale: string;
+  trailing?: ReactNode;
   sentenceCaseStamp?: boolean;
 }) {
   const { colors, theme, colorScheme } = useTheme();
@@ -1712,6 +1928,10 @@ function FloorSection({
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
           backgroundColor: colors.surfaceSecondary,
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
         }}
       >
         <AppText
@@ -1722,10 +1942,12 @@ function FloorSection({
             letterSpacing: locale === 'ar' ? 0 : 0.4,
             fontSize: 11,
             textAlign: isRTL ? 'right' : 'left',
+            flex: 1,
           }}
         >
           {title}
         </AppText>
+        {trailing}
       </View>
       <View style={{ padding: theme.spacing.md }}>{children}</View>
     </View>

@@ -1,4 +1,5 @@
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,16 +23,22 @@ import { openPaymentPdf } from '@/api/modules/payments';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { ApplyCreditSheet } from './components/ApplyCreditSheet';
 import { EditInvoiceSheet } from './components/EditInvoiceSheet';
+import { EditPaymentSheet } from './components/EditPaymentSheet';
+import { InvoiceReturnBoard } from './components/InvoiceReturnBoard';
+import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
+import {
+  useDeleteAllocationMutation,
+  useDeletePaymentMutation,
+  useInvoiceQuery,
+} from './query';
+import { selectInvoiceDetail, type InvoiceHistoryRow } from './selectInvoice';
 import { InvoiceBalanceBoard } from './components/InvoiceBalanceBoard';
 import { InvoiceDetailHero } from './components/InvoiceDetailHero';
-import { InvoiceJofotaraBoard } from './components/InvoiceJofotaraBoard';
 import { InvoiceLinesBoard } from './components/InvoiceLinesBoard';
 import { InvoiceMetaBoard } from './components/InvoiceMetaBoard';
 import { InvoicePaymentsBoard } from './components/InvoicePaymentsBoard';
 import { InvoiceStickyActions } from './components/InvoiceStickyActions';
 import { RecordPaymentSheet } from './components/RecordPaymentSheet';
-import { useInvoiceQuery } from './query';
-import { selectInvoiceDetail } from './selectInvoice';
 
 type Props = {
   invoiceId: string;
@@ -53,6 +60,7 @@ export function InvoiceDetailScreen({
   backFallback = '/(app)/(admin)/invoices' as Href,
 }: Props) {
   const { user } = useAuth();
+  const router = useRouter();
   const { t, locale } = useLocale();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -67,15 +75,20 @@ export function InvoiceDetailScreen({
   const [payOpen, setPayOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editRow, setEditRow] = useState<InvoiceHistoryRow | null>(null);
+  const [deleteRow, setDeleteRow] = useState<InvoiceHistoryRow | null>(null);
+  const query = useInvoiceQuery(invoiceId, canRead);
+  const deletePayment = useDeletePaymentMutation(invoiceId, query.data?.customerId);
+  const deleteAllocation = useDeleteAllocationMutation(invoiceId, query.data?.customerId);
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
-  const query = useInvoiceQuery(invoiceId, canRead);
   const model = useMemo(
     () => (query.data ? selectInvoiceDetail(query.data, locale) : null),
     [query.data, locale],
   );
 
   const methodLabel = (method: string) => {
+    if (method === 'CREDIT') return t('accounting.applyCredit');
     const key = `accounting.method${method}`;
     const translated = t(key);
     return translated === key ? method : translated;
@@ -189,8 +202,39 @@ export function InvoiceDetailScreen({
           <InvoiceBalanceBoard model={model} currencySuffix={INVOICE_DETAIL_CURRENCY} />
         </ListItemEnter>
 
-        <ListItemEnter index={2}>
-          <InvoiceMetaBoard model={model} />
+        {query.data?.returnRequest ? (
+          <ListItemEnter index={2}>
+            <InvoiceReturnBoard
+              invoice={query.data}
+              onOpenReturn={(returnId) => {
+                router.push(
+                  (isDealer
+                    ? `/(app)/(customer)/returns/${returnId}`
+                    : `/(app)/(admin)/returns/${returnId}`) as Href,
+                );
+              }}
+              onOpenOrder={(orderId) => {
+                router.push(
+                  (isDealer
+                    ? `/(app)/(customer)/sales-orders/${orderId}`
+                    : `/(app)/(admin)/orders/${orderId}`) as Href,
+                );
+              }}
+            />
+          </ListItemEnter>
+        ) : null}
+
+        <ListItemEnter index={3}>
+          <InvoiceMetaBoard
+            model={model}
+            onOpenReturn={(returnId) => {
+              router.push(
+                (isDealer
+                  ? `/(app)/(customer)/returns/${returnId}`
+                  : `/(app)/(admin)/returns/${returnId}`) as Href,
+              );
+            }}
+          />
         </ListItemEnter>
 
         <InvoiceLinesBoard model={model} currencySuffix={INVOICE_DETAIL_CURRENCY} />
@@ -199,8 +243,10 @@ export function InvoiceDetailScreen({
           currencySuffix={INVOICE_DETAIL_CURRENCY}
           methodLabel={methodLabel}
           onPaymentPdf={onPaymentPdf}
+          canEditPayments={canPay && !isDealer}
+          onEditPayment={setEditRow}
+          onDeletePayment={setDeleteRow}
         />
-        <InvoiceJofotaraBoard model={model} />
       </ScrollView>
 
       <FloatingActionDock
@@ -238,6 +284,7 @@ export function InvoiceDetailScreen({
           invoiceId={model.id}
           customerId={model.customerId}
           defaultAmount={model.outstanding}
+          onRecorded={() => void query.refetch()}
         />
       ) : null}
       {showApplyCredit ? (
@@ -248,8 +295,51 @@ export function InvoiceDetailScreen({
           customerId={model.customerId}
           remaining={model.outstanding}
           availableCredit={model.availableCredit}
+          onApplied={() => void query.refetch()}
         />
       ) : null}
+      {canPay && !isDealer ? (
+        <EditPaymentSheet
+          open={Boolean(editRow)}
+          onClose={() => setEditRow(null)}
+          invoiceId={invoiceId}
+          customerId={model.customerId}
+          payment={
+            editRow
+              ? {
+                  id: editRow.id,
+                  allocationId: editRow.allocationId,
+                  kind: editRow.kind,
+                  amount: editRow.amount,
+                  method: editRow.method,
+                  reference: editRow.reference,
+                }
+              : null
+          }
+          onSaved={() => void query.refetch()}
+        />
+      ) : null}
+      <ConfirmationSheet
+        open={Boolean(deleteRow)}
+        onClose={() => setDeleteRow(null)}
+        title={t('mobile.invoices.deletePayment')}
+        message={t('mobile.invoices.deletePaymentConfirm')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          if (!deleteRow) return;
+          const onGone = () => {
+            setDeleteRow(null);
+            void query.refetch();
+          };
+          if (deleteRow.kind === 'credit' && deleteRow.allocationId) {
+            deleteAllocation.mutate(deleteRow.allocationId, { onSuccess: onGone });
+            return;
+          }
+          deletePayment.mutate(deleteRow.id, { onSuccess: onGone });
+        }}
+      />
       {canEditInvoice && !isDealer && query.data ? (
         <EditInvoiceSheet
           open={editOpen}

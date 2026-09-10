@@ -1,5 +1,7 @@
 import { apiGet, apiPatch, apiPost, apiDelete, apiPut } from '../client';
 
+export type WorkflowScope = 'STANDARD' | 'RETURN';
+
 export type WorkflowListItem = {
   id: string;
   code: string;
@@ -7,6 +9,7 @@ export type WorkflowListItem = {
   nameEn: string;
   nameHe?: string | null;
   status: string;
+  scope?: WorkflowScope | null;
   activeVersion?: {
     id: string;
     versionNumber: number;
@@ -55,6 +58,7 @@ export type WorkflowVersion = {
   revision: number;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  scope?: WorkflowScope | null;
 };
 
 export type WorkflowDetail = {
@@ -64,6 +68,7 @@ export type WorkflowDetail = {
   nameEn: string;
   nameHe?: string | null;
   status: string;
+  scope?: WorkflowScope | null;
   activeVersion?: WorkflowVersion | null;
   versions: Array<{ id: string; versionNumber: number; status: string }>;
 };
@@ -82,6 +87,7 @@ export type OrderWorkflowStage = {
   isSkipped?: boolean;
   estimateReviewRequired?: boolean;
   assignedEmployee?: { id: string; name: string } | null;
+  taskId?: string | null;
   actualStart?: string | null;
   actualEnd?: string | null;
   plannedStart?: string | null;
@@ -98,6 +104,7 @@ export type OrderWorkflowGraph = {
   sourceVersionNumber: number | null;
   isLegacy: boolean;
   needsWorkflow?: boolean;
+  planEditable?: boolean;
   stages: OrderWorkflowStage[];
   edges: Array<{ from: string; to: string }>;
 };
@@ -130,6 +137,7 @@ export function createWorkflow(body: {
   nameEn: string;
   nameAr: string;
   nameHe?: string;
+  scope?: WorkflowScope;
 }) {
   return apiPost<WorkflowDetail>('/production-workflows', body);
 }
@@ -404,6 +412,14 @@ export type ProductionSetupResponse = {
     nameHe?: string | null;
     type: string;
     isDefault: boolean;
+    locations?: Array<{
+      id: string;
+      code: string;
+      name?: string | null;
+      isDefault?: boolean;
+      isActive?: boolean;
+      qrCode?: string | null;
+    }>;
   }>;
   outputs: Array<{
     id: string;

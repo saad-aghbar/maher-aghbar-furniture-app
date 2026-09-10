@@ -235,4 +235,10 @@ describe('WorkingCalendar (Asia/Amman)', () => {
     expect(occupied.has('2026-08-23')).toBe(true);
     expect(occupied.has('2026-08-21')).toBe(false);
   });
+
+  it('workingMinutesBetween skips the 12:00–12:30 factory lunch', () => {
+    const cal = calendar({ breaks: [{ start: '12:00', end: '12:30' }] });
+    expect(cal.workingMinutesBetween(amman(2026, 8, 9, 12, 0), amman(2026, 8, 9, 12, 30))).toBe(0);
+    expect(cal.workingMinutesBetween(amman(2026, 8, 9, 11, 0), amman(2026, 8, 9, 13, 0))).toBe(90);
+  });
 });

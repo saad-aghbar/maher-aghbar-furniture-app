@@ -15,6 +15,7 @@ import {
 import type { JourneyAttention, JourneyPrimaryCta, JourneyReadiness } from '../adminOrderJourney';
 import { buildLaneCardPresentation } from '../laneOrderCard';
 import { dealerLifecycleCardCopy } from '../dealerLifecycleCardCopy';
+import { orderProgressChipFlags } from '../ordersReturnedLens';
 import { resolveOrderMediaUri } from './OrderCardMedia';
 
 export type OrdersProgressCardModel = {
@@ -31,7 +32,7 @@ export type OrdersProgressCardModel = {
   dealerId?: string;
   dealerName?: string;
   sellerPrice?: number | null;
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
   priority?: string;
   quantity?: string | number | null;
   lifecycle?: AdminOrderLifecycle;
@@ -40,6 +41,9 @@ export type OrdersProgressCardModel = {
   journeyReadiness?: JourneyReadiness;
   actionHint?: string | null;
   manufacturingKind?: 'standard' | 'modified' | 'custom';
+  hasReturn?: boolean;
+  originKind?: 'RETURN_WORK' | 'REPLACEMENT';
+  originalOrderNumber?: string | null;
   primaryProductionOrderId?: string | null;
   plannedStartDate?: string | null;
   journeyLogistics?: import('@/api/modules/sales-orders').SalesOrderJourneyLogistics | null;
@@ -531,6 +535,43 @@ function AdminCommercialCard({
   );
 }
 
+function KindChip({
+  label,
+  colors,
+  theme,
+}: {
+  label: string;
+  colors: { brand: string; brandSoft?: string; surfaceSecondary: string };
+  theme: { spacing: Record<string, number>; radius: { md: number } };
+}) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: 3,
+        borderRadius: theme.radius.md,
+        backgroundColor: colors.brandSoft ?? colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.brand,
+      }}
+    >
+      <AppText
+        variant="caption"
+        weight="semibold"
+        numberOfLines={1}
+        style={{
+          color: colors.brand,
+          fontSize: 10,
+          lineHeight: 12,
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 function LaneCardBody({
   order,
   isRfq,
@@ -567,13 +608,20 @@ function LaneCardBody({
   t: (key: string, params?: Record<string, string | number>) => string;
   compact: boolean;
 }) {
-  const { locale } = useLocale();
-  const kindLabel = order.manufacturingKind
-    ? t(`mobile.orders.journey.kind.${order.manufacturingKind}`)
+  const chips = orderProgressChipFlags(order);
+  const kindLabel = chips.manufacturingKind
+    ? t(`mobile.orders.journey.kind.${chips.manufacturingKind}`)
     : null;
-  const kindKey = kindLabel && kindLabel !== `mobile.orders.journey.kind.${order.manufacturingKind}`
+  const kindKey = kindLabel && kindLabel !== `mobile.orders.journey.kind.${chips.manufacturingKind}`
     ? kindLabel
     : null;
+  const originLabel =
+    chips.originKind === 'REPLACEMENT'
+      ? t('mobile.production.origin.replacement')
+      : chips.originKind === 'RETURN_WORK'
+        ? t('mobile.production.origin.returnWork')
+        : null;
+  const showReturned = chips.returned;
 
   return (
     <View style={{ gap: compact ? 4 : 6, width: '100%' }}>
@@ -582,22 +630,25 @@ function LaneCardBody({
           {order.dealerName}
         </AppText>
       ) : null}
-      {kindKey ? (
-        <AppText
-          variant="caption"
-          weight={titleWeight}
-          color="brand"
-          numberOfLines={1}
+      {kindKey || showReturned || originLabel ? (
+        <View
           style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexWrap: 'wrap',
+            gap: 6,
             width: '100%',
-            fontSize: 10,
-            lineHeight: 12,
-            letterSpacing: locale === 'ar' ? 0 : 0.5,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
           }}
         >
-          {kindKey}
-        </AppText>
+          {originLabel ? <KindChip label={originLabel} colors={colors} theme={theme} /> : null}
+          {kindKey ? <KindChip label={kindKey} colors={colors} theme={theme} /> : null}
+          {showReturned ? (
+            <KindChip
+              label={t('mobile.orders.journey.kind.returned')}
+              colors={colors}
+              theme={theme}
+            />
+          ) : null}
+        </View>
       ) : null}
       <AppText
         variant="label"

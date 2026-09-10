@@ -15,16 +15,19 @@ jest.mock('@/api/modules/inventory', () => ({
   getInventoryItemByCode: jest.fn(),
   getInventoryLotByCode: jest.fn(),
   getWipKitByCode: jest.fn(),
+  getWarehouseLocationByCode: jest.fn(),
 }));
 
 const {
   getInventoryItemByCode,
   getInventoryLotByCode,
   getWipKitByCode,
+  getWarehouseLocationByCode,
 } = jest.requireMock('@/api/modules/inventory') as {
   getInventoryItemByCode: jest.Mock;
   getInventoryLotByCode: jest.Mock;
   getWipKitByCode: jest.Mock;
+  getWarehouseLocationByCode: jest.Mock;
 };
 
 function item(partial: Partial<InventoryItem> & { id: string; sku: string }): InventoryItem {
@@ -76,6 +79,23 @@ describe('resolveInventoryScan', () => {
       status: 'FOUND',
       item: beech,
     } satisfies InventoryScanResolve);
+  });
+
+  it('FOUND_BIN when a shelf QR matches', async () => {
+    const bin = {
+      id: 'loc-1',
+      warehouseId: 'wh-1',
+      code: 'MAIN',
+      qrCode: 'BIN-RAW-MAIN',
+      contents: [],
+      warehouse: { id: 'wh-1', code: 'RAW', nameEn: 'Raw', nameAr: 'خام' },
+    };
+    getWarehouseLocationByCode.mockResolvedValue(bin);
+    await expect(resolveInventoryScan('BIN-RAW-MAIN')).resolves.toEqual({
+      status: 'FOUND_BIN',
+      bin,
+    });
+    expect(getWipKitByCode).not.toHaveBeenCalled();
   });
 
   it('FOUND_KIT when WIP by-code matches', async () => {

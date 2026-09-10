@@ -11,14 +11,24 @@ import { localizedNamed } from '../selectPurchase';
 
 type Props = {
   supplier: Supplier;
+  onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onOrders?: () => void;
+  onStatement?: () => void;
 };
 
 /**
- * Supplier floor card — name, contact, certified chip, Edit + trash footer.
+ * Supplier floor card — name, contact, Active/Inactive chip, Edit + trash footer.
  */
-export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
+export function SupplierBoardCard({
+  supplier,
+  onPress,
+  onEdit,
+  onDelete,
+  onOrders,
+  onStatement,
+}: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -26,14 +36,15 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
   const phone = supplier.phone?.trim() || null;
   const whatsapp = supplier.whatsappPhone?.trim() || null;
   const company = supplier.companyName?.trim() || null;
-  const certified = supplier.isCertified !== false;
+  const status = String(supplier.status || 'ACTIVE');
+  const inactive = status !== 'ACTIVE';
 
   return (
     <View
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.borderStrong,
+        borderColor: inactive ? colors.border : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
@@ -47,8 +58,8 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
           bottom: 0,
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
-          backgroundColor: colors.brand,
-          opacity: 0.55,
+          backgroundColor: inactive ? colors.textMuted : colors.brand,
+          opacity: inactive ? 0.35 : 0.55,
         }}
       />
 
@@ -61,7 +72,19 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
             : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
-        <View
+        <AnimatedPressable
+          variant="card"
+          disabled={!onPress}
+          accessibilityRole={onPress ? 'button' : undefined}
+          accessibilityLabel={name}
+          onPress={
+            onPress
+              ? () => {
+                  void haptics.selection();
+                  onPress();
+                }
+              : undefined
+          }
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'flex-start',
@@ -69,6 +92,22 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
             gap: theme.spacing.md,
           }}
         >
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.brandSoft,
+              borderWidth: 1,
+              borderColor: colors.brand,
+            }}
+          >
+            <AppText weight={titleWeight} style={{ color: colors.brand }}>
+              {name.slice(0, 1).toUpperCase()}
+            </AppText>
+          </View>
           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
             <AppText
               variant="label"
@@ -100,10 +139,12 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
               </AppText>
             ) : null}
           </View>
-          {certified ? (
-            <StatusBadge status="ACTIVE" label={t('catalog.isCertified')} branded />
-          ) : null}
-        </View>
+          <StatusBadge
+            status={status}
+            label={inactive ? t('mobile.purchasing.supplierInactive') : t('catalog.active')}
+            branded={!inactive}
+          />
+        </AnimatedPressable>
 
         <View
           style={{
@@ -124,7 +165,7 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
         </View>
       </View>
 
-      {onEdit || onDelete ? (
+      {onEdit || onDelete || onOrders || onStatement ? (
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -153,6 +194,20 @@ export function SupplierBoardCard({ supplier, onEdit, onDelete }: Props) {
                 icon="create-outline"
                 onPress={onEdit}
                 emphasis
+              />
+            ) : null}
+            {onOrders ? (
+              <FooterChip
+                label={t('mobile.purchasing.openOrders')}
+                icon="cart-outline"
+                onPress={onOrders}
+              />
+            ) : null}
+            {onStatement ? (
+              <FooterChip
+                label={t('mobile.purchasing.statementPdf')}
+                icon="document-text-outline"
+                onPress={onStatement}
               />
             ) : null}
           </View>

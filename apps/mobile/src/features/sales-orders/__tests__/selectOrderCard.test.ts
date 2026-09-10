@@ -79,6 +79,19 @@ describe('selectOrderCard', () => {
     expect(custom.manufacturingKind).toBe('custom');
   });
 
+  it('maps hasReturn onto the admin card', () => {
+    const withReturn = toAdminOrderCard({
+      ...adminOrdersFixture[0]!,
+      hasReturn: true,
+    });
+    const without = toAdminOrderCard({
+      ...adminOrdersFixture[0]!,
+      hasReturn: false,
+    });
+    expect(withReturn.hasReturn).toBe(true);
+    expect(without.hasReturn).toBe(false);
+  });
+
   it('covers stage variety for composition QA', () => {
     const statuses = new Set(adminOrdersFixture.map((o) => o.status));
     expect(statuses.has('IN_PRODUCTION')).toBe(true);

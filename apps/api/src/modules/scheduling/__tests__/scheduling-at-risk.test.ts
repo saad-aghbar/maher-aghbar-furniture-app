@@ -26,7 +26,12 @@ function makeService() {
   const prisma = {
     product: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
-    scheduleAllocation: { findMany: jest.fn().mockResolvedValue([]) },
+    scheduleAllocation: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    wipKit: { findMany: jest.fn().mockResolvedValue([]) },
     factoryCalendar: {
       findFirst: jest.fn().mockResolvedValue(calendarRow()),
       create: jest.fn(),

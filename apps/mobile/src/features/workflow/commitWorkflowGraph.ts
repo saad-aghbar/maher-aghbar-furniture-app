@@ -20,8 +20,9 @@ import {
   type ParallelBandLinkMode,
   type PlacementIntent,
 } from '@maher/workflow-domain';
+import { isReturnWorkflowScope } from '@maher/types';
 import { isOpeningStageCode } from './workflowTerminal';
-import { toDomainGraph } from './toDomainGraph';
+import { chainFlagsForVersion, toDomainGraph } from './toDomainGraph';
 
 async function freshRevision(workflowId: string, versionId: string, fallback: number) {
   try {
@@ -36,10 +37,12 @@ function stageCodeForNode(version: WorkflowVersion, nodeId: string): string {
   return version.nodes.find((n) => n.id === nodeId)?.stageDefinition?.code ?? '';
 }
 
-/** Never rewrite inbound edges on opening or fully-locked finishing stages. */
+/** Never rewrite inbound edges on opening (standard only) or fully-locked finishing stages. */
 export function isLockedRewireTarget(version: WorkflowVersion, nodeId: string): boolean {
   const code = stageCodeForNode(version, nodeId);
-  return isOpeningStageCode(code) || code === 'PACKAGING' || code === 'DELIVERY';
+  if (isReturnWorkflowScope(version.scope)) return false;
+  if (code === 'PACKAGING' || code === 'DELIVERY') return true;
+  return isOpeningStageCode(code);
 }
 
 async function patchRunsAfter(args: {
@@ -67,6 +70,15 @@ async function patchRunsAfter(args: {
     }
   }
   throw lastErr;
+}
+
+function throwWorkflowValidation(
+  issues: Array<{ code: string; message: string }>,
+): never {
+  throw Object.assign(new Error(issues.map((i) => i.message).join('; ') || 'Invalid workflow graph'), {
+    code: 'WORKFLOW_VALIDATION',
+    issues,
+  });
 }
 
 function isStaleError(err: unknown): boolean {
@@ -159,7 +171,11 @@ export async function commitCanonicalizeDraft(args: {
   }));
   const nodeIds = nodes.map((n) => n.id);
   const rawPreds = buildPredMap(nodeIds, rawEdges);
-  const after = canonicalizeWorkflowGraph({ nodes, edges: rawEdges });
+  const after = canonicalizeWorkflowGraph({
+    nodes,
+    edges: rawEdges,
+    ...chainFlagsForVersion(fresh),
+  });
   const before = {
     ...after,
     predecessorsByNode: rawPreds,
@@ -230,10 +246,7 @@ export async function commitAddWorkflowStage(args: {
     explicitStartIds: explicitStarts,
   });
   if (!validation.ok) {
-    const msg = validation.issues.map((i) => i.message).join('; ');
-    throw Object.assign(new Error(msg || 'Invalid workflow graph'), {
-      code: 'WORKFLOW_VALIDATION',
-    });
+    throwWorkflowValidation(validation.issues);
   }
 
   const newPreds = simulated.predecessorsByNode[tempId] ?? [];
@@ -305,10 +318,7 @@ export async function commitEditWorkflowStage(args: {
   );
   const validation = validateCanonicalWorkflowGraph(after, { explicitStartIds: explicitStarts });
   if (!validation.ok) {
-    const msg = validation.issues.map((i) => i.message).join('; ');
-    throw Object.assign(new Error(msg || 'Invalid workflow graph'), {
-      code: 'WORKFLOW_VALIDATION',
-    });
+    throwWorkflowValidation(validation.issues);
   }
 
   let revision = await freshRevision(workflowId, version.id, version.revision);
@@ -393,10 +403,7 @@ export async function commitParallelBandLink(args: {
     ),
   });
   if (!validation.ok) {
-    const msg = validation.issues.map((i) => i.message).join('; ');
-    throw Object.assign(new Error(msg || 'Invalid workflow graph'), {
-      code: 'WORKFLOW_VALIDATION',
-    });
+    throwWorkflowValidation(validation.issues);
   }
   return applyPredecessorDiff({
     workflowId: args.workflowId,

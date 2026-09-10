@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
@@ -97,6 +97,41 @@ export async function listPayments(
 export async function getDealerFinanceSummary(customerId: string) {
   return apiGet<DealerFinanceSummary>(
     `/payments/dealer/${encodeURIComponent(customerId)}/summary`,
+  );
+}
+
+export async function updatePayment(
+  id: string,
+  body: {
+    amount?: number;
+    method?: PaymentMethod;
+    referenceNumber?: string | null;
+    bank?: string | null;
+    notes?: string | null;
+    paymentDate?: string;
+  },
+) {
+  return apiPatch<Payment>(`/payments/${encodeURIComponent(id)}`, body);
+}
+
+export async function deletePayment(id: string) {
+  return apiDelete<{ ok: boolean; id: string }>(`/payments/${encodeURIComponent(id)}`);
+}
+
+export async function updatePaymentAllocation(
+  id: string,
+  body: {
+    amount?: number;
+    method?: PaymentMethod;
+    referenceNumber?: string | null;
+  },
+) {
+  return apiPatch(`/payments/allocations/${encodeURIComponent(id)}`, body);
+}
+
+export async function deletePaymentAllocation(id: string) {
+  return apiDelete<{ ok: boolean; id: string }>(
+    `/payments/allocations/${encodeURIComponent(id)}`,
   );
 }
 

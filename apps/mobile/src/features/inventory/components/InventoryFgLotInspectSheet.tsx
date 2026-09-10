@@ -10,6 +10,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { fgDeliveryStatusLabel } from '../fgFilters';
+import { locationPickerLabel } from '../pickDefaultLocation';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
@@ -29,11 +30,13 @@ function FactRow({
   label,
   value,
   last,
+  valueDir,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   last?: boolean;
+  valueDir?: 'auto' | 'ltr';
 }) {
   const { isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -67,7 +70,7 @@ function FactRow({
         <AppText variant="caption" color="muted">
           {label}
         </AppText>
-        <AppText variant="bodySecondary" weight="medium" numberOfLines={2}>
+        <AppText variant="bodySecondary" weight="medium" numberOfLines={2} dir={valueDir}>
           {value}
         </AppText>
       </View>
@@ -157,6 +160,7 @@ export function InventoryFgLotInspectSheet({
   const salesOrderId = lot.salesOrder?.id ?? null;
   const deliveryId = lot.salesOrder?.deliveries?.[0]?.id ?? null;
   const poNumber = lot.productionOrderNumber ?? lot.productionOrder?.number ?? null;
+  const binLabel = locationPickerLabel(lot.location) || null;
 
   return (
     <BottomSheet
@@ -336,8 +340,17 @@ export function InventoryFgLotInspectSheet({
             icon="business-outline"
             label={t('inventory.warehouse')}
             value={localizedName(locale, lot.warehouse)}
-            last
+            last={!binLabel}
           />
+          {binLabel ? (
+            <FactRow
+              icon="location-outline"
+              label={t('mobile.inventory.binShelf')}
+              value={binLabel}
+              valueDir="ltr"
+              last
+            />
+          ) : null}
         </View>
 
         <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>

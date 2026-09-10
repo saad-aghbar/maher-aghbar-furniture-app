@@ -18,7 +18,7 @@ describe('inventory composition chrome layout', () => {
   });
 
   it('scan sits on the search row as an icon well', () => {
-    const searchBlock = src.slice(src.indexOf('showSearch && setSearchInput'), src.indexOf('createVisible || warehouseVisible'));
+    const searchBlock = src.slice(src.indexOf('showSearch && setSearchInput'), src.indexOf('createVisible || warehouseVisible || receiveVisible'));
     expect(searchBlock).toContain('scanVisible');
     expect(searchBlock).toContain('qr-code-outline');
     expect(searchBlock).toContain('iconOnly');

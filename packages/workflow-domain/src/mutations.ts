@@ -121,12 +121,24 @@ function resolvePlacementPreds(
   return sortedUnique(graph.predecessorsByNode[first] ?? []);
 }
 
+function chainOpts(graph: CanonicalWorkflowGraph) {
+  return {
+    requiresOpeningChain: graph.requiresOpeningChain,
+    requiresTerminalChain: graph.requiresTerminalChain,
+  };
+}
+
 function graphFromPreds(
   nodes: WorkflowDomainNode[],
   predecessorsByNode: Record<string, string[]>,
+  graph?: CanonicalWorkflowGraph,
 ): CanonicalWorkflowGraph {
   const edges = edgesFromPredMap(predecessorsByNode);
-  return canonicalizeWorkflowGraph({ nodes, edges });
+  return canonicalizeWorkflowGraph({
+    nodes,
+    edges,
+    ...(graph ? chainOpts(graph) : {}),
+  });
 }
 
 function hasProductionOut(
@@ -179,7 +191,7 @@ function simulateRemove(graph: CanonicalWorkflowGraph, nodeId: string): Canonica
     cleaned[n.id] = sortedUnique((preds[n.id] ?? []).filter((p) => p !== nodeId));
   }
   reattachAccidentalOrphans(cleaned, nodes, new Set());
-  return graphFromPreds(nodes, cleaned);
+  return graphFromPreds(nodes, cleaned, graph);
 }
 
 function simulateAdd(
@@ -213,7 +225,7 @@ function simulateAdd(
     wireStartIntoAfterPrep(preds, nodes, mutation.nodeId);
   }
   reattachAccidentalOrphans(preds, nodes, new Set([mutation.nodeId]));
-  return graphFromPreds(nodes, preds);
+  return graphFromPreds(nodes, preds, graph);
 }
 
 /**
@@ -251,6 +263,7 @@ function simulateEditPlacement(
     canonicalizeWorkflowGraph({
       nodes: nodesWithout,
       edges: edgesFromPredMap(cleaned),
+      ...chainOpts(graph),
     }),
     placement,
   );
@@ -303,7 +316,7 @@ function simulateEditPlacement(
   }
   reattachAccidentalOrphans(cleaned, nodes, allowedRoots);
 
-  return graphFromPreds(nodes, cleaned);
+  return graphFromPreds(nodes, cleaned, graph);
 }
 
 /**
@@ -329,8 +342,14 @@ function reattachAccidentalOrphans(
 export function fromRawGraph(
   nodes: WorkflowDomainNode[],
   edges: WorkflowDomainEdge[],
+  options?: { requiresOpeningChain?: boolean; requiresTerminalChain?: boolean },
 ): CanonicalWorkflowGraph {
-  return canonicalizeWorkflowGraph({ nodes, edges });
+  return canonicalizeWorkflowGraph({
+    nodes,
+    edges,
+    requiresOpeningChain: options?.requiresOpeningChain,
+    requiresTerminalChain: options?.requiresTerminalChain,
+  });
 }
 
 export function applyPatchesToPredMap(

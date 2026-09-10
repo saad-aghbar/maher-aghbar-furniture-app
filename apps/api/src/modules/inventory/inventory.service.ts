@@ -10,6 +10,19 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
 import {
+  inventoryLotOriginWhere,
+  parseProductionOrigin,
+  RETURN_PIECE_QUARANTINE_PREFIX,
+  RETURN_QUARANTINE_PREFIX,
+  returnIdFromQuarantineSourceKey,
+  returnQuarantineSourceKey,
+} from '../production/production-origin';
+import {
+  indexDeliveryIssueLeftAt,
+  lotOverlapsHistoryWindow,
+  resolveLotLeftAt,
+} from './finished-lot-presence';
+import {
   INVENTORY_CATEGORY_GROUPS,
   categoriesForGroup,
   nextSkuFromExisting,
@@ -40,7 +53,13 @@ import {
   pieceLabelsFromMetadata,
   type PieceLabel,
 } from '../production/piece-labels';
-import type { ListFinishedLotsDto } from './dto/finished-lots.dto';
+import type { ListFinishedLotsDto, ListSemiFinishedDto } from './dto/finished-lots.dto';
+import { resolveInventoryCostLinks } from './inventory-cost-links';
+import {
+  pickBinsForIssue,
+  resolveBinId,
+  warehouseStockFromBalances,
+} from './bin-resolve';
 
 function withItemStockQty<T extends { balances?: Array<{ availableQty?: unknown; reservedQty?: unknown }> }>(
   item: T,
@@ -183,7 +202,7 @@ export class InventoryService {
       this.prisma.inventoryItem.findMany({
         where,
         include: {
-          balances: { include: { warehouse: true } },
+          balances: { include: { warehouse: true, location: true } },
           product: { select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
         },
         orderBy: { sku: 'asc' },
@@ -232,7 +251,7 @@ export class InventoryService {
       where: {
         OR: [{ sku: raw }, { barcode: raw }, { qrCode: raw }],
       },
-      include: { balances: { include: { warehouse: true } } },
+      include: { balances: { include: { warehouse: true, location: true } } },
     });
     if (item) return presentInventoryItem(stripInventoryCostFields(item, permissions));
 
@@ -240,7 +259,7 @@ export class InventoryService {
     const lot = await this.prisma.inventoryLot.findFirst({
       where: { qrCode: raw },
       include: {
-        inventoryItem: { include: { balances: { include: { warehouse: true } } } },
+        inventoryItem: { include: { balances: { include: { warehouse: true, location: true } } } },
       },
     });
     if (lot?.inventoryItem) {
@@ -262,7 +281,7 @@ export class InventoryService {
           include: {
             inventoryLot: {
               include: {
-                inventoryItem: { include: { balances: { include: { warehouse: true } } } },
+                inventoryItem: { include: { balances: { include: { warehouse: true, location: true } } } },
               },
             },
           },
@@ -280,7 +299,7 @@ export class InventoryService {
   async getItem(id: string, permissions?: string[]) {
     const item = await this.prisma.inventoryItem.findFirst({
       where: { id },
-      include: { balances: { include: { warehouse: true } } },
+      include: { balances: { include: { warehouse: true, location: true } } },
     });
     if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
     return presentInventoryItem(stripInventoryCostFields(item, permissions));
@@ -333,6 +352,7 @@ export class InventoryService {
       category?: string;
       minStock?: number;
       maxStock?: number;
+      reorderQty?: number;
       standardCost?: number;
       barcode?: string;
       qrCode?: string;
@@ -380,6 +400,7 @@ export class InventoryService {
       classificationReviewRequired: classified.reviewRequired,
       minStock: roundMoney(dto.minStock ?? 0),
       maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
+      reorderQty: dto.reorderQty != null ? roundMoney(dto.reorderQty) : undefined,
       standardCost: roundMoney(dto.standardCost ?? 0),
       barcode: dto.barcode?.trim() || undefined,
       qrCode,
@@ -434,6 +455,7 @@ export class InventoryService {
       category: string;
       minStock: number;
       maxStock: number;
+      reorderQty: number | null;
       standardCost: number;
       barcode: string;
       isActive: boolean;
@@ -472,6 +494,9 @@ export class InventoryService {
         ...(dto.category !== undefined ? { category: dto.category as never } : {}),
         ...(dto.minStock !== undefined ? { minStock: roundMoney(dto.minStock) } : {}),
         ...(dto.maxStock !== undefined ? { maxStock: roundMoney(dto.maxStock) } : {}),
+        ...(dto.reorderQty !== undefined
+          ? { reorderQty: dto.reorderQty == null ? null : roundMoney(dto.reorderQty) }
+          : {}),
         ...(dto.standardCost !== undefined
           ? { standardCost: roundMoney(dto.standardCost) }
           : {}),
@@ -575,11 +600,16 @@ export class InventoryService {
     outbound?: boolean;
     referenceType?: string;
     referenceId?: string;
+    productionOrderId?: string;
+    productionTaskId?: string;
+    salesOrderId?: string;
     locationId?: string | null;
     reservedDelta?: number;
     db?: Prisma.TransactionClient;
-  }) {
-    if (params.quantity <= 0) {
+  }): Promise<{ id: string }> {
+    const hasReserve =
+      params.reservedDelta != null && Number(params.reservedDelta) !== 0;
+    if (params.quantity < 0 || (params.quantity === 0 && !hasReserve)) {
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Quantity must be positive.' });
     }
 
@@ -617,8 +647,47 @@ export class InventoryService {
       ];
       const isOutbound =
         params.outbound === true || outboundTypes.includes(params.type);
-      const signedQty = isOutbound ? -params.quantity : params.quantity;
-      const locationId = params.locationId ?? null;
+      const signedQty =
+        params.quantity === 0 ? 0 : isOutbound ? -params.quantity : params.quantity;
+
+      if (isOutbound && !params.locationId && params.quantity > 0) {
+        const picks = await pickBinsForIssue(tx, {
+          inventoryItemId: params.inventoryItemId,
+          warehouseId: params.warehouseId,
+          quantity: params.quantity,
+        });
+        if (picks.length > 1) {
+          let last: { id: string } | undefined;
+          let reservedLeft = params.reservedDelta ?? 0;
+          for (let i = 0; i < picks.length; i += 1) {
+            const pick = picks[i]!;
+            let sliceReserved = 0;
+            if (reservedLeft !== 0 && i === picks.length - 1) {
+              sliceReserved = reservedLeft;
+            } else if (reservedLeft < 0) {
+              sliceReserved = Math.max(reservedLeft, -pick.quantity);
+              reservedLeft -= sliceReserved;
+            } else if (reservedLeft > 0) {
+              sliceReserved = Math.min(reservedLeft, pick.quantity);
+              reservedLeft -= sliceReserved;
+            }
+            last = await this.applyMovement({
+              ...params,
+              quantity: pick.quantity,
+              locationId: pick.locationId,
+              reservedDelta: sliceReserved,
+              idempotencyKey: params.idempotencyKey
+                ? `${params.idempotencyKey}:${pick.locationId}`
+                : undefined,
+              db: tx,
+            });
+          }
+          return last!;
+        }
+        params = { ...params, locationId: picks[0]!.locationId };
+      }
+
+      const locationId = await resolveBinId(tx, params.warehouseId, params.locationId);
 
       const balance = await tx.inventoryBalance.findFirst({
         where: {
@@ -645,6 +714,7 @@ export class InventoryService {
         });
       }
 
+      const links = await resolveInventoryCostLinks(tx, params);
       const number = await this.sequences.next('INVTX', 'INV');
       let created;
       try {
@@ -662,6 +732,9 @@ export class InventoryService {
             createdById: params.userId,
             referenceType: params.referenceType,
             referenceId: params.referenceId,
+            productionOrderId: links.productionOrderId,
+            productionTaskId: links.productionTaskId,
+            salesOrderId: links.salesOrderId,
           },
         });
       } catch (err) {
@@ -709,6 +782,7 @@ export class InventoryService {
       unitCost?: number;
       notes?: string;
       idempotencyKey?: string;
+      locationId?: string | null;
     },
     userId: string,
   ) {
@@ -729,6 +803,7 @@ export class InventoryService {
       quantity: number;
       notes?: string;
       idempotencyKey?: string;
+      locationId?: string | null;
     },
     userId: string,
   ) {
@@ -746,15 +821,25 @@ export class InventoryService {
       fromWarehouseId: string;
       toWarehouseId: string;
       notes?: string;
-      lines: { inventoryItemId: string; quantity: number }[];
+      lines: {
+        inventoryItemId: string;
+        quantity: number;
+        fromLocationId?: string | null;
+        toLocationId?: string | null;
+      }[];
     },
     userId: string,
   ) {
     if (dto.fromWarehouseId === dto.toWarehouseId) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Source and destination warehouses must differ.',
-      });
+      const distinctBins = dto.lines.every(
+        (l) => l.fromLocationId && l.toLocationId && l.fromLocationId !== l.toLocationId,
+      );
+      if (!distinctBins) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Same-warehouse transfers must name two different bins.',
+        });
+      }
     }
     const [fromWh, toWh] = await Promise.all([
       this.prisma.warehouse.findUniqueOrThrow({ where: { id: dto.fromWarehouseId } }),
@@ -780,6 +865,8 @@ export class InventoryService {
           create: dto.lines.map((l) => ({
             inventoryItemId: l.inventoryItemId,
             quantity: roundMoney(l.quantity),
+            fromLocationId: l.fromLocationId ?? undefined,
+            toLocationId: l.toLocationId ?? undefined,
           })),
         },
       },
@@ -809,6 +896,16 @@ export class InventoryService {
         });
         const lotTracked =
           item.itemClass === 'FINISHED_GOOD' || item.itemClass === 'SEMI_FINISHED_GOOD';
+        const fromLocationId = await resolveBinId(
+          tx,
+          transfer.fromWarehouseId,
+          line.fromLocationId,
+        );
+        const toLocationId = await resolveBinId(
+          tx,
+          transfer.toWarehouseId,
+          line.toLocationId,
+        );
 
         let reservedToMove = 0;
         if (lotTracked) {
@@ -816,14 +913,15 @@ export class InventoryService {
             inventoryItemId: line.inventoryItemId,
             fromWarehouseId: transfer.fromWarehouseId,
             toWarehouseId: transfer.toWarehouseId,
+            fromLocationId,
+            toLocationId,
             quantity: qty,
           });
           reservedToMove = moved.reservedQty;
-          // Lots are physical truth — top up source balances before ledger out.
           await this.ensureLotBalanceForIssue(tx, {
             inventoryItemId: line.inventoryItemId,
             warehouseId: transfer.fromWarehouseId,
-            locationId: null,
+            locationId: fromLocationId,
             quantity: qty,
             status: 'AVAILABLE',
           });
@@ -832,7 +930,7 @@ export class InventoryService {
               where: {
                 inventoryItemId: line.inventoryItemId,
                 warehouseId: transfer.fromWarehouseId,
-                locationId: null,
+                locationId: fromLocationId,
               },
             });
             if (bal && Number(bal.reservedQty) < reservedToMove) {
@@ -848,6 +946,7 @@ export class InventoryService {
           type: InventoryTxType.WAREHOUSE_TRANSFER,
           inventoryItemId: line.inventoryItemId,
           warehouseId: transfer.fromWarehouseId,
+          locationId: fromLocationId,
           quantity: qty,
           outbound: true,
           userId,
@@ -862,6 +961,7 @@ export class InventoryService {
           type: InventoryTxType.WAREHOUSE_TRANSFER,
           inventoryItemId: line.inventoryItemId,
           warehouseId: transfer.toWarehouseId,
+          locationId: toLocationId,
           quantity: qty,
           userId,
           referenceType: 'WarehouseTransfer',
@@ -883,7 +983,7 @@ export class InventoryService {
 
   /**
    * Move SEMI/FG lots with a warehouse transfer (FIFO whole lots).
-   * Clears location — bin codes are warehouse-scoped.
+   * Lots land in the destination bin rather than being un-binned.
    */
   private async moveLotsForWarehouseTransfer(
     db: Prisma.TransactionClient,
@@ -891,6 +991,8 @@ export class InventoryService {
       inventoryItemId: string;
       fromWarehouseId: string;
       toWarehouseId: string;
+      fromLocationId: string;
+      toLocationId: string;
       quantity: number;
     },
   ): Promise<{ reservedQty: number; movedQty: number }> {
@@ -899,6 +1001,7 @@ export class InventoryService {
         inventoryItemId: params.inventoryItemId,
         warehouseId: params.fromWarehouseId,
         status: { in: ['AVAILABLE', 'RESERVED'] },
+        OR: [{ locationId: params.fromLocationId }, { locationId: null }],
       },
       orderBy: { producedAt: 'asc' },
     });
@@ -913,7 +1016,7 @@ export class InventoryService {
         where: { id: lot.id },
         data: {
           warehouseId: params.toWarehouseId,
-          locationId: null,
+          locationId: params.toLocationId,
         },
       });
       remaining = Number(roundMoney(remaining - lotQty));
@@ -948,7 +1051,7 @@ export class InventoryService {
     dto: {
       warehouseId: string;
       notes?: string;
-      lines: { inventoryItemId: string; countedQty?: number }[];
+      lines: { inventoryItemId: string; countedQty?: number; locationId?: string | null }[];
     },
     userId: string,
   ) {
@@ -956,17 +1059,19 @@ export class InventoryService {
     const number = await this.sequences.next('CNT', 'CNT');
     const lines = await Promise.all(
       dto.lines.map(async (l) => {
+        const locationId = await resolveBinId(this.prisma, dto.warehouseId, l.locationId);
         const balance = await this.prisma.inventoryBalance.findFirst({
           where: {
             inventoryItemId: l.inventoryItemId,
             warehouseId: dto.warehouseId,
-            locationId: null,
+            locationId,
           },
         });
         const systemQty = Number(balance?.availableQty ?? 0);
         const countedQty = l.countedQty != null ? Number(l.countedQty) : undefined;
         return {
           inventoryItemId: l.inventoryItemId,
+          locationId,
           systemQty: roundMoney(systemQty),
           countedQty: countedQty != null ? roundMoney(countedQty) : undefined,
           varianceQty:
@@ -984,7 +1089,7 @@ export class InventoryService {
         createdById: userId,
         lines: { create: lines },
       },
-      include: { lines: { include: { inventoryItem: true } } },
+      include: { lines: { include: { inventoryItem: true, location: true } } },
     });
   }
 
@@ -995,6 +1100,7 @@ export class InventoryService {
       countedQty: number;
       notes?: string;
       postImmediately?: boolean;
+      locationId?: string | null;
     },
     userId: string,
   ) {
@@ -1003,7 +1109,13 @@ export class InventoryService {
       {
         warehouseId: dto.warehouseId,
         notes: dto.notes ?? `Scan ${dto.code.trim()}`,
-        lines: [{ inventoryItemId: item.id, countedQty: Number(dto.countedQty) }],
+        lines: [
+          {
+            inventoryItemId: item.id,
+            countedQty: Number(dto.countedQty),
+            locationId: dto.locationId,
+          },
+        ],
       },
       userId,
     );
@@ -1029,10 +1141,16 @@ export class InventoryService {
       }
       const variance = Number(line.countedQty) - Number(line.systemQty);
       if (variance === 0) continue;
+      const locationId = await resolveBinId(
+        this.prisma,
+        count.warehouseId,
+        line.locationId,
+      );
       await this.applyMovement({
         type: InventoryTxType.INVENTORY_ADJUSTMENT,
         inventoryItemId: line.inventoryItemId,
         warehouseId: count.warehouseId,
+        locationId,
         quantity: Math.abs(variance),
         outbound: variance < 0,
         userId,
@@ -1046,7 +1164,7 @@ export class InventoryService {
     return this.prisma.inventoryCount.update({
       where: { id },
       data: { status: 'POSTED', countedAt: new Date() },
-      include: { lines: { include: { inventoryItem: true } } },
+      include: { lines: { include: { inventoryItem: true, location: true } } },
     });
   }
 
@@ -1300,7 +1418,10 @@ export class InventoryService {
     };
   }
 
-  async listSemiFinished(query: PaginationDto & { q?: string; warehouseId?: string }) {
+  async listSemiFinished(query: ListSemiFinishedDto | (PaginationDto & { q?: string; warehouseId?: string; origin?: 'normal' | 'returned' })) {
+    const originWhere = inventoryLotOriginWhere(
+      parseProductionOrigin((query as { origin?: string }).origin),
+    );
     const where: Prisma.InventoryLotWhereInput = {
       status: { in: ['AVAILABLE', 'RESERVED', 'REQUIRES_REVIEW', 'PARTIALLY_CONSUMED'] },
       inventoryItem: {
@@ -1317,6 +1438,7 @@ export class InventoryService {
           : {}),
       },
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
+      ...(originWhere ?? {}),
     };
     const [totalItems, rows] = await this.prisma.$transaction([
       this.prisma.inventoryLot.count({ where }),
@@ -1336,6 +1458,20 @@ export class InventoryService {
                   number: true,
                   projectName: true,
                   customer: { select: { id: true, nameEn: true, nameAr: true, code: true } },
+                },
+              },
+              returnRequest: {
+                select: {
+                  id: true,
+                  number: true,
+                  salesOrder: {
+                    select: {
+                      id: true,
+                      number: true,
+                      projectName: true,
+                      customer: { select: { id: true, nameEn: true, nameAr: true, code: true } },
+                    },
+                  },
                 },
               },
               workflowSnapshot: {
@@ -1371,10 +1507,22 @@ export class InventoryService {
         return {
           ...lot,
           wipKit: lot.wipPiece?.kit ?? null,
-          salesOrderNumber: lot.productionOrder?.salesOrder?.number ?? null,
-          dealerNameEn: lot.productionOrder?.salesOrder?.customer?.nameEn ?? null,
-          dealerNameAr: lot.productionOrder?.salesOrder?.customer?.nameAr ?? null,
-          projectName: lot.productionOrder?.salesOrder?.projectName ?? null,
+          salesOrderNumber:
+            lot.productionOrder?.salesOrder?.number ??
+            lot.productionOrder?.returnRequest?.salesOrder?.number ??
+            null,
+          dealerNameEn:
+            lot.productionOrder?.salesOrder?.customer?.nameEn ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.nameEn ??
+            null,
+          dealerNameAr:
+            lot.productionOrder?.salesOrder?.customer?.nameAr ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.nameAr ??
+            null,
+          projectName:
+            lot.productionOrder?.salesOrder?.projectName ??
+            lot.productionOrder?.returnRequest?.salesOrder?.projectName ??
+            null,
           nextConsumingStageCode: next?.stageCode ?? null,
           nextConsumingStageNameEn: next?.nameEnSnapshot ?? null,
           nextConsumingStageNameAr: next?.nameArSnapshot ?? null,
@@ -1465,67 +1613,221 @@ export class InventoryService {
         ]
       : [];
 
+    if (q) {
+      textOr.push({
+        productionOrder: {
+          returnRequest: {
+            OR: [
+              { number: { contains: q, mode: 'insensitive' } },
+              { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
+            ],
+          },
+        },
+      });
+      const matchingReturns = await this.prisma.returnRequest.findMany({
+        where: { number: { contains: q, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (matchingReturns.length) {
+        textOr.push({
+          sourceKey: {
+            in: matchingReturns.map((r) => `${RETURN_QUARANTINE_PREFIX}${r.id}`),
+          },
+        });
+      }
+    }
+
+    const originWhere = inventoryLotOriginWhere(query.origin);
+    const historyStatuses: Prisma.InventoryLotWhereInput['status'] =
+      scope === 'history' && query.origin === 'returned'
+        ? { in: ['AVAILABLE', 'RESERVED', 'DELIVERED', 'SCRAPPED', 'DAMAGED', 'QUARANTINED'] }
+        : scope === 'inWarehouse'
+          ? { in: ['AVAILABLE', 'RESERVED'] }
+          : { in: ['AVAILABLE', 'RESERVED', 'DELIVERED'] };
+    const andFilters: Prisma.InventoryLotWhereInput[] = [];
+    if (originWhere) andFilters.push(originWhere);
+    if (textOr.length) andFilters.push({ OR: textOr });
     const where: Prisma.InventoryLotWhereInput = {
       inventoryItem: { itemClass: 'FINISHED_GOOD', archivedAt: null },
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
-      ...(scope === 'inWarehouse'
-        ? { status: { in: ['AVAILABLE', 'RESERVED'] } }
-        : {
-            status: { in: ['AVAILABLE', 'RESERVED', 'DELIVERED'] },
-            ...(toEnd ? { producedAt: { lte: toEnd } } : {}),
-          }),
-      ...(textOr.length ? { OR: textOr } : {}),
+      status: historyStatuses,
+      ...(scope === 'history' && toEnd ? { producedAt: { lte: toEnd } } : {}),
+      ...(andFilters.length ? { AND: andFilters } : {}),
     };
 
-    // Fetch a wider page for history presence + package-label search filtering.
-    const fetchTake = Math.min(500, Math.max(query.pageSize * 5, 100));
-    const rows = await this.prisma.inventoryLot.findMany({
-      where,
-      include: {
-        inventoryItem: { include: { product: true } },
-        warehouse: true,
-        location: { select: { id: true, code: true, name: true } },
-        productionOrder: { select: { id: true, number: true, productDescription: true } },
-        salesOrder: {
-          select: {
-            id: true,
-            number: true,
-            projectName: true,
-            status: true,
-            customer: {
-              select: {
-                id: true,
-                nameEn: true,
-                nameAr: true,
-                nameHe: true,
-                name: true,
-                code: true,
-              },
-            },
-            deliveries: {
-              where: {
-                status: {
-                  in: ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+
+    const lotInclude = {
+      inventoryItem: { include: { product: true } },
+      warehouse: true,
+      location: { select: { id: true, code: true, name: true } },
+      productionOrder: {
+        select: {
+          id: true,
+          number: true,
+          productDescription: true,
+          originType: true,
+          returnRequest: {
+            select: {
+              id: true,
+              number: true,
+              lifecycleState: true,
+              salesOrder: {
+                select: {
+                  id: true,
+                  number: true,
+                  projectName: true,
+                  customer: {
+                    select: {
+                      id: true,
+                      nameEn: true,
+                      nameAr: true,
+                      nameHe: true,
+                      name: true,
+                      code: true,
+                    },
+                  },
                 },
-              },
-              orderBy: { deliveryDate: 'asc' },
-              take: 3,
-              select: {
-                id: true,
-                number: true,
-                status: true,
-                deliveryDate: true,
               },
             },
           },
         },
-        stageInstance: { include: { stageDefinition: true } },
       },
-      orderBy: { producedAt: 'asc' },
-      take: fetchTake,
-    });
+      salesOrder: {
+        select: {
+          id: true,
+          number: true,
+          projectName: true,
+          status: true,
+          customer: {
+            select: {
+              id: true,
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              name: true,
+              code: true,
+            },
+          },
+            deliveries: {
+              where: {
+                status: {
+                  in: ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as Array<
+                    'PLANNED' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED'
+                  >,
+                },
+              },
+              orderBy: { deliveryDate: 'asc' as const },
+              take: 3,
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              deliveryDate: true,
+            },
+          },
+        },
+      },
+      stageInstance: { include: { stageDefinition: true } },
+    };
+
+    const loadFinishedLotPage = (
+      pageWhere: Prisma.InventoryLotWhereInput,
+      skip: number,
+      take: number,
+    ) =>
+      this.prisma.inventoryLot.findMany({
+        where: pageWhere,
+        include: lotInclude as Prisma.InventoryLotInclude,
+        orderBy: { producedAt: 'asc' as const },
+        skip,
+        take,
+      }) as never;
+
+    let totalItems: number;
+    let rows: any[] = [];
+
+    if (scope === 'history' && fromStart && toEnd) {
+      const candidates = await this.prisma.inventoryLot.findMany({
+        where,
+        select: {
+          id: true,
+          status: true,
+          producedAt: true,
+          inventoryItemId: true,
+          productionOrderId: true,
+          salesOrder: {
+            select: {
+              deliveries: {
+                where: { status: { in: ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] } },
+                select: { id: true },
+              },
+            },
+          },
+        },
+        orderBy: { producedAt: 'asc' },
+      });
+      const delivered = candidates.filter((c) => c.status === 'DELIVERED');
+      const candidateDeliveryIds = [
+        ...new Set(delivered.flatMap((c) => (c.salesOrder?.deliveries ?? []).map((d) => d.id))),
+      ];
+      const candidatePoIds = [
+        ...new Set(delivered.map((c) => c.productionOrderId).filter((id): id is string => Boolean(id))),
+      ];
+      const windowTxOr: Prisma.InventoryTransactionWhereInput[] = [
+        ...(candidateDeliveryIds.length ? [{ referenceId: { in: candidateDeliveryIds } }] : []),
+        ...(candidatePoIds.length ? [{ referenceId: { in: candidatePoIds } }] : []),
+      ];
+      const windowTxs =
+        windowTxOr.length > 0
+          ? await this.prisma.inventoryTransaction.findMany({
+              where: {
+                type: 'DELIVERY_ISSUE',
+                OR: windowTxOr,
+              },
+              select: { referenceId: true, inventoryItemId: true, createdAt: true },
+              orderBy: { createdAt: 'desc' },
+            })
+          : [];
+      const { leftAtByDelivery, leftAtByItemPo } = indexDeliveryIssueLeftAt(windowTxs);
+      const keptIds = candidates
+        .filter((c) =>
+          lotOverlapsHistoryWindow(
+            c.producedAt,
+            resolveLotLeftAt(c, leftAtByDelivery, leftAtByItemPo),
+            fromStart,
+            toEnd,
+          ),
+        )
+        .map((c) => c.id);
+      totalItems = keptIds.length;
+      const pageIds = keptIds.slice(skip, skip + pageSize);
+      rows = pageIds.length
+        ? await loadFinishedLotPage({ id: { in: pageIds } }, 0, pageIds.length)
+        : [];
+    } else {
+      totalItems = await this.prisma.inventoryLot.count({ where });
+      rows = await loadFinishedLotPage(where, skip, pageSize);
+    }
 
     const lotIds = rows.map((r) => r.id);
+    const quarantineReturnIds = [
+      ...new Set(
+        rows
+          .map((r) => returnIdFromQuarantineSourceKey(r.sourceKey))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const quarantineReturns =
+      quarantineReturnIds.length > 0
+        ? await this.prisma.returnRequest.findMany({
+            where: { id: { in: quarantineReturnIds } },
+            select: { id: true, number: true, lifecycleState: true },
+          })
+        : [];
+    const quarantineReturnById = new Map(quarantineReturns.map((r) => [r.id, r]));
     const poIds = [
       ...new Set(rows.map((r) => r.productionOrderId).filter((id): id is string => Boolean(id))),
     ];
@@ -1534,7 +1836,7 @@ export class InventoryService {
     ];
     const deliveryIds = [
       ...new Set(
-        rows.flatMap((r) => (r.salesOrder?.deliveries ?? []).map((d) => d.id)),
+        rows.flatMap((r) => (r.salesOrder?.deliveries ?? []).map((d: { id: string }) => d.id)),
       ),
     ];
 
@@ -1655,7 +1957,6 @@ export class InventoryService {
       }
     }
 
-    const qLower = q.toLowerCase();
     const enriched = rows
       .map((lot) => {
         const packMeta =
@@ -1668,24 +1969,14 @@ export class InventoryService {
         const packageCount = qty * packagesPerUnit;
 
         const openDelivery =
-          (lot.salesOrder?.deliveries ?? []).find((d) =>
+          (lot.salesOrder?.deliveries ?? []).find((d: { status: string }) =>
             ['PLANNED', 'READY'].includes(d.status),
           ) ??
           (lot.salesOrder?.deliveries ?? [])[0] ??
           null;
         const load = openDelivery ? loadByDelivery.get(openDelivery.id) : undefined;
 
-        let leftAt: Date | null = null;
-        if (lot.status === 'DELIVERED') {
-          for (const d of lot.salesOrder?.deliveries ?? []) {
-            const t = leftAtByDelivery.get(d.id);
-            if (t && (!leftAt || t > leftAt)) leftAt = t;
-          }
-          if (!leftAt && lot.productionOrderId) {
-            leftAt =
-              leftAtByItemPo.get(`${lot.inventoryItemId}:${lot.productionOrderId}`) ?? null;
-          }
-        }
+        const leftAt = resolveLotLeftAt(lot, leftAtByDelivery, leftAtByItemPo);
 
         const enteredAt = lot.producedAt;
         const daysWaiting = Math.max(
@@ -1706,60 +1997,13 @@ export class InventoryService {
           enteredAt,
           daysWaiting,
         };
-      })
-      .filter((row) => {
-        if (scope === 'history' && fromStart && toEnd) {
-          if (row.enteredAt > toEnd) return false;
-          if (row.leftAt && row.leftAt < fromStart) return false;
-          // Still in warehouse or left during/after from — presence overlaps
-        }
-        if (qLower && row.pieceLabels.length) {
-          const labelHit = row.pieceLabels.some(
-            (p) =>
-              p.nameEn.toLowerCase().includes(qLower) ||
-              p.nameAr.toLowerCase().includes(qLower) ||
-              (p.nameHe ?? '').toLowerCase().includes(qLower),
-          );
-          // If q already matched via Prisma OR, keep; if only label could match, require labelHit
-          // When Prisma matched other fields, row is already included. For label-only search,
-          // Prisma may have returned empty OR too many — keep rows that match labels when q set.
-          // Simpler: if any label matches, keep; if no labels, keep (matched by Prisma).
-          if (!labelHit) {
-            // Keep if Prisma text match already applied (we can't know). Prefer keep all Prisma hits.
-            // Extra: drop only when q looks like it ONLY could be a package label AND no other field
-            // matched — too hard. Keep all Prisma results; additionally include label matches via
-            // second pass below.
-          }
-        }
-        return true;
       });
 
-    // Package-label-only hits: if q set and we want label search, also allow rows whose labels match
-    // (already in enriched from Prisma). Filter to label match OR non-label prisma fields always kept.
-    const filtered =
-      qLower.length === 0
-        ? enriched
-        : enriched.filter((row) => {
-            const labelHit = row.pieceLabels.some(
-              (p) =>
-                p.nameEn.toLowerCase().includes(qLower) ||
-                p.nameAr.toLowerCase().includes(qLower) ||
-                (p.nameHe ?? '').toLowerCase().includes(qLower),
-            );
-            if (labelHit) return true;
-            // Prisma already filtered by text OR — keep
-            return true;
-          });
-
-    const totalItems = filtered.length;
-    const page = Math.max(1, Number(query.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
-    const slice = filtered.slice((page - 1) * pageSize, page * pageSize);
-    const traced = await this.withLotTraceability(slice.map((s) => s.lot));
+    const traced = await this.withLotTraceability(enriched.map((s) => s.lot));
     const byId = new Map(traced.map((t) => [t.id, t]));
 
     return {
-      data: slice.map((row) => {
+      data: enriched.map((row) => {
         const tracedLot = byId.get(row.lot.id);
         const lot = row.lot;
         const delivery = row.openDelivery;
@@ -1784,12 +2028,28 @@ export class InventoryService {
           ...(tracedLot ? { laterMovements: (tracedLot as { laterMovements?: unknown }).laterMovements } : {}),
           daysWaiting: row.daysWaiting,
           agingBucket,
-          salesOrderNumber: lot.salesOrder?.number ?? null,
-          projectName: lot.salesOrder?.projectName ?? null,
+          salesOrderNumber:
+            lot.salesOrder?.number ??
+            lot.productionOrder?.returnRequest?.salesOrder?.number ??
+            null,
+          projectName:
+            lot.salesOrder?.projectName ??
+            lot.productionOrder?.returnRequest?.salesOrder?.projectName ??
+            null,
           dealerNameEn:
-            lot.salesOrder?.customer?.nameEn ?? lot.salesOrder?.customer?.name ?? null,
-          dealerNameAr: lot.salesOrder?.customer?.nameAr ?? null,
-          dealerNameHe: lot.salesOrder?.customer?.nameHe ?? null,
+            lot.salesOrder?.customer?.nameEn ??
+            lot.salesOrder?.customer?.name ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.nameEn ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.name ??
+            null,
+          dealerNameAr:
+            lot.salesOrder?.customer?.nameAr ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.nameAr ??
+            null,
+          dealerNameHe:
+            lot.salesOrder?.customer?.nameHe ??
+            lot.productionOrder?.returnRequest?.salesOrder?.customer?.nameHe ??
+            null,
           deliveryId: delivery?.id ?? null,
           deliveryStatus: delivery?.status ?? null,
           deliveryNumber: delivery?.number ?? null,
@@ -1807,6 +2067,25 @@ export class InventoryService {
           enteredAt: row.enteredAt.toISOString(),
           leftAt: row.leftAt?.toISOString() ?? null,
           location: lot.location ?? null,
+          returnRequest: (() => {
+            const fromPo = lot.productionOrder?.returnRequest;
+            if (fromPo) {
+              return {
+                id: fromPo.id,
+                number: fromPo.number,
+                lifecycleState: fromPo.lifecycleState ?? null,
+              };
+            }
+            const qid = returnIdFromQuarantineSourceKey(lot.sourceKey);
+            const fromQ = qid ? quarantineReturnById.get(qid) : null;
+            return fromQ
+              ? {
+                  id: fromQ.id,
+                  number: fromQ.number,
+                  lifecycleState: fromQ.lifecycleState,
+                }
+              : null;
+          })(),
         };
       }),
       meta: paginatedMeta(page, pageSize, totalItems),
@@ -1838,7 +2117,14 @@ export class InventoryService {
     const needle = q?.trim();
     const lots = await this.prisma.inventoryLot.findMany({
       where: {
-        fabricProcurementId: { not: null },
+        OR: [
+          { fabricProcurementId: { not: null } },
+          {
+            fabricProcurementId: null,
+            allocationMode: 'GENERAL_STOCK',
+            inventoryItem: { category: 'FABRIC' },
+          },
+        ],
         ...(needle
           ? {
               OR: [
@@ -2182,6 +2468,31 @@ export class InventoryService {
     return this.prisma.warehouse.findFirst({ where: { type, isActive: true }, orderBy: { createdAt: 'asc' } });
   }
 
+  private async pickRawWarehouseStock(
+    tx: Prisma.TransactionClient,
+    inventoryItemId: string,
+  ): Promise<{ warehouseId: string; available: number; reserved: number; free: number } | null> {
+    const rows = await tx.inventoryBalance.findMany({
+      where: {
+        inventoryItemId,
+        warehouse: { type: 'RAW_MATERIALS', isActive: true },
+      },
+    });
+    const byWh = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const list = byWh.get(row.warehouseId) ?? [];
+      list.push(row);
+      byWh.set(row.warehouseId, list);
+    }
+    let best: { warehouseId: string; available: number; reserved: number; free: number } | null =
+      null;
+    for (const [warehouseId, list] of byWh) {
+      const stock = warehouseStockFromBalances(list);
+      if (!best || stock.free > best.free) best = { warehouseId, ...stock };
+    }
+    return best;
+  }
+
   async reserveQty(
     inventoryItemId: string,
     warehouseId: string,
@@ -2189,22 +2500,39 @@ export class InventoryService {
     userId: string,
     db?: Prisma.TransactionClient,
   ) {
+    void userId;
     const client = db ?? this.prisma;
-    const balance = await client.inventoryBalance.findFirst({
-      where: { inventoryItemId, warehouseId, locationId: null },
+    const rows = await client.inventoryBalance.findMany({
+      where: { inventoryItemId, warehouseId },
+      orderBy: { availableQty: 'desc' },
     });
-    const available = Number(balance?.availableQty ?? 0);
-    const reserved = Number(balance?.reservedQty ?? 0);
-    if (available - reserved < quantity) {
+    const free = rows.reduce(
+      (s, r) => s + Number(r.availableQty) - Number(r.reservedQty),
+      0,
+    );
+    if (free + 1e-9 < quantity) {
       throw new BadRequestException({
         code: 'INSUFFICIENT_STOCK',
         message: 'Not enough free stock to reserve.',
       });
     }
-    if (balance) {
+    let remaining = quantity;
+    for (const row of rows) {
+      if (remaining <= 1e-9) break;
+      if (!row.locationId) continue;
+      const rowFree = Number(row.availableQty) - Number(row.reservedQty);
+      if (rowFree <= 0) continue;
+      const take = Math.min(rowFree, remaining);
       await client.inventoryBalance.update({
-        where: { id: balance.id },
-        data: { reservedQty: roundMoney(reserved + quantity) },
+        where: { id: row.id },
+        data: { reservedQty: roundMoney(Number(row.reservedQty) + take) },
+      });
+      remaining -= take;
+    }
+    if (remaining > 1e-9) {
+      throw new BadRequestException({
+        code: 'INSUFFICIENT_STOCK',
+        message: 'Not enough free stock to reserve.',
       });
     }
   }
@@ -2216,15 +2544,22 @@ export class InventoryService {
     db?: Prisma.TransactionClient,
   ) {
     const client = db ?? this.prisma;
-    const balance = await client.inventoryBalance.findFirst({
-      where: { inventoryItemId, warehouseId, locationId: null },
+    const rows = await client.inventoryBalance.findMany({
+      where: { inventoryItemId, warehouseId },
+      orderBy: { reservedQty: 'desc' },
     });
-    if (!balance) return;
-    const next = Math.max(0, Number(balance.reservedQty) - quantity);
-    await client.inventoryBalance.update({
-      where: { id: balance.id },
-      data: { reservedQty: roundMoney(next) },
-    });
+    let remaining = quantity;
+    for (const row of rows) {
+      if (remaining <= 1e-9) break;
+      const reserved = Number(row.reservedQty);
+      if (reserved <= 0) continue;
+      const take = Math.min(reserved, remaining);
+      await client.inventoryBalance.update({
+        where: { id: row.id },
+        data: { reservedQty: roundMoney(reserved - take) },
+      });
+      remaining -= take;
+    }
   }
 
   /**
@@ -2278,14 +2613,23 @@ export class InventoryService {
     });
   }
 
-  async issueForDelivery(deliveryId: string, salesOrderId: string | null, userId: string, db: Prisma.TransactionClient) {
-    if (!salesOrderId) return;
+  async issueForDelivery(
+    deliveryId: string,
+    salesOrderId: string | null,
+    userId: string,
+    db: Prisma.TransactionClient,
+    lotIds?: string[],
+  ) {
     const lots = await db.inventoryLot.findMany({
-      where: {
-        salesOrderId,
-        status: { in: ['AVAILABLE', 'RESERVED'] },
-        inventoryItem: { itemClass: 'FINISHED_GOOD' },
-      },
+      where: lotIds?.length
+        ? { id: { in: lotIds }, status: { in: ['AVAILABLE', 'RESERVED'] } }
+        : salesOrderId
+          ? {
+              salesOrderId,
+              status: { in: ['AVAILABLE', 'RESERVED'] },
+              inventoryItem: { itemClass: 'FINISHED_GOOD' },
+            }
+          : { id: { in: [] } },
     });
     for (const lot of lots) {
       await this.ensureLotBalanceForIssue(db, lot);
@@ -2403,26 +2747,52 @@ export class InventoryService {
     }
   }
 
-  async quarantineReturn(returnId: string, salesOrderId: string | null, quantity: number, userId: string) {
-    const sourceKey = `return-quarantine:${returnId}`;
+  async quarantineReturn(
+    returnId: string,
+    salesOrderId: string | null,
+    quantity: number,
+    userId: string,
+    identity?: {
+      salesOrderLineId?: string | null;
+      productId?: string | null;
+      sourceKey?: string;
+      warehouseId?: string;
+      locationId?: string | null;
+      pieceId?: string;
+    },
+  ) {
+    const sourceKey =
+      identity?.sourceKey ||
+      returnQuarantineSourceKey({ returnId, pieceId: identity?.pieceId }) ||
+      `${RETURN_QUARANTINE_PREFIX}${returnId}`;
     const existingLot = await this.prisma.inventoryLot.findUnique({ where: { sourceKey } });
     if (existingLot) return existingLot;
 
-    const fg = await this.resolveDefaultWarehouse('FINISHED_GOODS');
+    const fg = identity?.warehouseId
+      ? await this.prisma.warehouse.findUnique({ where: { id: identity.warehouseId } })
+      : await this.resolveDefaultWarehouse('FINISHED_GOODS');
     if (!fg) {
       throw new BadRequestException({
         code: 'RETURN_NO_STOCK_BASIS',
         message: 'No finished-goods warehouse configured for return quarantine.',
       });
     }
-    const quarantine = await this.prisma.warehouseLocation.findFirst({
-      where: { warehouseId: fg.id, code: 'QUARANTINE' },
-    });
-    const lot = salesOrderId
+    const quarantine = identity?.locationId
+      ? await this.prisma.warehouseLocation.findFirst({
+          where: { id: identity.locationId, warehouseId: fg.id },
+        })
+      : await this.prisma.warehouseLocation.findFirst({
+          where: { warehouseId: fg.id, code: 'QUARANTINE' },
+        });
+    const basisOr: Prisma.InventoryLotWhereInput[] = [
+      ...(identity?.salesOrderLineId ? [{ salesOrderLineId: identity.salesOrderLineId }] : []),
+      ...(salesOrderId ? [{ salesOrderId }, { productionOrder: { salesOrderId } }] : []),
+    ];
+    const lot = basisOr.length
       ? await this.prisma.inventoryLot.findFirst({
           where: {
             inventoryItem: { itemClass: 'FINISHED_GOOD' },
-            OR: [{ salesOrderId }, { productionOrder: { salesOrderId } }],
+            OR: basisOr,
           },
           orderBy: { producedAt: 'desc' },
         })
@@ -2439,9 +2809,9 @@ export class InventoryService {
       warehouseId: fg.id,
       quantity,
       userId,
-      idempotencyKey: `return-quarantine:${returnId}`,
-      referenceType: 'ReturnRequest',
-      referenceId: returnId,
+      idempotencyKey: sourceKey,
+      referenceType: identity?.pieceId ? 'ReturnPiece' : 'ReturnRequest',
+      referenceId: identity?.pieceId ?? returnId,
       locationId: quarantine?.id ?? null,
       // Physical stock is back, but quarantined units are not sellable until fate is set.
       reservedDelta: quantity,
@@ -2452,6 +2822,7 @@ export class InventoryService {
         warehouseId: fg.id,
         locationId: quarantine?.id ?? null,
         salesOrderId,
+        salesOrderLineId: identity?.salesOrderLineId ?? undefined,
         quantity,
         status: 'QUARANTINED',
         allocationMode: 'ORDER_ALLOCATED',
@@ -2460,15 +2831,83 @@ export class InventoryService {
     });
   }
 
+  async findReturnQuarantineLot(returnId: string, pieceId?: string) {
+    const include = { inventoryItem: { select: { standardCost: true } } } as const;
+    if (pieceId) {
+      return this.prisma.inventoryLot.findUnique({
+        where: { sourceKey: `${RETURN_PIECE_QUARANTINE_PREFIX}${pieceId}` },
+        include,
+      });
+    }
+    const legacy = await this.prisma.inventoryLot.findUnique({
+      where: { sourceKey: `${RETURN_QUARANTINE_PREFIX}${returnId}` },
+      include,
+    });
+    if (legacy) return legacy;
+    const pieces = await this.prisma.returnPiece.findMany({
+      where: { returnRequestId: returnId },
+      select: { id: true },
+    });
+    if (!pieces.length) return null;
+    return this.prisma.inventoryLot.findFirst({
+      where: {
+        sourceKey: { in: pieces.map((piece) => `${RETURN_PIECE_QUARANTINE_PREFIX}${piece.id}`) },
+        status: 'QUARANTINED',
+      },
+      include,
+    });
+  }
+
+  async writeOffReturnPieceQuarantine(args: {
+    pieceId: string;
+    userId: string;
+    reason: string;
+    db?: Prisma.TransactionClient;
+  }) {
+    const db = args.db ?? this.prisma;
+    const lot = await db.inventoryLot.findUnique({
+      where: { sourceKey: `${RETURN_PIECE_QUARANTINE_PREFIX}${args.pieceId}` },
+      include: { inventoryItem: { select: { standardCost: true } } },
+    });
+    if (!lot) return null;
+    if (lot.status === 'SCRAPPED' || lot.status === 'CONSUMED') return lot;
+    const qty = Number(lot.quantity);
+    if (qty > 0) {
+      await this.applyMovement({
+        type: InventoryTxType.SCRAP,
+        inventoryItemId: lot.inventoryItemId,
+        warehouseId: lot.warehouseId,
+        quantity: qty,
+        unitCost: Number(lot.unitCost ?? lot.inventoryItem.standardCost ?? 0) || undefined,
+        userId: args.userId,
+        locationId: lot.locationId,
+        idempotencyKey: `return-piece-writeoff:${args.pieceId}`,
+        referenceType: 'ReturnPiece',
+        referenceId: args.pieceId,
+        reservedDelta: lot.status === 'QUARANTINED' ? -qty : 0,
+        notes: args.reason,
+        db,
+      });
+    }
+    return db.inventoryLot.update({
+      where: { id: lot.id },
+      data: { status: 'SCRAPPED', quantity: 0 },
+    });
+  }
+
   async resolveReturnFate(
     returnId: string,
     fate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP',
     userId: string,
+    opts?: {
+      warehouseId?: string;
+      locationId?: string | null;
+      quantity?: number;
+      unitCost?: number;
+      pieceId?: string;
+    },
   ) {
-    const sourceKey = `return-quarantine:${returnId}`;
-    const lot = await this.prisma.inventoryLot.findUnique({
-      where: { sourceKey },
-    });
+    const lot = await this.findReturnQuarantineLot(returnId, opts?.pieceId);
     if (!lot || lot.status !== 'QUARANTINED') {
       throw new BadRequestException({
         code: 'RETURN_NOT_SELLABLE',
@@ -2476,19 +2915,44 @@ export class InventoryService {
       });
     }
 
-    const qty = Number(lot.quantity);
+    const requested = Number(opts?.quantity ?? lot.quantity);
+    const qty = Math.min(requested, Number(lot.quantity));
+    if (!(qty > 0)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Fate quantity must be greater than zero.',
+      });
+    }
+    const remaining = Number(lot.quantity) - qty;
     if (fate === 'REWORK') {
-      await this.prisma.returnRequest.update({
-        where: { id: returnId },
-        data: { inventoryFate: 'REWORK' },
+      const work = await this.prisma.productionOrder.findFirst({
+        where: { returnRequestId: returnId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.returnRequest.update({
+          where: { id: returnId },
+          data: { inventoryFate: 'REWORK' },
+        });
+        if (work) {
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: { productionOrderId: work.id },
+          });
+        }
       });
       return lot;
     }
 
     if (fate === 'RETURN_TO_STOCK') {
+      const targetWarehouseId = opts?.warehouseId ?? lot.warehouseId;
+      const targetLocationId =
+        opts?.locationId !== undefined ? opts.locationId : lot.locationId;
+      const stockKey = `return-fate-stock:${returnId}`;
       await this.prisma.$transaction(async (tx) => {
         const existing = await tx.inventoryTransaction.findUnique({
-          where: { idempotencyKey: `return-fate-stock:${returnId}` },
+          where: { idempotencyKey: stockKey },
         });
         if (!existing) {
           const number = await this.sequences.next('INVTX', 'INV');
@@ -2497,11 +2961,11 @@ export class InventoryService {
               number,
               type: InventoryTxType.INVENTORY_ADJUSTMENT,
               inventoryItemId: lot.inventoryItemId,
-              warehouseId: lot.warehouseId,
-              locationId: null,
+              warehouseId: targetWarehouseId,
+              locationId: targetLocationId,
               quantity: roundMoney(qty),
               notes: 'Released from quarantine to finished goods',
-              idempotencyKey: `return-fate-stock:${returnId}`,
+              idempotencyKey: stockKey,
               createdById: userId,
               referenceType: 'ReturnRequest',
               referenceId: returnId,
@@ -2522,36 +2986,77 @@ export class InventoryService {
             data: { reservedQty: roundMoney(nextReserved) },
           });
         }
-        await tx.inventoryLot.update({
-          where: { id: lot.id },
-          data: { status: 'AVAILABLE', locationId: null, allocationMode: 'GENERAL_STOCK' },
-        });
+        if (remaining <= 0) {
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: {
+              status: 'AVAILABLE',
+              warehouseId: targetWarehouseId,
+              locationId: targetLocationId,
+              allocationMode: 'GENERAL_STOCK',
+            },
+          });
+        } else {
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: { quantity: roundMoney(remaining) },
+          });
+          await tx.inventoryLot.create({
+            data: {
+              inventoryItemId: lot.inventoryItemId,
+              warehouseId: targetWarehouseId,
+              locationId: targetLocationId,
+              quantity: roundMoney(qty),
+              unitCost: lot.unitCost,
+              status: 'AVAILABLE',
+              allocationMode: 'GENERAL_STOCK',
+              sourceKey: `return-restock:${returnId}`,
+            },
+          });
+        }
         await tx.returnRequest.update({
           where: { id: returnId },
           data: { inventoryFate: 'RETURN_TO_STOCK' },
         });
       });
+      if (remaining > 0) {
+        const restocked = await this.prisma.inventoryLot.findUnique({
+          where: {
+            sourceKey: `return-restock:${returnId}`,
+          },
+        });
+        return restocked ?? lot;
+      }
       return lot;
     }
 
     const txType = fate === 'DAMAGED' ? InventoryTxType.DAMAGE : InventoryTxType.SCRAP;
+    const unitCost = Number(
+      opts?.unitCost ?? lot.unitCost ?? lot.inventoryItem.standardCost ?? 0,
+    );
+    const scrapKey = `return-fate:${returnId}`;
     await this.prisma.$transaction(async (tx) => {
       await this.applyMovement({
         type: txType,
         inventoryItemId: lot.inventoryItemId,
         warehouseId: lot.warehouseId,
         quantity: qty,
+        unitCost: unitCost > 0 ? unitCost : undefined,
         userId,
         locationId: lot.locationId,
-        idempotencyKey: `return-fate:${returnId}`,
+        idempotencyKey: scrapKey,
         referenceType: 'ReturnRequest',
         referenceId: returnId,
         reservedDelta: -qty,
+        notes: fate === 'SCRAP' ? 'Return scrap write-off' : 'Return damaged write-off',
         db: tx,
       });
       await tx.inventoryLot.update({
         where: { id: lot.id },
-        data: { status: fate === 'DAMAGED' ? 'DAMAGED' : 'SCRAPPED' },
+        data:
+          remaining <= 0
+            ? { status: fate === 'DAMAGED' ? 'DAMAGED' : 'SCRAPPED' }
+            : { quantity: roundMoney(remaining) },
       });
       await tx.returnRequest.update({
         where: { id: returnId },
@@ -2603,22 +3108,16 @@ export class InventoryService {
             if (neededQty == null) {
               continue;
             }
-            const balance = await tx.inventoryBalance.findFirst({
-              where: {
-                inventoryItemId: req.inventoryItemId,
-                warehouse: { type: 'RAW_MATERIALS', isActive: true },
-              },
-              orderBy: { availableQty: 'desc' },
-            });
+            const stock = await this.pickRawWarehouseStock(tx, req.inventoryItemId);
             const needed = neededQty * lineQty;
-            const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
-            if (!balance || free < needed) {
+            const free = stock?.free ?? 0;
+            if (!stock || free < needed) {
               ready = false;
               continue;
             }
             needs.push({
               inventoryItemId: req.inventoryItemId,
-              warehouseId: balance.warehouseId,
+              warehouseId: stock.warehouseId,
               quantity: needed,
             });
           }
@@ -2648,21 +3147,15 @@ export class InventoryService {
               ready = false;
               continue;
             }
-            const balance = await tx.inventoryBalance.findFirst({
-              where: {
-                inventoryItemId: item.id,
-                warehouse: { type: 'RAW_MATERIALS', isActive: true },
-              },
-              orderBy: { availableQty: 'desc' },
-            });
-            const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
-            if (!balance || free < need.qty) {
+            const stock = await this.pickRawWarehouseStock(tx, item.id);
+            const free = stock?.free ?? 0;
+            if (!stock || free < need.qty) {
               ready = false;
               continue;
             }
             needs.push({
               inventoryItemId: item.id,
-              warehouseId: balance.warehouseId,
+              warehouseId: stock.warehouseId,
               quantity: need.qty,
             });
           }
@@ -2703,15 +3196,9 @@ export class InventoryService {
                 })
               : null;
           if (!item) continue;
-          const balance = await tx.inventoryBalance.findFirst({
-            where: {
-              inventoryItemId: item.id,
-              warehouse: { type: 'RAW_MATERIALS' },
-            },
-            orderBy: { reservedQty: 'desc' },
-          });
-          if (!balance) continue;
-          await this.releaseReservation(item.id, balance.warehouseId, need.qty, tx);
+          const stock = await this.pickRawWarehouseStock(tx, item.id);
+          if (!stock) continue;
+          await this.releaseReservation(item.id, stock.warehouseId, need.qty, tx);
         }
       }
     };

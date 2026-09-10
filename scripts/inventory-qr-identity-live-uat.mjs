@@ -120,8 +120,21 @@ async function cleanupThrowaways() {
     await prisma.goodsReceiptLine.deleteMany({ where: { inventoryItemId: { in: ids } } });
     await prisma.inventoryTransaction.deleteMany({ where: { inventoryItemId: { in: ids } } });
     await prisma.inventoryBalance.deleteMany({ where: { inventoryItemId: { in: ids } } });
+    const lots = await prisma.inventoryLot.findMany({
+      where: { inventoryItemId: { in: ids } },
+      select: { id: true },
+    });
+    const lotIds = lots.map((row) => row.id);
+    if (lotIds.length) {
+      await prisma.deliveryLoadPiece.deleteMany({ where: { inventoryLotId: { in: lotIds } } });
+    }
+    await prisma.inventoryLot.deleteMany({ where: { inventoryItemId: { in: ids } } });
   }
   if (poIds.length) {
+    await prisma.supplierPayment.deleteMany({
+      where: { supplierInvoice: { purchaseOrderId: { in: poIds } } },
+    });
+    await prisma.supplierInvoice.deleteMany({ where: { purchaseOrderId: { in: poIds } } });
     await prisma.goodsReceipt.deleteMany({ where: { purchaseOrderId: { in: poIds } } });
     await prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: { in: poIds } } });
     await prisma.purchaseOrder.deleteMany({ where: { id: { in: poIds } } });
@@ -131,6 +144,15 @@ async function cleanupThrowaways() {
   if (ids.length) {
     await prisma.inventoryItem.deleteMany({ where: { id: { in: ids } } });
   }
+  await prisma.inventoryBalance.deleteMany({
+    where: { warehouse: { code: { startsWith: WH_CODE } } },
+  });
+  await prisma.inventoryTransaction.deleteMany({
+    where: { warehouse: { code: { startsWith: WH_CODE } } },
+  });
+  await prisma.warehouseLocation.deleteMany({
+    where: { warehouse: { code: { startsWith: WH_CODE } } },
+  });
   await prisma.warehouse.deleteMany({ where: { code: { startsWith: WH_CODE } } });
 }
 
@@ -271,7 +293,7 @@ async function main() {
     const whPo = await request('GET', `/api/v1/purchase-orders/${fabricPoId}`, {
       cookie: warehouse.cookie,
     });
-    ok('warehouse PO detail 403 (no purchase-order.read)', whPo.status === 403, String(whPo.status));
+    ok('warehouse PO detail 200 (purchase-order.read for receive)', whPo.status === 200, String(whPo.status));
   }
   mark('permissions', steps.filter((s) => ['warehouse by-code 200', 'dealer by-code 403', 'dealer open-receipts 403'].includes(s.name) && !s.ok).length ? 'FAIL' : 'PASS');
 

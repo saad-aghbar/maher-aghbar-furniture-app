@@ -22,4 +22,21 @@ export class ListFinishedLotsDto extends PaginationDto {
   @IsOptional()
   @IsString()
   warehouseId?: string;
+
+  @ApiPropertyOptional({ enum: ['normal', 'returned'] })
+  @IsOptional()
+  @IsIn(['normal', 'returned'])
+  origin?: 'normal' | 'returned';
+}
+
+export class ListSemiFinishedDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
+
+  @ApiPropertyOptional({ enum: ['normal', 'returned'] })
+  @IsOptional()
+  @IsIn(['normal', 'returned'])
+  origin?: 'normal' | 'returned';
 }

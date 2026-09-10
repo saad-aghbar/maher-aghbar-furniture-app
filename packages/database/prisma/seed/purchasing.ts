@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { VAT, daysAgo, money, monthsAgo } from './util';
 import type { InvItemRef } from './inventory';
+import { defaultBinIdForWarehouse } from './warehouse-bins';
 
 export async function seedPurchasing(
   prisma: PrismaClient,
@@ -156,6 +157,7 @@ export async function seedPurchasing(
         type: InventoryTxType.PURCHASE_RECEIPT,
         inventoryItemId: wood.id,
         warehouseId: opts.rawWhId,
+        locationId: await defaultBinIdForWarehouse(prisma, opts.rawWhId),
         quantity: money(80),
         unitCost: money(11.5),
         referenceType: 'PurchaseOrder',

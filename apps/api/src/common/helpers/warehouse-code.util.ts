@@ -21,3 +21,9 @@ export function nextWarehouseCode(base: string, existing: string[]): string {
   }
   return `${root}-${Date.now().toString(36).toUpperCase()}`;
 }
+
+/** Auto bin code: slug of the name, HOLD when non-latin or empty, then HOLD-2, … */
+export function nextLocationCode(name: string, existing: string[]): string {
+  const slug = slugFromWarehouseName(name);
+  return nextWarehouseCode(slug === 'WH' ? 'HOLD' : slug, existing);
+}

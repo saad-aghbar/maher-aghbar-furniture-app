@@ -17,6 +17,20 @@ config.resolver.nodeModulesPaths = [
 ];
 
 config.resolver.disableHierarchicalLookup = false;
+config.resolver.unstable_enableSymlinks = true;
+
+/** pnpm does not hoist these to the workspace root; pin them so Metro always finds them. */
+function pkgDir(name) {
+  return path.dirname(
+    require.resolve(`${name}/package.json`, { paths: [projectRoot] }),
+  );
+}
+
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules ?? {}),
+  'expo-audio': pkgDir('expo-audio'),
+  'expo-speech': pkgDir('expo-speech'),
+};
 
 // Release builds must not ship /dev galleries (or the fixture modules they pull in).
 // The __DEV__ redirect in app/dev/_layout.tsx is a second guard for accidental navigation.

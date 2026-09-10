@@ -24,6 +24,15 @@ describe('validateOpeningChain', () => {
     expect(issues.some((i) => i.code === 'OPENING_CHAIN_NOT_ROOT')).toBe(true);
   });
 
+  it('skips checks when enforce is false', () => {
+    const issues = validateOpeningChain(
+      [{ id: '1', nodeKey: 'carp', stageCode: 'CARPENTRY', isRequired: true }],
+      [],
+      { enforce: false },
+    );
+    expect(issues).toEqual([]);
+  });
+
   it('accepts root MATERIAL_PREP', () => {
     const issues = validateOpeningChain(
       [

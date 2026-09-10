@@ -7,7 +7,9 @@ import {
   AssignTaskDto,
   CompleteTaskDto,
   ListTasksDto,
+  ResolveBlockerDto,
   TaskBlockDto,
+  TaskCarryOverDto,
   TaskProgressDto,
   UpdateTaskNotesDto,
 } from './dto/task.dto';
@@ -31,12 +33,31 @@ export class TasksController {
   }
 
   @RequirePermissions('production-task.read')
+  @Get('my-orders')
+  listMyOrders(
+    @CurrentUser() user: AuthUser,
+    @Query('segment') segment?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.tasks.listMyOrders(user.id, segment, q);
+  }
+
+  @RequirePermissions('production-task.read')
+  @Get('my-orders/:productionOrderId/workflow')
+  getMyOrderWorkflow(
+    @Param('productionOrderId') productionOrderId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.getMyOrderWorkflow(productionOrderId, user.id);
+  }
+
+  @RequirePermissions('production-task.read')
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.tasks.getById(id, user.id, user.permissions);
   }
 
-  @RequirePermissions('production-order.assign')
+  @RequireAnyPermissions('production-order.assign', 'schedule.manage')
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignTaskDto, @CurrentUser() user: AuthUser) {
     return this.tasks.assign(id, dto, user.permissions, user.id);
@@ -86,6 +107,44 @@ export class TasksController {
     return this.tasks.unblock(id, user.id, user.permissions);
   }
 
+  @RequirePermissions('production-task.update-any')
+  @Post(':id/blockers/:blockerId/resolve')
+  resolveBlocker(
+    @Param('id') id: string,
+    @Param('blockerId') blockerId: string,
+    @Body() dto: ResolveBlockerDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.resolveBlocker(id, blockerId, dto, user.id, user.permissions);
+  }
+
+  @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
+  @Get(':id/carry-over/preview')
+  previewCarryOver(
+    @Param('id') id: string,
+    @Query('mode') mode: 'tomorrow' | 'overtime',
+    @Query('remainingMinutes') remainingMinutes: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.previewCarryOver(
+      id,
+      mode === 'overtime' ? 'overtime' : 'tomorrow',
+      Number(remainingMinutes) || 30,
+      user.id,
+      user.permissions,
+    );
+  }
+
+  @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
+  @Post(':id/carry-over')
+  carryOver(
+    @Param('id') id: string,
+    @Body() dto: TaskCarryOverDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.carryOver(id, dto, user.id, user.permissions);
+  }
+
   @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
   @Patch(':id/notes')
   notes(
@@ -127,6 +186,8 @@ export class TasksController {
       sku?: string;
       issueWarehouseId?: string | null;
       returnWarehouseId?: string | null;
+      issueLocationId?: string | null;
+      returnLocationId?: string | null;
     }> },
     @CurrentUser() user: AuthUser,
   ) {

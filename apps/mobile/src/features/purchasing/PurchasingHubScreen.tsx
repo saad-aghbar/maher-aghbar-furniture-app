@@ -3,48 +3,38 @@ import { FlatList, RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
-import { isApiError } from '@/api/errors';
-import { toastMessageForError } from '@/api/queryClient';
-import { listLowStock, listWarehouses } from '@/api/modules/inventory';
-import { queryKeys } from '@/api/queryKeys';
-import type { MaterialDemandRow } from '@/api/modules/purchasing';
+import { listWarehouses } from '@/api/modules/inventory';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { useMaterialDemandQuery } from '@/features/inventory/query';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
+import { haptics, ListItemEnter } from '@/motion';
 import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
-import { CreatePurchaseOrderSheet } from './components/CreatePurchaseOrderSheet';
-import { CreatePurchaseRequestSheet } from './components/CreatePurchaseRequestSheet';
-import { NeedsToBuyBoard } from './components/NeedsToBuyBoard';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
-import { PurchaseRequestBoardCard } from './components/PurchaseRequestBoardCard';
+import { PurchasingBuyAlertCard } from './components/PurchasingBuyAlertCard';
 import { OrderFabricGroupCard } from '@/features/fabric/OrderFabricGroupCard';
 import {
+  fabricRowHref,
   filterFabricRowsByPurchasingStatus,
   groupFabricRowsBySalesOrder,
   selectFabricTrackerRows,
 } from '@/features/fabric/selectFabricTracker';
-import { PurchasingFilterTriggers, PURCHASING_CHROME_CONTROL_H, PURCHASING_CHROME_GAP } from './components/PurchasingFilterTriggers';
-import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
+import { PurchasingFilterTriggers, PURCHASING_CHROME_GAP } from './components/PurchasingFilterTriggers';
 import { PurchasingHeroActions } from './components/PurchasingHeroActions';
 import { PurchasingStatusFilterSheet } from './components/PurchasingStatusFilterSheet';
 import { PurchasingSupplierSheet } from './components/PurchasingSupplierSheet';
 import { PurchasingTabBar } from './components/PurchasingTabBar';
+import { PurchasingSkeleton } from './components/PurchasingSkeleton';
 import { SupplierInvoiceBoardCard } from './components/SupplierInvoiceBoardCard';
 import {
   isStatusFilterActive,
@@ -54,35 +44,20 @@ import {
 } from './purchasingFilters';
 import {
   flattenPurchaseOrders,
-  flattenPurchaseRequests,
   flattenSupplierInvoices,
-  useFromLowStockMutation,
+  useBuyAlertQuery,
   usePurchaseOrdersInfiniteQuery,
-  usePurchaseRequestsInfiniteQuery,
   useSupplierInvoicesInfiniteQuery,
   useSuppliersQuery,
   useFabricProcurementsQuery,
 } from './query';
 import {
-  incomingQtyFromOrders,
-  needsToBuyDraftLine,
-  selectNeedsToBuyItem,
+  humanizeWarehouseLabel,
   selectPurchaseCard,
-  selectPurchaseRequestCard,
   selectSupplierInvoiceCard,
-  type DraftMaterialLine,
 } from './selectPurchase';
 
 const LIST_BOTTOM_EXTRA = 48;
-
-type NeedsCartEntry = {
-  inventoryItemId: string;
-  sku: string;
-  description: string;
-  unit: string;
-  stillNeeded: number;
-  standardCost: number;
-};
 
 function PurchasingTitle({
   backFallback,
@@ -127,7 +102,6 @@ export function PurchasingHubScreen() {
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
-  const { showToast } = useToast();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const backFallback = '/(app)/(admin)/(tabs)' as Href;
@@ -136,9 +110,7 @@ export function PurchasingHubScreen() {
   const canPr = can(user, 'purchase-request.read');
   const canSi = can(user, 'supplier-invoice.read');
   const canCreatePo = can(user, 'purchase-order.create');
-  const canCreatePr = can(user, 'purchase-request.create');
   const canReadSupplier = can(user, 'supplier.read');
-  const canInventory = can(user, 'inventory.read');
   const canFabric = can(user, 'fabric.procurement.read');
   const canReadOrder = can(user, 'sales-order.read');
 
@@ -148,46 +120,40 @@ export function PurchasingHubScreen() {
     needs?: string;
     arriving?: string;
     late?: string;
+    supplierId?: string;
   }>();
 
   const initialTab: PurchasingHubTab = (() => {
     const raw = String(routeParams.tab ?? '').trim();
-    if (raw === 'orders' || raw === 'requests' || raw === 'invoices' || raw === 'fabric') {
-      return raw;
-    }
-    if (routeParams.needs || routeParams.arriving || routeParams.late === 'true' || routeParams.focus === 'needs') {
-      return canPo ? 'orders' : canPr ? 'requests' : canFabric ? 'fabric' : 'invoices';
-    }
-    return canPo ? 'orders' : canPr ? 'requests' : canFabric ? 'fabric' : 'invoices';
+    if (raw === 'orders' || raw === 'invoices' || raw === 'fabric') return raw;
+    if (raw === 'requests') return 'orders';
+    return canPo ? 'orders' : canFabric ? 'fabric' : 'invoices';
   })();
   const [tab, setTab] = useState<PurchasingHubTab>(initialTab);
-  // Deep links land on an already-mounted hub, so re-sync when ?tab= changes.
   const requestedTab = String(routeParams.tab ?? '').trim();
   useEffect(() => {
-    if (
-      requestedTab === 'orders' ||
-      requestedTab === 'requests' ||
-      requestedTab === 'invoices' ||
-      requestedTab === 'fabric'
-    ) {
+    if (requestedTab === 'orders' || requestedTab === 'invoices' || requestedTab === 'fabric') {
       setTab(requestedTab);
+      setStatus('ALL');
+    }
+    if (requestedTab === 'requests') {
+      setTab('orders');
       setStatus('ALL');
     }
   }, [requestedTab]);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('ALL');
-  const [supplierId, setSupplierId] = useState<string | null>(null);
+  const [supplierId, setSupplierId] = useState<string | null>(
+    routeParams.supplierId ? String(routeParams.supplierId) : null,
+  );
   const [supplierLabel, setSupplierLabel] = useState<string | null>(null);
-
+  const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
+  const [warehouseLabel, setWarehouseLabel] = useState<string | null>(null);
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
   const [statusSheetOpen, setStatusSheetOpen] = useState(false);
-  const [createPoOpen, setCreatePoOpen] = useState(false);
-  const [createPoInitialLines, setCreatePoInitialLines] = useState<DraftMaterialLine[] | undefined>();
-  const [createPrOpen, setCreatePrOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [needsCart, setNeedsCart] = useState<Record<string, NeedsCartEntry>>({});
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
@@ -202,93 +168,34 @@ export function PurchasingHubScreen() {
     q: q || undefined,
     status: status === 'ALL' ? undefined : status,
     supplierId: supplierId || undefined,
+    warehouseId,
     dateFrom: dateFrom.trim() || undefined,
     dateTo: dateTo.trim() || undefined,
   };
 
-  const needsCartCount = Object.keys(needsCart).length;
-  const needsCartLines = useMemo((): DraftMaterialLine[] => {
-    return Object.values(needsCart).map((entry) => ({
-      key: `need-${entry.inventoryItemId}`,
-      inventoryItemId: entry.inventoryItemId,
-      description: entry.description,
-      unit: entry.unit,
-      quantity: String(entry.stillNeeded),
-      unitCost: String(entry.standardCost || 0),
-    }));
-  }, [needsCart]);
-
-  const addNeedToCart = (row: MaterialDemandRow) => {
-    const stillNeeded = Number(row.stillNeeded);
-    if (!(stillNeeded > 0)) return;
-    const description =
-      locale === 'ar'
-        ? row.nameAr || row.nameEn || row.sku
-        : locale === 'he'
-          ? row.nameHe || row.nameEn || row.nameAr || row.sku
-          : row.nameEn || row.nameAr || row.sku;
-    const cost = Number(row.standardCost);
-    void haptics.selection();
-    setNeedsCart((prev) => {
-      const existing = prev[row.inventoryItemId];
-      const nextQty = (existing?.stillNeeded ?? 0) + stillNeeded;
-      return {
-        ...prev,
-        [row.inventoryItemId]: {
-          inventoryItemId: row.inventoryItemId,
-          sku: row.sku,
-          description,
-          unit: row.unit || 'pcs',
-          stillNeeded: nextQty,
-          standardCost: Number.isFinite(cost) ? cost : existing?.standardCost ?? 0,
-        },
-      };
-    });
-  };
-
-  const openCreateFromNeeds = () => {
-    if (needsCartLines.length === 0) return;
-    void haptics.confirmLight();
-    setCreatePoInitialLines(needsCartLines);
-    setCreatePoOpen(true);
-  };
-
   const poQuery = usePurchaseOrdersInfiniteQuery(filters, canPo);
-  const prQuery = usePurchaseRequestsInfiniteQuery(filters, canPr);
   const siQuery = useSupplierInvoicesInfiniteQuery(filters, canSi);
+  const buyAlertQuery = useBuyAlertQuery(canPo && tab === 'orders');
   const fabricQuery = useFabricProcurementsQuery(
-    { q: q || undefined, state: status === 'ALL' || status === 'ARRIVED' || status === 'PARTIAL' ? undefined : status },
+    {
+      q: q || undefined,
+      state: status === 'ALL' || status === 'ARRIVED' || status === 'PARTIAL' ? undefined : status,
+      supplierId: supplierId || undefined,
+    },
     canFabric && tab === 'fabric',
   );
-  const suppliersQuery = useSuppliersQuery(canPo || canPr || canSi);
+  const suppliersQuery = useSuppliersQuery(canPo || canPr || canSi, { status: 'ACTIVE' });
   const warehousesQuery = useQuery({
     queryKey: ['warehouses-purchasing-hub'],
     queryFn: listWarehouses,
     enabled: canPo,
   });
-  const lowStockQuery = useQuery({
-    queryKey: queryKeys.inventory.lowStock(),
-    queryFn: listLowStock,
-    enabled: canPo && canInventory,
-  });
-  const fromLowStock = useFromLowStockMutation();
-  const demandQuery = useMaterialDemandQuery(canPo);
-
-  const shortageNeeds = useMemo(() => {
-    const rows = demandQuery.data ?? [];
-    return rows
-      .filter((r) => Number(r.stillNeeded) > 0)
-      .slice(0, 5);
-  }, [demandQuery.data]);
 
   const supplierOpenOrders = useMemo(() => {
     const map = new Map<string, Array<{ id: string; number: string; status: string }>>();
     for (const po of flattenPurchaseOrders(poQuery.data)) {
       if (!po.supplierId) continue;
-      const open =
-        po.status !== 'CLOSED' &&
-        po.status !== 'CANCELLED' &&
-        po.status !== 'RECEIVED';
+      const open = po.status !== 'CLOSED' && po.status !== 'CANCELLED' && po.status !== 'RECEIVED';
       if (!open) continue;
       const list = map.get(po.supplierId) ?? [];
       list.push({ id: po.id, number: po.number, status: po.status });
@@ -296,18 +203,6 @@ export function PurchasingHubScreen() {
     }
     return map;
   }, [poQuery.data]);
-
-  const warehouseNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const w of warehousesQuery.data ?? []) {
-      const name =
-        locale === 'ar'
-          ? w.nameAr || w.nameEn || w.code
-          : w.nameEn || w.nameAr || w.code;
-      map.set(w.id, name);
-    }
-    return map;
-  }, [warehousesQuery.data, locale]);
 
   const supplierOptions: PurchasingSupplierOption[] = useMemo(() => {
     return (suppliersQuery.data?.data ?? []).map((s) => {
@@ -325,35 +220,40 @@ export function PurchasingHubScreen() {
     });
   }, [suppliersQuery.data?.data, locale]);
 
-  const poRows = useMemo(() => flattenPurchaseOrders(poQuery.data), [poQuery.data]);
-  const poCards = useMemo(
+  const warehouseOptions = useMemo(
     () =>
-      poRows.map((po) =>
-        selectPurchaseCard(
-          po,
-          locale,
-          po.warehouseId ? warehouseNameById.get(po.warehouseId) : null,
-        ),
-      ),
-    [poRows, locale, warehouseNameById],
+      (warehousesQuery.data ?? [])
+        .filter((w) => w.isActive !== false)
+        .map((w) => {
+          const typeLabel = humanizeWarehouseLabel(w.type, t);
+          const subtitle = [w.code, typeLabel].filter(Boolean).join(' · ') || undefined;
+          return {
+            id: w.id,
+            name:
+              locale === 'ar'
+                ? w.nameAr || w.nameEn || w.code
+                : w.nameEn || w.nameAr || w.code,
+            subtitle,
+          };
+        }),
+    [warehousesQuery.data, locale, t],
   );
-  const needsToBuy = useMemo(() => {
-    return (lowStockQuery.data ?? []).slice(0, 8).map((item) =>
-      selectNeedsToBuyItem(item, locale, incomingQtyFromOrders(item.id, poRows)),
-    );
-  }, [lowStockQuery.data, locale, poRows]);
-  const prCards = useMemo(
-    () =>
-      flattenPurchaseRequests(prQuery.data).map((pr) =>
-        selectPurchaseRequestCard(pr, locale),
-      ),
-    [prQuery.data, locale],
+
+  useEffect(() => {
+    if (!supplierId) {
+      setSupplierLabel(null);
+      return;
+    }
+    const found = supplierOptions.find((s) => s.id === supplierId);
+    if (found) setSupplierLabel(found.name);
+  }, [supplierId, supplierOptions]);
+
+  const poCards = useMemo(
+    () => flattenPurchaseOrders(poQuery.data).map((po) => selectPurchaseCard(po, locale)),
+    [poQuery.data, locale],
   );
   const siCards = useMemo(
-    () =>
-      flattenSupplierInvoices(siQuery.data).map((inv) =>
-        selectSupplierInvoiceCard(inv, locale),
-      ),
+    () => flattenSupplierInvoices(siQuery.data).map((inv) => selectSupplierInvoiceCard(inv, locale)),
     [siQuery.data, locale],
   );
   const fabricRows = useMemo(() => {
@@ -361,15 +261,14 @@ export function PurchasingHubScreen() {
     return filterFabricRowsByPurchasingStatus(rows, status);
   }, [fabricQuery.data, status]);
   const fabricGroups = useMemo(() => groupFabricRowsBySalesOrder(fabricRows), [fabricRows]);
-
   const activeQuery =
-    tab === 'orders' ? poQuery : tab === 'requests' ? prQuery : tab === 'fabric' ? fabricQuery : siQuery;
+    tab === 'orders' ? poQuery : tab === 'fabric' ? fabricQuery : siQuery;
   const listData =
-    tab === 'orders' ? poCards : tab === 'requests' ? prCards : tab === 'fabric' ? fabricGroups : siCards;
+    tab === 'orders' ? poCards : tab === 'fabric' ? fabricGroups : siCards;
 
   const poCount = poQuery.data?.pages[0]?.meta?.totalItems;
-  const prCount = prQuery.data?.pages[0]?.meta?.totalItems;
   const siCount = siQuery.data?.pages[0]?.meta?.totalItems;
+  const ordersCount = typeof poCount === 'number' ? poCount : undefined;
 
   const statusLabel = isStatusFilterActive(status)
     ? (() => {
@@ -378,18 +277,14 @@ export function PurchasingHubScreen() {
         return translated === key ? status : translated;
       })()
     : t('mobile.purchasing.filter');
-  const filterActive = isStatusFilterActive(status) || Boolean(dateFrom || dateTo);
+  const filterActive = isStatusFilterActive(status) || Boolean(dateFrom || dateTo || warehouseId);
 
   const searchPlaceholder =
     tab === 'orders'
       ? t('mobile.purchasing.searchOrders')
-      : tab === 'requests'
-        ? t('mobile.purchasing.searchRequests')
-        : tab === 'fabric'
-          ? t('mobile.purchasing.searchFabric')
-          : t('mobile.purchasing.searchInvoices');
-
-  const supplierChipLabel = t('mobile.purchasing.suppliers');
+      : tab === 'fabric'
+        ? t('mobile.purchasing.searchFabric')
+        : t('mobile.purchasing.searchInvoices');
 
   if (!canPo && !canPr && !canSi && !canFabric) {
     return (
@@ -419,14 +314,8 @@ export function PurchasingHubScreen() {
     {
       key: 'orders',
       label: t('catalog.purchaseOrders'),
-      show: canPo,
-      count: typeof poCount === 'number' ? poCount : undefined,
-    },
-    {
-      key: 'requests',
-      label: t('catalog.purchaseRequests'),
-      show: canPr,
-      count: typeof prCount === 'number' ? prCount : undefined,
+      show: canPo || canPr,
+      count: ordersCount,
     },
     {
       key: 'invoices',
@@ -484,35 +373,11 @@ export function PurchasingHubScreen() {
             <PurchasingTitle backFallback={backFallback} titleWeight={titleWeight} />
 
             <PurchasingHeroActions
-              canCreatePr={canCreatePr}
               canCreatePo={canCreatePo}
-              fromLowStockLoading={fromLowStock.isPending}
-              onFromLowStock={() => {
-                fromLowStock.mutate(undefined, {
-                  onSuccess: (pr) => {
-                    void haptics.confirmLight();
-                    showToast({
-                      variant: 'success',
-                      message: t('catalog.prFromLowStockCreated'),
-                    });
-                    router.push(`/(app)/(admin)/purchasing/requests/${pr.id}` as Href);
-                  },
-                  onError: (err) => {
-                    void haptics.error();
-                    showToast({
-                      variant: 'error',
-                      message: isApiError(err)
-                        ? toastMessageForError(err)
-                        : t('mobile.purchasing.createFailed'),
-                    });
-                  },
-                });
-              }}
-              onNewRequest={() => setCreatePrOpen(true)}
-              onNewOrder={() => {
-                setCreatePoInitialLines(undefined);
-                setCreatePoOpen(true);
-              }}
+              canReadSuppliers={canReadSupplier}
+              onNewOrder={() => router.push('/(app)/(admin)/purchasing/new' as Href)}
+              onLowStock={() => router.push('/(app)/(admin)/purchasing/low-stock' as Href)}
+              onSuppliers={() => router.push('/(app)/(admin)/purchasing/suppliers' as Href)}
             />
 
             <PurchasingTabBar
@@ -530,11 +395,9 @@ export function PurchasingHubScreen() {
             >
               {tab === 'orders'
                 ? t('mobile.purchasing.tabOrdersHint')
-                : tab === 'requests'
-                  ? t('mobile.purchasing.tabRequestsHint')
-                  : tab === 'fabric'
-                    ? t('mobile.purchasing.tabFabricHint')
-                    : t('mobile.purchasing.tabInvoicesHint')}
+                : tab === 'fabric'
+                  ? t('mobile.purchasing.tabFabricHint')
+                  : t('mobile.purchasing.tabInvoicesHint')}
             </AppText>
 
             <View
@@ -548,72 +411,16 @@ export function PurchasingHubScreen() {
                 ...orderBoardShadow(colorScheme),
               }}
             >
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'stretch',
-                  gap: PURCHASING_CHROME_GAP,
-                }}
-              >
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <TextField
-                    value={search}
-                    onChangeText={setSearch}
-                    placeholder={searchPlaceholder}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                    returnKeyType="search"
-                    clearButtonMode="while-editing"
-                    pill
-                  />
-                </View>
-                {canReadSupplier ? (
-                  <AnimatedPressable
-                    variant="button"
-                    accessibilityRole="button"
-                    accessibilityLabel={t('mobile.purchasing.suppliers')}
-                    onPress={() => {
-                      void haptics.selection();
-                      router.push('/(app)/(admin)/purchasing/suppliers' as Href);
-                    }}
-                    style={{
-                      height: PURCHASING_CHROME_CONTROL_H,
-                      paddingHorizontal: theme.spacing.md,
-                      borderRadius: theme.radius.full,
-                      borderWidth: 1.5,
-                      borderColor: colors.brand,
-                      backgroundColor: colors.brandSoft,
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                      gap: theme.spacing.sm,
-                      ...orderBoardShadow(colorScheme),
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: colors.surface,
-                        borderWidth: 1,
-                        borderColor: colors.brand,
-                      }}
-                    >
-                      <Ionicons name="people-outline" size={16} color={colors.brand} />
-                    </View>
-                    <AppText
-                      variant="caption"
-                      weight={titleWeight}
-                      style={{ color: colors.brand, fontSize: 13, lineHeight: 16 }}
-                      numberOfLines={1}
-                    >
-                      {supplierChipLabel}
-                    </AppText>
-                  </AnimatedPressable>
-                ) : null}
-              </View>
+              <TextField
+                value={search}
+                onChangeText={setSearch}
+                placeholder={searchPlaceholder}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                pill
+              />
               <PurchasingFilterTriggers
                 supplierLabel={supplierLabel}
                 onOpenSuppliers={() => setSupplierSheetOpen(true)}
@@ -621,136 +428,64 @@ export function PurchasingHubScreen() {
                   setSupplierId(null);
                   setSupplierLabel(null);
                 }}
+                warehouseLabel={warehouseLabel}
+                onOpenWarehouse={() => setStatusSheetOpen(true)}
+                onClearWarehouse={() => {
+                  setWarehouseId(undefined);
+                  setWarehouseLabel(null);
+                }}
                 statusActive={filterActive}
                 statusLabel={statusLabel}
                 onOpenStatus={() => setStatusSheetOpen(true)}
               />
             </View>
 
-            {canPo && tab !== 'fabric' && shortageNeeds.length > 0 ? (
-              <PurchasingFloorBoard title={t('mobile.purchasing.needsToBuy')}>
-                {shortageNeeds.map((row) => {
-                  const name =
-                    locale === 'ar'
-                      ? row.nameAr || row.nameEn || row.sku
-                      : locale === 'he'
-                        ? row.nameHe || row.nameEn || row.nameAr || row.sku
-                        : row.nameEn || row.nameAr || row.sku;
-                  const inCart = Boolean(needsCart[row.inventoryItemId]);
-                  return (
-                    <AnimatedPressable
-                      key={row.inventoryItemId}
-                      variant="button"
-                      accessibilityRole="button"
-                      accessibilityLabel={t('mobile.purchasing.addToPurchase')}
-                      disabled={!canCreatePo}
-                      onPress={() => {
-                        if (!canCreatePo) return;
-                        addNeedToCart(row);
-                      }}
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        justifyContent: 'space-between',
-                        gap: theme.spacing.sm,
-                        alignItems: 'center',
-                        paddingVertical: theme.spacing.xs,
-                        borderRadius: theme.radius.lg,
-                        borderWidth: inCart ? 1 : 0,
-                        borderColor: inCart ? colors.brand : 'transparent',
-                        paddingHorizontal: inCart ? theme.spacing.sm : 0,
-                        backgroundColor: inCart ? colors.brandSoft : 'transparent',
-                      }}
-                    >
-                      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                        <AppText
-                          weight="semibold"
-                          numberOfLines={1}
-                          style={{ textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {name}
-                        </AppText>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          dir="ltr"
-                          style={{ textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {row.sku}
-                        </AppText>
-                        {canCreatePo ? (
-                          <AppText
-                            variant="caption"
-                            weight="semibold"
-                            style={{
-                              color: colors.brand,
-                              textAlign: isRTL ? 'right' : 'left',
-                              fontSize: 11,
-                            }}
-                          >
-                            {t('mobile.purchasing.addToPurchase')}
-                          </AppText>
-                        ) : null}
-                      </View>
-                      <View style={{ alignItems: isRTL ? 'flex-start' : 'flex-end', gap: 2 }}>
-                        <AppText weight="semibold" dir="ltr" style={{ color: colors.error }}>
-                          {`${Number(row.stillNeeded)} ${row.unit || ''}`.trim()}
-                        </AppText>
-                        <AppText variant="caption" color="muted" dir="ltr">
-                          {`${t('mobile.purchasing.incoming')}: ${Number(row.incomingQty ?? 0)}`}
-                        </AppText>
-                      </View>
-                    </AnimatedPressable>
-                  );
-                })}
-                {canCreatePo && needsCartCount > 0 ? (
-                  <PrimaryButton
-                    label={`${t('mobile.purchasing.createFromNeeds')} (${needsCartCount})`}
-                    onPress={openCreateFromNeeds}
-                    style={{ borderRadius: theme.radius.xl, marginTop: theme.spacing.xs }}
-                  />
-                ) : null}
-              </PurchasingFloorBoard>
+            {canPo && tab === 'orders' ? (
+              <PurchasingBuyAlertCard
+                count={buyAlertQuery.data?.count ?? 0}
+                onPress={() => router.push('/(app)/(admin)/purchasing/low-stock' as Href)}
+              />
             ) : null}
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            title={
-              q
-                ? t('mobile.purchasing.emptySearchTitle')
-                : tab === 'orders'
-                  ? t('catalog.noPurchaseOrders')
-                  : tab === 'requests'
-                    ? t('catalog.noPurchaseRequests')
+          activeQuery.isLoading ? (
+            <PurchasingSkeleton />
+          ) : (
+            <EmptyState
+              title={
+                q
+                  ? t('mobile.purchasing.emptySearchTitle')
+                  : tab === 'orders'
+                    ? t('catalog.noPurchaseOrders')
                     : tab === 'fabric'
                       ? t('mobile.purchasing.emptyFabricTitle')
                       : t('catalog.noSupplierInvoices')
-            }
-            description={
-              q
-                ? t('mobile.purchasing.emptySearchBody')
-                : tab === 'fabric'
-                  ? t('mobile.purchasing.emptyFabricBody')
-                  : t('mobile.purchasing.emptyBody')
-            }
-          />
+              }
+              description={
+                q
+                  ? t('mobile.purchasing.emptySearchBody')
+                  : tab === 'fabric'
+                    ? t('mobile.purchasing.emptyFabricBody')
+                    : t('mobile.purchasing.emptyBody')
+              }
+            />
+          )
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
             {tab === 'orders' ? (
-              <PurchaseOrderBoardCard
-                order={item as ReturnType<typeof selectPurchaseCard>}
-                onPress={() =>
-                  router.push(`/(app)/(admin)/purchasing/${item.id}` as Href)
-                }
-              />
-            ) : tab === 'requests' ? (
-              <PurchaseRequestBoardCard
-                request={item as ReturnType<typeof selectPurchaseRequestCard>}
-                onPress={() =>
-                  router.push(`/(app)/(admin)/purchasing/requests/${item.id}` as Href)
-                }
-              />
+                <PurchaseOrderBoardCard
+                  order={item as ReturnType<typeof selectPurchaseCard>}
+                  onPress={() => {
+                    const order = item as ReturnType<typeof selectPurchaseCard>;
+                    const href =
+                      order.runId && (order.runSupplierCount ?? 0) > 1
+                        ? `/(app)/(admin)/purchasing/runs/${order.runId}`
+                        : `/(app)/(admin)/purchasing/${order.id}`;
+                    router.push(href as Href);
+                  }}
+                />
             ) : tab === 'fabric' ? (
               <OrderFabricGroupCard
                 group={item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]}
@@ -764,9 +499,7 @@ export function PurchasingHubScreen() {
                         )
                     : undefined
                 }
-                onPressFabric={(row) =>
-                  router.push(`/(app)/(admin)/purchasing/fabric/${row.id}` as Href)
-                }
+                onPressFabric={(row) => router.push(fabricRowHref(row) as Href)}
               />
             ) : (
               <SupplierInvoiceBoardCard
@@ -800,36 +533,21 @@ export function PurchasingHubScreen() {
         status={status}
         dateFrom={dateFrom}
         dateTo={dateTo}
-        onApply={({ status: nextStatus, dateFrom: nextFrom, dateTo: nextTo }) => {
+        hideDates={tab === 'fabric'}
+        warehouses={tab === 'orders' ? warehouseOptions : []}
+        warehouseId={warehouseId}
+        onApply={({ status: nextStatus, dateFrom: nextFrom, dateTo: nextTo, warehouseId: nextWarehouse }) => {
           setStatus(nextStatus);
           setDateFrom(nextFrom ?? '');
           setDateTo(nextTo ?? '');
+          setWarehouseId(nextWarehouse);
+          setWarehouseLabel(
+            nextWarehouse
+              ? warehouseOptions.find((w) => w.id === nextWarehouse)?.name ?? null
+              : null,
+          );
         }}
       />
-      {canCreatePo ? (
-        <CreatePurchaseOrderSheet
-          open={createPoOpen}
-          onClose={() => {
-            setCreatePoOpen(false);
-            setCreatePoInitialLines(undefined);
-          }}
-          initialLines={createPoInitialLines}
-          onCreated={(id) => {
-            setNeedsCart({});
-            setCreatePoInitialLines(undefined);
-            router.push(`/(app)/(admin)/purchasing/${id}` as Href);
-          }}
-        />
-      ) : null}
-      {canCreatePr ? (
-        <CreatePurchaseRequestSheet
-          open={createPrOpen}
-          onClose={() => setCreatePrOpen(false)}
-          onCreated={(id) =>
-            router.push(`/(app)/(admin)/purchasing/requests/${id}` as Href)
-          }
-        />
-      ) : null}
     </AppScreen>
   );
 }

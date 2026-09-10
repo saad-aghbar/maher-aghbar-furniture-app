@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Href } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import type { Supplier } from '@/api/modules/purchasing';
@@ -23,6 +23,8 @@ import { haptics, ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CreateSupplierSheet } from './components/CreateSupplierSheet';
+import { useSupplierStatementPdf } from './useSupplierStatementPdf';
+import { PurchasingSkeleton } from './components/PurchasingSkeleton';
 import { SupplierBoardCard } from './components/SupplierBoardCard';
 import { useArchiveSupplierMutation, useSuppliersQuery } from './query';
 
@@ -65,6 +67,8 @@ function SuppliersScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibo
  */
 export function SuppliersListScreen() {
   const { user } = useAuth();
+  const router = useRouter();
+  const { start: startStatement, sheets: statementSheets } = useSupplierStatementPdf();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -86,7 +90,7 @@ export function SuppliersListScreen() {
     return () => clearTimeout(id);
   }, [q]);
 
-  const query = useSuppliersQuery(allowed, debouncedQ || undefined);
+  const query = useSuppliersQuery(allowed, { q: debouncedQ || undefined });
   const archiveMutation = useArchiveSupplierMutation();
 
   const openCreate = () => {
@@ -133,9 +137,7 @@ export function SuppliersListScreen() {
     return (
       <ScrollableScreen>
         <SuppliersScreenTitle titleWeight={titleWeight} />
-        <AppText variant="body" color="secondary">
-          {t('mobile.loadingSession')}
-        </AppText>
+        <PurchasingSkeleton />
       </ScrollableScreen>
     );
   }
@@ -242,8 +244,17 @@ export function SuppliersListScreen() {
             <ListItemEnter key={supplier.id} index={index}>
               <SupplierBoardCard
                 supplier={supplier}
+                onPress={() =>
+                  router.push(`/(app)/(admin)/purchasing/suppliers/${supplier.id}` as Href)
+                }
                 onEdit={canManage ? () => openEdit(supplier) : undefined}
                 onDelete={canManage ? () => setConfirmDelete(supplier) : undefined}
+                onOrders={() =>
+                  router.push(
+                    `/(app)/(admin)/purchasing/suppliers/${supplier.id}/orders` as Href,
+                  )
+                }
+                onStatement={() => startStatement(supplier.id)}
               />
             </ListItemEnter>
           ))}
@@ -269,6 +280,7 @@ export function SuppliersListScreen() {
         destructive
         onConfirm={() => void runArchive()}
       />
+      {statementSheets}
     </ScrollableScreen>
   );
 }

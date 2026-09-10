@@ -24,6 +24,11 @@ export {
   type TerminalStageCode,
 };
 
+export function isQualityGateStageCode(code?: string | null): boolean {
+  const c = String(code ?? '').toUpperCase();
+  return c === 'INSPECTION' || c === 'QC' || c === 'QUALITY';
+}
+
 export function isTerminalNode(node: Pick<WorkflowNode, 'stageDefinition'>): boolean {
   return isTerminalStageCode(node.stageDefinition.code);
 }

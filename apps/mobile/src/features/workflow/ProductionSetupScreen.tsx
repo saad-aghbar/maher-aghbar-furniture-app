@@ -363,7 +363,7 @@ function StageSetupRow({
         stage.behavior === 'USES_MATERIALS' ||
         (stage.materialInputs?.length ?? 0) > 0;
   const takesSemi =
-    mode === 'delivery'
+    mode === 'delivery' || mode === 'inspection'
       ? false
       : setupUsesSemi(stage.behavior) ||
         stage.consumesSemiFinished ||

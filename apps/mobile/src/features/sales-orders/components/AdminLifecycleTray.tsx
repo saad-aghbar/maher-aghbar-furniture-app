@@ -27,7 +27,7 @@ type Props = {
   totalCount?: number;
   /** Overview (All) vs single focused lane. */
   mode: 'preview' | 'focused';
-  onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPressItem: (id: string, kind?: 'order' | 'rfq' | 'returnWork') => void;
   onPrimaryCta?: (order: OrdersProgressCardModel) => void;
   onOpenFocused?: () => void;
   hint?: string | null;

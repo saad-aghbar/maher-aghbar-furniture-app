@@ -73,7 +73,7 @@ describe('inventory scan identity (mobile)', () => {
     }
   });
 
-  it('create and edit do not scan or send qrCode; barcode scan is supplier-only', () => {
+  it('create and edit write preferredSupplierId and do not send qrCode', () => {
     const create = readFileSync(
       join(inventoryDir, 'components/CreateInventoryItemSheet.tsx'),
       'utf8',
@@ -84,20 +84,24 @@ describe('inventory scan identity (mobile)', () => {
       types.indexOf('export type CreateInventoryItemInput'),
       types.indexOf('export type UpdateInventoryItemInput'),
     );
+    expect(createInput).toContain('preferredSupplierId?: string | null');
     expect(createInput).toContain('barcode?: string');
     expect(createInput).not.toContain('qrCode');
     for (const src of [create, edit]) {
-      expect(src).toContain('supplierBarcode');
-      expect(src).toContain('scanSupplierBarcode');
-      expect(src).toContain('barcode.trim()');
-      expect(src).toContain('scanIcon="barcode-outline"');
+      expect(src).toContain('PurchasingSupplierSheet');
+      expect(src).toContain('preferredSupplierId');
+      expect(src).not.toContain('supplierBarcode');
+      expect(src).not.toContain('scanSupplierBarcode');
+      expect(src).not.toContain('scanIcon="barcode-outline"');
       expect(src).not.toContain("t('mobile.inventory.scan')");
       expect(src).not.toContain("t('mobile.inventory.qrCode')");
-      expect(src).not.toContain("t('mobile.scan.enterOrScan')");
     }
     const submit = create.slice(create.indexOf('function submit()'), create.indexOf('return ('));
-    expect(submit).toContain('barcode:');
+    expect(submit).toContain('preferredSupplierId:');
+    expect(submit).toContain('reorderQty:');
     expect(submit).not.toContain('qrCode');
+    const editSubmit = edit.slice(edit.indexOf('function submit()'), edit.indexOf('return ('));
+    expect(editSubmit).toContain('reorderQty:');
   });
 
   it('create success offers View QR after the create Modal unmounts, and does not auto-open it', () => {
@@ -177,6 +181,17 @@ describe('inventory scan identity (mobile)', () => {
     expect(chrome).toContain('scanVisible');
     expect(chrome).toContain('qr-code-outline');
     expect(chrome).toContain('onScan');
+  });
+
+  it('bin contents sheet is wired on IDENTIFY and rows can open an item', () => {
+    const home = readFileSync(join(inventoryDir, 'components/InventorySignatureHome.tsx'), 'utf8');
+    const sheet = readFileSync(join(inventoryDir, 'components/BinContentsSheet.tsx'), 'utf8');
+    expect(home).toContain('FOUND_BIN');
+    expect(home).toContain('BinContentsSheet');
+    expect(home).toContain('setInspectBin');
+    expect(home).toContain('onViewItem');
+    expect(sheet).toContain('onViewItem');
+    expect(sheet).toContain('AnimatedPressable');
   });
 
   it('admin create/edit forms omit qrCode and label barcode as supplier barcode', () => {

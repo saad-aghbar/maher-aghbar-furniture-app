@@ -7,9 +7,12 @@ import {
 import {
   blockTask,
   completeTask,
+  getMyOrderWorkflow,
   getTask,
   listCompletedDealers,
+  listMyOrders,
   listTasks,
+  type MyOrderSegment,
   pauseTask,
   resumeTask,
   startTask,
@@ -37,6 +40,28 @@ export function useTasksInfiniteQuery(
     staleTime: 30_000,
     // Keep the current list visible while segment / search / date filters load.
     placeholderData: keepPreviousData,
+    meta: { skipGlobalErrorToast: true },
+  });
+}
+
+export function useMyOrdersQuery(segment: MyOrderSegment, q: string, enabled: boolean) {
+  const needle = q.trim();
+  return useQuery({
+    queryKey: queryKeys.tasks.myOrders(segment, needle),
+    queryFn: () => listMyOrders(segment, needle || undefined),
+    enabled,
+    staleTime: 20_000,
+    placeholderData: keepPreviousData,
+    meta: { skipGlobalErrorToast: true },
+  });
+}
+
+export function useMyOrderWorkflowQuery(productionOrderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.tasks.myOrderWorkflow(productionOrderId ?? ''),
+    queryFn: () => getMyOrderWorkflow(productionOrderId!),
+    enabled: Boolean(productionOrderId) && enabled,
+    staleTime: 15_000,
     meta: { skipGlobalErrorToast: true },
   });
 }
@@ -120,6 +145,8 @@ export function useBlockTaskMutation(taskId: string) {
     mutationFn: (body: {
       category: TaskBlockerCategory;
       reason: string;
+      voiceDocumentId?: string;
+      photoDocumentIds?: string[];
       idempotencyKey?: string;
     }) => blockTask(taskId, body),
     onSuccess: () => invalidateTaskQueries(qc, taskId),

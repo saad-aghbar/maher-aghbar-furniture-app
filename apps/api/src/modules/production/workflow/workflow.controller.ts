@@ -24,7 +24,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { isLockedAnchorStageCode, type AuthUser } from '@maher/types';
+import { isProtectedStageCode, type AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { WorkflowVersionService } from './workflow-version.service';
@@ -38,6 +38,8 @@ import {
   pickStagePatch,
   resolveGeneratedCode,
 } from './domain/technical-id';
+import { isReleasedToFactory } from '../factory-release';
+import { STAGE_STARTED_STATUSES } from '../../tasks/assign-stage-time';
 
 export class CreateWorkflowDto {
   @ApiPropertyOptional({
@@ -52,6 +54,10 @@ export class CreateWorkflowDto {
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionAr?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionEn?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionHe?: string;
+  @ApiPropertyOptional({ enum: ['STANDARD', 'RETURN'] })
+  @IsOptional()
+  @IsIn(['STANDARD', 'RETURN'])
+  scope?: 'STANDARD' | 'RETURN';
 }
 
 export class CreateStageDto {
@@ -231,12 +237,14 @@ export class WorkflowController {
     const version = await this.prisma.productionWorkflowVersion.findUnique({
       where: { id: versionId },
       include: {
+        workflow: { select: { scope: true } },
         nodes: { include: { stageDefinition: true }, orderBy: { sortOrder: 'asc' } },
         edges: true,
       },
     });
     if (!version) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Version not found.' });
-    return version;
+    const { workflow, ...rest } = version;
+    return { ...rest, scope: workflow.scope };
   }
 
   @Post('production-workflows/:id/versions/:versionId/nodes')
@@ -498,17 +506,24 @@ export class WorkflowController {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
     }
     const dtoRecord = dto as unknown as Record<string, unknown>;
-    if (isLockedAnchorStageCode(existing.code) && lockedAnchorNameChanged(existing, dtoRecord)) {
+    if (isProtectedStageCode(existing.code) && lockedAnchorNameChanged(existing, dtoRecord)) {
       throw new BadRequestException({
         code: 'LOCKED_ANCHOR_NAME',
         message:
-          'The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.',
+          'The name of Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be changed.',
+      });
+    }
+    if (isProtectedStageCode(existing.code) && dtoRecord.isActive === false) {
+      throw new BadRequestException({
+        code: 'LOCKED_ANCHOR_STAGE',
+        message:
+          'Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be deactivated.',
       });
     }
     const row = await this.prisma.productionStageDefinition.update({
       where: { id },
       data: pickStagePatch(dtoRecord, {
-        omitNames: isLockedAnchorStageCode(existing.code),
+        omitNames: isProtectedStageCode(existing.code),
       }) as Prisma.ProductionStageDefinitionUpdateInput,
     });
     await this.prisma.auditEvent.create({
@@ -654,12 +669,26 @@ export class WorkflowController {
       });
     }
 
-    const started = await this.prisma.productionStageInstance.count({
-      where: {
-        productionOrderId: id,
-        status: { in: ['IN_PROGRESS', 'COMPLETED'] },
-      },
+    const po = await this.prisma.productionOrder.findUnique({
+      where: { id },
+      select: { releasedToFactoryAt: true, actualStartDate: true, status: true },
     });
+    const wantsTimeChange = (dto.nodes ?? []).some((n) => n.estimatedMinutes != null);
+    if (wantsTimeChange && po && isReleasedToFactory(po)) {
+      throw new BadRequestException({
+        code: 'STAGE_TIME_LOCKED',
+        message: 'Stage times are locked after the production plan is confirmed.',
+      });
+    }
+
+    const instances = await this.prisma.productionStageInstance.findMany({
+      where: { productionOrderId: id },
+      select: { id: true, status: true },
+    });
+    const statusByInstance = new Map(instances.map((s) => [s.id, s.status]));
+    const started = instances.filter((s) =>
+      s.status === 'IN_PROGRESS' || s.status === 'COMPLETED',
+    ).length;
 
     for (const patch of dto.nodes ?? []) {
       if (patch.skip) {
@@ -677,10 +706,19 @@ export class WorkflowController {
           data: { estimatedMinutes: patch.estimatedMinutes, estimateReviewRequired: false },
         });
         const node = snapshot.nodes.find((n) => n.id === patch.snapshotNodeId);
+        const changed = (node?.estimatedMinutes ?? null) !== patch.estimatedMinutes;
+        const stageStarted = STAGE_STARTED_STATUSES.has(
+          statusByInstance.get(node?.stageInstanceId ?? '') ?? '',
+        );
         if (node?.stageInstanceId) {
           await this.prisma.productionTask.updateMany({
             where: { stageInstanceId: node.stageInstanceId },
-            data: { estimatedMinutes: patch.estimatedMinutes },
+            data: {
+              estimatedMinutes: patch.estimatedMinutes,
+              ...(changed && !stageStarted
+                ? { assignedEmployeeId: null, plannedStart: null, plannedCompletion: null }
+                : {}),
+            },
           });
         }
       }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -7,11 +8,23 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { hasPermission } from '@maher/permissions';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '@maher/types';
 import { FabricProcurementService } from './fabric-procurement.service';
+import { FabricReceivingService } from './fabric-receiving.service';
 
 class FabricSendDto {
   @IsArray()
@@ -86,10 +99,71 @@ class FabricDispositionDto {
   scrapReason?: string;
 }
 
+class FabricReceiveDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  qty!: number;
+
+  @IsUUID()
+  locationId!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  unitCost?: number;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @IsOptional()
+  @IsUUID()
+  photoDocumentId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  inventoryItemId?: string;
+
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+}
+
+class FabricAllocateDto {
+  @IsUUID()
+  inventoryItemId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  qty!: number;
+
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  replaceFabric?: boolean;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 @ApiTags('fabric-procurement')
 @Controller('fabric-procurements')
 export class FabricProcurementController {
-  constructor(private readonly fabrics: FabricProcurementService) {}
+  constructor(
+    private readonly fabrics: FabricProcurementService,
+    private readonly receiving: FabricReceivingService,
+  ) {}
 
   @Get()
   @RequirePermissions('fabric.procurement.read')
@@ -97,9 +171,10 @@ export class FabricProcurementController {
     @Query('q') q?: string,
     @Query('state') state?: string,
     @Query('salesOrderId') salesOrderId?: string,
+    @Query('supplierId') supplierId?: string,
     @CurrentUser() user?: AuthUser,
   ) {
-    return this.fabrics.list({ q, state, salesOrderId }, user);
+    return this.fabrics.list({ q, state, salesOrderId, supplierId }, user);
   }
 
   @Get('orders/:salesOrderId')
@@ -114,8 +189,14 @@ export class FabricProcurementController {
     return this.fabrics.workerBoard(taskId);
   }
 
+  @Get('by-code/:code')
+  @RequireAnyPermissions('fabric.procurement.read', 'inventory.read')
+  getByCode(@Param('code') code: string, @CurrentUser() user?: AuthUser) {
+    return this.fabrics.getByQrCode(code, user);
+  }
+
   @Get(':id')
-  @RequirePermissions('fabric.procurement.read')
+  @RequireAnyPermissions('fabric.procurement.read', 'inventory.read')
   get(@Param('id') id: string, @CurrentUser() user?: AuthUser) {
     return this.fabrics.getById(id, user);
   }
@@ -162,6 +243,32 @@ export class FabricProcurementController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.fabrics.overrideHold(id, user, body.reason);
+  }
+
+  @Post(':id/receive')
+  @RequirePermissions('inventory.receive')
+  receive(
+    @Param('id') id: string,
+    @Body() body: FabricReceiveDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.receiving.receive(id, body, user);
+  }
+
+  @Post(':id/allocate-from-stock')
+  @RequirePermissions('fabric.procurement.manage')
+  allocateFromStock(
+    @Param('id') id: string,
+    @Body() body: FabricAllocateDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (body.replaceFabric && !hasPermission(user.permissions, 'production.fabric.override')) {
+      throw new BadRequestException({
+        code: 'FABRIC_REPLACE_FORBIDDEN',
+        message: 'Replacing a fabric requires the fabric override permission.',
+      });
+    }
+    return this.receiving.allocateFromStock(id, body, user);
   }
 
   @Post('tasks/:taskId/take-in')

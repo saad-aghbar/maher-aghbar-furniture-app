@@ -77,7 +77,7 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
     queryKey: ['suppliers-pick-pr'],
     queryFn: () =>
       apiFetch<{ data: Array<{ id: string; name: string; nameAr?: string; nameEn?: string }> }>(
-        '/api/v1/suppliers?pageSize=100',
+        '/api/v1/suppliers?pageSize=100&status=ACTIVE',
       ).then((r) => r.data),
   });
 

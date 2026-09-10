@@ -13,7 +13,7 @@ describe('adminOrderLifecycle', () => {
 
   it('exposes Piece 13 human label fallbacks', () => {
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.rfq).toBe('Customer Requests');
-    expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_ship).toBe('Ready');
+    expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_ship).toBe('Ready for delivery');
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_start).toBe('Ready to start');
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.needs_attention).toBe('Attention');
     expect(adminLifecycleHumanLabel('shipped')).toBe('Shipped');

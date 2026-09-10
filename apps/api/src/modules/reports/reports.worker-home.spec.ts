@@ -126,6 +126,7 @@ describe('ReportsService.workerHome', () => {
         status: 'IN_PROGRESS',
         plannedCompletion: new Date('2026-08-05T17:00:00.000Z'),
         productionOrder: {
+          id: 'po-1',
           number: 'PO-1',
           productDescription: 'Table',
           salesOrder: { number: 'ORD-1258' },
@@ -166,6 +167,7 @@ describe('ReportsService.workerHome', () => {
           nameHe: null,
         },
         productionOrder: {
+          id: 'po-9',
           number: 'PO-9',
           productDescription: 'Sofa',
           salesOrder: { number: 'ORD-99' },
@@ -181,6 +183,7 @@ describe('ReportsService.workerHome', () => {
 
     const result = await service.workerHome(workerA);
     expect(result.completedTodayCount).toBe(2);
+    expect(result.urgentTask?.productionOrderId).toBe('po-9');
     expect(result.urgentTask?.orderNumber).toBe('ORD-99');
     expect(result.urgentTask?.imageUrl).toBe('https://example.com/sofa.png');
     expect(result.urgentTask?.estimatedMinutes).toBe(90);

@@ -30,7 +30,7 @@ import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import { buildDependencyGraph, detectCycles } from '../scheduling/domain';
 import { SchedulingService } from '../scheduling/scheduling.service';
-import { isLockedAnchorStageCode, type AuthUser } from '@maher/types';
+import { isProtectedStageCode, type AuthUser } from '@maher/types';
 import { lockedAnchorNameChanged, pickStagePatch } from './workflow/domain/technical-id';
 
 class StageDto {
@@ -119,12 +119,19 @@ export class ProductionStagesController {
   ) {
     const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
-    if (isLockedAnchorStageCode(existing.code)) {
+    if (isProtectedStageCode(existing.code)) {
       if (lockedAnchorNameChanged(existing, dto as unknown as Record<string, unknown>)) {
         throw new BadRequestException({
           code: 'LOCKED_ANCHOR_NAME',
           message:
-            'The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.',
+            'The name of Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be changed.',
+        });
+      }
+      if (dto.isActive === false) {
+        throw new BadRequestException({
+          code: 'LOCKED_ANCHOR_STAGE',
+          message:
+            'Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be deactivated.',
         });
       }
       const row = await this.prisma.productionStageDefinition.update({
@@ -176,7 +183,16 @@ export class ProductionStagesController {
 
   @Post(':id/deactivate')
   @RequirePermissions('production-order.update')
-  deactivate(@Param('id') id: string) {
+  async deactivate(@Param('id') id: string) {
+    const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+    if (isProtectedStageCode(existing.code)) {
+      throw new BadRequestException({
+        code: 'LOCKED_ANCHOR_STAGE',
+        message:
+          'Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be deactivated.',
+      });
+    }
     return this.prisma.productionStageDefinition.update({
       where: { id },
       data: { isActive: false },
@@ -197,10 +213,10 @@ export class ProductionStagesController {
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
-    if (isLockedAnchorStageCode(existing.code)) {
+    if (isProtectedStageCode(existing.code)) {
       throw new BadRequestException({
         code: 'LOCKED_ANCHOR_STAGE',
-        message: 'Material Prep, Inspection, Packaging, and Delivery cannot be deleted.',
+        message: 'Material Prep, Inspection, Packaging, Delivery, and Dismantle & Recover cannot be deleted.',
       });
     }
     const used = await this.prisma.productionStageInstance.count({ where: { stageDefinitionId: id } });

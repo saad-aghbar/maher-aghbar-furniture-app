@@ -131,6 +131,7 @@ describe('compileWorkflow', () => {
   it('excludes painting and bridges Carpentry → Assembly', () => {
     const compiled = compileWorkflow({
       enforceTerminalChain: false,
+      enforceOpeningChain: false,
       nodes: [
         node('carp', 'CARPENTRY', { sortOrder: 1 }),
         node('paint', 'PAINTING', { sortOrder: 2, canBeSkipped: true, isRequiredByDefault: false }),
@@ -158,6 +159,7 @@ describe('compileWorkflow', () => {
   it('keeps parallel foam and painting then merge to upholstery', () => {
     const compiled = compileWorkflow({
       enforceTerminalChain: false,
+      enforceOpeningChain: false,
       nodes: [
         node('carp', 'CARPENTRY'),
         node('foam', 'FOAM'),
@@ -179,6 +181,7 @@ describe('compileWorkflow', () => {
   it('marks estimate review when no duration available', () => {
     const compiled = compileWorkflow({
       enforceTerminalChain: false,
+      enforceOpeningChain: false,
       nodes: [
         node('a', 'A', {
           defaultEstimatedMinutes: null,
@@ -191,6 +194,26 @@ describe('compileWorkflow', () => {
       edges: [],
     });
     expect(compiled.included[0]?.estimateReviewRequired).toBe(true);
+  });
+
+  it('does not require estimate review for a zero-minute inspection gate', () => {
+    const compiled = compileWorkflow({
+      enforceTerminalChain: false,
+      enforceOpeningChain: false,
+      nodes: [
+        node('insp', 'INSPECTION', {
+          defaultEstimatedMinutes: 0,
+          stage: {
+            ...stage('sd-INSPECTION', 'INSPECTION', 'Inspection'),
+            estimatedHours: 0,
+            executionKind: 'QUALITY',
+          },
+        }),
+      ],
+      edges: [],
+    });
+    expect(compiled.included[0]?.estimatedMinutes).toBe(0);
+    expect(compiled.included[0]?.estimateReviewRequired).toBe(false);
   });
 });
 

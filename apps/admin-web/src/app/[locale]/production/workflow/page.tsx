@@ -29,6 +29,7 @@ interface WorkflowRow {
   nameEn: string;
   nameHe?: string | null;
   status: string;
+  scope?: 'STANDARD' | 'RETURN' | null;
   versions?: Array<{ id: string; versionNumber: number; status: string; revision?: number }>;
   activeVersion?: {
     id: string;
@@ -49,6 +50,7 @@ export default function WorkflowListPage() {
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [nameHe, setNameHe] = useState('');
+  const [createScope, setCreateScope] = useState<'STANDARD' | 'RETURN'>('STANDARD');
 
   const listQuery = useQuery({
     queryKey: ['production-workflows'],
@@ -63,17 +65,25 @@ export default function WorkflowListPage() {
           nameEn: nameEn.trim(),
           nameAr: nameAr.trim(),
           nameHe: nameHe.trim() || undefined,
+          scope: createScope,
         }),
       });
       const versionId = created.versions?.[0]?.id;
       if (versionId) {
-        const opened = await apiFetch<{ revision: number }>(
-          `/api/v1/production-workflows/${created.id}/versions/${versionId}/ensure-opening-chain`,
-          { method: 'POST', body: JSON.stringify({}) },
-        );
+        let revision: number | undefined;
+        if (createScope === 'STANDARD') {
+          const opened = await apiFetch<{ revision: number }>(
+            `/api/v1/production-workflows/${created.id}/versions/${versionId}/ensure-opening-chain`,
+            { method: 'POST', body: JSON.stringify({}) },
+          );
+          revision = opened.revision;
+        }
         await apiFetch(
           `/api/v1/production-workflows/${created.id}/versions/${versionId}/ensure-terminal-chain`,
-          { method: 'POST', body: JSON.stringify({ expectedRevision: opened.revision }) },
+          {
+            method: 'POST',
+            body: JSON.stringify(revision != null ? { expectedRevision: revision } : {}),
+          },
         );
       }
       return created;
@@ -83,6 +93,7 @@ export default function WorkflowListPage() {
       setNameEn('');
       setNameAr('');
       setNameHe('');
+      setCreateScope('STANDARD');
       setError(null);
       await qc.invalidateQueries({ queryKey: ['production-workflows'] });
     },
@@ -175,6 +186,9 @@ export default function WorkflowListPage() {
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 ps-3">
                     <StatusBadge status={pillStatus} />
+                    <Badge variant={row.scope === 'RETURN' ? 'warning' : 'default'}>
+                      {row.scope === 'RETURN' ? t('workflow.scopeReturn') : t('workflow.scopeStandard')}
+                    </Badge>
                     <Badge variant="brand">{stageCount}</Badge>
                     {active ? (
                       <Badge variant="success">{t('workflow.activeVersion')}</Badge>
@@ -218,6 +232,26 @@ export default function WorkflowListPage() {
             value={nameHe}
             onChange={(e) => setNameHe(e.target.value)}
           />
+          <div className="grid gap-2">
+            <p className="text-xs font-medium text-text-secondary">{t('workflow.scopeSection')}</p>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--maher-surface-muted)] p-1">
+              {(['STANDARD', 'RETURN'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`rounded-lg px-2 py-2 text-xs font-medium ${
+                    createScope === value
+                      ? 'bg-[var(--maher-surface)] shadow-sm'
+                      : 'text-text-secondary'
+                  }`}
+                  onClick={() => setCreateScope(value)}
+                >
+                  {value === 'RETURN' ? t('workflow.scopeReturn') : t('workflow.scopeStandard')}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-text-tertiary">{t('workflow.scopeHint')}</p>
+          </div>
         </div>
       </Modal>
     </div>

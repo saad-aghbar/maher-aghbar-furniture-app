@@ -12,6 +12,7 @@ import {
   DealerDateChangeDto,
   ListCalendarQuery,
   ListCapacityQuery,
+  ListFactoryDayQuery,
   ListOwnDeliveriesQuery,
   PatchAllocationDto,
   PinDto,
@@ -72,36 +73,6 @@ export class SchedulingController {
   @Get('calendar-settings/exceptions/:date/impact')
   exceptionImpact(@Param('date') date: string) {
     return this.scheduling.previewDayImpact(date);
-  }
-
-  @RequirePermissions('schedule.manage')
-  @Post('sync')
-  syncFactorySchedule(@CurrentUser() user: AuthUser) {
-    return this.scheduling.enqueueManualSync(user.id);
-  }
-
-  @RequirePermissions('schedule.manage')
-  @Post('optimize/preview')
-  previewCapacityOptimize(@CurrentUser() user: AuthUser) {
-    return this.scheduling.enqueueCapacityOptimize(user.id, false);
-  }
-
-  @RequirePermissions('schedule.manage')
-  @Post('optimize/apply')
-  applyCapacityOptimize(@CurrentUser() user: AuthUser) {
-    return this.scheduling.enqueueCapacityOptimize(user.id, true);
-  }
-
-  @RequirePermissions('schedule.read')
-  @Get('replan-runs/latest')
-  getLatestManualSyncRun() {
-    return this.scheduling.getLatestManualSyncRun();
-  }
-
-  @RequirePermissions('schedule.read')
-  @Get('replan-runs/latest-optimize')
-  getLatestCapacityOptimizeRun() {
-    return this.scheduling.getLatestCapacityOptimizeRun();
   }
 
   @RequirePermissions('schedule.read')
@@ -170,6 +141,21 @@ export class SchedulingController {
     return this.scheduling.dashboardSummary();
   }
 
+  @RequireAnyPermissions('schedule.read', 'schedule.capacity.read')
+  @Get('summary')
+  factorySummary() {
+    return this.scheduling.factoryControlSummary();
+  }
+
+  @RequireAnyPermissions('schedule.read', 'schedule.capacity.read')
+  @Get('day')
+  factoryDay(@Query() query: ListFactoryDayQuery) {
+    return this.scheduling.getFactoryDay(query.date, {
+      dealerId: query.dealerId,
+      stageId: query.stageId,
+    });
+  }
+
   @RequirePermissions('schedule.read.own')
   @Get('own-deliveries')
   listOwnDeliveries(@Query() query: ListOwnDeliveriesQuery, @CurrentUser() user: AuthUser) {
@@ -231,6 +217,7 @@ export class SchedulingController {
         sortOrder: a.sortOrder,
       })),
       dto.reason,
+      user.permissions,
     );
   }
 
@@ -285,6 +272,16 @@ export class SchedulingController {
     return this.scheduling.approve(productionOrderId, dto.version, user.id);
   }
 
+  @RequirePermissions('schedule.approve')
+  @Post('orders/:productionOrderId/unapprove')
+  unapprove(
+    @Param('productionOrderId') productionOrderId: string,
+    @Body() dto: ApproveScheduleDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.scheduling.unapprove(productionOrderId, dto.version, user.id);
+  }
+
   @RequirePermissions('schedule.manage')
   @Patch('orders/:productionOrderId/allocations/:id')
   patchAllocation(
@@ -314,6 +311,12 @@ export class SchedulingController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.scheduling.setPin(productionOrderId, dto, false, user);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('ripples/:batchId/revert')
+  revertRipple(@Param('batchId') batchId: string, @CurrentUser() user: AuthUser) {
+    return this.scheduling.revertRipple(batchId, user);
   }
 
   @RequireAnyPermissions('schedule.request-change.own', 'schedule.manage')

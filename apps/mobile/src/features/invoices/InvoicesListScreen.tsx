@@ -24,19 +24,30 @@ import { SupplierInvoiceBoardCard } from '@/features/purchasing/components/Suppl
 import {
   flattenSupplierInvoices,
   useSupplierInvoicesInfiniteQuery,
+  useSuppliersQuery,
 } from '@/features/purchasing/query';
 import { selectSupplierInvoiceCard } from '@/features/purchasing/selectPurchase';
 import type { SupplierInvoiceCardModel } from '@/features/purchasing/selectPurchase';
 import { openInvoicePdf } from './api';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import { CreateInvoiceFromSalesOrderSheet } from './components/CreateInvoiceFromSalesOrderSheet';
+import { CreateInvoiceSheet } from './components/CreateInvoiceSheet';
 import { InvoiceBoardCard } from './components/InvoiceBoardCard';
-import { InvoiceDealerSheet } from './components/InvoiceDealerSheet';
+import { InvoicePartySheet } from './components/InvoicePartySheet';
 import { InvoiceFilterTriggers } from './components/InvoiceFilterTriggers';
 import { InvoiceStatusFilterSheet } from './components/InvoiceStatusFilterSheet';
+import { InvoicePurchasingRail } from './components/InvoicePurchasingRail';
+import { InvoicesTabBar } from './components/InvoicesTabBar';
 import {
+  invoiceDeskEmptyKeys,
   isInvoiceStatusFilterActive,
+  parseInvoiceDeskTab,
+  partyFilterFallbackKey,
+  partySegmentsForDesk,
+  partySelectionAppliesToDesk,
   type InvoiceDealerOption,
+  type InvoiceDeskTab,
+  type InvoicePartySelection,
+  type InvoicePurchasingKind,
   type InvoiceStatusFilter,
 } from './invoiceFilters';
 import { useLocale } from '@/i18n';
@@ -65,7 +76,7 @@ type SectionItem =
   | { kind: 'purchase'; card: SupplierInvoiceCardModel };
 
 type InvoiceSection = {
-  key: 'orders' | 'purchasing';
+  key: 'orders' | 'returns' | 'purchasing';
   title: string;
   data: SectionItem[];
 };
@@ -122,99 +133,146 @@ export function InvoicesListScreen({
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
-  const params = useLocalSearchParams<{ chip?: string }>();
+  const params = useLocalSearchParams<{ chip?: string; section?: string }>();
   const allowed = can(user, 'invoice.read');
   const canReadPurchasing = adminControls && can(user, 'supplier-invoice.read');
   const canCreate = adminControls && can(user, 'invoice.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dealerSurface = !adminControls;
 
+  const [desk, setDesk] = useState<InvoiceDeskTab>('all');
+  const [purchasingKind, setPurchasingKind] = useState<InvoicePurchasingKind>('FABRIC');
   const [chip, setChip] = useState<InvoiceStatusFilter>('ALL');
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
-  const [customerId, setCustomerId] = useState<string | null>(null);
-  const [dealerLabel, setDealerLabel] = useState<string | null>(null);
+  const [party, setParty] = useState<InvoicePartySelection | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
+  const [partySheetOpen, setPartySheetOpen] = useState(false);
   const [statusSheetOpen, setStatusSheetOpen] = useState(false);
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   useEffect(() => {
+    const fromSection = parseInvoiceDeskTab(params.section);
+    if (fromSection) {
+      if (fromSection === 'purchasing' && !canReadPurchasing) return;
+      setDesk(fromSection);
+    }
     const raw = String(params.chip ?? '').trim().toUpperCase();
     if (!raw) return;
+    const fromChip = parseInvoiceDeskTab(raw.toLowerCase());
+    if (fromChip && raw !== 'ALL') {
+      if (fromChip === 'purchasing' && !canReadPurchasing) return;
+      setDesk(fromChip);
+      return;
+    }
     if (raw === 'OVERDUE' || raw === 'DRAFT' || raw === 'PAID' || raw === 'ISSUED' || raw === 'PARTIALLY_PAID') {
       setChip(raw as InvoiceStatusFilter);
       return;
     }
     if (raw === 'OPEN') setChip('ISSUED');
     if (raw === 'PARTIAL') setChip('PARTIALLY_PAID');
-  }, [params.chip]);
+  }, [canReadPurchasing, params.chip, params.section]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
     return () => clearTimeout(id);
   }, [search]);
 
+  useEffect(() => {
+    if (!partySelectionAppliesToDesk(party, desk)) setParty(null);
+  }, [desk, party]);
+
   const customersQuery = useInvoiceCustomersQuery(adminControls);
-  const query = useInvoicesInfiniteQuery(
-    {
-      q: q || undefined,
-      status: chip === 'ALL' || chip === 'OVERDUE' ? undefined : chip,
-      overdue: chip === 'OVERDUE' ? true : undefined,
-      customerId: customerId || undefined,
-    },
-    allowed,
+  const suppliersQuery = useSuppliersQuery(adminControls && canReadPurchasing, {
+    status: 'ACTIVE',
+  });
+  const partySegments = partySegmentsForDesk(desk);
+  const partyFallbackKey = partyFilterFallbackKey(desk);
+  const hideCustomerSections = party?.kind === 'suppliers';
+  const hidePurchasingSection = party?.kind === 'dealers';
+  const showCustomerInvoices = desk !== 'purchasing' && !hideCustomerSections;
+  const showOrdersQuery = showCustomerInvoices && desk !== 'returns';
+  const showReturnsQuery = showCustomerInvoices && desk !== 'orders';
+  const showPurchasing =
+    canReadPurchasing &&
+    (desk === 'all' || desk === 'purchasing') &&
+    !hidePurchasingSection;
+  const invoiceFilters = {
+    q: q || undefined,
+    status: chip === 'ALL' || chip === 'OVERDUE' ? undefined : chip,
+    overdue: chip === 'OVERDUE' ? true : undefined,
+    customerId: party?.kind === 'dealers' ? party.id : undefined,
+  };
+  const ordersQuery = useInvoicesInfiniteQuery(
+    { ...invoiceFilters, kind: 'ORDER' },
+    allowed && showOrdersQuery,
+  );
+  const returnsQuery = useInvoicesInfiniteQuery(
+    { ...invoiceFilters, kind: 'RETURN' },
+    allowed && showReturnsQuery,
   );
   const purchasingQuery = useSupplierInvoicesInfiniteQuery(
     {
       q: q || undefined,
       status: chip === 'ALL' ? undefined : chip,
+      materialKind: desk === 'purchasing' ? purchasingKind : undefined,
+      supplierId: party?.kind === 'suppliers' ? party.id : undefined,
     },
-    canReadPurchasing,
+    showPurchasing,
   );
   const orderCards = useMemo(
-    () => flattenInvoices(query.data).map((inv) => selectInvoiceCard(inv, locale)),
-    [query.data, locale],
+    () =>
+      showOrdersQuery
+        ? flattenInvoices(ordersQuery.data).map((inv) => selectInvoiceCard(inv, locale))
+        : [],
+    [locale, ordersQuery.data, showOrdersQuery],
+  );
+  const returnCards = useMemo(
+    () =>
+      showReturnsQuery
+        ? flattenInvoices(returnsQuery.data).map((inv) => selectInvoiceCard(inv, locale))
+        : [],
+    [locale, returnsQuery.data, showReturnsQuery],
   );
   const purchaseCards = useMemo(
     () =>
-      canReadPurchasing
+      showPurchasing
         ? flattenSupplierInvoices(purchasingQuery.data).map((inv) =>
             selectSupplierInvoiceCard(inv, locale),
           )
         : [],
-    [canReadPurchasing, purchasingQuery.data, locale],
+    [showPurchasing, purchasingQuery.data, locale],
   );
 
   const sections: InvoiceSection[] = useMemo(() => {
-    if (!adminControls) {
-      return [
-        {
-          key: 'orders',
-          title: t('mobile.invoices.sectionOrders'),
-          data: orderCards.map((card) => ({ kind: 'order' as const, card })),
-        },
-      ];
-    }
-    const next: InvoiceSection[] = [
-      {
-        key: 'orders',
-        title: t('mobile.invoices.sectionOrders'),
-        data: orderCards.map((card) => ({ kind: 'order' as const, card })),
-      },
-    ];
-    if (canReadPurchasing) {
-      next.push({
-        key: 'purchasing',
-        title: t('mobile.invoices.sectionPurchasing'),
-        data: purchaseCards.map((card) => ({ kind: 'purchase' as const, card })),
-      });
-    }
+    const orderSection: InvoiceSection = {
+      key: 'orders',
+      title: t('mobile.invoices.sectionOrders'),
+      data: orderCards.map((card) => ({ kind: 'order' as const, card })),
+    };
+    const returnSection: InvoiceSection = {
+      key: 'returns',
+      title: t('mobile.invoices.sectionReturns'),
+      data: returnCards.map((card) => ({ kind: 'order' as const, card })),
+    };
+    const purchaseSection: InvoiceSection = {
+      key: 'purchasing',
+      title: t('mobile.invoices.sectionPurchasing'),
+      data: purchaseCards.map((card) => ({ kind: 'purchase' as const, card })),
+    };
+    if (desk === 'orders') return [orderSection];
+    if (desk === 'returns') return [returnSection];
+    if (desk === 'purchasing') return [purchaseSection];
+    const next: InvoiceSection[] = [];
+    if (!hideCustomerSections) next.push(orderSection, returnSection);
+    if (showPurchasing) next.push(purchaseSection);
     return next;
-  }, [adminControls, canReadPurchasing, orderCards, purchaseCards, t]);
+  }, [desk, hideCustomerSections, orderCards, purchaseCards, returnCards, showPurchasing, t]);
 
   const isEmpty =
-    orderCards.length === 0 && (!canReadPurchasing || purchaseCards.length === 0);
+    orderCards.length === 0 &&
+    returnCards.length === 0 &&
+    (!showPurchasing || purchaseCards.length === 0);
 
   const dealerOptions: InvoiceDealerOption[] = useMemo(() => {
     const rows = customersQuery.data?.data ?? [];
@@ -236,6 +294,28 @@ export function InvoicesListScreen({
     });
   }, [customersQuery.data?.data, locale]);
 
+  const supplierOptions: InvoiceDealerOption[] = useMemo(() => {
+    const rows = suppliersQuery.data?.data ?? [];
+    return rows.map((d) => {
+      const name = localizedName(
+        locale,
+        {
+          name: d.name,
+          nameEn: d.nameEn,
+          nameAr: d.nameAr,
+          nameHe: d.nameHe,
+        },
+        d.code,
+      );
+      const searchText = [d.name, d.nameEn, d.nameAr, d.nameHe, d.code]
+        .filter(Boolean)
+        .join(' ');
+      return { id: d.id, name, code: d.code, searchText };
+    });
+  }, [locale, suppliersQuery.data?.data]);
+
+  const emptyCopy = invoiceDeskEmptyKeys(desk, purchasingKind);
+
   const statusLabel = isInvoiceStatusFilterActive(chip)
     ? t(`mobile.invoices.chips.${chip}`)
     : t('common.filter');
@@ -249,7 +329,8 @@ export function InvoicesListScreen({
     );
   }
 
-  if (query.isError && !query.data) {
+  const customerListQuery = desk === 'returns' ? returnsQuery : ordersQuery;
+  if (customerListQuery.isError && !customerListQuery.data) {
     return (
       <AppScreen>
         <InvoicesScreenTitle backFallback={backFallback} titleWeight={titleWeight} />
@@ -258,7 +339,7 @@ export function InvoicesListScreen({
           title={t('mobile.invoices.errorTitle')}
           description={t('mobile.invoices.errorBody')}
           retryLabel={t('mobile.invoices.retry')}
-          onRetry={() => void query.refetch()}
+          onRetry={() => void customerListQuery.refetch()}
         />
       </AppScreen>
     );
@@ -279,20 +360,29 @@ export function InvoicesListScreen({
         refreshControl={
           <RefreshControl
             refreshing={
-              (query.isRefetching && !query.isFetchingNextPage) ||
+              (showOrdersQuery && ordersQuery.isRefetching && !ordersQuery.isFetchingNextPage) ||
+              (showReturnsQuery &&
+                returnsQuery.isRefetching &&
+                !returnsQuery.isFetchingNextPage) ||
               (canReadPurchasing &&
                 purchasingQuery.isRefetching &&
                 !purchasingQuery.isFetchingNextPage)
             }
             onRefresh={() => {
-              void query.refetch();
+              if (showOrdersQuery) void ordersQuery.refetch();
+              if (showReturnsQuery) void returnsQuery.refetch();
               if (canReadPurchasing) void purchasingQuery.refetch();
             }}
             tintColor={colors.brand}
           />
         }
         onEndReached={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+          if (showOrdersQuery && ordersQuery.hasNextPage && !ordersQuery.isFetchingNextPage) {
+            void ordersQuery.fetchNextPage();
+          }
+          if (showReturnsQuery && returnsQuery.hasNextPage && !returnsQuery.isFetchingNextPage) {
+            void returnsQuery.fetchNextPage();
+          }
           if (
             canReadPurchasing &&
             purchasingQuery.hasNextPage &&
@@ -307,7 +397,7 @@ export function InvoicesListScreen({
 
             {canCreate ? (
               <PrimaryButton
-                label={t('accounting.createFromSalesOrder')}
+                label={t('mobile.invoices.createInvoice')}
                 onPress={() => {
                   void haptics.selection();
                   setCreateOpen(true);
@@ -318,6 +408,15 @@ export function InvoicesListScreen({
 
             {dealerSurface ? (
               <View style={{ gap: theme.spacing.md }}>
+                <InvoicesTabBar
+                  value={desk}
+                  onChange={setDesk}
+                  tabs={[
+                    { key: 'all', label: t('mobile.invoices.tabs.all') },
+                    { key: 'orders', label: t('mobile.invoices.tabs.orders') },
+                    { key: 'returns', label: t('mobile.invoices.tabs.returns') },
+                  ]}
+                />
                 <DealerSearchBar
                   value={search}
                   onChangeText={setSearch}
@@ -326,6 +425,8 @@ export function InvoicesListScreen({
                 <InvoiceFilterTriggers
                   showDealers={false}
                   dealerLabel={null}
+                  dealersFallbackKey={partyFallbackKey}
+                  dealersIcon={desk === 'purchasing' ? 'storefront-outline' : 'people-outline'}
                   onOpenDealers={() => undefined}
                   statusActive={isInvoiceStatusFilterActive(chip)}
                   statusLabel={statusLabel}
@@ -344,6 +445,22 @@ export function InvoicesListScreen({
                   ...orderBoardShadow(colorScheme),
                 }}
               >
+                <InvoicesTabBar
+                  embedded
+                  value={desk}
+                  onChange={setDesk}
+                  tabs={[
+                    { key: 'all', label: t('mobile.invoices.tabs.all') },
+                    { key: 'orders', label: t('mobile.invoices.tabs.orders') },
+                    { key: 'returns', label: t('mobile.invoices.tabs.returns') },
+                    ...(canReadPurchasing
+                      ? [{ key: 'purchasing' as const, label: t('mobile.invoices.tabs.purchasing') }]
+                      : []),
+                  ]}
+                />
+                {desk === 'purchasing' ? (
+                  <InvoicePurchasingRail value={purchasingKind} onChange={setPurchasingKind} />
+                ) : null}
                 <SearchBarShell>
                   <AppTextInput
                     value={search}
@@ -368,12 +485,11 @@ export function InvoicesListScreen({
 
                 <InvoiceFilterTriggers
                   showDealers={adminControls}
-                  dealerLabel={dealerLabel}
-                  onOpenDealers={() => setDealerSheetOpen(true)}
-                  onClearDealer={() => {
-                    setCustomerId(null);
-                    setDealerLabel(null);
-                  }}
+                  dealerLabel={party?.name ?? null}
+                  dealersFallbackKey={partyFallbackKey}
+                  dealersIcon={desk === 'purchasing' ? 'storefront-outline' : 'people-outline'}
+                  onOpenDealers={() => setPartySheetOpen(true)}
+                  onClearDealer={() => setParty(null)}
                   statusActive={isInvoiceStatusFilterActive(chip)}
                   statusLabel={statusLabel}
                   onOpenStatus={() => setStatusSheetOpen(true)}
@@ -386,19 +502,19 @@ export function InvoicesListScreen({
           isEmpty ? (
             dealerSurface ? (
               <DealerEmptyState
-                title={t('mobile.invoices.emptyTitle')}
-                body={t('mobile.invoices.emptyBody')}
+                title={t(emptyCopy.title)}
+                body={t(emptyCopy.body)}
               />
             ) : (
               <EmptyState
-                title={t('mobile.invoices.emptyTitle')}
-                description={t('mobile.invoices.emptyBody')}
+                title={t(emptyCopy.title)}
+                description={t(emptyCopy.body)}
               />
             )
           ) : null
         }
         renderSectionHeader={({ section }) =>
-          adminControls && canReadPurchasing ? (
+          desk === 'all' ? (
             <View
               style={{
                 paddingTop: theme.spacing.sm,
@@ -424,7 +540,9 @@ export function InvoicesListScreen({
                 >
                   {section.key === 'purchasing'
                     ? t('mobile.invoices.emptyPurchasing')
-                    : t('mobile.invoices.emptyOrders')}
+                    : section.key === 'returns'
+                      ? t('mobile.invoices.emptyReturns')
+                      : t('mobile.invoices.emptyOrders')}
                 </AppText>
               ) : null}
             </View>
@@ -463,23 +581,27 @@ export function InvoicesListScreen({
       />
 
       {canCreate ? (
-        <CreateInvoiceFromSalesOrderSheet
+        <CreateInvoiceSheet
           open={createOpen}
           onClose={() => setCreateOpen(false)}
-          onCreated={(id) => router.push(detailHref(id))}
+          includePurchasing={canReadPurchasing}
+          onCreated={(id, kind) => {
+            if (kind === 'PURCHASING') router.push(purchasingDetailHref(id));
+            else router.push(detailHref(id));
+          }}
         />
       ) : null}
 
       {adminControls ? (
-        <InvoiceDealerSheet
-          open={dealerSheetOpen}
-          onClose={() => setDealerSheetOpen(false)}
+        <InvoicePartySheet
+          open={partySheetOpen}
+          onClose={() => setPartySheetOpen(false)}
+          titleKey={partyFallbackKey}
+          segments={partySegments}
           dealers={dealerOptions}
-          selectedId={customerId}
-          onConfirm={(dealer) => {
-            setCustomerId(dealer?.id ?? null);
-            setDealerLabel(dealer?.name ?? null);
-          }}
+          suppliers={supplierOptions}
+          selected={party}
+          onConfirm={setParty}
         />
       ) : null}
 

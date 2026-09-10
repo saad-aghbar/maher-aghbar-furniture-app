@@ -14,7 +14,6 @@ export type SupplierOption = {
   nameAr?: string | null;
   nameEn?: string | null;
   nameHe?: string | null;
-  isCertified?: boolean;
 };
 
 type Props = {
@@ -22,8 +21,6 @@ type Props = {
   onChange: (id: string, supplier?: SupplierOption | null) => void;
   label?: string;
   required?: boolean;
-  /** When true, only show certified suppliers in results. */
-  certifiedOnly?: boolean;
   /** Defaults to ACTIVE. Pass empty string to skip. */
   status?: string;
   className?: string;
@@ -42,7 +39,6 @@ export function SupplierSearchPicker({
   onChange,
   label,
   required,
-  certifiedOnly = false,
   status = 'ACTIVE',
   className,
   disabled,
@@ -91,16 +87,14 @@ export function SupplierSearchPicker({
   const searchEnabled = open && !disabled;
 
   const resultsQuery = useQuery({
-    queryKey: ['suppliers-search', debouncedQ, status, certifiedOnly],
+    queryKey: ['suppliers-search', debouncedQ, status],
     enabled: searchEnabled,
     queryFn: async () => {
       const params = new URLSearchParams({ pageSize: '20' });
       if (status) params.set('status', status);
       if (debouncedQ) params.set('q', debouncedQ);
       const res = await apiFetch<{ data: SupplierOption[] }>(`/api/v1/suppliers?${params}`);
-      let rows = res.data ?? [];
-      if (certifiedOnly) rows = rows.filter((s) => s.isCertified);
-      return rows;
+      return res.data ?? [];
     },
   });
 

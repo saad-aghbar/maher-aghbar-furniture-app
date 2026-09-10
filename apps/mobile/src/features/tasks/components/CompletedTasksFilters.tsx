@@ -154,7 +154,14 @@ export function CompletedTasksFilters({
 
         <CompletedDateRail
           value={value.datePreset}
-          onChange={(datePreset) => patch({ datePreset })}
+          onChange={(datePreset) =>
+            patch({
+              datePreset,
+              ...(datePreset === 'custom' && !/^\d{4}-\d{2}-\d{2}$/.test(value.customDate.trim())
+                ? { customDate: todayYmd() }
+                : {}),
+            })
+          }
         />
 
         {showCustomButton ? (

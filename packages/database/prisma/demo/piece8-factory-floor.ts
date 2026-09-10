@@ -19,6 +19,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { defaultBinIdForWarehouse, allocateBinQrCode } from '../seed/warehouse-bins';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -226,9 +227,19 @@ export async function seedPiece8FactoryFloorExamples(
     const existing = await prisma.warehouseLocation.findUnique({
       where: { warehouseId_code: { warehouseId: semiWh.id, code } },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (!existing.qrCode) {
+        const qrCode = await allocateBinQrCode(prisma, semiWh.code, existing.code);
+        return prisma.warehouseLocation.update({
+          where: { id: existing.id },
+          data: { qrCode },
+        });
+      }
+      return existing;
+    }
+    const qrCode = await allocateBinQrCode(prisma, semiWh.code, code);
     return prisma.warehouseLocation.create({
-      data: { warehouseId: semiWh.id, code, name },
+      data: { warehouseId: semiWh.id, code, name, qrCode },
     });
   }
 
@@ -264,6 +275,9 @@ export async function seedPiece8FactoryFloorExamples(
             : InventoryTracking.NONE,
         consumesSemiFinished: true,
       };
+    }
+    if (code === 'INSPECTION') {
+      return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: true };
     }
     return { inventoryTracking: InventoryTracking.NONE, consumesSemiFinished: false };
   }
@@ -682,6 +696,7 @@ export async function seedPiece8FactoryFloorExamples(
             (status === TaskStatus.COMPLETED ? 100 : status === TaskStatus.IN_PROGRESS ? 40 : 0),
           assignedEmployeeId: assignee === undefined ? undefined : assignee,
           actualStart: plan.actualStart === undefined ? undefined : plan.actualStart,
+          actualCompletion: status === TaskStatus.COMPLETED ? (plan.actualStart ?? asOf) : undefined,
           plannedStart: addDays(asOf, 0),
           plannedCompletion: addDays(asOf, 1),
         },
@@ -770,7 +785,7 @@ export async function seedPiece8FactoryFloorExamples(
       data: {
         inventoryItemId: outputItem.id,
         warehouseId: semiWh.id,
-        locationId: bin?.id ?? null,
+        locationId: bin?.id ?? (await defaultBinIdForWarehouse(prisma, semiWh.id)),
         quantity: args.pieces,
         status: 'AVAILABLE',
         productionOrderId: args.poId,
@@ -790,7 +805,7 @@ export async function seedPiece8FactoryFloorExamples(
         expectedPieceCount: args.pieces,
         qrCode,
         warehouseId: semiWh.id,
-        locationId: bin?.id ?? null,
+        locationId: await defaultBinIdForWarehouse(prisma, semiWh.id),
         nextSnapshotNodeIds: nextIds,
         claimedAt: args.status === WipKitStatus.CLAIMED ? asOf : null,
         claimedByUserId: args.claimedByUserId ?? null,
@@ -1249,6 +1264,11 @@ export async function seedPiece8FactoryFloorExamples(
         progressPercent: 100,
         assignUsername: 'assembler',
       },
+      PAINTING: {
+        status: TaskStatus.COMPLETED,
+        stageStatus: StageInstanceStatus.COMPLETED,
+        progressPercent: 100,
+      },
       INSPECTION: {
         status: TaskStatus.READY,
         stageStatus: StageInstanceStatus.READY,
@@ -1327,6 +1347,11 @@ export async function seedPiece8FactoryFloorExamples(
         progressPercent: 100,
         assignUsername: 'assembler',
       },
+      PAINTING: {
+        status: TaskStatus.COMPLETED,
+        stageStatus: StageInstanceStatus.COMPLETED,
+        progressPercent: 100,
+      },
       INSPECTION: {
         status: TaskStatus.COMPLETED,
         stageStatus: StageInstanceStatus.COMPLETED,
@@ -1381,6 +1406,11 @@ export async function seedPiece8FactoryFloorExamples(
         progressPercent: 100,
         assignUsername: 'assembler',
       },
+      PAINTING: {
+        status: TaskStatus.COMPLETED,
+        stageStatus: StageInstanceStatus.COMPLETED,
+        progressPercent: 100,
+      },
       INSPECTION: {
         status: TaskStatus.COMPLETED,
         stageStatus: StageInstanceStatus.COMPLETED,
@@ -1409,6 +1439,7 @@ export async function seedPiece8FactoryFloorExamples(
         data: {
           inventoryItemId: fgItem.id,
           warehouseId: finWh.id,
+          locationId: await defaultBinIdForWarehouse(prisma, finWh.id),
           quantity: 1,
           status: 'AVAILABLE',
           productionOrderId: k.poId,

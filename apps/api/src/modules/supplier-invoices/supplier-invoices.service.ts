@@ -13,7 +13,13 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
-import type { ListSupplierInvoicesDto, UpdateSupplierInvoiceDto } from './dto/supplier-invoice.dto';
+import type {
+  ListSupplierInvoicesDto,
+  UpdateSupplierInvoiceDto,
+  UpdateSupplierPaymentDto,
+} from './dto/supplier-invoice.dto';
+import { supplierInvoiceMaterialKindWhere } from './supplier-invoice-material-kind';
+import { normalizeInvoiceTaxRate, taxAmountOnNet } from '../invoices/invoice-tax-rate';
 
 const INVOICEABLE_PO: PurchaseOrderStatus[] = [
   PurchaseOrderStatus.PARTIALLY_RECEIVED,
@@ -34,6 +40,7 @@ export class SupplierInvoicesService {
       archivedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...supplierInvoiceMaterialKindWhere(query.materialKind),
       ...(query.q
         ? {
             OR: [
@@ -74,7 +81,16 @@ export class SupplierInvoicesService {
       },
       include: {
         supplier: true,
-        purchaseOrder: true,
+        purchaseOrder: {
+          include: {
+            lines: {
+              select: {
+                fabricProcurementId: true,
+                inventoryItem: { select: { category: true } },
+              },
+            },
+          },
+        },
         goodsReceipt: true,
         lines: { orderBy: { sortOrder: 'asc' } },
         payments: { orderBy: { createdAt: 'desc' } },
@@ -83,7 +99,10 @@ export class SupplierInvoicesService {
     if (!invoice) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Supplier invoice not found.' });
     }
-    return invoice;
+    const fabric = invoice.purchaseOrder.lines.some(
+      (line) => line.fabricProcurementId || line.inventoryItem?.category === 'FABRIC',
+    );
+    return { ...invoice, materialKind: fabric ? 'FABRIC' : 'RAW' };
   }
 
   async createFromPurchaseOrder(
@@ -146,7 +165,13 @@ export class SupplierInvoicesService {
       goodsReceiptId = latestGrn.id;
     }
 
-    const number = await this.sequences.next('SINV', 'SINV');
+    const number = await this.sequences.nextUnused('SINV', 'SINV', async (candidate) => {
+      const existing = await this.prisma.supplierInvoice.findUnique({
+        where: { number: candidate },
+        select: { id: true },
+      });
+      return Boolean(existing);
+    });
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (po.paymentTermsDays || 30));
 
@@ -223,6 +248,8 @@ export class SupplierInvoicesService {
     let subtotal = Number(invoice.subtotal);
     let taxTotal = Number(invoice.taxTotal);
     let total = Number(invoice.total);
+    const headerOverride =
+      dto.subtotal !== undefined || dto.taxTotal !== undefined || dto.total !== undefined;
     let lineCreates:
       | Array<{
           description: string;
@@ -244,9 +271,9 @@ export class SupplierInvoicesService {
       lineCreates = dto.lines.map((l, i) => {
         const qty = Number(roundMoney(Number(l.quantity)));
         const unit = Number(roundMoney(Number(l.unitPrice)));
-        const taxRate = Number(roundMoney(Number(l.taxRate ?? 0)));
+        const taxRate = normalizeInvoiceTaxRate(l.taxRate);
         const net = Number(roundMoney(qty * unit));
-        const tax = Number(roundMoney(net * (taxRate / 100)));
+        const tax = Number(roundMoney(taxAmountOnNet(net, taxRate)));
         return {
           description: l.description.trim() || 'Line',
           quantity: qty,
@@ -265,12 +292,16 @@ export class SupplierInvoicesService {
         roundMoney(
           lineCreates.reduce((s, l) => {
             const net = Number(l.quantity) * Number(l.unitPrice);
-            return s + net * (Number(l.taxRate) / 100);
+            return s + taxAmountOnNet(net, l.taxRate);
           }, 0),
         ),
       );
       total = Number(roundMoney(subtotal + taxTotal));
     }
+    if (dto.subtotal !== undefined) subtotal = Number(roundMoney(dto.subtotal));
+    if (dto.taxTotal !== undefined) taxTotal = Number(roundMoney(dto.taxTotal));
+    if (dto.total !== undefined) total = Number(roundMoney(dto.total));
+    else if (headerOverride) total = Number(roundMoney(subtotal + taxTotal));
 
     if (total + 1e-9 < paid) {
       throw new BadRequestException({
@@ -286,15 +317,26 @@ export class SupplierInvoicesService {
           ? new Date(dto.dueDate)
           : null
         : invoice.dueDate;
-    let status = invoice.status;
-    if (invoice.status !== InvoiceStatus.DRAFT) {
-      if (outstanding <= 0.001) status = InvoiceStatus.PAID;
-      else if (paid > 0.001) status = InvoiceStatus.PARTIALLY_PAID;
+    let status: InvoiceStatus = invoice.status;
+    if (dto.status === InvoiceStatus.CANCELLED || dto.status === InvoiceStatus.VOID) {
+      status = dto.status;
+    } else if (outstanding <= 0.001) {
+      status = InvoiceStatus.PAID;
+    } else if (dto.status && dto.status !== InvoiceStatus.PAID) {
+      status = dto.status;
+    } else if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (paid > 0.001) status = InvoiceStatus.PARTIALLY_PAID;
       else if (nextDue && nextDue.getTime() < Date.now() && outstanding > 0.001) {
         status = InvoiceStatus.OVERDUE;
       } else {
         status = InvoiceStatus.ISSUED;
       }
+    }
+    if (dto.status === InvoiceStatus.PAID && outstanding > 0.001) {
+      throw new BadRequestException({
+        code: 'INVOICE_NOT_SETTLED',
+        message: 'Cannot mark an invoice paid while an amount is still outstanding.',
+      });
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -311,7 +353,8 @@ export class SupplierInvoicesService {
           ...(dto.dueDate !== undefined
             ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }
             : {}),
-          ...(lineCreates
+          ...(dto.invoiceDate ? { invoiceDate: new Date(dto.invoiceDate) } : {}),
+          ...(lineCreates || headerOverride
             ? {
                 subtotal,
                 taxTotal,
@@ -319,7 +362,7 @@ export class SupplierInvoicesService {
                 outstandingAmount: outstanding,
                 status,
               }
-            : dto.dueDate !== undefined
+            : dto.dueDate !== undefined || dto.status !== undefined
               ? { status }
               : {}),
         },
@@ -428,7 +471,13 @@ export class SupplierInvoicesService {
         }
       }
 
-      const number = await this.sequences.next('SPAY', 'SPAY');
+      const number = await this.sequences.nextUnused('SPAY', 'SPAY', async (candidate) => {
+        const existing = await this.prisma.supplierPayment.findUnique({
+          where: { number: candidate },
+          select: { id: true },
+        });
+        return Boolean(existing);
+      });
       const payment = await tx.supplierPayment.create({
         data: {
           number,
@@ -473,6 +522,110 @@ export class SupplierInvoicesService {
       });
 
       return payment;
+    });
+  }
+
+  async updatePayment(id: string, dto: UpdateSupplierPaymentDto, userId: string) {
+    const payment = await this.prisma.supplierPayment.findUnique({ where: { id } });
+    if (!payment) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Supplier payment not found.' });
+    }
+    const nextAmount = dto.amount != null ? Number(dto.amount) : Number(payment.amount);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (payment.supplierInvoiceId && dto.amount != null) {
+        const invoice = await tx.supplierInvoice.findFirst({
+          where: { id: payment.supplierInvoiceId, archivedAt: null },
+        });
+        if (invoice) {
+          const others = await tx.supplierPayment.aggregate({
+            where: { supplierInvoiceId: invoice.id, id: { not: id } },
+            _sum: { amount: true },
+          });
+          const otherPaid = Number(others._sum.amount ?? 0);
+          if (otherPaid + nextAmount - Number(invoice.total) > 1e-6) {
+            throw new BadRequestException({
+              code: 'PAYMENT_EXCEEDS_OUTSTANDING',
+              message: 'Payment exceeds outstanding amount.',
+            });
+          }
+        }
+      }
+
+      await tx.supplierPayment.update({
+        where: { id },
+        data: {
+          ...(dto.amount != null ? { amount: roundMoney(nextAmount) } : {}),
+          ...(dto.method ? { method: dto.method } : {}),
+          ...(dto.referenceNumber !== undefined ? { referenceNumber: dto.referenceNumber } : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.paymentDate ? { paymentDate: new Date(dto.paymentDate) } : {}),
+        },
+      });
+
+      if (payment.supplierInvoiceId) {
+        await this.recomputeSupplierInvoiceFromPayments(tx, payment.supplierInvoiceId);
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'supplier-payment.update',
+          entityType: 'SupplierPayment',
+          entityId: id,
+          oldValues: { amount: Number(payment.amount) },
+          newValues: { amount: nextAmount },
+        },
+      });
+    });
+
+    return this.prisma.supplierPayment.findUniqueOrThrow({ where: { id } });
+  }
+
+  async removePayment(id: string, userId: string) {
+    const payment = await this.prisma.supplierPayment.findUnique({ where: { id } });
+    if (!payment) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Supplier payment not found.' });
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.supplierPayment.delete({ where: { id } });
+      if (payment.supplierInvoiceId) {
+        await this.recomputeSupplierInvoiceFromPayments(tx, payment.supplierInvoiceId);
+      }
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'supplier-payment.delete',
+          entityType: 'SupplierPayment',
+          entityId: id,
+          oldValues: { amount: Number(payment.amount), supplierInvoiceId: payment.supplierInvoiceId },
+        },
+      });
+    });
+    return { ok: true, id };
+  }
+
+  private async recomputeSupplierInvoiceFromPayments(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+  ) {
+    const invoice = await tx.supplierInvoice.findFirstOrThrow({ where: { id: invoiceId } });
+    const paidAgg = await tx.supplierPayment.aggregate({
+      where: { supplierInvoiceId: invoiceId },
+      _sum: { amount: true },
+    });
+    const paid = Number(paidAgg._sum.amount ?? 0);
+    const outstanding = Math.max(0, Number(invoice.total) - paid);
+    let status: InvoiceStatus = InvoiceStatus.ISSUED;
+    if (outstanding <= 0.001) status = InvoiceStatus.PAID;
+    else if (paid > 0.001) status = InvoiceStatus.PARTIALLY_PAID;
+    await tx.supplierInvoice.update({
+      where: { id: invoiceId },
+      data: {
+        paidAmount: roundMoney(paid),
+        outstandingAmount: roundMoney(outstanding),
+        status,
+      },
     });
   }
 }

@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BlockerCategory, Priority, TaskStatus } from '@maher/database';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -99,10 +101,54 @@ export class TaskBlockDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsUUID()
+  voiceDocumentId?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsUUID('4', { each: true })
+  photoDocumentIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MinLength(8)
   @MaxLength(128)
   idempotencyKey?: string;
+}
+
+export class TaskCarryOverDto {
+  @ApiProperty({ enum: ['tomorrow', 'overtime'] })
+  @IsIn(['tomorrow', 'overtime'])
+  mode!: 'tomorrow' | 'overtime';
+
+  @ApiProperty()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  remainingMinutes!: number;
+}
+
+export class ResolveBlockerDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  resolution?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  resolutionVoiceDocumentId?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsUUID('4', { each: true })
+  resolutionPhotoDocumentIds?: string[];
 }
 
 export class AssignTaskDto {
@@ -141,6 +187,27 @@ export class AssignTaskDto {
   @Transform(({ value }) => toOptionalBoolean(value))
   @IsBoolean()
   overrideConflict?: boolean;
+
+  /** Persist extra-shift overtime when the window runs past the factory shift end. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  overtime?: boolean;
+
+  /** Required for warning-class overlaps (double-book) unless schedule.override is held. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  acknowledge?: boolean;
+
+  /** Human reason stored on ScheduleChangeHistory. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 export class CompleteTaskDto {

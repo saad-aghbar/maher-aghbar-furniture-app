@@ -1,8 +1,9 @@
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { ExpectedPackage } from '../api';
 
@@ -58,8 +59,8 @@ export function PackagingConfirmPanel({
           weight="semibold"
           style={{
             color: colors.success,
-            letterSpacing: locale === 'ar' ? 0 : 1,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            letterSpacing: locale === 'ar' || locale === 'he' ? 0 : 1,
+            textTransform: locale === 'ar' || locale === 'he' ? 'none' : 'uppercase',
             fontSize: 11,
             textAlign: isRTL ? 'right' : 'left',
           }}
@@ -90,9 +91,22 @@ export function PackagingConfirmPanel({
         }}
       >
         <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: 3,
+            backgroundColor: colors.brand,
+            opacity: 0.55,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+          }}
+        />
+        <View
           style={{
             paddingHorizontal: theme.spacing.md,
             paddingVertical: theme.spacing.sm + 2,
+            paddingStart: theme.spacing.lg + 4,
             borderBottomWidth: 1,
             borderBottomColor: colors.border,
             backgroundColor: colors.surfaceSecondary,
@@ -106,8 +120,8 @@ export function PackagingConfirmPanel({
             weight="semibold"
             style={{
               color: colors.brand,
-              letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' || locale === 'he' ? 0 : 0.6,
+              textTransform: locale === 'ar' || locale === 'he' ? 'none' : 'uppercase',
               fontSize: 11,
               flex: 1,
               textAlign: isRTL ? 'right' : 'left',
@@ -119,7 +133,7 @@ export function PackagingConfirmPanel({
             {t('mobile.quality.packagesProgress', { done, total })}
           </AppText>
         </View>
-        <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
+        <View style={{ padding: theme.spacing.md, paddingStart: theme.spacing.lg + 4, gap: theme.spacing.sm }}>
           {packages.length === 0 ? (
             <AppText variant="body" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
               {t('mobile.quality.noExpectedPackages')}
@@ -128,8 +142,9 @@ export function PackagingConfirmPanel({
             packages.map((p) => {
               const on = Boolean(checked[p.code]);
               return (
-                <Pressable
+                <AnimatedPressable
                   key={p.code}
+                  variant="button"
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: on }}
                   disabled={disabled}
@@ -141,35 +156,30 @@ export function PackagingConfirmPanel({
                     flexDirection: isRTL ? 'row-reverse' : 'row',
                     alignItems: 'center',
                     gap: theme.spacing.sm,
-                    paddingVertical: theme.spacing.sm,
-                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.md,
+                    paddingHorizontal: theme.spacing.md,
                     borderRadius: theme.radius.lg,
                     borderWidth: 1,
-                    borderColor: on ? colors.success : colors.border,
+                    borderColor: on ? colors.success : colors.borderStrong,
                     backgroundColor: on ? colors.successSoft : colors.surfaceSecondary,
-                    minHeight: theme.sizes.touch.min,
+                    minHeight: 64,
+                    opacity: disabled ? 0.55 : 1,
                   }}
                 >
                   <View
                     style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
                       borderWidth: 2,
                       borderColor: on ? colors.success : colors.borderStrong,
-                      backgroundColor: on ? colors.success : colors.surface,
+                      backgroundColor: on ? colors.success : 'transparent',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
                     {on ? (
-                      <AppText
-                        variant="caption"
-                        weight="semibold"
-                        style={{ color: colors.onBrand, fontSize: 12 }}
-                      >
-                        ✓
-                      </AppText>
+                      <Ionicons name="checkmark" size={18} color={colors.onBrand ?? '#fff'} />
                     ) : null}
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
@@ -180,17 +190,15 @@ export function PackagingConfirmPanel({
                     >
                       {labelFor(p)}
                     </AppText>
-                    {!on ? (
-                      <AppText
-                        variant="caption"
-                        color="muted"
-                        style={{ textAlign: isRTL ? 'right' : 'left' }}
-                      >
-                        {t('mobile.quality.missingPackage')}
-                      </AppText>
-                    ) : null}
+                    <AppText
+                      variant="caption"
+                      color={on ? 'success' : 'muted'}
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {on ? t('mobile.quality.packageConfirmed') : t('mobile.quality.missingPackage')}
+                    </AppText>
                   </View>
-                </Pressable>
+                </AnimatedPressable>
               );
             })
           )}
@@ -215,7 +223,8 @@ export function PackagingConfirmPanel({
       </View>
 
       {allDone && onComplete ? (
-        <Pressable
+        <AnimatedPressable
+          variant="button"
           accessibilityRole="button"
           disabled={disabled || completeBusy}
           onPress={() => {
@@ -235,10 +244,11 @@ export function PackagingConfirmPanel({
           <AppText variant="label" weight="semibold" style={{ color: colors.onBrand, fontSize: 16 }}>
             {t('mobile.quality.completePackaging')}
           </AppText>
-        </Pressable>
+        </AnimatedPressable>
       ) : null}
 
-      <Pressable
+      <AnimatedPressable
+        variant="button"
         accessibilityRole="button"
         disabled={disabled}
         onPress={() => {
@@ -259,7 +269,7 @@ export function PackagingConfirmPanel({
         <AppText variant="label" weight="semibold" style={{ color: colors.error }}>
           {t('mobile.quality.reportProblem')}
         </AppText>
-      </Pressable>
+      </AnimatedPressable>
     </View>
   );
 }

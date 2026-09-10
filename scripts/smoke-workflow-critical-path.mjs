@@ -149,6 +149,12 @@ if (rfqId) {
   );
 }
 
+const products = await request('GET', '/api/v1/products?pageSize=20', { cookie: adminCookie });
+const productRows = products.json?.data ?? (Array.isArray(products.json) ? products.json : []);
+const catalogProduct =
+  productRows.find((p) => /sofa|ottoman|armchair|chair/i.test(String(p.nameEn ?? p.name ?? ''))) ??
+  productRows[0];
+
 const quote = await request('POST', '/api/v1/quotations', {
   cookie: adminCookie,
   body: {
@@ -156,14 +162,16 @@ const quote = await request('POST', '/api/v1/quotations', {
     requestId: rfqId,
     paymentTerms: '30% deposit',
     deliveryTerms: 'Delivery by 2026-12-15',
+    offeredDeliveryDate: '2026-12-15',
     lines: [
       {
-        description: 'Smoke sofa',
+        description: catalogProduct?.nameEn ?? 'Smoke sofa',
         quantity: 1,
         unitPrice: 1200,
         fabric: 'Velvet',
         color: 'Navy',
         taxRate: 0.16,
+        productId: catalogProduct?.id,
       },
     ],
   },
@@ -181,7 +189,11 @@ if (quoteId) {
   approve1 = await approveQuotation(quoteId, adminCookie);
   ok('quotation approved', approve1.json?.status === 'APPROVED', approve1.json?.status);
   const sent = await request('POST', `/api/v1/quotations/${quoteId}/send`, { cookie: adminCookie });
-  ok('send quotation', sent.json?.status === 'SENT', sent.json?.status);
+  ok(
+    'send quotation',
+    sent.json?.status === 'SENT' || sent.json?.status === 'VIEWED',
+    sent.json?.status ?? sent.json?.message ?? String(sent.status),
+  );
 }
 
 const custLogin = await request('POST', '/api/v1/auth/login', {
@@ -190,10 +202,7 @@ const custLogin = await request('POST', '/api/v1/auth/login', {
 const custCookie = cookieHeader(custLogin.setCookie);
 ok('customer login', custLogin.status === 200 || custLogin.status === 201);
 
-let acceptQuoteId = quoteId;
-const custQuotes = await request('GET', '/api/v1/quotations?pageSize=20', { cookie: custCookie });
-const ownSent = (custQuotes.json?.data ?? []).find((q) => q.status === 'SENT' || q.id === quoteId);
-if (ownSent) acceptQuoteId = ownSent.id;
+const acceptQuoteId = quoteId;
 
 const accepted = await request('POST', `/api/v1/quotations/${acceptQuoteId}/accept`, {
   cookie: custCookie,
@@ -206,30 +215,92 @@ ok(
 );
 
 const soList = await request('GET', '/api/v1/sales-orders?pageSize=10', { cookie: adminCookie });
-const so =
-  (soList.json?.data ?? []).find((s) => s.quotation?.id === acceptQuoteId) ??
-  soList.json?.data?.[0];
+let so =
+  accepted.json?.salesOrders?.[0] ??
+  (soList.json?.data ?? []).find((s) => s.quotation?.id === acceptQuoteId);
 ok('sales order present', Boolean(so?.id), so?.number ?? '');
 
-if (so?.id && so.status === 'DRAFT') {
-  const confirmed = await request('POST', `/api/v1/sales-orders/${so.id}/confirm`, {
-    cookie: adminCookie,
-  });
-  ok(
-    'confirm sales order',
-    confirmed.json?.status === 'READY_FOR_PRODUCTION' ||
-      confirmed.json?.status === 'CONFIRMED' ||
-      confirmed.status === 200,
-    confirmed.json?.status ?? String(confirmed.status),
-  );
+if (so?.id) {
+  const soFull = await request('GET', `/api/v1/sales-orders/${so.id}`, { cookie: adminCookie });
+  if (soFull.json?.id) so = soFull.json;
+  const priceLines = (so.lines ?? []).map((l) => ({
+    lineId: l.id,
+    unitPrice: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : 1200,
+  }));
+  if (priceLines.length) {
+    await request('POST', `/api/v1/sales-orders/${so.id}/confirm-commercial-prices`, {
+      cookie: adminCookie,
+      body: { lines: priceLines },
+    });
+  }
 }
 
-const poList = await request('GET', '/api/v1/production-orders?pageSize=20', { cookie: adminCookie });
-const po =
-  (poList.json?.data ?? []).find((p) => p.salesOrder?.id === so?.id) ?? poList.json?.data?.[0];
+let plan = { status: 0, json: null };
+if (so?.id) {
+  await request('GET', `/api/v1/sales-orders/${so.id}/production-setup`, {
+    cookie: adminCookie,
+  });
+  plan = await request('POST', `/api/v1/sales-orders/${so.id}/production-setup/ensure-plan`, {
+    cookie: adminCookie,
+  });
+  const soNow = await request('GET', `/api/v1/sales-orders/${so.id}`, { cookie: adminCookie });
+  if (soNow.json?.id) so = soNow.json;
+
+  if (so.status === 'DRAFT') {
+    const confirmed = await request('POST', `/api/v1/sales-orders/${so.id}/confirm`, {
+      cookie: adminCookie,
+    });
+    ok(
+      'confirm sales order',
+      confirmed.json?.status === 'READY_FOR_PRODUCTION' ||
+        confirmed.json?.status === 'WAITING_FOR_MATERIALS' ||
+        confirmed.json?.status === 'CONFIRMED' ||
+        confirmed.status === 200 ||
+        confirmed.status === 201,
+      confirmed.json?.status ?? confirmed.json?.message ?? String(confirmed.status),
+    );
+    if (confirmed.json?.id) so = confirmed.json;
+  } else {
+    ok(
+      'confirm sales order',
+      ['READY_FOR_PRODUCTION', 'WAITING_FOR_MATERIALS', 'CONFIRMED', 'IN_PRODUCTION'].includes(
+        so.status,
+      ),
+      so.status ?? `plan=${plan.status} ${plan.json?.message ?? ''}`,
+    );
+  }
+}
+
+const poId =
+  plan.json?.primaryProductionOrderId ??
+  plan.json?.productionOrderIds?.[0] ??
+  so?.productionOrders?.[0]?.id;
+const poDetail = poId
+  ? await request('GET', `/api/v1/production-orders/${poId}`, { cookie: adminCookie })
+  : { json: null };
+const po = poDetail.json?.id ? poDetail.json : null;
 ok('production order from accept/confirm', Boolean(po?.id), po?.number ?? '');
 
 if (po?.id) {
+  const workflows = await request('GET', '/api/v1/production-workflows', { cookie: adminCookie });
+  const wfRows = Array.isArray(workflows.json) ? workflows.json : (workflows.json?.data ?? []);
+  const wf =
+    wfRows.find((w) => /standard furniture/i.test(String(w.nameEn ?? w.name ?? ''))) ??
+    wfRows.find((w) => (w.activeVersion?._count?.nodes ?? 0) >= 5) ??
+    wfRows.find((w) => w.activeVersion?.id);
+  if (wf?.id) {
+    const assigned = await request('POST', `/api/v1/production-orders/${po.id}/workflow/assign`, {
+      cookie: adminCookie,
+      body: { workflowId: wf.id },
+    });
+    if (!(assigned.status === 200 || assigned.status === 201)) {
+      ok(
+        'assign workflow to PO',
+        false,
+        `${assigned.status} ${assigned.json?.message ?? wf.id}`,
+      );
+    }
+  }
   await request('POST', `/api/v1/production-orders/${po.id}/start`, { cookie: adminCookie });
   const afterStages = await completeProductionForDelivery(po.id, adminCookie);
   ok(
@@ -259,15 +330,33 @@ if (delivery.json?.id && so?.id) {
     cookie: adminCookie,
     body: { status: 'READY' },
   });
-  await request('PATCH', `/api/v1/deliveries/${delivery.json.id}/status`, {
+  const sheet = await request('GET', `/api/v1/deliveries/${delivery.json.id}/load-sheet`, {
     cookie: adminCookie,
-    body: { status: 'OUT_FOR_DELIVERY' },
   });
-  const delivered = await request('PATCH', `/api/v1/deliveries/${delivery.json.id}/status`, {
+  for (const product of sheet.json?.products ?? []) {
+    for (const piece of product.pieces ?? []) {
+      if (!piece.loadedAt && piece.id) {
+        await request(
+          'POST',
+          `/api/v1/deliveries/${delivery.json.id}/load-pieces/${piece.id}/check`,
+          { cookie: adminCookie },
+        );
+      }
+    }
+  }
+  const departed = await request('POST', `/api/v1/deliveries/${delivery.json.id}/depart`, {
     cookie: adminCookie,
-    body: { status: 'DELIVERED', recipientName: 'Smoke Tester', signatureData: 'sig' },
   });
-  ok('delivery delivered', delivered.json?.status === 'DELIVERED', delivered.json?.status ?? '');
+  const receipt = await request('POST', `/api/v1/deliveries/${delivery.json.id}/confirm-receipt`, {
+    cookie: custCookie,
+    body: { recipientName: 'Smoke Tester', signatureData: 'sig' },
+  });
+  ok(
+    'delivery delivered',
+    receipt.json?.status === 'DELIVERED',
+    receipt.json?.status ??
+      `${receipt.status} ${receipt.json?.message ?? departed.json?.message ?? ''}`,
+  );
   const soAfter = await request('GET', `/api/v1/sales-orders/${so.id}`, { cookie: adminCookie });
   ok('SO closed on delivery', soAfter.json?.status === 'DELIVERED', soAfter.json?.status ?? '');
 }
@@ -279,9 +368,9 @@ const invoice = so?.id
     })
   : { status: 0, json: null };
 ok(
-  'invoice from SO (JoFotara)',
+  'invoice from SO',
   Boolean(invoice.json?.id),
-  `${invoice.json?.id ?? ''} jofotara=${invoice.json?.jofotaraStatus ?? invoice.json?.jofotaraUuid ?? ''}`,
+  invoice.json?.id ?? '',
 );
 
 if (invoice.json?.id) {
@@ -306,8 +395,10 @@ const warehouseId = (Array.isArray(warehouses.json)
   : (warehouses.json?.data ?? []))[0]?.id;
 const suppliers = await request('GET', '/api/v1/suppliers?pageSize=5', { cookie: adminCookie });
 const supplierId = (suppliers.json?.data ?? [])[0]?.id;
-const invItems = await request('GET', '/api/v1/inventory/items?pageSize=5', { cookie: adminCookie });
-let inventoryItemId = (invItems.json?.data ?? [])[0]?.id;
+const invItems = await request('GET', '/api/v1/inventory/items?pageSize=20&isPurchasable=true', {
+  cookie: adminCookie,
+});
+let inventoryItemId = (invItems.json?.data ?? []).find((i) => i.isPurchasable)?.id;
 
 if (!inventoryItemId) {
   const createdItem = await request('POST', '/api/v1/inventory/items', {
@@ -317,6 +408,7 @@ if (!inventoryItemId) {
       nameAr: 'مادة دخان',
       nameEn: 'Smoke material',
       unit: 'pcs',
+      category: 'WOOD',
       minStock: 10,
     },
   });
@@ -340,7 +432,11 @@ const pr = await request('POST', '/api/v1/purchase-requests', {
     ],
   },
 });
-ok('create PR', Boolean(pr.json?.id), pr.json?.id ?? String(pr.status));
+ok(
+  'create PR',
+  Boolean(pr.json?.id),
+  pr.json?.id ?? `${pr.status} ${pr.json?.message ?? ''}`,
+);
 
 if (pr.json?.id && supplierId) {
   await request('POST', `/api/v1/purchase-requests/${pr.json.id}/approve`, {

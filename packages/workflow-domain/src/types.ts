@@ -51,6 +51,13 @@ export type CanonicalWorkflowGraph = {
   packagingNodeId: string | null;
   deliveryNodeId: string | null;
   frontierNodeIds: string[];
+  requiresOpeningChain: boolean;
+  requiresTerminalChain: boolean;
+};
+
+export type WorkflowChainOptions = {
+  requiresOpeningChain?: boolean;
+  requiresTerminalChain?: boolean;
 };
 
 export type WorkflowValidationIssue = {

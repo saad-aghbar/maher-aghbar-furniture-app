@@ -30,14 +30,14 @@ export function displayStatusLabel(locale: Locale, status: string): string {
   const key = normalizeStatusKey(status);
   if (!key) return status;
 
-  const fromStatuses = statusLabel(locale, key);
-  if (!isUnresolvedStatusLabel(key, fromStatuses)) return fromStatuses;
-
   for (const prefix of STATUS_MESSAGE_KEYS) {
     const path = `${prefix}${key}`;
     const translated = translate(locale, path);
     if (translated !== path) return translated;
   }
+
+  const fromStatuses = statusLabel(locale, key);
+  if (!isUnresolvedStatusLabel(key, fromStatuses)) return fromStatuses;
 
   return englishStatusFallback(key);
 }

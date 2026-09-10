@@ -14,8 +14,9 @@ describe('classifyPurchaseOrder', () => {
     expect(p.attentionReason).toBeNull();
   });
 
-  it('maps APPROVED/SENT to ORDERED', () => {
+  it('maps APPROVED/SENT to ORDERED but only SENT can receive', () => {
     expect(classifyPurchaseOrder({ status: 'APPROVED' }).phase).toBe('ORDERED');
+    expect(classifyPurchaseOrder({ status: 'APPROVED' }).primaryAction).toBe('PLACE');
     expect(classifyPurchaseOrder({ status: 'SENT' }).phase).toBe('ORDERED');
     expect(classifyPurchaseOrder({ status: 'SENT' }).tone).toBe('info');
     expect(classifyPurchaseOrder({ status: 'SENT' }).primaryAction).toBe('RECEIVE');

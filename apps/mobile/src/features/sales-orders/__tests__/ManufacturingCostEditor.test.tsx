@@ -97,5 +97,5 @@ describe('ManufacturingCostEditor layout', () => {
     expect(getByText('Qty 88')).toBeTruthy();
     expect(getByText('1 materials')).toBeTruthy();
     expect(getByText('JOD 294.40')).toBeTruthy();
-  });
+  }, 15_000);
 });

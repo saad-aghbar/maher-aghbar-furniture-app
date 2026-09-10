@@ -20,6 +20,8 @@ interface ConfirmDialogProps {
   reasonPlaceholder?: string;
   onConfirm: (reason?: string) => void;
   onClose: () => void;
+  /** Optional shared pill class for confirm + cancel. */
+  ctaClassName?: string;
 }
 
 export function ConfirmDialog({
@@ -36,6 +38,7 @@ export function ConfirmDialog({
   reasonPlaceholder,
   onConfirm,
   onClose,
+  ctaClassName,
 }: ConfirmDialogProps) {
   const t = useTranslations('common');
   const [reason, setReason] = useState('');
@@ -54,10 +57,16 @@ export function ConfirmDialog({
       size="sm"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
+          <Button
+            variant={ctaClassName ? 'secondary' : 'ghost'}
+            className={ctaClassName}
+            onClick={onClose}
+            disabled={loading}
+          >
             {t('cancel')}
           </Button>
           <Button
+            className={ctaClassName}
             variant={danger ? 'danger' : 'primary'}
             loading={loading}
             disabled={reasonMissing}

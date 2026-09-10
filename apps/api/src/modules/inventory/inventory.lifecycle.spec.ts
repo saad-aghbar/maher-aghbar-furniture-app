@@ -31,11 +31,33 @@ describe('inventory lifecycle engine', () => {
       warehouse: {
         findUniqueOrThrow: jest.fn().mockResolvedValue({
           id: 'wh-1',
+          code: 'RAW',
+          type: overrides?.warehouseType ?? 'RAW_MATERIALS',
+        }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'wh-1',
+          code: 'RAW',
           type: overrides?.warehouseType ?? 'RAW_MATERIALS',
         }),
       },
+      warehouseLocation: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'loc-default',
+          warehouseId: 'wh-1',
+          code: 'RAW-MAIN',
+          isDefault: true,
+          qrCode: 'BIN-RAW-MAIN',
+        }),
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'loc-default' }),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({}),
+      },
       inventoryBalance: {
-        findFirst: jest.fn().mockResolvedValue(overrides?.balance ?? { id: 'bal-1', availableQty: 10, reservedQty: 0 }),
+        findFirst: jest.fn().mockResolvedValue(overrides?.balance ?? { id: 'bal-1', availableQty: 10, reservedQty: 0, locationId: 'loc-default' }),
+        findMany: jest.fn().mockResolvedValue([
+          overrides?.balance ?? { id: 'bal-1', availableQty: 10, reservedQty: 0, locationId: 'loc-default' },
+        ]),
         update: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockResolvedValue({}),
       },
@@ -225,6 +247,62 @@ describe('inventory lifecycle engine', () => {
     },
   );
 
+  it('allows a same-warehouse transfer when bins differ', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'trf-bin', status: 'DRAFT' });
+    const prisma = {
+      warehouse: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'raw', type: 'RAW_MATERIALS' })
+          .mockResolvedValueOnce({ id: 'raw', type: 'RAW_MATERIALS' }),
+      },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'i', archivedAt: null, isActive: true }]),
+      },
+      warehouseTransfer: { create },
+    } as unknown as PrismaService;
+    const service = new InventoryService(
+      prisma,
+      { next: jest.fn().mockResolvedValue('TRF-1') } as unknown as SequenceService,
+      {} as PurchasingService,
+    );
+    await expect(
+      service.createTransfer(
+        {
+          fromWarehouseId: 'raw',
+          toWarehouseId: 'raw',
+          lines: [
+            {
+              inventoryItemId: 'i',
+              quantity: 1,
+              fromLocationId: 'bin-a',
+              toLocationId: 'bin-b',
+            },
+          ],
+        },
+        'u1',
+      ),
+    ).resolves.toMatchObject({ id: 'trf-bin' });
+    expect(create).toHaveBeenCalled();
+  });
+
+  it('rejects a same-warehouse transfer without two bins', async () => {
+    const prisma = {
+      warehouse: { findUniqueOrThrow: jest.fn() },
+    } as unknown as PrismaService;
+    const service = new InventoryService(
+      prisma,
+      { next: jest.fn() } as unknown as SequenceService,
+      {} as PurchasingService,
+    );
+    await expect(
+      service.createTransfer(
+        { fromWarehouseId: 'raw', toWarehouseId: 'raw', lines: [{ inventoryItemId: 'i', quantity: 1 }] },
+        'u1',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   const crossLifecycle: Array<[string, string]> = [
     ['RAW_MATERIALS', 'SEMI_FINISHED'],
     ['RAW_MATERIALS', 'FINISHED_GOODS'],
@@ -327,8 +405,20 @@ describe('inventory lifecycle engine', () => {
     });
     expect(tx.inventoryLot!.update).toHaveBeenCalledWith({
       where: { id: 'lot-1' },
-      data: { warehouseId: 'wh-2', locationId: null },
+      data: { warehouseId: 'wh-2', locationId: 'loc-default' },
     });
     expect(tx.inventoryBalance.update).toHaveBeenCalled();
+  });
+
+  it('lands unnamed receipts on the warehouse default bin', async () => {
+    const { service, created } = makeService();
+    await service.applyMovement({
+      type: InventoryTxType.PURCHASE_RECEIPT,
+      inventoryItemId: 'item-1',
+      warehouseId: 'wh-1',
+      quantity: 1,
+      userId: 'u1',
+    });
+    expect(created[0]).toMatchObject({ locationId: 'loc-default' });
   });
 });

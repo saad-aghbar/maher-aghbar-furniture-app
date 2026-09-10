@@ -19,6 +19,7 @@ function makeService(overrides: {
     },
     supplierQuoteOffer: { update: jest.fn() },
     auditEvent: { create: jest.fn().mockResolvedValue({}) },
+    systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     ...overrides.prisma,
   };

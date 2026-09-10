@@ -320,6 +320,7 @@ export function InventoryGroupListScreen({
           const body = {
             inventoryItemId: input.inventoryItemId,
             warehouseId: input.warehouseId,
+            locationId: input.locationId,
             quantity: input.quantity,
             notes: input.notes,
             idempotencyKey: `mobile-${move.mode}-${input.inventoryItemId}-${Date.now()}`,

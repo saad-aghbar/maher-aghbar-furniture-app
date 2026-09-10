@@ -12,6 +12,7 @@ import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCa
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { locationPickerLabel } from '@/features/inventory/pickDefaultLocation';
 import {
   productionBoardShadow,
   productionSectionLabelStyle,
@@ -253,7 +254,7 @@ export function ProductionWipSection({
           <View style={{ gap: theme.spacing.sm }}>
             {flatKits.map(({ kit, stageLabel }) => {
               const name = productName(kit, locale);
-              const bin = kit.location?.name?.trim() || kit.location?.code || null;
+              const bin = locationPickerLabel(kit.location) || null;
               const accent =
                 kit.status === 'CLAIMED'
                   ? colors.warning

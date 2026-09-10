@@ -105,6 +105,7 @@ export const navItems: NavItem[] = [
     key: 'reports',
     icon: FileBarChart2,
     anyPermissions: [
+      'inventory.cost.read',
       'report.sales.read',
       'report.production.read',
       'report.inventory.read',
@@ -182,7 +183,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
       {
         href: '/warehouses',
         key: 'warehouses',
-        anyPermissions: ['warehouse.manage', 'inventory.read'],
+        anyPermissions: ['warehouse.manage', 'warehouse.read'],
       },
     ],
   },
@@ -212,6 +213,11 @@ export const nestedNavGroups: NestedNavGroup[] = [
         href: '/production/workflow',
         key: 'workflow',
         anyPermissions: ['production.workflow.read'],
+      },
+      {
+        href: '/production/problems',
+        key: 'productionProblems',
+        anyPermissions: ['production-task.update-any'],
       },
       {
         href: '/quality',

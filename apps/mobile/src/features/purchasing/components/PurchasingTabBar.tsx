@@ -29,7 +29,6 @@ const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A'] as const;
 
 const TAB_ICON: Record<PurchasingHubTab, keyof typeof Ionicons.glyphMap> = {
   orders: 'cart-outline',
-  requests: 'document-text-outline',
   invoices: 'receipt-outline',
   fabric: 'color-palette-outline',
 };
@@ -49,7 +48,7 @@ type Props = {
 };
 
 /**
- * Draggable purchasing section bar — Orders / Requests / Invoices with sliding bubble.
+ * Draggable purchasing section bar — Orders / Invoices / Fabric with sliding bubble.
  */
 export function PurchasingTabBar({ tabs, value, onChange }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -187,11 +186,9 @@ export function PurchasingTabBar({ tabs, value, onChange }: Props) {
             const shortFallback =
               item.key === 'orders'
                 ? 'Orders'
-                : item.key === 'requests'
-                  ? 'Requests'
-                  : item.key === 'fabric'
-                    ? 'Fabric'
-                    : 'Invoices';
+                : item.key === 'fabric'
+                  ? 'Fabric'
+                  : 'Invoices';
             const short = shortRaw === shortKey ? shortFallback : shortRaw;
             const a11y =
               item.count != null ? `${item.label} (${item.count})` : item.label;

@@ -6,9 +6,11 @@ import {
   MonthCalendar,
   formatYmdLabel,
   initialCursorFromValue,
+  monthRangeYmd,
   todayYmd,
   type DayMeta,
 } from '@/components/calendar';
+import { useSchedulingCalendarQuery } from '../query';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { OrderCardMedia } from '@/features/sales-orders/components/OrderCardMedia';
@@ -24,15 +26,6 @@ import {
   overtimeHoursLabel,
   stepOvertimeEnd,
 } from '../selectDayCapacity';
-import {
-  blockerKindI18nKey,
-  type SyncScheduleSheetPhase,
-  type SyncScheduleStats,
-} from '../syncScheduleUi';
-import {
-  type OptimizeScheduleSheetPhase,
-  type OptimizeScheduleStats,
-} from '../optimizeScheduleUi';
 
 function SheetFooter({
   confirmLabel,
@@ -270,6 +263,7 @@ export function ApproveScheduleSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
+      overlay
       title={t('mobile.adminScheduling.sheets.approveTitle')}
       fitContent
       maxHeight={Math.round(height * 0.48)}
@@ -293,12 +287,49 @@ export function ApproveScheduleSheet({
   );
 }
 
+export function OverwriteApprovalSheet({
+  open,
+  onClose,
+  orderNumber,
+  loading,
+  errorMessage,
+  onConfirm,
+}: ApproveSheetProps) {
+  const { t } = useLocale();
+  const { theme } = useTheme();
+  const { height } = useWindowDimensions();
+  return (
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      overlay
+      title={t('mobile.adminScheduling.sheets.overwriteApprovalTitle')}
+      fitContent
+      maxHeight={Math.round(height * 0.48)}
+    >
+      <View style={{ gap: theme.spacing.md }}>
+        <ConfirmCopyBoard
+          icon="refresh-outline"
+          orderNumber={orderNumber}
+          body={t('mobile.adminScheduling.sheets.overwriteApprovalBody', { number: orderNumber })}
+          errorMessage={errorMessage}
+        />
+        <SheetFooter
+          confirmLabel={t('mobile.adminScheduling.sheets.overwriteApprovalConfirm')}
+          cancelLabel={t('mobile.production.cancel')}
+          loading={loading}
+          onConfirm={onConfirm}
+          onCancel={onClose}
+        />
+      </View>
+    </BottomSheet>
+  );
+}
+
 type ChangeDateSheetProps = {
   open: boolean;
   onClose: () => void;
   current?: string | null;
-  /** Working YMD set from factory calendar (optional). */
-  workingDays?: Set<string>;
   loading?: boolean;
   errorMessage?: string | null;
   onSubmit: (isoDate: string, reason?: string) => void;
@@ -308,7 +339,6 @@ export function AdminChangeScheduleDateSheet({
   open,
   onClose,
   current,
-  workingDays,
   loading,
   errorMessage,
   onSubmit,
@@ -333,24 +363,37 @@ export function AdminChangeScheduleDateSheet({
     }
   }, [open, current]);
 
+  const monthRange = useMemo(() => monthRangeYmd(cursor), [cursor]);
+  const calendarQuery = useSchedulingCalendarQuery(
+    open ? { from: monthRange.from, to: monthRange.to, view: 'month' } : null,
+    open,
+  );
+  const workingByYmd = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const day of calendarQuery.data?.days ?? []) {
+      map.set(day.date.slice(0, 10), day.isWorking);
+    }
+    return map;
+  }, [calendarQuery.data?.days]);
+
   const dayMeta = useMemo(() => {
     const last = new Date(cursor.y, cursor.m + 1, 0).getDate();
     const meta: Record<string, DayMeta> = {};
     for (let d = 1; d <= last; d++) {
       const ymd = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      if (workingDays && !workingDays.has(ymd)) {
-        meta[ymd] = { tone: 'closed', disabled: true };
-      } else {
-        meta[ymd] = { tone: 'empty', disabled: false };
-      }
+      meta[ymd] =
+        workingByYmd.get(ymd) === false
+          ? { tone: 'closed', disabled: true }
+          : { tone: 'empty', disabled: false };
     }
     return meta;
-  }, [cursor.m, cursor.y, workingDays]);
+  }, [cursor.m, cursor.y, workingByYmd]);
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
+      overlay
       title={t('mobile.adminScheduling.sheets.changeDateTitle')}
       sheetHeight={Math.min(Math.round(height * 0.62), 560)}
     >
@@ -488,9 +531,11 @@ type DayExceptionSheetProps = {
   currentOvertimeEnd?: string | null;
   loading?: boolean;
   errorMessage?: string | null;
+  workers?: Array<{ id: string; name: string }>;
+  impactSummary?: string | null;
   onOpenDay: () => void;
   onCloseDay: () => void;
-  onOvertime: (endHm: string) => void;
+  onOvertime: (endHm: string, overtimeEmployeeIds?: string[]) => void;
   onClearException: () => void;
 };
 
@@ -538,6 +583,71 @@ function DayCapacityCard({
         {children}
       </View>
     </View>
+  );
+}
+
+function OvertimeWorkerRow({
+  label,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const { isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected, disabled }}
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: theme.sizes.touch.min,
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: selected ? colors.brand : colors.border,
+        backgroundColor: selected ? colors.brandSoft : colors.surface,
+        paddingHorizontal: theme.spacing.md,
+        overflow: 'hidden',
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      {selected ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: 3,
+            backgroundColor: colors.brand,
+            opacity: 0.55,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+          }}
+        />
+      ) : null}
+      <Ionicons
+        name={selected ? 'checkbox' : 'square-outline'}
+        size={18}
+        color={selected ? colors.brand : colors.textMuted}
+      />
+      <AppText weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
+        {label}
+      </AppText>
+    </AnimatedPressable>
   );
 }
 
@@ -653,6 +763,8 @@ export function AdminDayExceptionSheet({
   currentOvertimeEnd,
   loading,
   errorMessage,
+  workers = [],
+  impactSummary,
   onOpenDay,
   onCloseDay,
   onOvertime,
@@ -662,14 +774,23 @@ export function AdminDayExceptionSheet({
   const { colors, theme, colorScheme } = useTheme();
   const { height } = useWindowDimensions();
   const [overtimeEnd, setOvertimeEnd] = useState(() => defaultOvertimeEnd(defaultShiftEnd));
+  const [overtimeWorkerIds, setOvertimeWorkerIds] = useState<string[]>([]);
+  const [workerQuery, setWorkerQuery] = useState('');
   const busy = Boolean(loading);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dateLabel = formatYmdLabel(dateYmd, formatDate) || dateYmd;
   const accent = isWorking ? colors.brand : colors.borderStrong;
+  const filteredWorkers = useMemo(() => {
+    const q = workerQuery.trim().toLowerCase();
+    if (!q) return workers;
+    return workers.filter((worker) => worker.name.toLowerCase().includes(q));
+  }, [workerQuery, workers]);
 
   useEffect(() => {
     if (!open) return;
     setOvertimeEnd(currentOvertimeEnd?.trim() || defaultOvertimeEnd(defaultShiftEnd));
+    setOvertimeWorkerIds([]);
+    setWorkerQuery('');
   }, [currentOvertimeEnd, dateYmd, defaultShiftEnd, open]);
 
   const ActionBtn = ({
@@ -758,9 +879,15 @@ export function AdminDayExceptionSheet({
       onClose={onClose}
       title={t('mobile.adminScheduling.dayCapacity.title', { date: dateLabel })}
       fitContent
-      maxHeight={Math.round(height * 0.72)}
+      expandable
+      maxHeight={Math.round(height * 0.88)}
     >
-      <View style={{ gap: theme.spacing.md }}>
+      <ScrollView
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
+      >
         <DayCapacityCard accent={accent}>
           <View
             style={{
@@ -831,6 +958,95 @@ export function AdminDayExceptionSheet({
               disabled={busy}
               onChange={setOvertimeEnd}
             />
+            {workers.length > 0 ? (
+              <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.sm,
+                  }}
+                >
+                  <AppText variant="caption" color="secondary">
+                    {t('mobile.adminScheduling.dayCapacity.workers')}
+                  </AppText>
+                  <AppText variant="caption" color="muted">
+                    {overtimeWorkerIds.length > 0
+                      ? t('mobile.adminScheduling.dayCapacity.selectedCount', {
+                          count: overtimeWorkerIds.length,
+                        })
+                      : t('mobile.adminScheduling.dayCapacity.allWorkers')}
+                  </AppText>
+                </View>
+                <TextField
+                  value={workerQuery}
+                  onChangeText={setWorkerQuery}
+                  placeholder={t('mobile.adminScheduling.dayCapacity.searchWorkers')}
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  editable={!busy}
+                />
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    overflow: 'hidden',
+                    maxHeight: 232,
+                  }}
+                >
+                  <ScrollView
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    style={{ maxHeight: 232 }}
+                    contentContainerStyle={{
+                      gap: theme.spacing.xs,
+                      padding: theme.spacing.sm,
+                    }}
+                  >
+                    {workerQuery.trim() ? null : (
+                      <OvertimeWorkerRow
+                        label={t('mobile.adminScheduling.dayCapacity.allWorkers')}
+                        selected={overtimeWorkerIds.length === 0}
+                        disabled={busy}
+                        onPress={() => setOvertimeWorkerIds([])}
+                      />
+                    )}
+                    {filteredWorkers.map((worker) => {
+                      const selected = overtimeWorkerIds.includes(worker.id);
+                      return (
+                        <OvertimeWorkerRow
+                          key={worker.id}
+                          label={worker.name}
+                          selected={selected}
+                          disabled={busy}
+                          onPress={() =>
+                            setOvertimeWorkerIds((prev) =>
+                              prev.includes(worker.id)
+                                ? prev.filter((id) => id !== worker.id)
+                                : [...prev, worker.id],
+                            )
+                          }
+                        />
+                      );
+                    })}
+                    {filteredWorkers.length === 0 ? (
+                      <AppText variant="caption" color="muted" style={{ padding: theme.spacing.sm }}>
+                        {t('mobile.adminScheduling.dayCapacity.noWorkersMatch')}
+                      </AppText>
+                    ) : null}
+                  </ScrollView>
+                </View>
+              </View>
+            ) : null}
+          </DayCapacityCard>
+        ) : null}
+
+        {impactSummary ? (
+          <DayCapacityCard accent={colors.warning}>
+            <AppText variant="body">{impactSummary}</AppText>
           </DayCapacityCard>
         ) : null}
 
@@ -849,7 +1065,12 @@ export function AdminDayExceptionSheet({
               label={t('mobile.adminScheduling.dayCapacity.addOvertime')}
               icon="time-outline"
               filled
-              onPress={() => onOvertime(overtimeEnd)}
+              onPress={() =>
+                onOvertime(
+                  overtimeEnd,
+                  overtimeWorkerIds.length > 0 ? overtimeWorkerIds : undefined,
+                )
+              }
             />
           )}
 
@@ -883,7 +1104,7 @@ export function AdminDayExceptionSheet({
             onPress={onClose}
           />
         </View>
-      </View>
+      </ScrollView>
     </BottomSheet>
   );
 }
@@ -1954,624 +2175,6 @@ export function ResolveAllAtRiskSheet({
             confirmLabel={t('mobile.adminScheduling.atRisk.resolveAll')}
             cancelLabel={t('mobile.production.cancel')}
             loading={loading}
-            onConfirm={() => onConfirm?.()}
-            onCancel={onClose}
-          />
-        </View>
-      )}
-    </BottomSheet>
-  );
-}
-
-function syncSheetTitle(phase: SyncScheduleSheetPhase, t: (key: string) => string): string {
-  if (phase === 'syncing') return t('mobile.adminScheduling.sync.syncing');
-  if (phase === 'upToDate') return t('mobile.adminScheduling.sync.upToDate');
-  if (phase === 'changed') return t('mobile.adminScheduling.sync.complete');
-  if (phase === 'partial') return t('mobile.adminScheduling.sync.partial');
-  if (phase === 'failed') return t('mobile.adminScheduling.sync.failed');
-  if (phase === 'inProgress') return t('mobile.adminScheduling.sync.inProgress');
-  return t('mobile.adminScheduling.sync.confirmTitle');
-}
-
-export function SyncScheduleSheet({
-  open,
-  onClose,
-  phase,
-  stats,
-  errorMessage,
-  onConfirm,
-  onRetry,
-  onViewAttention,
-}: {
-  open: boolean;
-  onClose: () => void;
-  phase: SyncScheduleSheetPhase;
-  stats?: SyncScheduleStats | null;
-  errorMessage?: string | null;
-  onConfirm?: () => void;
-  onRetry?: () => void;
-  onViewAttention?: () => void;
-}) {
-  const { t, isRTL } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
-  const { height } = useWindowDimensions();
-  const showingResult = phase === 'upToDate' || phase === 'changed' || phase === 'partial' || phase === 'failed';
-  const needsAdmin = phase === 'partial';
-  const accent =
-    phase === 'failed' ? colors.error : needsAdmin ? colors.warning : colors.success;
-  const wash =
-    phase === 'failed' ? colors.errorSoft : needsAdmin ? colors.warningSoft : colors.successSoft;
-  const maxHeight = Math.round(height * 0.74);
-  const attentionRows = [
-    ...(stats?.blockedItems ?? []).map((item) => ({
-      key: `blocked-${item.number}`,
-      label: `${item.number} · ${t(blockerKindI18nKey(item.blockerKind))}`,
-      reasonKey: blockerKindI18nKey(item.blockerKind),
-    })),
-    ...(stats?.manualAttentionItems ?? []).map((item) => ({
-      key: `manual-${item.number}`,
-      label: `${item.number} · ${t('mobile.adminScheduling.sync.manualAttention')}`,
-      reasonKey: 'mobile.adminScheduling.sync.manualAttention',
-    })),
-  ];
-
-  return (
-    <BottomSheet
-      open={open}
-      onClose={onClose}
-      title={syncSheetTitle(phase, t)}
-      fitContent
-      maxHeight={maxHeight}
-    >
-      {phase === 'syncing' ? (
-        <View
-          style={{
-            gap: theme.spacing.md,
-            alignItems: 'center',
-            paddingVertical: theme.spacing.lg,
-          }}
-        >
-          <ActivityIndicator color={colors.brand} />
-          <AppText
-            variant="body"
-            color="secondary"
-            style={{ textAlign: 'center', lineHeight: 22 }}
-          >
-            {t('mobile.adminScheduling.sync.syncing')}
-          </AppText>
-        </View>
-      ) : showingResult ? (
-        <ScrollView
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-          style={{ maxHeight: Math.max(240, maxHeight - 88) }}
-          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
-        >
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: accent,
-              backgroundColor: colors.surface,
-              overflow: 'hidden',
-              ...orderBoardShadow(colorScheme),
-            }}
-          >
-            <View style={{ height: 5, backgroundColor: wash }} />
-            <View
-              style={{
-                padding: theme.spacing.md,
-                gap: theme.spacing.sm,
-                alignItems: isRTL ? 'flex-end' : 'flex-start',
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: theme.radius.lg,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: wash,
-                    borderWidth: 1,
-                    borderColor: accent,
-                  }}
-                >
-                  <Ionicons
-                    name={
-                      phase === 'failed'
-                        ? 'alert-circle-outline'
-                        : needsAdmin
-                          ? 'warning-outline'
-                          : 'checkmark-circle-outline'
-                    }
-                    size={18}
-                    color={accent}
-                  />
-                </View>
-              </View>
-              <AppText
-                variant="body"
-                color="secondary"
-                style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 22 }}
-              >
-                {phase === 'upToDate'
-                  ? t('mobile.adminScheduling.sync.upToDateBody')
-                  : phase === 'failed'
-                    ? t('mobile.adminScheduling.sync.failedBody')
-                    : phase === 'partial'
-                      ? t('mobile.adminScheduling.sync.partial')
-                      : t('mobile.adminScheduling.sync.complete')}
-              </AppText>
-            </View>
-          </View>
-
-          {phase !== 'upToDate' && phase !== 'failed' && stats ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.sync.replanned')}
-                value={stats.replanned}
-                accent={stats.replanned > 0 ? colors.brand : colors.textMuted}
-                wash={stats.replanned > 0 ? colors.brandSoft : colors.surfaceSecondary}
-              />
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.sync.generated')}
-                value={stats.generated}
-                accent={stats.generated > 0 ? colors.success : colors.textMuted}
-                wash={stats.generated > 0 ? colors.successSoft : colors.surfaceSecondary}
-              />
-            </View>
-          ) : null}
-
-          {phase !== 'upToDate' && phase !== 'failed' && stats && stats.pastDueRescheduled > 0 ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.sync.pastDueRescheduled')}
-                value={stats.pastDueRescheduled}
-                accent={colors.brand}
-                wash={colors.brandSoft}
-              />
-            </View>
-          ) : null}
-
-          {phase !== 'failed' && stats ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.sync.scanned')}
-                value={stats.scanned}
-                accent={colors.textMuted}
-                wash={colors.surfaceSecondary}
-              />
-              <ResolveAllStatTile
-                label={
-                  phase === 'partial'
-                    ? t('mobile.adminScheduling.sync.stillAttention')
-                    : t('mobile.adminScheduling.sync.alreadyValid')
-                }
-                value={phase === 'partial' ? stats.stillAttention : stats.alreadyValid}
-                accent={phase === 'partial' && stats.stillAttention > 0 ? colors.warning : colors.textMuted}
-                wash={
-                  phase === 'partial' && stats.stillAttention > 0
-                    ? colors.warningSoft
-                    : colors.surfaceSecondary
-                }
-              />
-            </View>
-          ) : null}
-
-          {stats && (stats.atRiskRecovered > 0 || stats.conflictsResolved > 0) ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 8 }}>
-              {stats.atRiskRecovered > 0 ? (
-                <AppText variant="caption" weight="semibold" style={{ color: colors.success }}>
-                  {`${t('mobile.adminScheduling.sync.atRiskRecovered')} · ${stats.atRiskRecovered}`}
-                </AppText>
-              ) : null}
-              {stats.conflictsResolved > 0 ? (
-                <AppText variant="caption" weight="semibold" style={{ color: colors.success }}>
-                  {`${t('mobile.adminScheduling.sync.conflictsResolved')} · ${stats.conflictsResolved}`}
-                </AppText>
-              ) : null}
-            </View>
-          ) : null}
-
-          {needsAdmin && attentionRows.length > 0 ? (
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                backgroundColor: wash,
-                borderWidth: 1,
-                borderColor: accent,
-                padding: theme.spacing.md,
-                gap: theme.spacing.sm,
-              }}
-            >
-              {attentionRows.slice(0, 8).map((row) => (
-                <ResolveAllReasonRow
-                  key={row.key}
-                  reasonKey={row.reasonKey}
-                  label={row.label}
-                  countLabel=""
-                  a11yLabel={row.label}
-                />
-              ))}
-            </View>
-          ) : null}
-
-          {phase === 'failed' && errorMessage ? (
-            <AppText variant="caption" color="error">
-              {errorMessage}
-            </AppText>
-          ) : null}
-
-          <View style={{ gap: theme.spacing.sm }}>
-            {phase === 'partial' && onViewAttention ? (
-              <AnimatedPressable
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.adminScheduling.sync.viewAttention')}
-                onPress={() => {
-                  void haptics.selection();
-                  onViewAttention();
-                }}
-                style={{
-                  minHeight: theme.sizes.touch.min,
-                  borderRadius: theme.radius.full,
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  backgroundColor: colors.brandSoft,
-                  borderWidth: 1,
-                  borderColor: colors.brand,
-                }}
-              >
-                <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
-                  {t('mobile.adminScheduling.sync.viewAttention')}
-                </AppText>
-              </AnimatedPressable>
-            ) : null}
-            {phase === 'failed' && onRetry ? (
-              <SheetFooter
-                confirmLabel={t('mobile.adminScheduling.sync.retry')}
-                cancelLabel={t('mobile.adminScheduling.sync.done')}
-                onConfirm={onRetry}
-                onCancel={onClose}
-              />
-            ) : (
-              <AnimatedPressable
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.adminScheduling.sync.done')}
-                onPress={() => {
-                  void haptics.selection();
-                  onClose();
-                }}
-                style={{
-                  minHeight: theme.sizes.touch.min,
-                  borderRadius: theme.radius.full,
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  backgroundColor: colors.brand,
-                  ...orderBoardShadow(colorScheme),
-                }}
-              >
-                <Ionicons name="checkmark" size={18} color={colors.onBrand} />
-                <AppText variant="label" weight="semibold" style={{ color: colors.onBrand }}>
-                  {t('mobile.adminScheduling.sync.done')}
-                </AppText>
-              </AnimatedPressable>
-            )}
-          </View>
-        </ScrollView>
-      ) : (
-        <View style={{ gap: theme.spacing.md }}>
-          <ConfirmCopyBoard
-            icon="sync-outline"
-            orderNumber=""
-            body={
-              phase === 'inProgress'
-                ? t('mobile.adminScheduling.sync.inProgress')
-                : t('mobile.adminScheduling.sync.confirmBody')
-            }
-            errorMessage={errorMessage}
-          />
-          {phase === 'inProgress' ? (
-            <AnimatedPressable
-              variant="button"
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.adminScheduling.sync.done')}
-              onPress={() => {
-                void haptics.selection();
-                onClose();
-              }}
-              style={{
-                minHeight: theme.sizes.touch.min,
-                borderRadius: theme.radius.full,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brand,
-              }}
-            >
-              <AppText variant="label" weight="semibold" style={{ color: colors.onBrand }}>
-                {t('mobile.adminScheduling.sync.done')}
-              </AppText>
-            </AnimatedPressable>
-          ) : (
-            <SheetFooter
-              confirmLabel={t('mobile.adminScheduling.sync.confirmCta')}
-              cancelLabel={t('mobile.production.cancel')}
-              loading={false}
-              onConfirm={() => onConfirm?.()}
-              onCancel={onClose}
-            />
-          )}
-        </View>
-      )}
-    </BottomSheet>
-  );
-}
-
-function optimizeSheetTitle(phase: OptimizeScheduleSheetPhase, t: (key: string) => string): string {
-  if (phase === 'previewing') return t('mobile.adminScheduling.optimize.previewing');
-  if (phase === 'preview') return t('mobile.adminScheduling.optimize.previewTitle');
-  if (phase === 'applying') return t('mobile.adminScheduling.optimize.applying');
-  if (phase === 'upToDate') return t('mobile.adminScheduling.optimize.upToDate');
-  if (phase === 'changed') return t('mobile.adminScheduling.optimize.complete');
-  if (phase === 'partial') return t('mobile.adminScheduling.optimize.partial');
-  if (phase === 'failed') return t('mobile.adminScheduling.optimize.failed');
-  if (phase === 'inProgress') return t('mobile.adminScheduling.optimize.inProgress');
-  return t('mobile.adminScheduling.optimize.confirmTitle');
-}
-
-export function OptimizeScheduleSheet({
-  open,
-  onClose,
-  phase,
-  stats,
-  errorMessage,
-  onConfirm,
-  onApply,
-  onRetry,
-  onViewAttention,
-}: {
-  open: boolean;
-  onClose: () => void;
-  phase: OptimizeScheduleSheetPhase;
-  stats?: OptimizeScheduleStats | null;
-  errorMessage?: string | null;
-  onConfirm?: () => void;
-  onApply?: () => void;
-  onRetry?: () => void;
-  onViewAttention?: () => void;
-}) {
-  const { t, isRTL } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
-  const { height } = useWindowDimensions();
-  const busy = phase === 'previewing' || phase === 'applying';
-  const showingResult =
-    phase === 'upToDate' || phase === 'changed' || phase === 'partial' || phase === 'failed';
-  const needsAdmin = phase === 'partial';
-  const accent =
-    phase === 'failed' ? colors.error : needsAdmin ? colors.warning : colors.success;
-  const wash =
-    phase === 'failed' ? colors.errorSoft : needsAdmin ? colors.warningSoft : colors.successSoft;
-  const maxHeight = Math.round(height * 0.74);
-
-  return (
-    <BottomSheet
-      open={open}
-      onClose={onClose}
-      title={optimizeSheetTitle(phase, t)}
-      fitContent
-      maxHeight={maxHeight}
-    >
-      {busy ? (
-        <View
-          style={{
-            gap: theme.spacing.md,
-            alignItems: 'center',
-            paddingVertical: theme.spacing.lg,
-          }}
-        >
-          <ActivityIndicator color={colors.brand} />
-          <AppText variant="body" color="secondary" style={{ textAlign: 'center', lineHeight: 22 }}>
-            {phase === 'applying'
-              ? t('mobile.adminScheduling.optimize.applying')
-              : t('mobile.adminScheduling.optimize.previewing')}
-          </AppText>
-        </View>
-      ) : phase === 'preview' ? (
-        <ScrollView
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-          style={{ maxHeight: Math.max(240, maxHeight - 88) }}
-          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
-        >
-          <AppText variant="body" color="secondary" style={{ lineHeight: 22 }}>
-            {t('mobile.adminScheduling.optimize.previewBody')}
-          </AppText>
-          {stats ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.optimize.wouldMove')}
-                value={stats.wouldMove}
-                accent={stats.wouldMove > 0 ? colors.brand : colors.textMuted}
-                wash={stats.wouldMove > 0 ? colors.brandSoft : colors.surfaceSecondary}
-              />
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.optimize.scanned')}
-                value={stats.scanned}
-                accent={colors.textMuted}
-                wash={colors.surfaceSecondary}
-              />
-            </View>
-          ) : null}
-          {stats?.previewMoves.slice(0, 6).map((move) => (
-            <AppText key={move.productionOrderId} variant="caption" color="secondary">
-              {`${move.number} · ${move.daysEarlier}`}
-            </AppText>
-          ))}
-          {stats?.emptyDays.slice(0, 4).map((day) => (
-            <AppText key={day.ymd} variant="caption" color="secondary">
-              {`${day.ymd} · ${t(day.causeKey)}`}
-            </AppText>
-          ))}
-          {stats && stats.wouldMove > 0 ? (
-            <SheetFooter
-              confirmLabel={t('mobile.adminScheduling.optimize.applyCta')}
-              cancelLabel={t('mobile.adminScheduling.optimize.done')}
-              onConfirm={() => onApply?.()}
-              onCancel={onClose}
-            />
-          ) : (
-            <SheetFooter
-              confirmLabel={t('mobile.adminScheduling.optimize.done')}
-              cancelLabel={t('mobile.adminScheduling.optimize.done')}
-              onConfirm={onClose}
-              onCancel={onClose}
-            />
-          )}
-        </ScrollView>
-      ) : showingResult ? (
-        <ScrollView
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-          style={{ maxHeight: Math.max(240, maxHeight - 88) }}
-          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
-        >
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: accent,
-              backgroundColor: colors.surface,
-              overflow: 'hidden',
-              ...orderBoardShadow(colorScheme),
-            }}
-          >
-            <View style={{ height: 5, backgroundColor: wash }} />
-            <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
-              <AppText variant="body" color="secondary" style={{ lineHeight: 22 }}>
-                {phase === 'upToDate'
-                  ? t('mobile.adminScheduling.optimize.upToDateBody')
-                  : phase === 'failed'
-                    ? t('mobile.adminScheduling.optimize.failedBody')
-                    : phase === 'partial'
-                      ? t('mobile.adminScheduling.optimize.partial')
-                      : t('mobile.adminScheduling.optimize.complete')}
-              </AppText>
-            </View>
-          </View>
-          {phase !== 'upToDate' && phase !== 'failed' && stats ? (
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.optimize.moved')}
-                value={stats.moved}
-                accent={stats.moved > 0 ? colors.brand : colors.textMuted}
-                wash={stats.moved > 0 ? colors.brandSoft : colors.surfaceSecondary}
-              />
-              <ResolveAllStatTile
-                label={t('mobile.adminScheduling.optimize.scanned')}
-                value={stats.scanned}
-                accent={colors.textMuted}
-                wash={colors.surfaceSecondary}
-              />
-            </View>
-          ) : null}
-          {phase === 'failed' && errorMessage ? (
-            <AppText variant="caption" color="error">
-              {errorMessage}
-            </AppText>
-          ) : null}
-          {phase === 'partial' && onViewAttention ? (
-            <AnimatedPressable
-              variant="button"
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.adminScheduling.optimize.viewAttention')}
-              onPress={() => {
-                void haptics.selection();
-                onViewAttention();
-              }}
-              style={{
-                minHeight: theme.sizes.touch.min,
-                borderRadius: theme.radius.full,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.brand,
-              }}
-            >
-              <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
-                {t('mobile.adminScheduling.optimize.viewAttention')}
-              </AppText>
-            </AnimatedPressable>
-          ) : null}
-          {phase === 'failed' && onRetry ? (
-            <SheetFooter
-              confirmLabel={t('mobile.adminScheduling.optimize.retry')}
-              cancelLabel={t('mobile.adminScheduling.optimize.done')}
-              onConfirm={onRetry}
-              onCancel={onClose}
-            />
-          ) : (
-            <AnimatedPressable
-              variant="button"
-              accessibilityRole="button"
-              onPress={onClose}
-              style={{
-                minHeight: theme.sizes.touch.min,
-                borderRadius: theme.radius.full,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brand,
-              }}
-            >
-              <AppText variant="label" weight="semibold" style={{ color: colors.onBrand }}>
-                {t('mobile.adminScheduling.optimize.done')}
-              </AppText>
-            </AnimatedPressable>
-          )}
-        </ScrollView>
-      ) : phase === 'inProgress' ? (
-        <View style={{ gap: theme.spacing.md }}>
-          <AppText variant="body" color="secondary">
-            {t('mobile.adminScheduling.optimize.inProgress')}
-          </AppText>
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            onPress={onClose}
-            style={{
-              minHeight: theme.sizes.touch.min,
-              borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.brand,
-            }}
-          >
-            <AppText variant="label" weight="semibold" style={{ color: colors.onBrand }}>
-              {t('mobile.adminScheduling.optimize.done')}
-            </AppText>
-          </AnimatedPressable>
-        </View>
-      ) : (
-        <View style={{ gap: theme.spacing.md }}>
-          <AppText variant="body" color="secondary" style={{ lineHeight: 22 }}>
-            {t('mobile.adminScheduling.optimize.confirmBody')}
-          </AppText>
-          <SheetFooter
-            confirmLabel={t('mobile.adminScheduling.optimize.confirmCta')}
-            cancelLabel={t('mobile.production.cancel')}
             onConfirm={() => onConfirm?.()}
             onCancel={onClose}
           />

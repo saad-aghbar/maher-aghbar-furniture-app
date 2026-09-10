@@ -105,6 +105,7 @@ describe('isSemiKitActive / boardParamsForSemiFilter', () => {
         to: '2026-01-31',
         warehouseId: 'wh-1',
         q: 'sofa',
+        origin: 'returned',
       }),
     ).toEqual({
       scope: 'history',
@@ -112,6 +113,7 @@ describe('isSemiKitActive / boardParamsForSemiFilter', () => {
       to: '2026-01-31',
       warehouseId: 'wh-1',
       q: 'sofa',
+      origin: 'returned',
     });
   });
 });

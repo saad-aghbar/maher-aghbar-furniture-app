@@ -48,6 +48,7 @@ export type FabricLotInput = {
   status: string;
   allocationMode?: string | null;
   salesOrderId?: string | null;
+  productionOrderId?: string | null;
   locationId?: string | null;
   inventoryItemId?: string | null;
   sku?: string | null;
@@ -60,7 +61,8 @@ export type FabricUsageInput = {
 
 export type FabricRequirementInput = {
   id: string;
-  salesOrderId: string;
+  salesOrderId?: string | null;
+  productionOrderId?: string | null;
   label: string;
   sku?: string | null;
   inventoryItemId?: string | null;
@@ -123,11 +125,11 @@ function qtyOf(lot: FabricLotInput): number {
   return Math.max(0, num(lot.quantity) ?? 0);
 }
 
-function isAllocatedToOrder(lot: FabricLotInput, salesOrderId: string): boolean {
-  return (
-    String(lot.allocationMode ?? '').toUpperCase() === 'ORDER_ALLOCATED' &&
-    lot.salesOrderId === salesOrderId
-  );
+function isAllocatedToOrder(lot: FabricLotInput, req: FabricRequirementInput): boolean {
+  if (String(lot.allocationMode ?? '').toUpperCase() !== 'ORDER_ALLOCATED') return false;
+  if (req.productionOrderId && lot.productionOrderId === req.productionOrderId) return true;
+  if (req.salesOrderId && lot.salesOrderId === req.salesOrderId) return true;
+  return false;
 }
 
 function identityMatches(req: FabricRequirementInput, lot: FabricLotInput): boolean {
@@ -199,7 +201,7 @@ export function assessFabricReadiness(input: {
 
   const issuedQty = usages.reduce((s, u) => s + Math.max(0, num(u.actualQty) ?? 0), 0);
 
-  const ownLots = lots.filter((lot) => isAllocatedToOrder(lot, req.salesOrderId));
+  const ownLots = lots.filter((lot) => isAllocatedToOrder(lot, req));
   const matchingLive = ownLots.filter(
     (lot) =>
       identityMatches(req, lot) &&
@@ -212,9 +214,6 @@ export function assessFabricReadiness(input: {
       !ISSUED_LOT_STATUSES.has(String(lot.status).toUpperCase()),
   );
   const arrivedQty = matchingLive.reduce((s, lot) => s + qtyOf(lot), 0);
-  const locatedQty = matchingLive
-    .filter((lot) => Boolean(lot.locationId))
-    .reduce((s, lot) => s + qtyOf(lot), 0);
 
   const consumedQty = ownLots
     .filter((lot) => ISSUED_LOT_STATUSES.has(String(lot.status).toUpperCase()))
@@ -227,7 +226,6 @@ export function assessFabricReadiness(input: {
       : arrivedQty + 1e-9 >= expectedQty;
   const partialApproved = storedState === 'PARTIALLY_AVAILABLE';
   const qtyOk = qtySatisfied || (partialApproved && arrivedQty > 0);
-  const locationOk = locatedQty > 0 && (expectedQty == null || locatedQty + 1e-9 >= Math.min(expectedQty, arrivedQty) || locatedQty + 1e-9 >= arrivedQty);
   const hasLocation = matchingLive.some((lot) => Boolean(lot.locationId));
 
   const missing: string[] = [];
@@ -344,26 +342,4 @@ export function fabricStageIsReady(
   return { ready: missing.length === 0, missing };
 }
 
-export function buildFabricProcurementWhatsAppBody(input: {
-  orderNumber: string;
-  productName?: string | null;
-  dealerName?: string | null;
-  lines: Array<{
-    procurementId: string;
-    label: string;
-    role?: string | null;
-    qty?: number | null;
-    unit?: string | null;
-  }>;
-}): string {
-  const header = [`Fabric request for order ${input.orderNumber}`];
-  if (input.productName?.trim()) header.push(`Product: ${input.productName.trim()}`);
-  if (input.dealerName?.trim()) header.push(`Dealer: ${input.dealerName.trim()}`);
-  const lines = input.lines.map((l) => {
-    const qty = l.qty != null && Number.isFinite(l.qty) ? String(l.qty) : 'qty TBC';
-    const unit = l.unit?.trim() ? ` ${l.unit.trim()}` : '';
-    const role = l.role?.trim() ? ` (${l.role.trim()})` : '';
-    return `• ${l.label}${role}: ${qty}${unit} [${l.procurementId.slice(0, 8)}]`;
-  });
-  return `${header.join('\n')}\nPlease confirm availability:\n${lines.join('\n')}\nThank you.`;
-}
+export { buildFabricProcurementWhatsAppBody } from '../../common/helpers/fabric-whatsapp-copy';

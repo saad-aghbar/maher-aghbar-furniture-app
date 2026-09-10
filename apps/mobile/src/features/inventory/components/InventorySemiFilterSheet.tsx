@@ -5,6 +5,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import type { OriginFocus } from '@/features/production/components/OriginFocusBar';
 import type { SemiOrderFilter } from '../selectSemiOrders';
 import type { InventoryWarehouseOption } from './InventoryWarehousePickerControl';
 import {
@@ -19,6 +20,7 @@ export type SemiFilterDraft = {
   warehouseId: string | null;
   historyFrom: string;
   historyTo: string;
+  origin: OriginFocus;
 };
 
 export type SemiFilterDefaults = {
@@ -47,6 +49,7 @@ export function defaultSemiFilterDraft(defaults: SemiFilterDefaults): SemiFilter
     warehouseId: null,
     historyFrom: defaults.historyFrom,
     historyTo: defaults.historyTo,
+    origin: 'all',
   };
 }
 
@@ -59,6 +62,7 @@ export function countActiveSemiFilters(
   const includeHistoryDates = opts?.includeHistoryDates !== false;
   let n = 0;
   if (draft.scope !== 'active') n += 1;
+  if (draft.origin && draft.origin !== 'all') n += 1;
   if (includeWarehouse && draft.warehouseId) n += 1;
   if (
     includeHistoryDates &&
@@ -152,6 +156,28 @@ export function InventorySemiFilterSheet({
                   onChange({ ...draft, scope: 'history' });
                 }}
               />
+            </View>
+          </InventoryFilterSection>
+
+          <InventoryFilterSection
+            index={nextIndex()}
+            reduce={reduce}
+            icon="return-down-back-outline"
+            title={t('mobile.inventory.filterOrigin')}
+            accent={draft.origin !== 'all' ? colors.brand : undefined}
+          >
+            <View style={chipRow}>
+              {(['all', 'normal', 'returned'] as const).map((key) => (
+                <InventoryFloorChip
+                  key={key}
+                  label={t(`mobile.production.origin.${key}`)}
+                  active={draft.origin === key}
+                  onPress={() => {
+                    void haptics.selection();
+                    onChange({ ...draft, origin: key });
+                  }}
+                />
+              ))}
             </View>
           </InventoryFilterSection>
 

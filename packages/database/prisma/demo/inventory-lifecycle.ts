@@ -20,6 +20,7 @@ import {
   type ProductStageOutputRow,
 } from '../../../../apps/api/src/modules/production/product-inventory-output.resolver';
 import { nextDoc, type SeqBag } from './seq';
+import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 
 type SnapNodeInput = {
   sourceWorkflowNodeId: string;
@@ -140,6 +141,7 @@ export async function postDemoPhysicalOutputs(ctx: CompletedStageContext): Promi
     const warehouseId =
       node.defaultWarehouseId ?? (isFin ? finWh?.id : semiWh?.id) ?? null;
     if (!warehouseId) continue;
+    const locationId = await defaultBinIdForWarehouse(prisma, warehouseId);
 
     const qty = outputQtyForOrder(Number(node.outputQtyPerUnit) || 1, ctx.orderQty);
     const type = isFin
@@ -173,6 +175,7 @@ export async function postDemoPhysicalOutputs(ctx: CompletedStageContext): Promi
         type,
         inventoryItemId: node.outputInventoryItemId,
         warehouseId,
+        locationId,
         quantity: qty,
         createdById: ctx.adminId,
         createdAt: ctx.at,
@@ -187,6 +190,7 @@ export async function postDemoPhysicalOutputs(ctx: CompletedStageContext): Promi
       data: {
         inventoryItemId: node.outputInventoryItemId,
         warehouseId,
+        locationId,
         productionOrderId: ctx.productionOrderId,
         salesOrderId: ctx.salesOrderId,
         salesOrderLineId: ctx.salesOrderLineId,
@@ -211,6 +215,7 @@ export async function postDemoPhysicalOutputs(ctx: CompletedStageContext): Promi
           type: InventoryTxType.DELIVERY_ISSUE,
           inventoryItemId: node.outputInventoryItemId,
           warehouseId,
+          locationId,
           quantity: -qty,
           createdById: ctx.adminId,
           createdAt: ctx.at,
@@ -281,6 +286,7 @@ async function consumeSemiLot(
       type: InventoryTxType.SEMI_FINISHED_ISSUE,
       inventoryItemId: args.inventoryItemId,
       warehouseId: args.warehouseId,
+      locationId: await defaultBinIdForWarehouse(prisma, args.warehouseId),
       quantity: -args.qty,
       createdById: args.adminId,
       createdAt: args.at,
@@ -311,11 +317,12 @@ async function bumpBalance(
     reservedDelta: number;
   },
 ) {
+  const locationId = await defaultBinIdForWarehouse(prisma, args.warehouseId);
   const existing = await prisma.inventoryBalance.findFirst({
     where: {
       inventoryItemId: args.inventoryItemId,
       warehouseId: args.warehouseId,
-      locationId: null,
+      locationId,
     },
   });
   if (!existing) {
@@ -323,6 +330,7 @@ async function bumpBalance(
       data: {
         inventoryItemId: args.inventoryItemId,
         warehouseId: args.warehouseId,
+        locationId,
         availableQty: Math.max(0, args.delta),
         reservedQty: Math.max(0, args.reservedDelta),
       },
@@ -563,6 +571,7 @@ export async function seedDemoMaterialUsageStories(params: {
       where: { type: WarehouseType.RAW_MATERIALS, isActive: true },
     }));
   if (!rawWh) return;
+  const rawBinId = await defaultBinIdForWarehouse(prisma, rawWh.id);
 
   for (let i = 0; i < inputs.length; i += 1) {
     const row = inputs[i]!;
@@ -638,6 +647,7 @@ export async function seedDemoMaterialUsageStories(params: {
           type: InventoryTxType.PRODUCTION_ISSUE,
           inventoryItemId: row.inventoryItemId,
           warehouseId: rawWh.id,
+          locationId: rawBinId,
           quantity: -issueQty,
           createdById: params.adminId,
           createdAt: params.at,
@@ -669,6 +679,7 @@ export async function seedDemoMaterialUsageStories(params: {
             type: InventoryTxType.PRODUCTION_RETURN,
             inventoryItemId: row.inventoryItemId,
             warehouseId: rawWh.id,
+            locationId: rawBinId,
             quantity: returned,
             createdById: params.adminId,
             createdAt: params.at,

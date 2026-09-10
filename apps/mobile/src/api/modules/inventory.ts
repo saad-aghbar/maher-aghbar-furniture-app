@@ -1,7 +1,8 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPatch, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
 import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
+import { sectionsQueryValue } from '@/features/inventory/rawMaterialsReport';
 import { toSearchParams, type PageParams } from '../pagination';
 
 export type InventoryCategoryGroup = 'fabric' | 'foam' | 'wood' | 'accessories';
@@ -21,12 +22,19 @@ export type InventoryBalance = {
   onHandQty?: number | string;
   freeQty?: number | string;
   warehouseId: string;
+  locationId?: string | null;
   warehouse?: {
     id: string;
     code: string;
     nameEn: string;
     nameAr: string;
     type?: string;
+  } | null;
+  location?: {
+    id: string;
+    code: string;
+    name?: string | null;
+    isDefault?: boolean;
   } | null;
 };
 
@@ -62,6 +70,9 @@ export type InventoryItem = {
   standardCost?: number | string | null;
   materialId?: string | null;
   minStock: number | string;
+  reorderQty?: number | string | null;
+  preferredSupplierId?: string | null;
+  preferredSupplier?: { id: string; name?: string | null } | null;
   maxStock?: number | string | null;
   isActive?: boolean;
   archivedAt?: string | null;
@@ -104,7 +115,44 @@ export type InventoryTransaction = {
 
 export type WarehouseLocation = {
   id: string;
+  warehouseId?: string;
   code: string;
+  name?: string | null;
+  qrCode?: string | null;
+  isDefault?: boolean;
+  isActive?: boolean;
+};
+
+export type WarehouseBinContents = WarehouseLocation & {
+  scanCode?: string;
+  warehouse?: {
+    id: string;
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    type?: string;
+  } | null;
+  contents: Array<{
+    inventoryItemId: string;
+    sku: string;
+    nameEn: string;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    unit: string;
+    imageUrl?: string | null;
+    availableQty: number;
+    reservedQty: number;
+  }>;
+};
+
+export type CreateWarehouseLocationInput = {
+  name: string;
+  code?: string;
+};
+
+export type UpdateWarehouseLocationInput = {
+  code?: string;
   name?: string | null;
 };
 
@@ -138,9 +186,43 @@ export async function createWarehouse(body: CreateWarehouseInput) {
   return apiPost<Warehouse>('/warehouses', body);
 }
 
+export async function createWarehouseLocation(
+  warehouseId: string,
+  body: CreateWarehouseLocationInput,
+) {
+  return apiPost<WarehouseLocation>(
+    `/warehouses/${encodeURIComponent(warehouseId)}/locations`,
+    body,
+  );
+}
+
+export async function updateWarehouseLocation(
+  warehouseId: string,
+  locationId: string,
+  body: UpdateWarehouseLocationInput,
+) {
+  return apiPatch<WarehouseLocation>(
+    `/warehouses/${encodeURIComponent(warehouseId)}/locations/${encodeURIComponent(locationId)}`,
+    body,
+  );
+}
+
+export async function getWarehouseLocationByCode(code: string) {
+  return apiGet<WarehouseBinContents>(
+    `/warehouses/locations/by-code/${encodeURIComponent(code)}`,
+  );
+}
+
+export async function deleteWarehouseLocation(warehouseId: string, locationId: string) {
+  return apiDelete<{ ok: boolean }>(
+    `/warehouses/${encodeURIComponent(warehouseId)}/locations/${encodeURIComponent(locationId)}`,
+  );
+}
+
 export type StockReceiptInput = {
   inventoryItemId: string;
   warehouseId: string;
+  locationId?: string;
   quantity: number;
   unitCost?: number;
   notes?: string;
@@ -150,6 +232,7 @@ export type StockReceiptInput = {
 export type StockIssueInput = {
   inventoryItemId: string;
   warehouseId: string;
+  locationId?: string;
   quantity: number;
   notes?: string;
   idempotencyKey?: string;
@@ -317,8 +400,10 @@ export type CreateInventoryItemInput = {
   unit?: string;
   category?: string;
   minStock?: number;
+  reorderQty?: number | null;
   standardCost?: number;
   barcode?: string;
+  preferredSupplierId?: string | null;
   color?: string;
   materialType?: string;
   size?: string;
@@ -333,8 +418,10 @@ export type UpdateInventoryItemInput = {
   unit?: string;
   category?: string;
   minStock?: number;
+  reorderQty?: number | null;
   standardCost?: number;
   barcode?: string;
+  preferredSupplierId?: string | null;
   color?: string;
   materialType?: string;
   size?: string;
@@ -347,13 +434,18 @@ export type CreateWarehouseTransferInput = {
   fromWarehouseId: string;
   toWarehouseId: string;
   notes?: string;
-  lines: Array<{ inventoryItemId: string; quantity: number }>;
+  lines: Array<{
+    inventoryItemId: string;
+    quantity: number;
+    fromLocationId?: string;
+    toLocationId?: string;
+  }>;
 };
 
 export type CreateInventoryStockCountInput = {
   warehouseId: string;
   notes?: string;
-  lines: Array<{ inventoryItemId: string; countedQty?: number }>;
+  lines: Array<{ inventoryItemId: string; countedQty?: number; locationId?: string }>;
 };
 
 /** Maps UI category group → API category string (matches admin-web). */
@@ -425,11 +517,13 @@ export async function openRawMaterialsReportPdf(
     period: 'today' | 'week' | 'month' | 'custom';
     from?: string;
     to?: string;
+    sections: Array<'fabric' | 'foam' | 'wood' | 'accessories'>;
   },
   opts?: PdfDownloadOptions,
 ): Promise<void> {
   const qs = new URLSearchParams();
   qs.set('period', args.period);
+  qs.set('sections', sectionsQueryValue(args.sections));
   if (args.period === 'custom') {
     if (args.from) qs.set('from', args.from);
     if (args.to) qs.set('to', args.to);
@@ -438,8 +532,8 @@ export async function openRawMaterialsReportPdf(
   if (opts?.theme) qs.set('theme', opts.theme);
   await openAuthedPdf(
     `/inventory/reports/raw-materials/pdf?${qs.toString()}`,
-    'Raw materials report PDF failed',
-    'Raw Materials Report',
+    'Materials report PDF failed',
+    'Materials Report',
   );
 }
 
@@ -565,7 +659,12 @@ export type SemiFinishedLot = {
     } | null;
   };
   warehouse: { id: string; code: string; nameEn: string; nameAr: string };
-  productionOrder?: { id: string; number: string; productDescription: string } | null;
+  productionOrder?: {
+    id: string;
+    number: string;
+    productDescription: string;
+    originType?: string | null;
+  } | null;
   stageInstance?: {
     stageDefinition?: { code: string; nameEn: string; nameAr: string; nameHe?: string | null } | null;
   } | null;
@@ -616,6 +715,12 @@ export type FinishedLot = SemiFinishedLot & {
   enteredAt?: string | null;
   leftAt?: string | null;
   dealerNameHe?: string | null;
+  sourceKey?: string | null;
+  returnRequest?: {
+    id: string;
+    number: string;
+    lifecycleState?: string | null;
+  } | null;
   salesOrder?: {
     id: string;
     number?: string;
@@ -649,6 +754,7 @@ export async function listFinishedLots(
     scope?: 'inWarehouse' | 'history';
     from?: string;
     to?: string;
+    origin?: 'normal' | 'returned';
   } = {},
 ) {
   const qs = toSearchParams({
@@ -659,6 +765,7 @@ export async function listFinishedLots(
     scope: params.scope,
     from: params.from,
     to: params.to,
+    origin: params.origin,
   });
   return apiGet<PaginatedResponse<FinishedLot>>(`/inventory/finished-lots${qs}`);
 }
@@ -757,6 +864,7 @@ export type WipKitCard = {
     id: string;
     number: string;
     productDescription: string;
+    originType?: string | null;
     product?: {
       nameEn: string;
       nameAr: string;
@@ -829,6 +937,7 @@ export async function fetchWipKitBoard(params: {
   to?: string;
   warehouseId?: string;
   q?: string;
+  origin?: 'normal' | 'returned';
 } = {}) {
   const qs = toSearchParams(params);
   return apiGet<{ sections: WipKitBoardSection[]; totalKits: number }>(

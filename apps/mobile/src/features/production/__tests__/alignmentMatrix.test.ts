@@ -126,14 +126,25 @@ describe('§16 test matrix — Production board alignment', () => {
   });
 
   describe('Day lens i18n present', () => {
-    it('EN/AR/HE expose Planned / Actual / All time keys', () => {
+    it('EN/AR/HE expose Planned / Actual / All time / pulse / origin keys without raw codes', () => {
       for (const root of [en, ar, he]) {
-        const dayLens = (root as { production?: { dayLens?: Record<string, string> } })
-          .production?.dayLens;
+        const dayLens = (root as { production?: { dayLens?: Record<string, unknown> } })
+          .production?.dayLens as Record<string, unknown> | undefined;
         expect(dayLens?.planned).toBeTruthy();
         expect(dayLens?.actual).toBeTruthy();
         expect(dayLens?.allTime).toBeTruthy();
         expect(dayLens?.emptyPlanned).toBeTruthy();
+        expect(dayLens?.origin).toBeTruthy();
+        expect(dayLens?.listHintLateMissed).toBeTruthy();
+        expect(dayLens?.listHintAtRisk).toBeTruthy();
+        expect(dayLens?.emptyLateMissed).toBeTruthy();
+        expect(dayLens?.emptyAtRisk).toBeTruthy();
+        const events = dayLens?.event as Record<string, string> | undefined;
+        expect(events?.unknown).toBeTruthy();
+        expect(events?.semi_produced).toBeTruthy();
+        expect(isRawAttentionToken(String(events?.semi_produced))).toBe(false);
+        expect(String(events?.semi_produced)).not.toMatch(/SEMI/);
+        expect(String(events?.semi_received)).not.toMatch(/SEMI/);
       }
     });
   });

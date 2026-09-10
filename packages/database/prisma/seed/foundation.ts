@@ -4,7 +4,10 @@ import {
   ensureFoamStageDefinition,
   seedStandardFurnitureWorkflow,
   STAGE_LIBRARY_NAME_HE,
+  seedReturnRecoveryWorkflow,
+  seedReturnRepairWorkflow,
 } from './workflow';
+import { ensureDefaultWarehouseBin } from './warehouse-bins';
 
 /** IAM, org, stage library, STANDARD_FURNITURE, settings, QC, notification templates. */
 export async function seedFoundation(prisma: PrismaClient): Promise<void> {
@@ -120,18 +123,19 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
     { code: 'FIN', nameAr: 'مستودع المنتجات الجاهزة', nameEn: 'Finished Goods', type: 'FINISHED_GOODS' as const, isDefault: true },
   ];
   for (const wh of warehouses) {
-    await prisma.warehouse.upsert({
+    const row = await prisma.warehouse.upsert({
       where: { code: wh.code },
       update: { type: wh.type, isDefault: wh.isDefault, nameAr: wh.nameAr, nameEn: wh.nameEn, isActive: true },
       create: wh,
     });
+    await ensureDefaultWarehouseBin(prisma, { id: row.id, code: row.code });
   }
 
   await prisma.warehouse.updateMany({
     where: {
       code: { notIn: ['RAW', 'SEMI', 'FIN'] },
       OR: [
-        { code: { in: ['TEST', 'TEST-2', 'SA', 'RAW-2', 'SEMI-2', 'FIN-2'] } },
+        { code: { in: ['TEST', 'TEST-2', 'SA', 'RAW-2', 'SEMI-2', 'FIN-2', 'TERS', 'WH'] } },
         { nameEn: { contains: 'TEST', mode: 'insensitive' } },
         { nameEn: { contains: 'UAT', mode: 'insensitive' } },
         { nameEn: { contains: 'SAMPLE', mode: 'insensitive' } },
@@ -241,6 +245,15 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       responsibleDepartment: 'DEL',
       executionKind: 'LOGISTICS',
     },
+    {
+      code: 'DISMANTLE_RECOVER',
+      nameAr: 'تفكيك واسترداد',
+      nameEn: 'Dismantle & recover',
+      sortOrder: 90,
+      dependsOnCodes: [],
+      responsibleDepartment: 'WH',
+      executionKind: 'PRODUCTION',
+    },
   ];
   for (const s of stages) {
     const nameHe = STAGE_LIBRARY_NAME_HE[s.code];
@@ -255,6 +268,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
         requiresInspection: s.requiresInspection ?? false,
         responsibleDepartment: s.responsibleDepartment,
         executionKind: s.executionKind ?? 'PRODUCTION',
+        isActive: true,
       },
       create: {
         code: s.code,
@@ -267,13 +281,16 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
         responsibleDepartment: s.responsibleDepartment,
         executionKind: s.executionKind ?? 'PRODUCTION',
         requiresPhotos: true,
+        isActive: true,
       },
     });
   }
 
   await ensureFoamStageDefinition(prisma);
   await seedStandardFurnitureWorkflow(prisma);
-  console.log('  workflow: STANDARD_FURNITURE v1 (ACTIVE)');
+  await seedReturnRecoveryWorkflow(prisma);
+  await seedReturnRepairWorkflow(prisma);
+  console.log('  workflow: STANDARD_FURNITURE + RETURN_RECOVERY + RETURN_REPAIR');
 
   await prisma.systemSetting.upsert({
     where: { key: 'default_vat_rate' },
@@ -467,6 +484,65 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
         'בקשת וואטסאפ מ-{{customerName}} ({{customerCode}}) — {{from}}. טיוטה {{requestNumber}} — נא לבדוק.',
     },
     {
+      code: 'MATERIAL_OVER_ISSUE',
+      channel: 'IN_APP',
+      subjectAr: 'تجاوز كمية المواد',
+      subjectEn: 'Material over-issue',
+      subjectHe: 'חריגת חומר',
+      bodyAr:
+        '{{workerName}} استخدم {{actual}} من {{sku}} على {{orderNumber}} / {{taskName}} (المخطط {{expected}}). {{reason}}',
+      bodyEn:
+        '{{workerName}} used {{actual}} of {{sku}} on {{orderNumber}} / {{taskName}} (planned {{expected}}). {{reason}}',
+      bodyHe:
+        '{{workerName}} השתמש ב-{{actual}} מ-{{sku}} ב-{{orderNumber}} / {{taskName}} (מתוכנן {{expected}}). {{reason}}',
+    },
+    {
+      code: 'MATERIAL_UNDER_ISSUE',
+      channel: 'IN_APP',
+      subjectAr: 'استخدام مواد أقل من المخطط',
+      subjectEn: 'Material under-issue',
+      subjectHe: 'שימוש חסר בחומר',
+      bodyAr:
+        '{{workerName}} استخدم {{actual}} من {{sku}} على {{orderNumber}} / {{taskName}} (المخطط {{expected}}). {{reason}}',
+      bodyEn:
+        '{{workerName}} used {{actual}} of {{sku}} on {{orderNumber}} / {{taskName}} (planned {{expected}}). {{reason}}',
+      bodyHe:
+        '{{workerName}} השתמש ב-{{actual}} מ-{{sku}} ב-{{orderNumber}} / {{taskName}} (מתוכנן {{expected}}). {{reason}}',
+    },
+    {
+      code: 'MATERIAL_EXTRA_ISSUE',
+      channel: 'IN_APP',
+      subjectAr: 'مادة إضافية خارج الخطة',
+      subjectEn: 'Extra material used',
+      subjectHe: 'חומר נוסף מחוץ לתוכנית',
+      bodyAr:
+        '{{workerName}} أضاف {{sku}} ({{actual}}) على {{orderNumber}} / {{taskName}}. {{reason}}',
+      bodyEn:
+        '{{workerName}} added extra {{sku}} ({{actual}}) on {{orderNumber}} / {{taskName}}. {{reason}}',
+      bodyHe:
+        '{{workerName}} הוסיף {{sku}} ({{actual}}) ב-{{orderNumber}} / {{taskName}}. {{reason}}',
+    },
+    {
+      code: 'PRODUCTION_PROBLEM_ANSWERED',
+      channel: 'IN_APP',
+      subjectAr: 'رد على مشكلة الإنتاج',
+      subjectEn: 'Production problem answered',
+      subjectHe: 'תשובה לבעיית ייצור',
+      bodyAr: 'رد المشرف على مشكلتك في {{orderNumber}} / {{taskName}}: {{resolution}}',
+      bodyEn: 'A supervisor answered your problem on {{orderNumber}} / {{taskName}}: {{resolution}}',
+      bodyHe: 'מנהל ענה לבעיה שלך ב-{{orderNumber}} / {{taskName}}: {{resolution}}',
+    },
+    {
+      code: 'EXECUTION_RIPPLE',
+      channel: 'IN_APP',
+      subjectAr: 'تعديل جدول بسبب الوقت الفعلي',
+      subjectEn: 'Schedule shifted from actual time',
+      subjectHe: 'הלוח זז בגלל זמן בפועל',
+      bodyAr: '{{workerName}} اختار {{mode}} على {{orderNumber}}. الدفعة {{rippleBatchId}}.',
+      bodyEn: '{{workerName}} chose {{mode}} on {{orderNumber}}. Batch {{rippleBatchId}}.',
+      bodyHe: '{{workerName}} בחר {{mode}} ב-{{orderNumber}}. אצווה {{rippleBatchId}}.',
+    },
+    {
       code: 'LOW_STOCK',
       channel: 'IN_APP',
       subjectAr: 'تنبيه مخزون منخفض',
@@ -565,6 +641,106 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       bodyAr: 'تم رفض طلب المرتجع {{number}}.',
       bodyEn: 'Return request {{number}} was rejected.',
       bodyHe: 'בקשת החזרה {{number}} נדחתה.',
+    },
+    {
+      code: 'RETURN_RECEIVED',
+      channel: 'IN_APP',
+      subjectAr: 'وصول المرتجع للمصنع',
+      subjectEn: 'Return received at factory',
+      subjectHe: 'ההחזרה התקבלה במפעל',
+      bodyAr: 'وصل المرتجع {{number}} إلى المصنع.',
+      bodyEn: 'Return {{number}} arrived at the factory.',
+      bodyHe: 'החזרה {{number}} הגיעה למפעל.',
+    },
+    {
+      code: 'RETURN_NEED_INFO',
+      channel: 'IN_APP',
+      subjectAr: 'المرتجع يحتاج معلومات',
+      subjectEn: 'Return needs information',
+      subjectHe: 'ההחזרה דורשת מידע',
+      bodyAr: 'طلب المرتجع {{number}} يحتاج معلومات إضافية: {{note}}',
+      bodyEn: 'Return {{number}} needs more information: {{note}}',
+      bodyHe: 'החזרה {{number}} דורשת מידע נוסף: {{note}}',
+    },
+    {
+      code: 'RETURN_DECISION',
+      channel: 'IN_APP',
+      subjectAr: 'قرار المصنع على المرتجع',
+      subjectEn: 'Factory decision on your return',
+      subjectHe: 'החלטת המפעל על ההחזרה',
+      bodyAr: 'اتخذ المصنع قراراً على المرتجع {{number}}.',
+      bodyEn: 'The factory made a decision on return {{number}}.',
+      bodyHe: 'המפעל קיבל החלטה על החזרה {{number}}.',
+    },
+    {
+      code: 'RETURN_WORK_STARTED',
+      channel: 'IN_APP',
+      subjectAr: 'بدأ عمل المصنع على المرتجع',
+      subjectEn: 'Factory work started on your return',
+      subjectHe: 'עבודת המפעל על ההחזרה החלה',
+      bodyAr: 'بدأ المصنع العمل على المرتجع {{number}}.',
+      bodyEn: 'Factory work started on return {{number}}.',
+      bodyHe: 'עבודת המפעל על החזרה {{number}} החלה.',
+    },
+    {
+      code: 'RETURN_READY',
+      channel: 'IN_APP',
+      subjectAr: 'المرتجع جاهز للإعادة',
+      subjectEn: 'Return is ready to ship back',
+      subjectHe: 'ההחזרה מוכנה למשלוח חזרה',
+      bodyAr: 'المرتجع {{number}} جاهز للإعادة إليك.',
+      bodyEn: 'Return {{number}} is ready to ship back to you.',
+      bodyHe: 'החזרה {{number}} מוכנה למשלוח חזרה אליך.',
+    },
+    {
+      code: 'RETURN_RESHIP_SCHEDULED',
+      channel: 'IN_APP',
+      subjectAr: 'تم جدولة إعادة المرتجع',
+      subjectEn: 'Return shipment scheduled',
+      subjectHe: 'משלוח ההחזרה נקבע',
+      bodyAr: 'تم جدولة شحنة إعادة المرتجع {{number}} ({{delivery}}).',
+      bodyEn: 'Return {{number}} is scheduled for shipment ({{delivery}}).',
+      bodyHe: 'משלוח החזרה {{number}} נקבע ({{delivery}}).',
+    },
+    {
+      code: 'RETURN_DELIVERED',
+      channel: 'IN_APP',
+      subjectAr: 'وصل المرتجع',
+      subjectEn: 'Return delivered',
+      subjectHe: 'ההחזרה נמסרה',
+      bodyAr: 'وصل المرتجع {{number}} إليك.',
+      bodyEn: 'Return {{number}} was delivered.',
+      bodyHe: 'החזרה {{number}} נמסרה.',
+    },
+    {
+      code: 'RETURN_CHARGED',
+      channel: 'IN_APP',
+      subjectAr: 'فاتورة مرتجع',
+      subjectEn: 'Return invoice created',
+      subjectHe: 'נוצרה חשבונית החזרה',
+      bodyAr: 'تم إنشاء الفاتورة {{invoice}} للمرتجع {{number}} بمبلغ {{total}}.',
+      bodyEn: 'Invoice {{invoice}} for return {{number}} ({{total}}) was created.',
+      bodyHe: 'נוצרה חשבונית {{invoice}} להחזרה {{number}} בסך {{total}}.',
+    },
+    {
+      code: 'RETURN_CHARGE_PROPOSED',
+      channel: 'IN_APP',
+      subjectAr: 'مبلغ مرتجع بانتظار تأكيدك',
+      subjectEn: 'Return charge awaiting your confirmation',
+      subjectHe: 'חיוב החזרה ממתין לאישורך',
+      bodyAr: 'المصنع يقترح مبلغ {{amount}} للمرتجع {{number}}. أكّد أو ارفض المبلغ.',
+      bodyEn: 'The factory proposed {{amount}} for return {{number}}. Confirm or reject the amount.',
+      bodyHe: 'המפעל הציע {{amount}} להחזרה {{number}}. אשרו או דחו את הסכום.',
+    },
+    {
+      code: 'RETURN_CHARGE_REJECTED',
+      channel: 'IN_APP',
+      subjectAr: 'التاجر رفض مبلغ المرتجع',
+      subjectEn: 'Dealer rejected the return charge',
+      subjectHe: 'הסוחר דחה את חיוב ההחזרה',
+      bodyAr: 'رفض التاجر مبلغ المرتجع {{number}}: {{note}}',
+      bodyEn: 'The dealer rejected the charge for return {{number}}: {{note}}',
+      bodyHe: 'הסוחר דחה את החיוב להחזרה {{number}}: {{note}}',
     },
     {
       code: 'INVOICE_CREATED',
@@ -705,7 +881,45 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
     });
   }
 
-
+  const returns = await prisma.returnRequest.findMany({
+    select: {
+      id: true,
+      lifecycleState: true,
+      approvalStatus: true,
+      physicalStatus: true,
+      inventoryFate: true,
+    },
+  });
+  for (const row of returns) {
+    const approval = String(row.approvalStatus ?? 'PENDING').trim().toUpperCase();
+    const physical = String(row.physicalStatus ?? 'NONE').trim().toUpperCase();
+    const fate = String(row.inventoryFate ?? 'PENDING').trim().toUpperCase();
+    const next =
+      approval === 'REJECTED'
+        ? 'REJECTED'
+        : physical === 'RESOLVED'
+          ? 'COMPLETED'
+          : fate === 'RETURN_TO_STOCK'
+            ? 'RETURNED_TO_STOCK'
+            : fate === 'DAMAGED' || fate === 'SCRAP'
+              ? 'SCRAPPED'
+              : fate === 'REWORK'
+                ? 'REWORKING'
+                : physical === 'INSPECTING'
+                  ? 'INSPECTING'
+                  : physical === 'RETURNED'
+                    ? 'RECEIVED'
+                    : physical === 'WAITING_RETURN' || approval === 'APPROVED'
+                      ? 'APPROVED'
+                      : approval === 'NEED_INFO'
+                        ? 'NEED_INFO'
+                        : 'REQUESTED';
+    if (row.lifecycleState === next) continue;
+    await prisma.returnRequest.update({
+      where: { id: row.id },
+      data: { lifecycleState: next },
+    });
+  }
 }
 
 export function preservedRoleCodes(): string[] {

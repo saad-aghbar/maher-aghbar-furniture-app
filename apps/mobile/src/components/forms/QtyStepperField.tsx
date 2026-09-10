@@ -20,6 +20,8 @@ type Props = {
   placeholder?: string;
   accessibilityLabel?: string;
   containerStyle?: StyleProp<ViewStyle>;
+  /** Muted suffix inside the field, before the + well (e.g. m). */
+  unit?: string;
 };
 
 export function QtyStepperField({
@@ -35,6 +37,7 @@ export function QtyStepperField({
   placeholder = '0',
   accessibilityLabel,
   containerStyle,
+  unit,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -122,8 +125,21 @@ export function QtyStepperField({
               fontSize: 16,
               ...resolveAppFontStyle(locale, { variant: 'body', weight: 'semibold' }),
             }}
-          />
+            />
         </View>
+        {unit ? (
+          <View
+            pointerEvents="none"
+            style={{
+              paddingHorizontal: theme.spacing.sm,
+              justifyContent: 'center',
+            }}
+          >
+            <AppText variant="caption" color="muted" dir="ltr">
+              {unit}
+            </AppText>
+          </View>
+        ) : null}
         <AnimatedPressable
           variant="button"
           disabled={disabled || atMax}

@@ -16,6 +16,7 @@ import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel'
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { locationPickerLabel } from '@/features/inventory/pickDefaultLocation';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { productionBoardShadow } from '../productionFloorStyle';
 
@@ -171,7 +172,7 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
     .filter((u): u is string => Boolean(u));
   const heroUris = photoUris.length > 0 ? photoUris : productUri ? [productUri] : [];
   const accent = kitAccent(kit.status, colors);
-  const bin = kit.location?.name?.trim() || kit.location?.code || null;
+  const bin = locationPickerLabel(kit.location) || null;
   const warehouse = kit.warehouse
     ? localizedName(locale, kit.warehouse, kit.warehouse.code)
     : null;

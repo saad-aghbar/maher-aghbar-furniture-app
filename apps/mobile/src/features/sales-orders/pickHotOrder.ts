@@ -9,7 +9,7 @@ export type HotOrderCandidate = {
   priority?: string;
   dealerName?: string;
   sellerPrice?: number | null;
-  kind?: 'order' | 'rfq';
+  kind?: 'order' | 'rfq' | 'returnWork';
 };
 
 const DONE = new Set(['DELIVERED', 'COMPLETED', 'INVOICED', 'CANCELLED', 'VOID']);
