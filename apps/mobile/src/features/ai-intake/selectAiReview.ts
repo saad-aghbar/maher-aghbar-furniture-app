@@ -35,6 +35,20 @@ export function localUploadingReview(): AiJobReview {
   };
 }
 
+/**
+ * List pill chrome only. Approved jobs are API `COMPLETED` (mint `success`).
+ * Reuse quiet wood-cream StatusBadge default (`DRAFT`) — same family as
+ * invoice Paid / Partially paid. Label stays Approved; API status unchanged.
+ */
+export function aiIntakeListBadgeStatus(
+  status: string,
+  phase?: AiReviewPhase | null,
+): string {
+  const key = status.trim().toUpperCase();
+  if (phase === 'approved' || key === 'COMPLETED') return 'DRAFT';
+  return status;
+}
+
 export function selectAiJobReview(job: AiJob | null | undefined): AiJobReview | null {
   if (!job) return null;
   if (job.review) return job.review;

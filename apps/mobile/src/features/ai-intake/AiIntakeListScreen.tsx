@@ -22,7 +22,7 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useState } from 'react';
 import { flattenAiJobsPages, useAiJobsInfiniteQuery, useCreateAiJobMutation } from './query';
-import { selectAiJobReview } from './selectAiReview';
+import { aiIntakeListBadgeStatus, selectAiJobReview } from './selectAiReview';
 
 export function AiIntakeListScreen() {
   const { user } = useAuth();
@@ -183,7 +183,7 @@ export function AiIntakeListScreen() {
                       {item.number}
                     </AppText>
                     <StatusBadge
-                      status={item.status}
+                      status={aiIntakeListBadgeStatus(item.status, review?.phase)}
                       label={
                         review
                           ? t(`mobile.aiIntake.phases.${review.phase}`)
