@@ -3,9 +3,11 @@ import type {
   ExtractionResult,
   ExtractedField,
   ExtractedLineItem,
+  SpecExtractionContext,
   SupportedLocale,
   TranslateProvider,
 } from './types';
+import { constrainItemToLibrary } from './consensus';
 import { MockExtractionProvider } from './mock-ai.provider';
 
 function resolveTargetLocale(opts?: { targetLanguage?: SupportedLocale }): SupportedLocale {
@@ -219,6 +221,75 @@ Include every distinct line item. Dimensions may be missing per item.`,
       translatedText,
       detectedLanguage,
       fields,
+      items,
+      provider: this.name,
+    };
+  }
+
+  async extractSpecFromImage(
+    buffer: Buffer,
+    mime: string,
+    ctx?: SpecExtractionContext,
+  ): Promise<ExtractionResult> {
+    const model = process.env.AI_VISION_MODEL ?? 'gpt-4o';
+    const allowed = (ctx?.optionGroups ?? [])
+      .map((g) => `${g.code}: ${g.values.map((v) => v.code).join(', ')}`)
+      .join('\n');
+    const catalog = (ctx?.products ?? [])
+      .slice(0, 80)
+      .map((p) => `${p.sku} ${p.nameAr} / ${p.nameEn}`)
+      .join('; ');
+    const b64 = buffer.toString('base64');
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `Read a handwritten furniture spec sheet. Select option codes from the libraries; never invent foam/paint/wood codes. If unsure, put the raw text in unrecognizedOptions and leave the coded field null. Return JSON {"detectedLanguage":"ar|en|he","items":[{"productName":"...","quantity":"1","width":null,"height":null,"depth":null,"foamDensity":null,"woodType":null,"finish":null,"orientation":"NONE|LEFT|RIGHT","fabricType":null,"notes":null,"confidence":0-1,"lowConfidenceFields":[],"unrecognizedOptions":[]}]}. Libraries:\n${allowed || '(none)'}\nCatalog:\n${catalog || '(none)'}`,
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract every product row on this sheet.' },
+              { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      return this.extractStructured('', { targetLanguage: ctx?.locale });
+    }
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    let parsed: { detectedLanguage?: SupportedLocale; items?: ExtractedLineItem[] } = {};
+    try {
+      parsed = JSON.parse(json.choices?.[0]?.message?.content ?? '{}') as {
+        detectedLanguage?: SupportedLocale;
+        items?: ExtractedLineItem[];
+      };
+    } catch {
+      return this.extractStructured('', { targetLanguage: ctx?.locale });
+    }
+    const items = (parsed.items ?? []).map((row) => constrainItemToLibrary(row, ctx));
+    const primary = items[0];
+    return {
+      originalText: 'vision',
+      translatedText: items.map((row) => row.productName).join(' + '),
+      detectedLanguage: parsed.detectedLanguage ?? ctx?.locale ?? 'ar',
+      fields: [
+        { fieldName: 'product', fieldValue: primary?.productName ?? null, confidence: primary?.confidence ?? 0.7 },
+        { fieldName: 'quantity', fieldValue: primary?.quantity ?? '1', confidence: 0.8 },
+      ],
       items,
       provider: this.name,
     };

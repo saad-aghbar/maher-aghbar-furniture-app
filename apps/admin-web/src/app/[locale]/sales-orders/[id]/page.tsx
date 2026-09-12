@@ -161,6 +161,7 @@ interface SalesOrderDetail {
       unitPrice: number;
       lineTotal: number;
       manufacturingComplexity?: string | null;
+      productId?: string | null;
       commercialPriceStatus: string;
       commercialPriceSource?: string | null;
       commercialPriceNote?: string | null;
@@ -201,6 +202,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
   const tNav = useTranslations('navigation');
   const tCustomers = useTranslations('customers');
   const ta = useTranslations('accounting');
+  const tc = useTranslations('catalog');
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
   const [financeAttention, setFinanceAttention] = useState(false);
@@ -251,6 +253,25 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
       setBanner(tSales('heldBanner'));
       await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
       await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const promoteMutation = useMutation({
+    mutationFn: (args: { lineId: string; productId?: string | null }) =>
+      args.productId
+        ? apiFetch(
+            `/api/v1/products/${args.productId}/variants/from-order-line/${args.lineId}`,
+            { method: 'POST', body: JSON.stringify({}) },
+          )
+        : apiFetch(`/api/v1/products/from-order-line/${args.lineId}`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tc('promotedFromOrder'));
+      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -832,6 +853,44 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                   </Button>
                 </div>
               ) : null}
+            </div>
+          </Card>
+        </MotionSection>
+      ) : null}
+
+      {(commercial?.lines ?? []).some(
+        (line) => String(line.manufacturingComplexity).toUpperCase() === 'CUSTOM',
+      ) ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card title={tc('promoteFromOrder')}>
+            <div className="space-y-3">
+              {(commercial?.lines ?? [])
+                .filter((line) => String(line.manufacturingComplexity).toUpperCase() === 'CUSTOM')
+                .map((line) => (
+                  <div key={line.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm">{line.description}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        loading={promoteMutation.isPending}
+                        onClick={() => promoteMutation.mutate({ lineId: line.id })}
+                      >
+                        {tc('promoteFromOrder')}
+                      </Button>
+                      {line.productId ? (
+                        <Button
+                          variant="ghost"
+                          loading={promoteMutation.isPending}
+                          onClick={() =>
+                            promoteMutation.mutate({ lineId: line.id, productId: line.productId })
+                          }
+                        >
+                          {tc('promoteVariantFromOrder')}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
             </div>
           </Card>
         </MotionSection>

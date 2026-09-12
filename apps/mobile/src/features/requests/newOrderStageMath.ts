@@ -1,8 +1,8 @@
 import type { NewOrderStep } from './newOrderSteps';
 
-export const NEW_ORDER_STAGE_COUNT = 4;
+export const NEW_ORDER_STAGE_COUNT = 3;
 
-/** Progress 0..1 for rising stage fill (step 1 → 0.25, step 4 → 1). */
+/** Progress 0..1 for rising stage fill (step 1 → 1/3, step 3 → 1). */
 export function stageProgress(
   step: number,
   total: number = NEW_ORDER_STAGE_COUNT,

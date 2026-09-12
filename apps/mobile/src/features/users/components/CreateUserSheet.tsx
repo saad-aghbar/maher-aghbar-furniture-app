@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, useWindowDimensions } from 'react-native';
 import {
   submittedRoleId,
-  submittedStageDefinitionIds,
 } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { BottomSheet, resolveSheetHeightCap } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -20,11 +19,13 @@ import {
   useStaffTypesQuery,
 } from '../query';
 import { identityFromSegment, namesFromUsername, type UsersSegment } from '../segment';
+import { createUserBody } from '../userForm';
 import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
 import { TempPasswordSheet } from './TempPasswordSheet';
 import { identityUsesDepartment, UserIdentityFields } from './UserIdentityFields';
 import {
+  HourlyRateField,
   UserFormError,
   UserFormFooter,
   UserFormSection,
@@ -41,6 +42,7 @@ const empty = (segment: UsersSegment) => ({
   username: '',
   password: '',
   departmentId: '',
+  hourlyRate: '',
   identity: identityFromSegment(segment),
 });
 
@@ -52,7 +54,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
   const { theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.9), 760);
+  const sheetHeight = resolveSheetHeightCap({ windowHeight: height });
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const rolesQuery = useRolesQuery(open);
@@ -121,15 +123,18 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
     const { firstName, lastName } = namesFromUsername(username);
 
     try {
-      const created = await createMutation.mutateAsync({
-        username,
-        firstName,
-        lastName,
-        roleIds: [roleId],
-        ...(showDepartment && form.departmentId ? { departmentId: form.departmentId } : {}),
-        ...(form.password.trim() ? { password: form.password } : {}),
-        stageDefinitionIds: submittedStageDefinitionIds(form.identity),
-      });
+      const created = await createMutation.mutateAsync(
+        createUserBody({
+          username,
+          firstName,
+          lastName,
+          roleId,
+          departmentId: showDepartment && form.departmentId ? form.departmentId : undefined,
+          password: form.password.trim() || undefined,
+          identity: form.identity,
+          hourlyRate: form.hourlyRate,
+        }),
+      );
 
       void haptics.confirmLight();
       const temp = created.temporaryPassword;
@@ -167,6 +172,8 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
               onChangeText={(v) => setForm((f) => ({ ...f, username: v }))}
               autoCapitalize="none"
               autoCorrect={false}
+              accessibilityLabel={t('users.username')}
+              testID="user-username"
             />
             <AppText
               variant="caption"
@@ -210,6 +217,15 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
             stagesLoading={stagesQuery.isLoading}
             titleWeight={titleWeight}
           />
+
+          {form.identity.identityRoleCode === 'PRODUCTION_WORKER' &&
+          form.identity.employeeType === 'WORKER' ? (
+            <HourlyRateField
+              value={form.hourlyRate}
+              onChange={(hourlyRate) => setForm((f) => ({ ...f, hourlyRate }))}
+              titleWeight={titleWeight}
+            />
+          ) : null}
 
           {form.identity.identityRoleCode === 'CUSTOMER' ? (
             <AppText

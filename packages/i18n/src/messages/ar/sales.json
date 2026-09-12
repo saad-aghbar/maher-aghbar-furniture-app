@@ -56,6 +56,8 @@
   "mfgCostStatusInProgress": "التكلفة حتى الآن",
   "mfgCostStatusIncomplete": "تقييم غير مكتمل",
   "mfgCostStatusEstimatedOnly": "مقدّر فقط",
+  "mfgCostLabor": "العمالة",
+  "mfgCostAllInHint": "مواد + عمالة",
   "autoCalculated": "محسوب تلقائياً",
   "fromInventoryCosts": "تلقائي من أسعار مواد المخزون",
   "profit": "الربح",

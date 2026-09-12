@@ -180,7 +180,7 @@ export async function loadCapacityOptimizeWorld(
         product: {
           select: {
             bomDefaults: true,
-            productionProfile: { select: { bufferPercent: true } },
+            productionProfiles: { where: { variantId: null }, select: { bufferPercent: true } },
             stageEstimates: {
               select: {
                 stageDefinitionId: true,
@@ -426,7 +426,7 @@ export async function loadCapacityOptimizeWorld(
       materialRisk: latest?.materialRisk ?? liveMat.risk,
       now,
     });
-    const bufferPercent = po.product?.productionProfile?.bufferPercent ?? 10;
+    const bufferPercent = po.product?.productionProfiles?.[0]?.bufferPercent ?? 10;
     const totalMinutes = plannerStages.reduce((sum, s) => sum + s.estimatedMinutes, 0);
 
     orders.push({

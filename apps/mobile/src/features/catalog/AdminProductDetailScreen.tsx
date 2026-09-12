@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,18 +14,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import {
-  deleteDealerPrice,
   getAdminProduct,
   listProductCategories,
-  listProductDealerPrices,
+  listProductVariants,
   patchAdminProduct,
-  upsertDealerPrice,
-  type AdminBomLine,
-  type AdminCustomMeasurement,
   type AdminProductDetail,
   type AdminProductPatch,
 } from '@/api/modules/catalogAdmin';
-import { listCustomers } from '@/api/modules/customers';
 import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
@@ -41,7 +35,6 @@ import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
@@ -50,35 +43,21 @@ import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CategoryPickerSheet } from './components/CategoryPickerSheet';
-import { BomFloorRow } from './components/BomFloorRow';
-import { BomMaterialPickerSheet } from './components/BomMaterialPickerSheet';
-import { MeasurementFloorRow, displayMeasurementUnit } from './components/MeasurementFloorRow';
-import { MeasurementValuePanel } from './components/MeasurementValueSheet';
+import { BilingualNameField } from './components/BilingualNameField';
+import { CatalogFloorEmpty } from './components/CatalogFloorList';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
-import { formatCatalogDimensionHint } from './catalogDimensionHint';
 import { adminProductChromeTitle } from './adminProductChrome';
 import { mergeProductPhotos, splitProductPhotos } from './productPhotos';
-import { ProductWorkflowSection } from '@/features/workflow/components/ProductWorkflowSection';
+import { CreateVariantSheet } from './components/CreateVariantSheet';
+import { localizedName } from '@maher/i18n';
+import { renderVariantSpecLine } from '@maher/types';
 import {
   pickProductPhotosFromLibrary,
   PRODUCT_PHOTO_ASPECT_RATIO,
   uploadProductImage,
   uploadProductPhotoUri,
 } from './productPhotoUpload';
-
-function num(v: number | string | null | undefined): number | null {
-  if (v == null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function strNum(v: string): number | null {
-  const t = v.trim();
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
 
 type Draft = {
   nameEn: string;
@@ -87,14 +66,6 @@ type Draft = {
   categoryId: string | null;
   photos: string[];
   isActive: boolean;
-  width: string;
-  height: string;
-  depth: string;
-  seatHeight: string;
-  basePrice: string;
-  adminNotes: string;
-  customMeasurements: AdminCustomMeasurement[];
-  bomLines: AdminBomLine[];
 };
 
 function toDraft(p: AdminProductDetail): Draft {
@@ -105,26 +76,17 @@ function toDraft(p: AdminProductDetail): Draft {
     categoryId: p.categoryId ?? null,
     photos: mergeProductPhotos(p.imageUrl, p.galleryUrls),
     isActive: p.isActive !== false,
-    width: num(p.width) != null ? String(num(p.width)) : '',
-    height: num(p.height) != null ? String(num(p.height)) : '',
-    depth: num(p.depth) != null ? String(num(p.depth)) : '',
-    seatHeight: num(p.seatHeight) != null ? String(num(p.seatHeight)) : '',
-    basePrice: num(p.basePrice) != null ? String(num(p.basePrice)) : '',
-    adminNotes: p.adminNotes ?? '',
-    customMeasurements: [...(p.customMeasurements ?? [])],
-    bomLines: [...(p.bomLines ?? [])],
   };
 }
 
 type Props = { productId: string };
 
 /**
- * Admin product manage PDP — website parity boards (product, measurements,
- * costs, seller prices, materials, admin notes). Dealers never see this screen.
+ * Admin product manage PDP — identity and variants only. Dealers never see this screen.
  */
 export function AdminProductDetailScreen({ productId }: Props) {
   const { user } = useAuth();
-  const { t, formatCurrency, locale, isRTL } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   /** Prefer i18n; fall back if Metro still has a stale @maher/i18n bundle. */
   const label = (key: string, fallback: string) => {
@@ -139,87 +101,29 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const { openAccessoryCamera } = useAccessoryCamera();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'catalog.manage');
-  const canPrice = can(user, 'customer.update');
 
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [sellerSheet, setSellerSheet] = useState(false);
-  const [sellerEditing, setSellerEditing] = useState(false);
-  const [sellerCustomerLabel, setSellerCustomerLabel] = useState('');
-  const [materialSheet, setMaterialSheet] = useState(false);
-  const [measureSheet, setMeasureSheet] = useState(false);
   const [categorySheet, setCategorySheet] = useState(false);
   const [photoSheet, setPhotoSheet] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [measureValueSheet, setMeasureValueSheet] = useState(false);
-  const [editingMeasureIndex, setEditingMeasureIndex] = useState<number | null>(null);
-  const [sellerCustomerId, setSellerCustomerId] = useState<string | null>(null);
-  const [sellerPrice, setSellerPrice] = useState('');
-  const [sellerQ, setSellerQ] = useState('');
-  const [newMeasure, setNewMeasure] = useState<{
-    nameEn: string;
-    nameAr: string;
-    value: string;
-    unit: string;
-  }>({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
+  const [createVariantSheet, setCreateVariantSheet] = useState(false);
 
   const productQuery = useQuery({
     queryKey: queryKeys.catalog.adminDetail(productId),
     queryFn: () => getAdminProduct(productId),
     enabled: allowed && Boolean(productId),
   });
-
-  const pricesQuery = useQuery({
-    queryKey: queryKeys.catalog.dealerPrices(productId),
-    queryFn: () => listProductDealerPrices(productId),
-    enabled: allowed && Boolean(productId),
-  });
-
   const categoriesQuery = useQuery({
     queryKey: queryKeys.catalog.productCategories(),
     queryFn: () => listProductCategories({ page: 1, pageSize: 100 }),
     enabled: allowed,
   });
-
-  const customersQuery = useQuery({
-    queryKey: ['customers', 'picker', sellerQ],
-    queryFn: () => listCustomers({ page: 1, pageSize: 30, q: sellerQ || undefined }),
-    enabled: sellerSheet && canPrice && !sellerEditing,
+  const variantsQuery = useQuery({
+    queryKey: queryKeys.catalog.variants(productId, { includeInactive: true }),
+    queryFn: () => listProductVariants(productId, true),
+    enabled: allowed && Boolean(productId),
   });
-
-  const pricedCustomerIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const row of pricesQuery.data ?? []) {
-      if (row.customerId) ids.add(row.customerId);
-    }
-    return ids;
-  }, [pricesQuery.data]);
-
-  const addSellerCandidates = useMemo(() => {
-    return (customersQuery.data?.data ?? []).filter((c) => !pricedCustomerIds.has(c.id));
-  }, [customersQuery.data?.data, pricedCustomerIds]);
-
-  const openAddSellerPrice = () => {
-    setSellerEditing(false);
-    setSellerCustomerLabel('');
-    setSellerCustomerId(null);
-    setSellerPrice('');
-    setSellerQ('');
-    setSellerSheet(true);
-  };
-
-  const openEditSellerPrice = (row: {
-    customerId: string;
-    price: number | string;
-    name: string;
-  }) => {
-    setSellerEditing(true);
-    setSellerCustomerLabel(row.name);
-    setSellerCustomerId(row.customerId);
-    setSellerPrice(String(row.price));
-    setSellerQ('');
-    setSellerSheet(true);
-  };
 
   useEffect(() => {
     if (productQuery.data) setDraft(toDraft(productQuery.data));
@@ -243,57 +147,11 @@ export function AdminProductDetailScreen({ productId }: Props) {
     },
   });
 
-  const upsertPriceMutation = useMutation({
-    mutationFn: () => {
-      if (!sellerCustomerId) throw new Error('customer');
-      const price = strNum(sellerPrice);
-      if (price == null) throw new Error('price');
-      return upsertDealerPrice({
-        customerId: sellerCustomerId,
-        productId,
-        price,
-      });
-    },
-    onSuccess: () => {
-      void haptics.confirmLight();
-      setSellerSheet(false);
-      setSellerEditing(false);
-      setSellerCustomerLabel('');
-      setSellerCustomerId(null);
-      setSellerPrice('');
-      void queryClient.invalidateQueries({ queryKey: queryKeys.catalog.dealerPrices(productId) });
-      showToast({ message: t('catalog.sellerPriceSaved'), variant: 'success' });
-    },
-    onError: (err) => {
-      void haptics.error();
-      showToast({
-        message: isApiError(err) ? toastMessageForError(err) : t('mobile.adminProduct.saveError'),
-        variant: 'error',
-      });
-    },
-  });
-
-  const deletePriceMutation = useMutation({
-    mutationFn: (row: { customerId: string; id: string }) =>
-      deleteDealerPrice(row.customerId, row.id),
-    onSuccess: () => {
-      void haptics.selection();
-      void queryClient.invalidateQueries({ queryKey: queryKeys.catalog.dealerPrices(productId) });
-    },
-  });
-
-  const productionCost = num(productQuery.data?.productionCost ?? productQuery.data?.manufacturingCost);
   const categories = categoriesQuery.data?.data ?? [];
-  const dealerPrices = pricesQuery.data ?? [];
   /** Scroll content must clear the floating pill — leftover stack inset plus extra last-card pad. */
   const footerPad =
     theme.spacing['5xl'] + surfaceTabBarStackInset(insets.bottom, theme.spacing.md);
-  const sheetLocksPageScroll =
-    measureSheet ||
-    materialSheet ||
-    categorySheet ||
-    photoSheet ||
-    sellerSheet;
+  const sheetLocksPageScroll = categorySheet || photoSheet;
 
   const categoryLabel = useMemo(() => {
     const id = draft?.categoryId;
@@ -316,21 +174,6 @@ export function AdminProductDetailScreen({ productId }: Props) {
       imageUrl: split.imageUrl,
       galleryUrls: split.galleryUrls,
       isActive: draft.isActive,
-      width: strNum(draft.width),
-      height: strNum(draft.height),
-      depth: strNum(draft.depth),
-      seatHeight: strNum(draft.seatHeight),
-      basePrice: strNum(draft.basePrice) ?? undefined,
-      adminNotes: draft.adminNotes.trim() || null,
-      customMeasurements: draft.customMeasurements,
-      bomDefaults: {
-        materials: draft.bomLines.map((l) => ({
-          sku: l.sku,
-          qty: l.qty,
-          unitCost: l.unitCost,
-          category: l.category ?? undefined,
-        })),
-      },
     };
     saveMutation.mutate(body);
   };
@@ -497,7 +340,6 @@ export function AdminProductDetailScreen({ productId }: Props) {
             refreshing={productQuery.isRefetching && !productQuery.isPending}
             onRefresh={() => {
               void productQuery.refetch();
-              void pricesQuery.refetch();
             }}
             tintColor={colors.brand}
           />
@@ -613,15 +455,11 @@ export function AdminProductDetailScreen({ productId }: Props) {
               </View>
             </View>
 
-            <TextField
-              label={t('catalog.nameEn')}
-              value={draft.nameEn}
-              onChangeText={(v) => set('nameEn', v)}
-            />
-            <TextField
-              label={t('catalog.nameAr')}
-              value={draft.nameAr}
-              onChangeText={(v) => set('nameAr', v)}
+            <BilingualNameField
+              arabic={draft.nameAr}
+              english={draft.nameEn}
+              onArabicChange={(v) => set('nameAr', v)}
+              onEnglishChange={(v) => set('nameEn', v)}
             />
             <TextField
               label={t('catalog.description')}
@@ -652,418 +490,78 @@ export function AdminProductDetailScreen({ productId }: Props) {
           </SectionBoard>
         </ListItemEnter>
 
-        {/* Measurements */}
         <ListItemEnter index={1}>
           <SectionBoard
-            title={t('catalog.measurements')}
+            title={t('catalog.variants')}
             titleWeight={titleWeight}
-            actionLabel={t('catalog.addMeasurement')}
-            onAction={() => {
-              setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
-              setEditingMeasureIndex(null);
-              setMeasureValueSheet(false);
-              setMeasureSheet(true);
-            }}
+            actionLabel={t('catalog.addVariant')}
+            onAction={() => setCreateVariantSheet(true)}
           >
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
-              {(
-                [
-                  ['width', t('catalog.width')],
-                  ['height', t('catalog.height')],
-                  ['depth', t('catalog.depth')],
-                  ['seatHeight', t('catalog.seatHeight')],
-                ] as const
-              ).map(([key, fieldLabel]) => (
-                <View key={key} style={{ width: '47%', flexGrow: 1 }}>
-                  <TextField
-                    label={fieldLabel}
-                    hint={formatCatalogDimensionHint(
-                      label('catalog.catalog', 'Catalog'),
-                      productQuery.data?.[key],
-                      label('catalog.emptyValue', '—'),
+            <AppText variant="caption" color="muted">
+              {t('catalog.variantsHint')}
+            </AppText>
+            {(variantsQuery.data ?? []).length === 0 ? (
+              <CatalogFloorEmpty
+                icon="layers-outline"
+                title={t('catalog.noVariants')}
+                body={t('catalog.createStandardVariantHint')}
+              />
+            ) : (
+              (variantsQuery.data ?? []).map((row) => (
+                <AnimatedPressable
+                  key={row.id}
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('catalog.openVariant')}
+                  onPress={() => {
+                    void haptics.selection();
+                    router.push(`/(app)/(admin)/products/${productId}/variants/${row.id}`);
+                  }}
+                  style={{
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: 4,
+                    ...orderBoardShadow(colorScheme),
+                  }}
+                >
+                  <AppText variant="body" weight={titleWeight}>
+                    {localizedName(locale, row)}
+                    {row.isDefault ? ` · ${t('catalog.standardVariant')}` : ''}
+                    {row.isActive ? '' : ` · ${t('catalog.variantInactive')}`}
+                  </AppText>
+                  <AppText variant="caption" color="muted" numberOfLines={2}>
+                    {renderVariantSpecLine(
+                      {
+                        nameAr: row.nameAr,
+                        nameEn: row.nameEn,
+                        nameHe: row.nameHe ?? null,
+                        measurements: row.measurements ?? [],
+                        options: (row.options ?? []).map((opt) => ({
+                          specOptionValueId: opt.specOptionValueId,
+                          nameAr: opt.specOptionValue?.nameAr,
+                          nameEn: opt.specOptionValue?.nameEn,
+                          nameHe: opt.specOptionValue?.nameHe,
+                          code: opt.specOptionValue?.code,
+                        })),
+                        includedItems: row.includedItems ?? [],
+                        composition: row.composition ?? [],
+                        factoryNotesAr: row.factoryNotesAr ?? null,
+                        factoryNotesEn: row.factoryNotesEn ?? null,
+                        factoryNotesHe: row.factoryNotesHe ?? null,
+                      },
+                      locale,
                     )}
-                    value={draft[key]}
-                    onChangeText={(v) => set(key, v)}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-              ))}
-            </View>
-            {draft.customMeasurements.length ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <AppText
-                    variant="caption"
-                    style={{
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.7,
-                      fontSize: 11,
-                      color: colors.brand,
-                    }}
-                  >
-                    {t('catalog.customMeasurements')}
                   </AppText>
-                  <AppText variant="caption" color="muted" dir="ltr">
-                    {draft.customMeasurements.length}
-                  </AppText>
-                </View>
-                <CappedNestedScroll
-                  itemCount={draft.customMeasurements.length}
-                  rowEstimate={FLOOR_ROW_ESTIMATE.measurement}
-                  gap={theme.spacing.sm}
-                >
-                  {draft.customMeasurements.map((m, idx) => {
-                    const name =
-                      locale === 'ar' ? m.nameAr || m.nameEn : m.nameEn || m.nameAr;
-                    const secondary =
-                      locale === 'ar'
-                        ? m.nameEn && m.nameEn !== name
-                          ? m.nameEn
-                          : null
-                        : m.nameAr && m.nameAr !== name
-                          ? m.nameAr
-                          : null;
-                    const valueLabel =
-                      m.value != null ? `${m.value} ${displayMeasurementUnit(m.unit)}` : '—';
-                    return (
-                      <MeasurementFloorRow
-                        key={`${m.nameEn}-${idx}`}
-                        index={idx}
-                        name={name || '—'}
-                        secondary={secondary}
-                        valueLabel={valueLabel}
-                        onEdit={() => {
-                          setNewMeasure({
-                            nameEn: m.nameEn,
-                            nameAr: m.nameAr,
-                            value: m.value != null ? String(m.value) : '',
-                            unit: displayMeasurementUnit(m.unit),
-                          });
-                          setEditingMeasureIndex(idx);
-                          setMeasureValueSheet(false);
-                          setMeasureSheet(true);
-                        }}
-                        onRemove={() => {
-                          set(
-                            'customMeasurements',
-                            draft.customMeasurements.filter((_, i) => i !== idx),
-                          );
-                        }}
-                      />
-                    );
-                  })}
-                </CappedNestedScroll>
-              </View>
-            ) : (
-              <View
-                style={{
-                  borderRadius: theme.radius.xl,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surfaceSecondary,
-                  paddingVertical: theme.spacing.xl,
-                  paddingHorizontal: theme.spacing.lg,
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Ionicons name="resize-outline" size={20} color={colors.textMuted} />
-                </View>
-                <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
-                  {t('catalog.noCustomMeasurements')}
-                </AppText>
-              </View>
+                </AnimatedPressable>
+              ))
             )}
           </SectionBoard>
         </ListItemEnter>
 
-        {/* Costs */}
         <ListItemEnter index={2}>
-          <SectionBoard title={t('catalog.costs')} titleWeight={titleWeight}>
-            <View style={{ gap: theme.spacing.md }}>
-              <View style={{ gap: theme.spacing.xs }}>
-                <TextField
-                  label={t('catalog.basePrice')}
-                  value={draft.basePrice}
-                  onChangeText={(v) => set('basePrice', v)}
-                  keyboardType="decimal-pad"
-                />
-                <AppText variant="caption" color="muted">
-                  {t('catalog.basePriceHint')}
-                </AppText>
-              </View>
-              <View
-                style={{
-                  padding: theme.spacing.md,
-                  borderRadius: theme.radius.xl,
-                  backgroundColor: colors.surfaceSecondary,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  gap: 4,
-                }}
-              >
-                <AppText variant="caption" color="muted">
-                  {t('catalog.manufacturingCost')}
-                </AppText>
-                <AppText variant="title" weight="semibold" dir="ltr">
-                  {productionCost != null ? formatCurrency(productionCost) : '—'}
-                </AppText>
-                <AppText variant="caption" color="muted">
-                  {t('catalog.productionCostHint')}
-                </AppText>
-              </View>
-            </View>
-          </SectionBoard>
-        </ListItemEnter>
-
-        {/* Seller prices */}
-        <ListItemEnter index={3}>
-          <SectionBoard
-            title={t('catalog.sellerPrices')}
-            titleWeight={titleWeight}
-            actionLabel={canPrice ? t('catalog.addSellerPrice') : undefined}
-            onAction={canPrice ? openAddSellerPrice : undefined}
-          >
-            <AppText variant="caption" color="muted">
-              {t('catalog.sellerPricesHint')}
-            </AppText>
-            {dealerPrices.length === 0 ? (
-              <View
-                style={{
-                  borderRadius: theme.radius.xl,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surfaceSecondary,
-                  paddingVertical: theme.spacing.xl,
-                  paddingHorizontal: theme.spacing.lg,
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Ionicons name="pricetag-outline" size={20} color={colors.textMuted} />
-                </View>
-                <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
-                  {t('customers.noPrices')}
-                </AppText>
-              </View>
-            ) : (
-              <View style={{ gap: theme.spacing.sm }}>
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <AppText
-                    variant="caption"
-                    style={{
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.7,
-                      fontSize: 11,
-                      color: colors.brand,
-                    }}
-                  >
-                    {t('catalog.sellerPrices')}
-                  </AppText>
-                  <AppText variant="caption" color="muted" dir="ltr">
-                    {dealerPrices.length}
-                  </AppText>
-                </View>
-                <CappedNestedScroll
-                  itemCount={dealerPrices.length}
-                  rowEstimate={FLOOR_ROW_ESTIMATE.seller}
-                  gap={theme.spacing.sm}
-                >
-                  {dealerPrices.map((row, index) => {
-                    const name =
-                      locale === 'ar'
-                        ? row.customer?.nameAr || row.customer?.name || row.customer?.nameEn
-                        : locale === 'he'
-                          ? row.customer?.nameHe || row.customer?.name || row.customer?.nameEn
-                          : row.customer?.nameEn || row.customer?.name || row.customer?.nameAr;
-                    const initial = (name || row.customer?.code || '?')
-                      .trim()
-                      .charAt(0)
-                      .toUpperCase();
-                    return (
-                      <SellerPriceFloorRow
-                        key={row.id}
-                        index={index}
-                        name={name || '—'}
-                        code={row.customer?.code ?? ''}
-                        initial={initial}
-                        priceLabel={formatCurrency(Number(row.price))}
-                        canEdit={canPrice}
-                        canDelete={canPrice}
-                        deleting={deletePriceMutation.isPending}
-                        onEdit={() =>
-                          openEditSellerPrice({
-                            customerId: row.customerId,
-                            price: row.price,
-                            name: name || row.customer?.code || '—',
-                          })
-                        }
-                        onDelete={() =>
-                          deletePriceMutation.mutate({
-                            customerId: row.customerId,
-                            id: row.id,
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </CappedNestedScroll>
-              </View>
-            )}
-          </SectionBoard>
-        </ListItemEnter>
-
-        {/* Materials / BOM */}
-        <ListItemEnter index={4}>
-          <SectionBoard
-            title={t('catalog.bomMaterials')}
-            titleWeight={titleWeight}
-            actionLabel={t('catalog.addMaterial')}
-            onAction={() => {
-              setMaterialSheet(true);
-            }}
-          >
-            {draft.bomLines.length === 0 ? (
-              <View
-                style={{
-                  borderRadius: theme.radius.xl,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surfaceSecondary,
-                  paddingVertical: theme.spacing.xl,
-                  paddingHorizontal: theme.spacing.lg,
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Ionicons name="cube-outline" size={20} color={colors.textMuted} />
-                </View>
-                <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
-                  {t('catalog.noBomMaterials')}
-                </AppText>
-              </View>
-            ) : (
-              <CappedNestedScroll
-                itemCount={draft.bomLines.length}
-                rowEstimate={FLOOR_ROW_ESTIMATE.bom}
-                gap={theme.spacing.sm}
-              >
-                {draft.bomLines.map((line, idx) => {
-                  const qtyNum = Math.max(0, Number(line.qty) || 0);
-                  const lineTotal = qtyNum * (Number(line.unitCost) || 0);
-                  return (
-                    <BomFloorRow
-                      key={`${line.sku}-${idx}`}
-                      index={idx}
-                      name={
-                        locale === 'ar' ? line.nameAr || line.nameEn : line.nameEn || line.nameAr
-                      }
-                      sku={line.sku}
-                      imageUrl={line.imageUrl}
-                      unitCostLabel={formatCurrency(line.unitCost)}
-                      lineTotalLabel={formatCurrency(lineTotal)}
-                      qty={String(line.qty)}
-                      onQtyChange={(v) => {
-                        const q = Math.max(0, Number(v) || 0);
-                        set(
-                          'bomLines',
-                          draft.bomLines.map((l, i) =>
-                            i === idx ? { ...l, qty: q, lineCost: q * l.unitCost } : l,
-                          ),
-                        );
-                      }}
-                      onRemove={() => {
-                        set(
-                          'bomLines',
-                          draft.bomLines.filter((_, i) => i !== idx),
-                        );
-                      }}
-                    />
-                  );
-                })}
-              </CappedNestedScroll>
-            )}
-          </SectionBoard>
-        </ListItemEnter>
-
-        {/* Admin notes */}
-        <ListItemEnter index={5}>
-          <SectionBoard title={t('catalog.adminNotes')} titleWeight={titleWeight}>
-            <AppText variant="caption" color="muted">
-              {t('catalog.adminNotesHint')}
-            </AppText>
-            <TextField
-              value={draft.adminNotes}
-              onChangeText={(v) => set('adminNotes', v)}
-              placeholder={t('catalog.adminNotesPlaceholder')}
-              multiline
-              growMinHeight={100}
-            />
-          </SectionBoard>
-        </ListItemEnter>
-
-        <ListItemEnter index={6}>
-          <SectionBoard
-            title={t('mobile.production.workflow.productSectionTitle')}
-            titleWeight={titleWeight}
-          >
-            <ProductWorkflowSection
-              productId={productId}
-              showHeading={false}
-              titleWeight={titleWeight}
-            />
-          </SectionBoard>
-        </ListItemEnter>
-
-        <ListItemEnter index={7}>
           <PrimaryButton
             label={label('mobile.adminProduct.save', 'Save product')}
             loading={saveMutation.isPending}
@@ -1106,6 +604,16 @@ export function AdminProductDetailScreen({ productId }: Props) {
         allowCreate
       />
 
+      <CreateVariantSheet
+        open={createVariantSheet}
+        productId={productId}
+        onClose={() => setCreateVariantSheet(false)}
+        onCreated={(row) => {
+          setCreateVariantSheet(false);
+          router.push(`/(app)/(admin)/products/${productId}/variants/${row.id}`);
+        }}
+      />
+
       <ProductPhotoSourceSheet
         open={photoSheet}
         onClose={() => setPhotoSheet(false)}
@@ -1126,553 +634,10 @@ export function AdminProductDetailScreen({ productId }: Props) {
         }
       />
 
-      {/* Add / edit seller price */}
-      <BottomSheet
-        open={sellerSheet}
-        onClose={() => {
-          setSellerSheet(false);
-          setSellerEditing(false);
-          setSellerCustomerLabel('');
-        }}
-        title={
-          sellerEditing
-            ? label('catalog.editSellerPrice', 'Edit seller price')
-            : label('catalog.addSellerPrice', 'Add seller price')
-        }
-        fitContent
-        maxHeight={520}
-      >
-        <View style={{ gap: theme.spacing.md }}>
-          {sellerEditing ? (
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surfaceSecondary,
-                padding: theme.spacing.md,
-                gap: 2,
-                overflow: 'hidden',
-                ...orderBoardShadow(colorScheme),
-              }}
-            >
-              <AppText variant="caption" color="muted">
-                {label('catalog.seller', 'Seller')}
-              </AppText>
-              <AppText variant="label" weight={titleWeight}>
-                {sellerCustomerLabel || '—'}
-              </AppText>
-            </View>
-          ) : (
-            <>
-              <TextField
-                label={t('mobile.catalog.search')}
-                value={sellerQ}
-                onChangeText={setSellerQ}
-                placeholder={t('mobile.orders.filterDealerSearch')}
-                returnKeyType="search"
-              />
-              <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled">
-                {addSellerCandidates.length === 0 ? (
-                  <View
-                    style={{
-                      paddingVertical: theme.spacing.lg,
-                      paddingHorizontal: theme.spacing.sm,
-                      alignItems: 'center',
-                      gap: theme.spacing.xs,
-                    }}
-                  >
-                    <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
-                      {customersQuery.isLoading
-                        ? t('common.loading')
-                        : label(
-                            'catalog.noSellersLeftForPrice',
-                            'Every seller already has a price. Edit a card to change one.',
-                          )}
-                    </AppText>
-                  </View>
-                ) : (
-                  addSellerCandidates.map((c) => {
-                    const active = sellerCustomerId === c.id;
-                    const name =
-                      locale === 'ar'
-                        ? c.nameAr || c.name || c.nameEn
-                        : locale === 'he'
-                          ? c.nameHe || c.name || c.nameEn
-                          : c.nameEn || c.name || c.nameAr;
-                    return (
-                      <Pressable
-                        key={c.id}
-                        onPress={() => {
-                          void haptics.selection();
-                          setSellerCustomerId(c.id);
-                        }}
-                        style={{
-                          paddingVertical: theme.spacing.sm,
-                          paddingHorizontal: theme.spacing.sm,
-                          borderRadius: theme.radius.lg,
-                          backgroundColor: active ? colors.brandSoft : 'transparent',
-                          borderWidth: 1,
-                          borderColor: active ? colors.brand : colors.border,
-                          marginBottom: theme.spacing.xs,
-                        }}
-                      >
-                        <AppText variant="label" weight={active ? 'semibold' : 'regular'}>
-                          {name}
-                        </AppText>
-                        <AppText variant="caption" color="muted" dir="ltr">
-                          {c.code}
-                        </AppText>
-                      </Pressable>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </>
-          )}
-          <TextField
-            label={t('catalog.price')}
-            value={sellerPrice}
-            onChangeText={setSellerPrice}
-            keyboardType="decimal-pad"
-          />
-          <PrimaryButton
-            label={t('common.save')}
-            loading={upsertPriceMutation.isPending}
-            disabled={!sellerCustomerId || !sellerPrice.trim()}
-            onPress={() => upsertPriceMutation.mutate()}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-        </View>
-      </BottomSheet>
-
-      {/* Add material */}
-      <BomMaterialPickerSheet
-        open={materialSheet}
-        onClose={() => setMaterialSheet(false)}
-        existingSkus={draft.bomLines.map((l) => l.sku)}
-        onPick={(line) => set('bomLines', [...draft.bomLines, line])}
-      />
-
-      {/* Add custom measurement */}
-      <BottomSheet
-        open={measureSheet}
-        onClose={() => {
-          setMeasureValueSheet(false);
-          setEditingMeasureIndex(null);
-          setMeasureSheet(false);
-        }}
-        title={
-          measureValueSheet
-            ? t('catalog.pickMeasurementValue')
-            : editingMeasureIndex != null
-              ? t('common.edit')
-              : t('catalog.addMeasurement')
-        }
-        fitContent
-        maxHeight={560}
-      >
-        {measureValueSheet ? (
-          <MeasurementValuePanel
-            active={measureValueSheet}
-            selected={newMeasure.value}
-            unit={newMeasure.unit}
-            onBack={() => setMeasureValueSheet(false)}
-            onSelect={(value, unit) => {
-              setNewMeasure((s) => ({ ...s, value, unit }));
-              setMeasureValueSheet(false);
-            }}
-          />
-        ) : (
-          <View style={{ gap: theme.spacing.md }}>
-            <TextField
-              label={t('catalog.measurementNameEn')}
-              value={newMeasure.nameEn}
-              onChangeText={(v) => setNewMeasure((s) => ({ ...s, nameEn: v }))}
-            />
-            <TextField
-              label={t('catalog.measurementNameAr')}
-              value={newMeasure.nameAr}
-              onChangeText={(v) => setNewMeasure((s) => ({ ...s, nameAr: v }))}
-            />
-            <View style={{ gap: theme.spacing.xs }}>
-              <AppText variant="label" color="secondary">
-                {t('catalog.measurementValue')}
-              </AppText>
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'stretch',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <TextField
-                  value={newMeasure.value}
-                  onChangeText={(v) => setNewMeasure((s) => ({ ...s, value: v }))}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  containerStyle={{ flex: 1, width: undefined }}
-                />
-                <View
-                  style={{
-                    minWidth: 48,
-                    paddingHorizontal: theme.spacing.sm,
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.brandSoft,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <AppText variant="caption" weight="semibold" style={{ color: colors.brand }} dir="ltr">
-                    {newMeasure.unit}
-                  </AppText>
-                </View>
-                <AnimatedPressable
-                  variant="button"
-                  accessibilityRole="button"
-                  accessibilityLabel={t('catalog.pickMeasurementValue')}
-                  onPress={() => {
-                    void haptics.selection();
-                    setMeasureValueSheet(true);
-                  }}
-                  style={{
-                    minWidth: theme.sizes.touch.min + 8,
-                    minHeight: theme.sizes.touch.min,
-                    paddingHorizontal: theme.spacing.md,
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.surface,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 2,
-                    overflow: 'hidden',
-                    ...orderBoardShadow(colorScheme),
-                  }}
-                >
-                  <View
-                    pointerEvents="none"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      bottom: 0,
-                      ...(isRTL ? { right: 0 } : { left: 0 }),
-                      width: 3,
-                      backgroundColor: colors.brand,
-                      opacity: 0.7,
-                    }}
-                  />
-                  <Ionicons name="options-outline" size={18} color={colors.brand} />
-                  <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-                    {t('catalog.pickValue')}
-                  </AppText>
-                </AnimatedPressable>
-              </View>
-            </View>
-            <PrimaryButton
-              label={
-                editingMeasureIndex != null ? t('common.save') : t('catalog.addMeasurement')
-              }
-              onPress={() => {
-                if (!newMeasure.nameEn.trim() || !newMeasure.nameAr.trim()) {
-                  void haptics.error();
-                  showToast({
-                    variant: 'error',
-                    message: t('catalog.measurementNamesRequired'),
-                  });
-                  return;
-                }
-                void haptics.confirmLight();
-                const next = {
-                  nameEn: newMeasure.nameEn.trim(),
-                  nameAr: newMeasure.nameAr.trim(),
-                  value: strNum(newMeasure.value),
-                  unit: newMeasure.unit,
-                };
-                set(
-                  'customMeasurements',
-                  editingMeasureIndex != null
-                    ? draft.customMeasurements.map((row, i) =>
-                        i === editingMeasureIndex ? next : row,
-                      )
-                    : [...draft.customMeasurements, next],
-                );
-                setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
-                setEditingMeasureIndex(null);
-                setMeasureValueSheet(false);
-                setMeasureSheet(false);
-              }}
-              style={{ borderRadius: theme.radius.xl }}
-            />
-          </View>
-        )}
-      </BottomSheet>
     </AppScreen>
-  );
-}
-
-
-
-
-function SellerPriceFloorRow({
-  index,
-  name,
-  code,
-  initial,
-  priceLabel,
-  canEdit,
-  canDelete,
-  deleting,
-  onEdit,
-  onDelete,
-}: {
-  index: number;
-  name: string;
-  code: string;
-  initial: string;
-  priceLabel: string;
-  canEdit?: boolean;
-  canDelete: boolean;
-  deleting?: boolean;
-  onEdit?: () => void;
-  onDelete: () => void;
-}) {
-  const { colors, theme, colorScheme } = useTheme();
-  const { isRTL, locale, t } = useLocale();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  return (
-    <ListItemEnter index={Math.min(index, 6)}>
-      <View
-        style={{
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surfaceSecondary,
-          overflow: 'hidden',
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
-            width: 3,
-            backgroundColor: colors.brand,
-            opacity: 0.75,
-          }}
-        />
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            paddingVertical: theme.spacing.md,
-            paddingHorizontal: theme.spacing.md,
-            ...(isRTL
-              ? { paddingRight: theme.spacing.md + 4 }
-              : { paddingLeft: theme.spacing.md + 4 }),
-          }}
-        >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'flex-start',
-              gap: theme.spacing.md,
-            }}
-          >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.border,
-                marginTop: 2,
-              }}
-            >
-              <AppText variant="label" weight={titleWeight} style={{ color: colors.brand }}>
-                {initial}
-              </AppText>
-            </View>
-
-            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <AppText
-                variant="label"
-                weight={titleWeight}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {name}
-              </AppText>
-              {code ? (
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  dir="ltr"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {code}
-                </AppText>
-              ) : null}
-            </View>
-          </View>
-
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: theme.spacing.sm,
-            }}
-          >
-            {canEdit && onEdit ? (
-              <AnimatedPressable
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel={t('common.edit')}
-                onPress={() => {
-                  void haptics.selection();
-                  onEdit();
-                }}
-                style={{
-                  flexShrink: 0,
-                  paddingHorizontal: theme.spacing.md,
-                  paddingVertical: theme.spacing.sm,
-                  borderRadius: theme.radius.lg,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.borderStrong,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <AppText
-                  variant="label"
-                  weight={titleWeight}
-                  style={{ color: colors.brand }}
-                >
-                  {t('common.edit')}
-                </AppText>
-              </AnimatedPressable>
-            ) : (
-              <View />
-            )}
-
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <View
-                style={{
-                  flexShrink: 0,
-                  paddingHorizontal: theme.spacing.md,
-                  paddingVertical: theme.spacing.sm,
-                  borderRadius: theme.radius.lg,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.borderStrong,
-                }}
-              >
-                <AppText
-                  variant="label"
-                  weight={titleWeight}
-                  dir="ltr"
-                  style={{ color: colors.brand }}
-                >
-                  {priceLabel}
-                </AppText>
-              </View>
-
-              {canDelete ? (
-                <AnimatedPressable
-                  variant="button"
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.delete')}
-                  disabled={deleting}
-                  onPress={() => {
-                    void haptics.selection();
-                    onDelete();
-                  }}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.errorSoft,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    opacity: deleting ? 0.5 : 1,
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={16} color={colors.error} />
-                </AnimatedPressable>
-              ) : null}
-            </View>
-          </View>
-        </View>
-      </View>
-    </ListItemEnter>
-  );
-}
-
-/** Floor board row heights used to pin nested lists inside the page ScrollView. */
-const FLOOR_ROW_ESTIMATE = {
-  measurement: 84,
-  seller: 92,
-  bom: 152,
-} as const;
-
-const FLOOR_LIST_VISIBLE_ROWS = 3;
-
-/**
- * Nested ScrollViews ignore maxHeight inside a parent ScrollView on iOS.
- * Few items stay natural height; longer lists pin a fixed box and scroll in-place.
- */
-function CappedNestedScroll({
-  itemCount,
-  rowEstimate,
-  gap,
-  visibleRows = FLOOR_LIST_VISIBLE_ROWS,
-  children,
-}: {
-  itemCount: number;
-  rowEstimate: number;
-  gap: number;
-  visibleRows?: number;
-  children: ReactNode;
-}) {
-  const scrollable = itemCount > visibleRows;
-  const capHeight =
-    visibleRows * rowEstimate + Math.max(0, visibleRows - 1) * gap;
-
-  if (!scrollable) {
-    return <View style={{ gap }}>{children}</View>;
+    );
   }
 
-  return (
-    <View style={{ height: capHeight, overflow: 'hidden' }}>
-      <ScrollView
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        keyboardShouldPersistTaps="handled"
-        style={{ flex: 1 }}
-        contentContainerStyle={{ gap, paddingBottom: 2 }}
-      >
-        {children}
-      </ScrollView>
-    </View>
-  );
-}
 
 function SectionBoard({
   title,

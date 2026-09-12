@@ -9,6 +9,14 @@ import { isImageMime, type PendingAttachment } from '../pendingAttachment';
 
 export type ReviewSummary = {
   modelName: string;
+  basketLines?: Array<{
+    name: string;
+    quantity: string;
+    variant?: string;
+    fabric?: string;
+    dimensions?: string;
+    notes?: string;
+  }>;
   customerName: string;
   customerPhone: string;
   address: string;
@@ -95,6 +103,8 @@ export function ReviewStep({
 }: ReviewStepProps) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const itemLines = summary.basketLines ?? [];
 
   const successNumber = submittedNumber || draftSavedNumber || null;
   const successIsDraft = Boolean(draftSavedNumber) && !submittedNumber;
@@ -123,7 +133,7 @@ export function ReviewStep({
               ✓
             </AppText>
           </View>
-          <AppText variant="title" weight="semibold" style={{ textAlign: 'center' }}>
+          <AppText variant="title" weight={titleWeight} style={{ textAlign: 'center' }}>
             {successIsDraft
               ? t('mobile.newOrder.draftSavedTitle')
               : t('mobile.newOrder.submittedTitle')}
@@ -159,7 +169,7 @@ export function ReviewStep({
     <View style={{ gap: theme.spacing.lg }}>
       {showTitle ? (
         <>
-          <AppText variant="title" weight="semibold">
+          <AppText variant="title" weight={titleWeight}>
             {t('mobile.newOrder.step4ReviewTitle')}
           </AppText>
           <AppText variant="body" color="secondary">
@@ -167,10 +177,52 @@ export function ReviewStep({
           </AppText>
         </>
       ) : (
-        <AppText variant="label" weight="semibold">
+        <AppText variant="label" weight={titleWeight}>
           {t('mobile.newOrder.step4ReviewTitle')}
         </AppText>
       )}
+
+      {itemLines.length
+        ? itemLines.map((line, index) => (
+            <View
+              key={`${line.name}-${index}`}
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: theme.radius.lg,
+                paddingHorizontal: theme.spacing.lg,
+                backgroundColor: colors.surfaceSecondary,
+              }}
+            >
+              <Row
+                label={`${index + 1}. ${line.name}`}
+                value={`${line.variant || t('mobile.newOrder.defaultVariant')} · ×${line.quantity}`}
+              />
+              {line.fabric ? (
+                <Row label={t('mobile.newOrder.fabricName')} value={line.fabric} />
+              ) : null}
+              {line.dimensions ? (
+                <Row label={t('mobile.newOrder.dimensionsNotes')} value={line.dimensions} />
+              ) : null}
+              {line.notes ? (
+                <Row label={t('mobile.newOrder.itemNotes')} value={line.notes} />
+              ) : null}
+            </View>
+          ))
+        : (
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: theme.radius.lg,
+                paddingHorizontal: theme.spacing.lg,
+                backgroundColor: colors.surfaceSecondary,
+              }}
+            >
+              <Row label={t('mobile.newOrder.review.model')} value={summary.modelName} />
+              <Row label={t('mobile.newOrder.quantity')} value={summary.quantity} />
+            </View>
+          )}
 
       <View
         style={{
@@ -181,19 +233,11 @@ export function ReviewStep({
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <Row label={t('mobile.newOrder.review.model')} value={summary.modelName} />
         <Row label={t('mobile.newOrder.review.customer')} value={summary.customerName} />
         <Row label={t('mobile.newOrder.review.phone')} value={summary.customerPhone} />
         <Row label={t('mobile.newOrder.review.address')} value={summary.address} />
         <Row label={t('mobile.newOrder.dealerPo')} value={summary.dealerPo} />
-        <Row label={t('mobile.newOrder.quantity')} value={summary.quantity} />
         <Row label={t('mobile.newOrder.priority')} value={summary.priority} />
-        <Row label={t('mobile.newOrder.fabricName')} value={summary.fabric} />
-        <Row
-          label={t('mobile.newOrder.fabricDescription')}
-          value={summary.fabricDescription}
-        />
-        <Row label={t('mobile.newOrder.dimensionsNotes')} value={summary.dimensionsNotes} />
         <Row label={t('mobile.newOrder.deliveryNotes')} value={summary.deliveryNotes} />
         {summary.requestedDeliveryDate ? (
           <Row
@@ -213,7 +257,7 @@ export function ReviewStep({
             <AppText variant="caption" color="muted">
               {t('mobile.newOrder.review.estimatedTotal')}
             </AppText>
-            <AppText variant="title" weight="semibold" color="brand" dir="ltr">
+            <AppText variant="title" weight={titleWeight} color="brand" dir="ltr">
               {formatCurrency(summary.estimatedTotal)}
             </AppText>
             {summary.unitPrice != null ? (
@@ -229,7 +273,7 @@ export function ReviewStep({
 
       {images.length > 0 ? (
         <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="label" weight="semibold">
+          <AppText variant="label" weight={titleWeight}>
             {t('mobile.newOrder.review.images')}
           </AppText>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
@@ -251,7 +295,7 @@ export function ReviewStep({
       ) : null}
 
       <View style={{ gap: theme.spacing.sm }}>
-        <AppText variant="label" weight="semibold">
+        <AppText variant="label" weight={titleWeight}>
           {t('mobile.newOrder.review.attachments')}
         </AppText>
         {docs.length > 0 ? (

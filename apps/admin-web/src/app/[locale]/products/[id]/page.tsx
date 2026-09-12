@@ -203,6 +203,23 @@ export default function ProductDetailPage() {
     queryFn: () => apiFetch<ProductDetail>(`/api/v1/products/${id}`),
   });
 
+  const variantsQuery = useQuery({
+    queryKey: ['product-variants', id],
+    queryFn: () =>
+      apiFetch<
+        Array<{
+          id: string;
+          sku: string;
+          code: string;
+          nameAr: string;
+          nameEn: string;
+          nameHe?: string | null;
+          isDefault: boolean;
+          isActive: boolean;
+        }>
+      >(`/api/v1/products/${id}/variants?includeInactive=true`),
+  });
+
   const categoriesQuery = useQuery({
     queryKey: ['product-categories'],
     queryFn: () =>
@@ -1180,6 +1197,57 @@ export default function ProductDetailPage() {
           <ProductWorkflowTimes productId={id} workflowId={workflowId} />
         </MotionSection>
       ) : null}
+
+      <MotionSection className="maher-form-section" as="div">
+        <Card
+          title={t('variants')}
+          actions={
+            <Button
+              size="sm"
+              variant="secondary"
+              leadingIcon={<Plus className="h-4 w-4" />}
+              onClick={() => {
+                const code = window.prompt(t('variantCode'));
+                const nameAr = window.prompt(t('variantNameAr'));
+                const nameEn = window.prompt(t('variantNameEn'));
+                if (!code || !nameAr || !nameEn) return;
+                void apiFetch(`/api/v1/products/${id}/variants`, {
+                  method: 'POST',
+                  body: JSON.stringify({ code, nameAr, nameEn }),
+                }).then((row: { id: string }) => {
+                  void qc.invalidateQueries({ queryKey: ['product-variants', id] });
+                  window.location.href = `/${locale}/products/${id}/variants/${row.id}`;
+                });
+              }}
+            >
+              {t('addVariant')}
+            </Button>
+          }
+        >
+          <p className="mb-3 text-sm text-text-secondary">{t('variantsHint')}</p>
+          {(variantsQuery.data ?? []).length === 0 ? (
+            <p className="text-sm text-text-tertiary">{t('noVariants')}</p>
+          ) : (
+            <ul className="space-y-2">
+              {(variantsQuery.data ?? []).map((row) => (
+                <li key={row.id}>
+                  <Link
+                    href={`/${locale}/products/${id}/variants/${row.id}`}
+                    className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm hover:bg-surface-secondary"
+                  >
+                    <span>
+                      {localizedName(locale, row)}
+                      {row.isDefault ? ` · ${t('defaultVariant')}` : ''}
+                      {row.isActive ? '' : ` · ${t('variantInactive')}`}
+                    </span>
+                    <span className="text-text-tertiary">{row.code}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </MotionSection>
 
       <MotionSection className="maher-form-section" as="div">
         <ProductProductionSetup productId={id} />

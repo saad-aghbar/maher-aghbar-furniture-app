@@ -1,0 +1,14 @@
+appId: jo.maheraghbar.furniture
+name: Dealer signs in (happy path)
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    id: "login-username"
+    optional: true
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true

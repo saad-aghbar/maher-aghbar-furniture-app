@@ -122,6 +122,48 @@ describe('Custom ensure-plan and seed guards', () => {
     expect(seeded.manufacturingComplexity).toBe(ManufacturingComplexity.CUSTOM);
     expect(seeded.workflow).toBeUndefined();
     expect(seeded.materialRequirements).toBeUndefined();
+    expect(seeded.instructionsAr).toBeNull();
+    expect(seeded.factoryNotes).toBeNull();
+  });
+
+  it('seeds trilingual item instructions one-to-one from the variant', () => {
+    const { service } = makeService();
+    const seeded = (service as any).seedLineCreateData(
+      {
+        id: 'line-std',
+        description: 'Karina',
+        manufacturingComplexity: ManufacturingComplexity.STANDARD,
+        orderSpec: {},
+        productId: 'p-1',
+        variantId: 'v-std',
+        product: {
+          nameEn: 'Karina',
+          width: 200,
+          height: 90,
+          depth: 90,
+          seatHeight: 42,
+          bomDefaults: null,
+          workflowConfiguration: null,
+          stageMaterialInputs: [],
+          stageInventoryOutputs: [],
+          variants: [
+            {
+              id: 'v-std',
+              isDefault: true,
+              factoryNotesAr: 'لف بسيط',
+              factoryNotesEn: 'Simple wrap',
+              factoryNotesHe: null,
+            },
+          ],
+        },
+      },
+      [],
+      false,
+    );
+    expect(seeded.instructionsAr).toBe('لف بسيط');
+    expect(seeded.instructionsEn).toBe('Simple wrap');
+    expect(seeded.instructionsHe).toBeNull();
+    expect(seeded.factoryNotes).toBe('لف بسيط\nSimple wrap');
   });
 
   it('seedFromCatalog still rejects Custom with CUSTOM_NO_TEMPLATE', async () => {

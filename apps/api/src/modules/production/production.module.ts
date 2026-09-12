@@ -16,6 +16,7 @@ import { WorkflowSnapshotService } from './workflow/workflow-snapshot.service';
 import { OrderWorkflowGraphService } from './workflow/order-workflow-graph.service';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
+import { CatalogModule } from '../catalog/catalog.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WipKitService } from './wip-kit.service';
 import { WipKitController } from './wip-kit.controller';
@@ -29,6 +30,7 @@ import { ProductionStartWebhookController } from './production-start.webhook.con
     forwardRef(() => InventoryModule),
     forwardRef(() => SchedulingModule),
     NotificationsModule,
+    CatalogModule,
   ],
   controllers: [
     ProductionController,

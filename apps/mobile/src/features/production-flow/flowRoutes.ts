@@ -4,12 +4,20 @@
  */
 import type { Href } from 'expo-router';
 
-export function adminOrderFlowHref(orderId: string): Href {
-  return `/(app)/(admin)/orders/${orderId}/flow` as Href;
+function withPo(base: string, productionOrderId?: string): Href {
+  return (
+    productionOrderId
+      ? `${base}?po=${encodeURIComponent(productionOrderId)}`
+      : base
+  ) as Href;
 }
 
-export function dealerOrderFlowHref(orderId: string): Href {
-  return `/(app)/(customer)/orders/${orderId}/flow` as Href;
+export function adminOrderFlowHref(orderId: string, productionOrderId?: string): Href {
+  return withPo(`/(app)/(admin)/orders/${orderId}/flow`, productionOrderId);
+}
+
+export function dealerOrderFlowHref(orderId: string, productionOrderId?: string): Href {
+  return withPo(`/(app)/(customer)/orders/${orderId}/flow`, productionOrderId);
 }
 
 export function adminProductionFlowHref(productionOrderId: string): Href {

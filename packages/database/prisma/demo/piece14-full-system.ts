@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -36,6 +37,12 @@ type ProductRef = {
   width?: unknown;
   height?: unknown;
   depth?: unknown;
+  defaultVariantId?: string;
+  defaultVariantSku?: string;
+  defaultVariantLabel?: string;
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
 };
 type WorkerRef = { id: string; username?: string };
 
@@ -198,7 +205,10 @@ export async function seedPiece14FullSystemExamples(
   const hardwareItem = pick('METAL_ACCESSORY', /hw|hardware|spring|mech/i);
 
   const stageMaterials = await prisma.productStageMaterialInput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     include: {
       inventoryItem: {
         select: { id: true, sku: true, nameEn: true, category: true, unit: true },
@@ -207,7 +217,10 @@ export async function seedPiece14FullSystemExamples(
     take: 20,
   });
   const packagingOutputs = await prisma.productStageInventoryOutput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     select: { expectedPieceCount: true, pieceLabels: true, inventoryTracking: true },
   });
   const finished =
@@ -468,6 +481,7 @@ export async function seedPiece14FullSystemExamples(
             create: [
               {
                 productId: product.id,
+                ...variantLineFields(product),
                 productName: product.nameEn,
                 quantity: qty,
                 width: input.orderWidth,
@@ -501,6 +515,7 @@ export async function seedPiece14FullSystemExamples(
           create: [
             {
               productId: product.id,
+              ...variantLineFields(product),
               description: product.nameEn,
               quantity: qty,
               unitPrice: unitPriceM,
@@ -536,6 +551,7 @@ export async function seedPiece14FullSystemExamples(
           create: [
             {
               productId: product.id,
+              ...variantLineFields(product),
               description: product.nameEn,
               quantity: qty,
               unitPrice: unitPriceM,
@@ -592,6 +608,7 @@ export async function seedPiece14FullSystemExamples(
         salesOrderLineId: line.id,
         customerId: oasis.id,
         productId: product.id,
+        ...variantPoFields(product),
         productDescription: product.nameEn,
         quantity: qty,
         status: ProductionOrderStatus.READY,

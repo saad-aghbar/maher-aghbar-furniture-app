@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
@@ -221,8 +222,13 @@ export function ReturnDetailScreen({
       : physicalRaw;
 
   return (
-    <AppScreen backFallback={resolvedBack}>
+    <AppScreen edges={{ top: true, bottom: false }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
+      <DetailTitle
+        title={card.number}
+        titleWeight={titleWeight}
+        backFallback={resolvedBack}
+      />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
@@ -242,6 +248,18 @@ export function ReturnDetailScreen({
           }}
         >
           <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              ...(isRTL ? { right: 0 } : { left: 0 }),
+              width: 3,
+              backgroundColor: colors.brand,
+              opacity: 0.55,
+            }}
+          />
+          <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
               alignItems: 'center',
@@ -249,6 +267,9 @@ export function ReturnDetailScreen({
               gap: theme.spacing.md,
               paddingHorizontal: theme.spacing.lg,
               paddingVertical: theme.spacing.md,
+              ...(isRTL
+                ? { paddingRight: theme.spacing.lg + 4 }
+                : { paddingLeft: theme.spacing.lg + 4 }),
               backgroundColor: colors.surfaceSecondary,
               borderBottomWidth: 1,
               borderBottomColor: colors.border,
@@ -274,6 +295,9 @@ export function ReturnDetailScreen({
               gap: theme.spacing.md,
               flexDirection: isRTL ? 'row-reverse' : 'row',
               alignItems: 'center',
+              ...(isRTL
+                ? { paddingRight: theme.spacing.lg + 4 }
+                : { paddingLeft: theme.spacing.lg + 4 }),
             }}
           >
             <View
@@ -342,30 +366,11 @@ export function ReturnDetailScreen({
         />
 
         {dealerFacing && card.needsInfo && card.needInfoNote ? (
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.lg,
-              gap: theme.spacing.sm,
-              ...orderBoardShadow(colorScheme),
-            }}
+          <DealerBoard
+            title={t('mobile.returns.needInfoTitle')}
+            titleWeight={titleWeight}
+            accentColor={colors.warning}
           >
-            <AppText
-              variant="caption"
-              weight="semibold"
-              style={{
-                color: colors.brand,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                letterSpacing: 0.5,
-                fontSize: 11,
-                textAlign: isRTL ? 'right' : 'left',
-              }}
-            >
-              {t('mobile.returns.needInfoTitle')}
-            </AppText>
             <AppText
               variant="body"
               style={{
@@ -376,7 +381,7 @@ export function ReturnDetailScreen({
             >
               {card.needInfoNote}
             </AppText>
-          </View>
+          </DealerBoard>
         ) : null}
 
         <View
@@ -1208,6 +1213,47 @@ export function ReturnDetailScreen({
         </>
       ) : null}
     </AppScreen>
+  );
+}
+
+function DetailTitle({
+  title,
+  titleWeight,
+  backFallback,
+}: {
+  title: string;
+  titleWeight: 'medium' | 'semibold';
+  backFallback: Href;
+}) {
+  const { isRTL } = useLocale();
+  const { theme } = useTheme();
+  const leadSize = theme.sizes.touch.min;
+
+  return (
+    <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          zIndex: 1,
+          justifyContent: 'center',
+        }}
+      >
+        <ScreenBackLead fallback={backFallback} />
+      </View>
+      <AppText
+        variant="largeTitle"
+        weight={titleWeight}
+        align="center"
+        numberOfLines={1}
+        dir="ltr"
+        style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
+      >
+        {title}
+      </AppText>
+    </View>
   );
 }
 

@@ -18,6 +18,7 @@ import {
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
 import { WF_SECTIONAL } from './workflows';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -30,6 +31,12 @@ type ProductRef = {
   depth?: unknown;
   workflowCode?: string;
   bomDefaults?: unknown;
+  defaultVariantId?: string;
+  defaultVariantSku?: string;
+  defaultVariantLabel?: string;
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
 };
 
 type WorkerRef = { id: string; username?: string };
@@ -202,7 +209,10 @@ export async function seedPiece3ProductionPlanExamples(
   const sectionalWorkflowId = await workflowIdForProduct(sectionalProduct.id);
 
   const stageMaterials = await prisma.productStageMaterialInput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     include: {
       inventoryItem: {
         select: { id: true, sku: true, nameEn: true, category: true, unit: true },
@@ -221,7 +231,10 @@ export async function seedPiece3ProductionPlanExamples(
     inventoryItems.find((i) => i.category === 'WOOD') ?? inventoryItems[1] ?? inventoryItems[0] ?? null;
 
   const packagingOutputs = await prisma.productStageInventoryOutput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     select: { expectedPieceCount: true, pieceLabels: true, inventoryTracking: true },
   });
   const finished =
@@ -329,6 +342,7 @@ export async function seedPiece3ProductionPlanExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: input.quantity,
               unitPrice,
@@ -381,6 +395,7 @@ export async function seedPiece3ProductionPlanExamples(
         data: {
           salesOrderId: existing.id,
           productId: input.productId,
+          ...variantLineFieldsForProductId(opts.products, input.productId),
           description: input.description,
           quantity: input.quantity,
           unitPrice,
@@ -413,6 +428,7 @@ export async function seedPiece3ProductionPlanExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: input.quantity,
               unitPrice,
@@ -595,6 +611,7 @@ export async function seedPiece3ProductionPlanExamples(
         salesOrderLineId: line.id,
         customerId: input.customerId,
         productId: input.productId,
+        ...variantPoFieldsForProductId(opts.products, input.productId),
         productDescription: input.description,
         quantity: 1,
         status: input.poStatus,

@@ -7,6 +7,7 @@ import { ToastProvider } from '@/components/feedback/Toast';
 import { LocationMapVisibilityProvider } from '@/components/maps/LocationMapVisibility';
 import { CodeScannerProvider } from '@/components/scan/CodeScannerProvider';
 import { SheetOverlayYieldProvider } from '@/components/sheets/SheetOverlayYield';
+import { OrderBasketProvider } from '@/features/requests/OrderBasketProvider';
 import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
 import { AccessoryCameraProvider } from '@/features/inventory/components/AccessoryCameraProvider';
 import { LocaleProvider } from '@/i18n';
@@ -26,16 +27,18 @@ export function AppProviders({ children }: { children: ReactNode }) {
                 <ToastProvider>
                   <QueryProvider>
                     <AuthProvider>
-                      <CodeScannerProvider>
-                        <AccessoryCameraProvider>
-                          <LocationMapVisibilityProvider>
-                            <SheetOverlayYieldProvider>
-                              {children}
-                              <KeyboardDismissAccessory />
-                            </SheetOverlayYieldProvider>
-                          </LocationMapVisibilityProvider>
-                        </AccessoryCameraProvider>
-                      </CodeScannerProvider>
+                      <OrderBasketProvider>
+                        <CodeScannerProvider>
+                          <AccessoryCameraProvider>
+                            <LocationMapVisibilityProvider>
+                              <SheetOverlayYieldProvider>
+                                {children}
+                                <KeyboardDismissAccessory />
+                              </SheetOverlayYieldProvider>
+                            </LocationMapVisibilityProvider>
+                          </AccessoryCameraProvider>
+                        </CodeScannerProvider>
+                      </OrderBasketProvider>
                     </AuthProvider>
                   </QueryProvider>
                 </ToastProvider>

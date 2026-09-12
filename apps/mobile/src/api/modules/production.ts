@@ -355,6 +355,10 @@ export type ProductionOrderDetail = ProductionOrderListItem & {
     incomplete?: boolean;
     estimatedTotal?: number | null;
     actualTotal?: number | null;
+    estimatedMaterials?: number | null;
+    actualMaterials?: number | null;
+    estimatedLabor?: number | null;
+    actualLabor?: number | null;
     varianceCost?: number | null;
     variancePct?: number | null;
     scrapCost?: number | null;

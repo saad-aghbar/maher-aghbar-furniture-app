@@ -32,6 +32,25 @@ export type CatalogDiffRow = {
   delta?: number | null;
 };
 
+export type CatalogStandardOptions = {
+  woodType?: string | null;
+  woodColor?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
+};
+
+export type OrderSpecOption = {
+  groupCode?: string | null;
+  code?: string | null;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  specOptionValueId?: string | null;
+  qty?: number | null;
+  note?: string | null;
+};
+
 export type CatalogDimRef = {
   width?: number | null;
   height?: number | null;
@@ -40,10 +59,16 @@ export type CatalogDimRef = {
   material?: string | null;
   /** Catalog Product.customMeasurements JSON — compared, never presence-only. */
   customMeasurements?: unknown;
+  /** Variant-standard spec. Presence of foam/paint/etc. is not a modification when it matches these. */
+  standardOptions?: CatalogStandardOptions | null;
+  options?: OrderSpecOption[] | null;
+  composition?: unknown;
+  includedItems?: unknown;
 };
 
 export type OrderLineClassifyInput = {
   productId?: string | null;
+  variantId?: string | null;
   width?: number | null;
   height?: number | null;
   depth?: number | null;
@@ -63,6 +88,7 @@ export type OrderLineClassifyInput = {
   notes?: string | null;
   description?: string | null;
   customMeasurements?: unknown;
+  options?: OrderSpecOption[] | null;
   catalog?: CatalogDimRef | null;
 };
 
@@ -76,6 +102,45 @@ function str(v: unknown): string | null {
   if (v == null) return null;
   const s = String(v).trim();
   return s.length ? s : null;
+}
+
+function normCode(v: unknown): string | null {
+  const s = str(v);
+  return s ? s.toLowerCase() : null;
+}
+
+/** Ordered value vs the variant's own standard. Empty on the order is not a change. */
+export function optionValueDiffers(
+  ordered: string | null | undefined,
+  standard: string | null | undefined,
+): boolean {
+  const a = normCode(ordered);
+  if (!a) return false;
+  const b = normCode(standard);
+  if (!b) return true;
+  return a !== b;
+}
+
+function orderedOptionsDiffer(
+  ordered: OrderSpecOption[] | null | undefined,
+  standard: OrderSpecOption[] | null | undefined,
+): boolean {
+  if (!ordered?.length) return false;
+  const byGroup = new Map<string, string>();
+  for (const row of standard ?? []) {
+    const group = normCode(row.groupCode);
+    const code = normCode(row.code);
+    if (group && code) byGroup.set(group, code);
+  }
+  for (const row of ordered) {
+    const group = normCode(row.groupCode);
+    const code = normCode(row.code);
+    if (!group || !code) continue;
+    const expected = byGroup.get(group);
+    if (!expected) return true;
+    if (expected !== code) return true;
+  }
+  return false;
 }
 
 function dimDiffers(
@@ -228,10 +293,12 @@ export function classifyManufacturingComplexity(
     dimDiffers(input.height, catalog?.height),
     dimDiffers(input.depth, catalog?.depth),
     dimDiffers(input.seatHeight, catalog?.seatHeight),
-    Boolean(str(input.woodType) || str(input.woodColor)),
-    Boolean(str(input.foamDensity)),
-    Boolean(str(input.finish)),
-    Boolean(str(input.accessories)),
+    optionValueDiffers(input.woodType, catalog?.standardOptions?.woodType),
+    optionValueDiffers(input.woodColor, catalog?.standardOptions?.woodColor),
+    optionValueDiffers(input.foamDensity, catalog?.standardOptions?.foamDensity),
+    optionValueDiffers(input.finish, catalog?.standardOptions?.finish),
+    optionValueDiffers(input.accessories, catalog?.standardOptions?.accessories),
+    orderedOptionsDiffer(input.options, catalog?.options),
     customMeasurementsDiffer(input.customMeasurements, catalog),
     Boolean(str(input.material) && str(input.material) !== str(catalog?.material)),
   ];
@@ -330,6 +397,9 @@ export function manufacturingComplexityDisplayKey(
 
 export type OrderLineSpecSnapshot = {
   productId: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
   productName: string;
   productImageRef?: string | null;
   quantity: number;
@@ -353,6 +423,11 @@ export type OrderLineSpecSnapshot = {
   /** Canonical multi-fabric list. Singular `fabric` remains for back-compat. */
   fabrics?: OrderFabricSelection[];
   material?: string | null;
+  woodType?: string | null;
+  woodColor?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
   notes?: string | null;
   modifications?: string | null;
   manufacturingComplexity: ManufacturingComplexityCode;
@@ -361,10 +436,17 @@ export type OrderLineSpecSnapshot = {
   attachmentIds?: string[];
   dealerReference?: string | null;
   requiredDeliveryDate?: string | null;
+  composition?: unknown;
+  orientation?: string | null;
+  includedItems?: unknown;
+  options?: OrderSpecOption[] | null;
 };
 
 export function buildOrderLineSpecSnapshot(input: {
   productId?: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
   productName: string;
   productImageRef?: string | null;
   quantity: number;
@@ -380,6 +462,11 @@ export function buildOrderLineSpecSnapshot(input: {
   color?: string | null;
   fabrics?: unknown;
   material?: string | null;
+  woodType?: string | null;
+  woodColor?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
   notes?: string | null;
   description?: string | null;
   customMeasurements?: unknown;
@@ -387,11 +474,16 @@ export function buildOrderLineSpecSnapshot(input: {
   attachmentIds?: string[];
   dealerReference?: string | null;
   requiredDeliveryDate?: string | Date | null;
+  options?: OrderSpecOption[] | null;
+  composition?: unknown;
+  orientation?: string | null;
+  includedItems?: unknown;
 }): OrderLineSpecSnapshot {
   const complexity =
     input.manufacturingComplexity ??
     classifyManufacturingComplexity({
       productId: input.productId,
+      variantId: input.variantId,
       width: input.width,
       height: input.height,
       depth: input.depth,
@@ -400,9 +492,15 @@ export function buildOrderLineSpecSnapshot(input: {
       fabricType: input.fabricType ?? input.fabric,
       fabricCode: input.fabricCode,
       fabricColor: input.fabricColor ?? input.color,
+      woodType: input.woodType,
+      woodColor: input.woodColor,
+      foamDensity: input.foamDensity,
+      finish: input.finish,
+      accessories: input.accessories,
       notes: input.notes,
       description: input.description,
       customMeasurements: input.customMeasurements,
+      options: input.options,
       catalog: input.catalog,
     });
 
@@ -422,6 +520,9 @@ export function buildOrderLineSpecSnapshot(input: {
 
   return {
     productId: input.productId ?? null,
+    variantId: input.variantId ?? null,
+    variantSku: str(input.variantSku),
+    variantLabel: str(input.variantLabel),
     productName: input.productName,
     productImageRef: input.productImageRef ?? null,
     quantity: Number(input.quantity),
@@ -446,6 +547,11 @@ export function buildOrderLineSpecSnapshot(input: {
     },
     fabrics,
     material: str(input.material),
+    woodType: str(input.woodType),
+    woodColor: str(input.woodColor),
+    foamDensity: str(input.foamDensity),
+    finish: str(input.finish),
+    accessories: str(input.accessories),
     notes: str(input.notes),
     modifications: str(input.description),
     manufacturingComplexity: complexity,
@@ -453,6 +559,10 @@ export function buildOrderLineSpecSnapshot(input: {
     attachmentIds: input.attachmentIds ?? [],
     dealerReference: str(input.dealerReference),
     requiredDeliveryDate: delivery,
+    composition: input.composition ?? input.catalog?.composition ?? null,
+    orientation: str(input.orientation),
+    includedItems: input.includedItems ?? input.catalog?.includedItems ?? null,
+    options: input.options ?? input.catalog?.options ?? null,
   };
 }
 

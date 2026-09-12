@@ -22,7 +22,7 @@ type DestDef = {
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
   hintKey: string;
-  href: Href | ((ctx: { shippedAwaiting: number; pendingReturns: number }) => Href);
+  href: Href;
   permission: Permission;
   badgeCount?: (ctx: { shippedAwaiting: number; pendingReturns: number }) => number | undefined;
 };
@@ -49,10 +49,7 @@ const DESTINATIONS: DestDef[] = [
     icon: 'car-outline',
     labelKey: 'mobile.dealerAccount.placeDeliveriesTitle',
     hintKey: 'mobile.dealerHome.destDeliveriesHint',
-    href: ({ shippedAwaiting }) =>
-      (shippedAwaiting > 0
-        ? '/(app)/(customer)/(tabs)/orders?chip=shipped'
-        : '/(app)/(customer)/(tabs)/orders?chip=delivered') as Href,
+    href: '/(app)/(customer)/deliveries' as Href,
     permission: 'sales-order.read',
     badgeCount: ({ shippedAwaiting }) => (shippedAwaiting > 0 ? shippedAwaiting : undefined),
   },
@@ -166,9 +163,7 @@ export function DealerHomeDestinations() {
                   }
                   onPress={() => {
                     void haptics.confirmLight();
-                    const href =
-                      typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
-                    router.push(href);
+                    router.push(place.href);
                   }}
                   style={{
                     flex: 1,

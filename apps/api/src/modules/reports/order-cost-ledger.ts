@@ -107,11 +107,16 @@ export function saleValueFromSubtotals(invoiceSubtotal: unknown, orderSubtotal: 
   return null;
 }
 
-export function marginFrom(saleValue: number | null, actualCost: number | null) {
+export function marginFrom(
+  saleValue: number | null,
+  actualCost: number | null,
+  laborCost: number | null = null,
+) {
   if (saleValue == null || actualCost == null) {
     return { grossMargin: null as number | null, marginPct: null as number | null };
   }
-  const grossMargin = Number(roundMoney(saleValue - actualCost));
+  const labor = laborCost ?? 0;
+  const grossMargin = Number(roundMoney(saleValue - actualCost - labor));
   return {
     grossMargin,
     marginPct: saleValue > 0 ? Number(roundMoney((grossMargin / saleValue) * 100)) : null,
@@ -121,4 +126,10 @@ export function marginFrom(saleValue: number | null, actualCost: number | null) 
 export function averagePerUnit(totalCost: number | null, qty: number): number | null {
   if (totalCost == null || !(qty > 0)) return null;
   return Number(roundMoney(totalCost / qty));
+}
+
+/** Actual minus planned. Null when either side is missing — never a silent 0. */
+export function costVariance(plannedCost: number | null, actualCost: number | null): number | null {
+  if (plannedCost == null || actualCost == null) return null;
+  return Number(roundMoney(actualCost - plannedCost));
 }

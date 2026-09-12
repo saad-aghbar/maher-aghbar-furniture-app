@@ -25,6 +25,7 @@ type SharedButtonProps = {
   leading?: ReactNode;
   trailing?: ReactNode;
   haptic?: 'none' | 'selection' | 'light' | 'medium';
+  testID?: string;
 };
 
 function BaseButton({
@@ -38,6 +39,7 @@ function BaseButton({
   leading,
   trailing,
   haptic = 'medium',
+  testID,
 }: SharedButtonProps & { variant: ButtonVariant }) {
   const { theme } = useTheme();
   const { isRTL } = useLocale();
@@ -51,6 +53,7 @@ function BaseButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
+      testID={testID}
       disabled={isDisabled}
       onPress={(e) => {
         if (haptic === 'selection') void haptics.selection();

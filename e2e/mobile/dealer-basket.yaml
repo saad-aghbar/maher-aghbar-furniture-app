@@ -1,0 +1,32 @@
+appId: jo.maheraghbar.furniture
+name: Dealer basket — three lines
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*New order.*|.*طلب جديد.*|.*הזמנה חדשה.*"
+    optional: true
+- assertVisible:
+    text: ".*Basket.*|.*السلة.*|.*סל.*"
+    optional: true
+- tapOn:
+    text: ".*Add another product.*|.*إضافة منتج آخر.*|.*הוסיפו מוצר נוסף.*"
+    optional: true
+- tapOn:
+    text: ".*Edit spec.*|.*تعديل المواصفات.*|.*עריכת מפרט.*"
+    optional: true
+- tapOn:
+    id: "order-line-spec-done"
+    optional: true
+- tapOn:
+    text: ".*Continue.*|.*متابعة.*|.*המשך.*"
+    optional: true
+- assertVisible:
+    text: ".*Order details.*|.*تفاصيل الطلب.*|.*פרטי הזמנה.*"
+    optional: true

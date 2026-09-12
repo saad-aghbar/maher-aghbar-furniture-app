@@ -50,6 +50,7 @@
     "smoke:scope": "node scripts/smoke-scope-isolation.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "test:e2e:playwright": "playwright test",
+    "mobile:e2e": "node scripts/mobile-e2e.mjs",
     "db:generate": "pnpm --filter @maher/database generate",
     "db:migrate": "pnpm --filter @maher/database migrate:dev",
     "db:push": "pnpm --filter @maher/database push",

@@ -21,6 +21,18 @@ export class PatchLineSetupDto {
   factoryNotes?: string | null;
 
   @IsOptional()
+  @IsString()
+  instructionsAr?: string | null;
+
+  @IsOptional()
+  @IsString()
+  instructionsEn?: string | null;
+
+  @IsOptional()
+  @IsString()
+  instructionsHe?: string | null;
+
+  @IsOptional()
   orderDimensions?: {
     width?: number | null;
     height?: number | null;

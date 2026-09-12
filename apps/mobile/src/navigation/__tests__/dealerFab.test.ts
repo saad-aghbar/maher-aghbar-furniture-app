@@ -16,9 +16,9 @@ const base: AuthUser = {
 };
 
 describe('dealer FAB integration', () => {
-  it('targets the hidden new-order tab route', () => {
+  it('targets the hidden basket tab route', () => {
     // Route is registered for deep links / FAB; not a visible equal-width chip.
-    expect(DEALER_NEW_ORDER_HREF).toBe('/(app)/(customer)/(tabs)/new-order');
+    expect(DEALER_NEW_ORDER_HREF).toBe('/(app)/(customer)/(tabs)/basket');
     expect(customerNewOrderTab.name).toBe('new-order');
     expect(customerNewOrderTab.labelKey).toBe('newOrder');
   });
@@ -38,6 +38,7 @@ describe('dealer FAB integration', () => {
     const names = visibleTabsForUser('customer', dealer).map((t) => t.name);
     expect(names).toEqual(['index', 'catalog', 'orders', 'account']);
     expect(names).not.toContain('new-order');
+    expect(names).not.toContain('basket');
     // RTL note: floating pill uses flexDirection row-reverse under isRTL;
     // FAB stays center-slotted between catalog and orders regardless of locale.
   });

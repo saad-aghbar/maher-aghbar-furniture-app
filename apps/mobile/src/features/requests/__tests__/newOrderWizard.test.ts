@@ -6,25 +6,29 @@ import {
 import { normalizeLocalDraft } from '../newOrderDraftNormalize';
 
 describe('newOrderSteps', () => {
-  it('clamps wizard to 4 steps', () => {
+  it('clamps wizard to 3 steps', () => {
     expect(clampWizardStep(0)).toBe(1);
     expect(clampWizardStep(1)).toBe(1);
-    expect(clampWizardStep(4)).toBe(4);
-    expect(clampWizardStep(9)).toBe(4);
+    expect(clampWizardStep(3)).toBe(3);
+    expect(clampWizardStep(4)).toBe(3);
+    expect(clampWizardStep(9)).toBe(3);
   });
 
-  it('migrates legacy 6-step drafts onto 4 steps', () => {
+  it('migrates legacy 6-step drafts onto 3 steps', () => {
     expect(migrateDraftStep(1, 1)).toBe(1);
-    expect(migrateDraftStep(2, 1)).toBe(2);
-    expect(migrateDraftStep(3, 1)).toBe(3);
-    expect(migrateDraftStep(4, 1)).toBe(2);
-    expect(migrateDraftStep(5, 1)).toBe(4);
-    expect(migrateDraftStep(6, 1)).toBe(4);
+    expect(migrateDraftStep(2, 1)).toBe(1);
+    expect(migrateDraftStep(3, 1)).toBe(2);
+    expect(migrateDraftStep(4, 1)).toBe(1);
+    expect(migrateDraftStep(5, 1)).toBe(3);
+    expect(migrateDraftStep(6, 1)).toBe(3);
   });
 
-  it('keeps v2 steps within 1–4', () => {
-    expect(migrateDraftStep(3, 2)).toBe(3);
-    expect(migrateDraftStep(6, 2)).toBe(4);
+  it('hops 4-step drafts onto 3 steps', () => {
+    expect(migrateDraftStep(1, 2)).toBe(1);
+    expect(migrateDraftStep(2, 2)).toBe(1);
+    expect(migrateDraftStep(3, 2)).toBe(2);
+    expect(migrateDraftStep(4, 2)).toBe(3);
+    expect(migrateDraftStep(6, 2)).toBe(3);
   });
 
   it('persists business fields across step navigation snapshots', () => {
@@ -76,11 +80,14 @@ describe('normalizeLocalDraft', () => {
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
     expect(restored).not.toBeNull();
-    expect(restored!.version).toBe(3);
-    expect(restored!.step).toBe(2);
+    expect(restored!.version).toBe(4);
+    expect(restored!.step).toBe(1);
     expect(restored!.customProductName).toBe('Chair');
     expect(restored!.fabric).toBe('Velvet');
     expect(restored!.deliveryAddress).toBe('Ramallah');
+    expect(restored!.lines).toHaveLength(1);
+    expect(restored!.lines[0].customProductName).toBe('Chair');
+    expect(restored!.lines[0].fabrics[0]?.type).toBe('Velvet');
   });
 
   it('restores a v2 draft on attachments step', () => {
@@ -102,9 +109,9 @@ describe('normalizeLocalDraft', () => {
       deliveryNotes: '',
       updatedAt: '2026-01-02T00:00:00.000Z',
     });
-    expect(restored?.step).toBe(4);
+    expect(restored?.step).toBe(3);
     expect(restored?.customProductName).toBe('Table');
-    expect(restored?.version).toBe(3);
+    expect(restored?.version).toBe(4);
     expect(restored?.dimWidth).toBe('');
   });
 
@@ -161,5 +168,40 @@ describe('normalizeLocalDraft', () => {
     expect(restored?.deliveryLat).toBeCloseTo(31.9522);
     expect(restored?.deliveryLng).toBeCloseTo(35.2332);
     expect(typeof restored?.deliveryLat).toBe('number');
+  });
+
+  it('migrates a v3 draft into a one-line v4 basket', () => {
+    const restored = normalizeLocalDraft({
+      version: 3,
+      step: 1,
+      productId: 'prod-1',
+      customProductName: 'Karina',
+      quantity: '2',
+      externalOrderNumber: '',
+      priority: 'NORMAL',
+      fabric: 'Velvet',
+      fabricDescription: 'Gold',
+      dimensionsNotes: '',
+      dimWidth: '250',
+      dimHeight: '90',
+      dimDepth: '95',
+      dimSeat: '45',
+      customMeasurements: [],
+      orderNotes: '',
+      deliveryAddress: '',
+      endCustomerName: '',
+      endCustomerPhone: '',
+      deliveryNotes: '',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+    expect(restored?.version).toBe(4);
+    expect(restored?.lines).toHaveLength(1);
+    expect(restored?.lines[0]).toMatchObject({
+      productId: 'prod-1',
+      customProductName: 'Karina',
+      quantity: '2',
+      dimWidth: '250',
+    });
+    expect(restored?.lines[0].fabrics[0]?.type).toBe('Velvet');
   });
 });

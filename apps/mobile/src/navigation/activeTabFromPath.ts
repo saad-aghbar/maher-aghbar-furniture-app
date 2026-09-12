@@ -10,6 +10,7 @@ const ALL_TAB_NAMES: TabName[] = [
   'catalog',
   'schedule',
   'new-order',
+  'basket',
   'account',
   'tasks',
   'completed',
@@ -33,6 +34,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
   if (tabsIdx >= 0) {
     const next = segments[tabsIdx + 1];
     if (surface === 'customer' && next === 'schedule') return 'account';
+    if (surface === 'customer' && next === 'basket') return 'catalog';
     if (next && isTabName(next) && next !== 'index') return next;
     return 'index';
   }
@@ -68,7 +70,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
   }
 
   if (surface === 'customer') {
-    if (segments.includes('catalog')) return 'catalog';
+    if (segments.includes('catalog') || segments.includes('basket')) return 'catalog';
     if (segments.includes('new-order') || segments.includes('requests')) return 'new-order';
     if (segments.includes('orders') || segments.includes('quotations')) return 'orders';
     if (segments.includes('schedule') || segments.includes('calendar')) return 'account';

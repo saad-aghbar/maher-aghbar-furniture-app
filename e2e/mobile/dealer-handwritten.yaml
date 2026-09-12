@@ -1,0 +1,29 @@
+appId: jo.maheraghbar.furniture
+name: Dealer handwritten sheet — two products
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*New order.*|.*طلب جديد.*|.*הזמנה חדשה.*"
+    optional: true
+- tapOn:
+    text: ".*Handwritten.*|.*ورقة.*|.*כתב יד.*"
+    optional: true
+- assertVisible:
+    text: ".*Review the sheet.*|.*مراجعة الورقة.*|.*סקירת הגיליון.*"
+    optional: true
+- tapOn:
+    text: ".*Looks right.*|.*القيمة صحيحة.*|.*הערך נכון.*"
+    optional: true
+- tapOn:
+    id: "scan-review-confirm"
+    optional: true
+- tapOn:
+    text: ".*Send to the factory.*|.*إرسال للمصنع.*|.*שליחה למפעל.*"
+    optional: true

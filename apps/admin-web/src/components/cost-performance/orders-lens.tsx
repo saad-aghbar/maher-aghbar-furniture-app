@@ -3,6 +3,7 @@
 import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import {
+  Button,
   Card,
   EmptyState,
   Skeleton,
@@ -16,6 +17,8 @@ import {
 } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+import { useReportsFilterQs } from './reports-chrome';
 
 export type CostOrderRow = {
   id: string;
@@ -26,10 +29,13 @@ export type CostOrderRow = {
   productSummary: string;
   quantity: number;
   actualCost: number | null;
+  plannedCost: number | null;
+  variance: number | null;
   saleValue: number | null;
   grossMargin: number | null;
   marginPct: number | null;
   coverage: 'FINAL' | 'PARTIAL' | 'UNPRICED';
+  labor: number | null;
   workerEffortMinutes: number;
   wallClockMinutes: number | null;
 };
@@ -44,22 +50,39 @@ function hours(minutes: number | null) {
   return `${(minutes / 60).toFixed(1)} h`;
 }
 
-export function OrdersLens({ periodQs }: { periodQs: string }) {
+type SortKey = 'number' | 'saleValue' | 'plannedCost' | 'actualCost' | 'variance' | 'grossMargin';
+
+export function OrdersLens() {
   const ta = useTranslations('accounting');
   const locale = useLocale();
+  const periodQs = useReportsFilterQs();
+  const [sort, setSort] = useState<SortKey>('number');
+  const [page, setPage] = useState(1);
   const query = useQuery({
-    queryKey: ['cost-orders', periodQs],
+    queryKey: ['cost-orders', periodQs, page],
     queryFn: () =>
-      apiFetch<{ data: CostOrderRow[] }>(`/api/v1/reports/cost/orders${periodQs}`),
+      apiFetch<{ data: CostOrderRow[]; meta?: { page: number; pageSize: number; totalItems: number } }>(
+        `/api/v1/reports/cost/orders${periodQs}${periodQs ? '&' : '?'}page=${page}&pageSize=50`,
+      ),
     retry: (count, error) => {
       if (error instanceof ApiClientError && error.status === 403) return false;
       return count < 1;
     },
   });
 
+  const rows = useMemo(() => {
+    const list = [...(query.data?.data ?? [])];
+    list.sort((a, b) => {
+      const av = a[sort];
+      const bv = b[sort];
+      if (typeof av === 'number' && typeof bv === 'number') return bv - av;
+      return String(av ?? '').localeCompare(String(bv ?? ''));
+    });
+    return list;
+  }, [query.data, sort]);
+
   if (query.isLoading) return <Skeleton className="h-56 w-full" />;
   if (query.isError) return null;
-  const rows = query.data?.data ?? [];
 
   return (
     <Card className="space-y-3 p-4">
@@ -72,24 +95,40 @@ export function OrdersLens({ periodQs }: { periodQs: string }) {
         <Table>
           <TableHead>
             <TableRow>
-              <TableHeaderCell>{ta('reportSales')}</TableHeaderCell>
-              <TableHeaderCell>{ta('saleValue')}</TableHeaderCell>
-              <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
-              <TableHeaderCell>{ta('grossMargin')}</TableHeaderCell>
+              {(
+                [
+                  ['number', ta('lensOrders')],
+                  ['saleValue', ta('saleValue')],
+                  ['plannedCost', ta('plannedCost')],
+                  ['actualCost', ta('actualCost')],
+                  ['variance', ta('variance')],
+                  ['grossMargin', ta('grossMargin')],
+                ] as const
+              ).map(([key, label]) => (
+                <TableHeaderCell key={key}>
+                  <button type="button" className="underline-offset-2 hover:underline" onClick={() => setSort(key)}>
+                    {label}
+                  </button>
+                </TableHeaderCell>
+              ))}
               <TableHeaderCell>{ta('factoryTime')}</TableHeaderCell>
+              <TableHeaderCell>{ta('laborCost')}</TableHeaderCell>
               <TableHeaderCell>{ta('coverage')}</TableHeaderCell>
-              <TableHeaderCell />
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell>
-                  <div className="font-medium">{row.number}</div>
+                  <Link href={`/reports/orders/${row.id}${periodQs}`} className="font-medium underline">
+                    {row.number}
+                  </Link>
                   <div className="text-xs text-muted-foreground">{row.productSummary}</div>
                 </TableCell>
                 <TableNumericCell>{money(locale, row.saleValue)}</TableNumericCell>
+                <TableNumericCell>{money(locale, row.plannedCost)}</TableNumericCell>
                 <TableNumericCell>{money(locale, row.actualCost)}</TableNumericCell>
+                <TableNumericCell>{money(locale, row.variance)}</TableNumericCell>
                 <TableNumericCell>
                   {money(locale, row.grossMargin)}
                   {row.marginPct != null ? ` (${row.marginPct}%)` : ''}
@@ -98,6 +137,7 @@ export function OrdersLens({ periodQs }: { periodQs: string }) {
                   {hours(row.workerEffortMinutes)}
                   {row.wallClockMinutes != null ? ` / ${hours(row.wallClockMinutes)}` : ''}
                 </TableNumericCell>
+                <TableNumericCell>{money(locale, row.labor)}</TableNumericCell>
                 <TableCell>
                   {row.coverage === 'FINAL'
                     ? ta('coverageFinal')
@@ -105,16 +145,24 @@ export function OrdersLens({ periodQs }: { periodQs: string }) {
                       ? ta('coveragePartial')
                       : ta('coverageUnpriced')}
                 </TableCell>
-                <TableCell>
-                  <Link href={`/reports/orders/${row.id}`} className="text-sm underline">
-                    {ta('openDossier')}
-                  </Link>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
+      <div className="flex gap-2">
+        <Button size="sm" variant="subtle" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+          ←
+        </Button>
+        <Button
+          size="sm"
+          variant="subtle"
+          disabled={(query.data?.data?.length ?? 0) < 50}
+          onClick={() => setPage((p) => p + 1)}
+        >
+          →
+        </Button>
+      </div>
     </Card>
   );
 }

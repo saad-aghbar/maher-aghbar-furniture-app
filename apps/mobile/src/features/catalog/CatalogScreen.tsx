@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Pressable,
   RefreshControl,
   View,
 } from 'react-native';
@@ -55,7 +54,7 @@ import { CATALOG_SEARCH_DEBOUNCE_MS } from './catalogSearchDebounce';
 import { adminCatalogFabBottom, adminCatalogListBottomPad } from './catalogGridInsets';
 import { type CatalogBrowseMode } from './catalogBrowseMode';
 import { isCatalogPickForOrder } from './catalogPickForOrder';
-import { navigateToNewOrderWithProduct } from './newOrderDeepLink';
+import { navigateToBasketReview } from './newOrderDeepLink';
 import { useDealerFavorites } from './useDealerFavorites';
 type CatalogScreenProps = {
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
@@ -95,6 +94,7 @@ export function CatalogScreen({
   const router = useRouter();
   const searchParams = useLocalSearchParams();
   const isDealer = variant === 'dealer';
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pickForOrder = isDealer && isCatalogPickForOrder(searchParams);
   const allowed = can(user, 'catalog.read');
   const canCreate = showCreateProduct && can(user, 'catalog.manage');
@@ -237,11 +237,7 @@ export function CatalogScreen({
   const GridSkeleton = isDealer ? DealerCatalogGridSkeleton : CatalogGridSkeleton;
 
   const openProduct = (id: string) => {
-    if (pickForOrder) {
-      void haptics.confirmMedium();
-      navigateToNewOrderWithProduct(router, id, 1);
-      return;
-    }
+    if (pickForOrder) void haptics.selection();
     router.push(
       productDetailHref
         ? productDetailHref(id)
@@ -277,26 +273,27 @@ export function CatalogScreen({
     >
       <Ionicons name="bag-handle-outline" size={20} color={colors.brand} />
       <View style={{ flex: 1, gap: 2 }}>
-        <AppText variant="label" weight="semibold" color="brand">
+        <AppText variant="label" weight={titleWeight} color="brand">
           {t('mobile.newOrder.pickFromCatalogTitle')}
         </AppText>
         <AppText variant="caption" color="secondary">
           {t('mobile.newOrder.pickFromCatalogBody')}
         </AppText>
       </View>
-      <Pressable
+      <AnimatedPressable
+        variant="button"
         onPress={() => {
           void haptics.selection();
-          router.navigate('/(app)/(customer)/(tabs)/new-order' as Href);
+          navigateToBasketReview(router);
         }}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.newOrder.back')}
         hitSlop={8}
       >
-        <AppText variant="caption" weight="semibold" color="brand">
+        <AppText variant="caption" weight={titleWeight} color="brand">
           {t('mobile.newOrder.back')}
         </AppText>
-      </Pressable>
+      </AnimatedPressable>
     </View>
   ) : null;
 

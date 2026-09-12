@@ -460,4 +460,165 @@ describe('quotations commercial integrity', () => {
     expect(result).not.toHaveProperty('internalNotes');
     expect((result as { rejectionReason?: string }).rejectionReason).toBe('Price too high');
   });
+
+  it('prefills STANDARD price from the variant dealer price', async () => {
+    const { service, prisma, sequences } = makeService();
+    sequences.next.mockResolvedValue('QT-VAR');
+    prisma.dealerPrice.findMany.mockResolvedValue([
+      { productId: 'p1', variantId: null, price: 5000 },
+      { productId: 'p1', variantId: 'v-250', price: 7200 },
+    ]);
+    prisma.product.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        sku: 'MIL',
+        nameEn: 'Milano',
+        nameAr: null,
+        nameHe: null,
+        basePrice: 4000,
+        variants: [
+          { id: 'v-250', sku: 'MIL-250', nameAr: '250', nameEn: '250', isDefault: false, basePrice: 6500 },
+        ],
+      },
+    ]);
+    prisma.quotation.create.mockResolvedValue({ id: 'q-new', status: 'DRAFT', lines: [] });
+    await service.create(
+      {
+        customerId: 'customer-a',
+        lines: [
+          {
+            description: 'Milano 250',
+            quantity: 1,
+            unitPrice: 0,
+            productId: 'p1',
+            variantId: 'v-250',
+          },
+        ],
+      },
+      'admin-1',
+    );
+    const created = prisma.quotation.create.mock.calls[0][0] as {
+      data: { lines: { create: Array<{ unitPrice: number; variantId?: string }> } };
+    };
+    expect(Number(created.data.lines.create[0]?.unitPrice)).toBe(7200);
+    expect(created.data.lines.create[0]?.variantId).toBe('v-250');
+  });
+
+  it('carries variantId, sku, label and options onto the sales order line', async () => {
+    const { service, prisma, tx } = makeService();
+    prisma.quotation.findFirst.mockResolvedValue({
+      ...sentQuote,
+      request: {
+        id: 'rfq-1',
+        number: 'RFQ-1',
+        items: [
+          {
+            productId: 'p1',
+            woodType: 'BEECH',
+            foamDensity: 'D35',
+            finish: 'GOLD',
+            orientation: 'LEFT',
+            options: [{ specOptionValueId: 'opt-foam', groupCode: 'FOAM_DENSITY', code: 'D35' }],
+          },
+        ],
+        documents: [],
+      },
+      lines: [
+        {
+          id: 'l1',
+          description: 'Karina 250',
+          quantity: 1,
+          unitPrice: 7200,
+          manufacturingComplexity: 'STANDARD',
+          productId: 'p1',
+          variantId: 'v-250',
+          variantSku: 'KARINA-250',
+          variantLabel: 'أوكرانيه',
+          width: 250,
+          height: 85,
+          depth: 95,
+        },
+      ],
+    });
+    tx.product.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        sku: 'KARINA',
+        nameEn: 'Karina',
+        nameAr: 'كرينا',
+        nameHe: null,
+        width: 220,
+        height: 85,
+        depth: 95,
+        seatHeight: 45,
+        imageUrl: null,
+        variants: [
+          {
+            id: 'v-250',
+            productId: 'p1',
+            sku: 'KARINA-250',
+            code: '250',
+            nameAr: 'أوكرانيه',
+            nameEn: 'Ukrainian',
+            nameHe: null,
+            isDefault: false,
+            width: 250,
+            height: 85,
+            depth: 95,
+            seatHeight: 45,
+            measurements: [],
+            composition: [{ labelEn: '2-seater', qty: 1 }],
+            orientation: 'LEFT',
+            includedItems: [],
+            imageUrl: null,
+            options: [
+              {
+                specOptionValueId: 'opt-foam',
+                specOptionValue: {
+                  code: 'D35',
+                  nameEn: 'Foam 35',
+                  nameAr: 'D35',
+                  inventoryItemId: 'inv-foam',
+                  group: { code: 'FOAM_DENSITY' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    tx.quotation.findFirstOrThrow.mockResolvedValue({
+      ...sentQuote,
+      status: 'ACCEPTED',
+      acceptedById: 'dealer-a',
+      salesOrders: [{ id: 'so-1', number: 'SO-UAT-1', status: 'DRAFT' }],
+    });
+    await service.accept('q-a', dealer());
+    const created = tx.salesOrder.create.mock.calls[0]?.[0] as {
+      data: {
+        lines: {
+          create: Array<{
+            variantId?: string;
+            variantSku?: string;
+            orderSpec?: {
+              variantId?: string;
+              orientation?: string;
+              foamDensity?: string | null;
+              woodType?: string | null;
+            };
+            lineOptions?: { create: Array<{ specOptionValueId: string }> };
+          }>;
+        };
+      };
+    };
+    expect(created.data.lines.create[0]?.variantId).toBe('v-250');
+    expect(created.data.lines.create[0]?.variantSku).toBe('KARINA-250');
+    expect(created.data.lines.create[0]?.orderSpec?.variantId).toBe('v-250');
+    expect(created.data.lines.create[0]?.orderSpec?.orientation).toBe('LEFT');
+    expect(created.data.lines.create[0]?.orderSpec?.foamDensity).toBe('D35');
+    expect(created.data.lines.create[0]?.orderSpec?.woodType).toBe('BEECH');
+    expect(created.data.lines.create[0]?.lineOptions?.create).toEqual(
+      expect.arrayContaining([expect.objectContaining({ specOptionValueId: 'opt-foam' })]),
+    );
+  });
 });

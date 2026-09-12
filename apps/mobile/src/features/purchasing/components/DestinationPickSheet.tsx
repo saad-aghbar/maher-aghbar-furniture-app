@@ -46,7 +46,7 @@ export function DestinationPickSheet({
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(height);
+  const pickerHeights = pickerViewportHeights(Math.round(height));
   const sheetHeight = pickerHeights.sheet;
   const holding = mode === 'location';
   const [query, setQuery] = useState('');

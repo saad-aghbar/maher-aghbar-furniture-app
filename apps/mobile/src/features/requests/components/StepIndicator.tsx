@@ -32,10 +32,9 @@ export function StepIndicator({ step }: StepIndicatorProps) {
   }));
 
   const labels = [
-    t('mobile.newOrder.steps.product'),
-    t('mobile.newOrder.steps.details'),
-    t('mobile.newOrder.steps.customer'),
-    t('mobile.newOrder.steps.attachments'),
+    t('mobile.newOrder.steps.items'),
+    t('mobile.newOrder.steps.delivery'),
+    t('mobile.newOrder.steps.review'),
   ];
 
   return (

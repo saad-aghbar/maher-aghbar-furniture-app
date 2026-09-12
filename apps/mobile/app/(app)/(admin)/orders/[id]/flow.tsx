@@ -1,14 +1,21 @@
 import { useLocalSearchParams } from 'expo-router';
-import { ProductionFlowScreen } from '@/features/production-flow/ProductionFlowScreen';
+import { OrderProductionFlowScreen } from '@/features/production-flow/OrderProductionFlowScreen';
+
+function firstParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return String(value[0] ?? '');
+  return String(value ?? '');
+}
 
 export default function AdminOrderFlowRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, po } = useLocalSearchParams<{ id: string; po?: string }>();
+  const salesOrderId = firstParam(id);
+  const selected = firstParam(po);
   return (
-    <ProductionFlowScreen
+    <OrderProductionFlowScreen
       role="admin"
-      source="sales-order"
-      id={String(id ?? '')}
-      backFallback={`/(app)/(admin)/orders/${id}` as never}
+      salesOrderId={salesOrderId}
+      selectedProductionOrderId={selected || null}
+      orderBackFallback={`/(app)/(admin)/orders/${salesOrderId}` as never}
     />
   );
 }

@@ -27,7 +27,6 @@ import {
   type ProductionFlowStage,
 } from './selectProductionFlow';
 import {
-  pickProductionOrderIdFromSalesOrder,
   selectProductionFlowFromWorkflowGraph,
 } from './selectProductionFlowFromWorkflowGraph';
 import { AssignOrderWorkflowCard } from '@/features/workflow/components/AssignOrderWorkflowCard';
@@ -74,8 +73,10 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
 
   const productionOrderId = useMemo(() => {
     if (source === 'production-order') return id;
-    if (!salesQuery.data) return null;
-    return pickProductionOrderIdFromSalesOrder(salesQuery.data as never);
+    const pos = salesQuery.data?.productionOrders ?? [];
+    // Multi-item orders are listed at /orders/[id]/flow — never pick highest progress.
+    if (pos.length === 1) return pos[0]?.id ?? null;
+    return null;
   }, [id, salesQuery.data, source]);
 
   const workflowQuery = useProductionOrderWorkflowQuery(

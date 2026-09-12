@@ -18,8 +18,17 @@ import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { DealerEmptyState, DealerSearchBar } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import {
+  StatementDateSheet,
+  StatementDateTrigger,
+} from '@/features/account/components/StatementDateSheet';
+import {
+  datePresetRange,
+  type StatementDatePreset,
+  type StatementPdfRange,
+} from '@/features/account/selectStatement';
 import { useLocale } from '@/i18n';
-import { haptics, ListItemEnter } from '@/motion';
+import { haptics, ListItemEnter, AnimatedPressable } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { ReturnBoardCard } from './components/ReturnBoardCard';
@@ -34,7 +43,12 @@ import {
   type ReturnsDealerOption,
 } from './returnFilters';
 import { flattenReturns, useReturnsInfiniteQuery } from './query';
-import { returnMatchesStatusChip, selectReturnCard } from './selectReturn';
+import {
+  filterDealerReturnCards,
+  returnMatchesStatusChip,
+  selectDealerReturnHub,
+  selectReturnCard,
+} from './selectReturn';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
@@ -59,9 +73,7 @@ function ReturnsScreenTitle({
   const { theme } = useTheme();
   const leadSize = theme.sizes.touch.min;
   const title = t('mobile.returns.title');
-  const subtitle = adminControls
-    ? t('mobile.returns.adminSubtitle')
-    : t('mobile.returns.subtitle');
+  const subtitle = adminControls ? t('mobile.returns.adminSubtitle') : null;
 
   return (
     <View style={{ gap: theme.spacing.xs }}>
@@ -88,14 +100,16 @@ function ReturnsScreenTitle({
           {title}
         </AppText>
       </View>
-      <AppText
-        variant="caption"
-        color="muted"
-        align="center"
-        style={{ paddingHorizontal: theme.spacing.lg }}
-      >
-        {subtitle}
-      </AppText>
+      {subtitle ? (
+        <AppText
+          variant="caption"
+          color="muted"
+          align="center"
+          style={{ paddingHorizontal: theme.spacing.lg }}
+        >
+          {subtitle}
+        </AppText>
+      ) : null}
     </View>
   );
 }
@@ -122,6 +136,9 @@ export function ReturnsListScreen({
   const [physicalPhase, setPhysicalPhase] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
+  const [datePreset, setDatePreset] = useState<StatementDatePreset>('all');
+  const [customRange, setCustomRange] = useState<StatementPdfRange>({});
+  const [dateSheetOpen, setDateSheetOpen] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [dealerLabel, setDealerLabel] = useState<string | null>(null);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
@@ -156,6 +173,11 @@ export function ReturnsListScreen({
     return () => clearTimeout(id);
   }, [search]);
 
+  const dateRange = useMemo(
+    () => datePresetRange(datePreset, new Date(), customRange),
+    [datePreset, customRange],
+  );
+
   const customersQuery = useQuery({
     queryKey: ['returns-customers'],
     queryFn: () => listCustomers({ page: 1, pageSize: 100 }),
@@ -170,12 +192,37 @@ export function ReturnsListScreen({
     allowed,
   );
 
+  const allCards = useMemo(
+    () => flattenReturns(query.data).map((r) => selectReturnCard(r, locale)),
+    [query.data, locale],
+  );
+  const datedCards = useMemo(
+    () =>
+      filterDealerReturnCards(allCards, {
+        dateFrom: dateRange.dateFrom,
+        dateTo: dateRange.dateTo,
+      }),
+    [allCards, dateRange.dateFrom, dateRange.dateTo],
+  );
+  const hub = useMemo(() => selectDealerReturnHub(datedCards), [datedCards]);
   const cards = useMemo(() => {
     const matchChip = physicalPhase ?? chip;
-    return flattenReturns(query.data)
-      .filter((r) => returnMatchesStatusChip(r, matchChip))
-      .map((r) => selectReturnCard(r, locale));
-  }, [query.data, chip, locale, physicalPhase]);
+    return datedCards.filter((r) =>
+      returnMatchesStatusChip(
+        {
+          approvalStatus: r.approvalStatus,
+          physicalStatus: r.physicalStatus,
+          inventoryFate: r.inventoryFate,
+        },
+        matchChip,
+      ),
+    );
+  }, [datedCards, chip, physicalPhase]);
+  const filtersActive =
+    chip !== 'ALL' ||
+    Boolean(physicalPhase) ||
+    datePreset !== 'all' ||
+    search.trim().length > 0;
 
   const dealerOptions: ReturnsDealerOption[] = useMemo(() => {
     return (customersQuery.data?.data ?? []).map((d) => {
@@ -285,7 +332,7 @@ export function ReturnsListScreen({
           adminControls={adminControls}
         />
 
-            {canCreate && createHref ? (
+            {canCreate && createHref && !dealerSurface ? (
               <PrimaryButton
                 label={t('mobile.returns.newReturn')}
                 onPress={() => {
@@ -298,18 +345,181 @@ export function ReturnsListScreen({
 
             {dealerSurface ? (
               <View style={{ gap: theme.spacing.md }}>
-                <DealerSearchBar
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder={searchPlaceholder}
-                />
-                <ReturnsStatusRail
-                  value={chip}
-                  onChange={(next) => {
-                    setPhysicalPhase(null);
-                    setChip(next);
+                <View
+                  style={{
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    overflow: 'hidden',
+                    ...orderBoardShadow(colorScheme),
                   }}
-                />
+                >
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      ...(isRTL ? { right: 0 } : { left: 0 }),
+                      width: 3,
+                      backgroundColor: colors.brand,
+                      opacity: 0.55,
+                    }}
+                  />
+                  <View
+                    style={{
+                      paddingHorizontal: theme.spacing.lg,
+                      paddingVertical: theme.spacing.md,
+                      ...(isRTL
+                        ? { paddingRight: theme.spacing.lg + 4 }
+                        : { paddingLeft: theme.spacing.lg + 4 }),
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                      backgroundColor: colors.surfaceSecondary,
+                    }}
+                  >
+                    <AppText
+                      variant="caption"
+                      weight="semibold"
+                      style={{ color: colors.brand }}
+                      numberOfLines={1}
+                    >
+                      {t('mobile.returns.hubEyebrow')}
+                    </AppText>
+                  </View>
+                  <View
+                    style={{
+                      padding: theme.spacing.lg,
+                      gap: theme.spacing.md,
+                      ...(isRTL
+                        ? { paddingRight: theme.spacing.lg + 4 }
+                        : { paddingLeft: theme.spacing.lg + 4 }),
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        gap: theme.spacing.md,
+                      }}
+                    >
+                      <HubStamp
+                        label={t('mobile.returns.hubOpen')}
+                        value={String(hub.open)}
+                        warning={hub.open > 0}
+                        selected={chip === 'PENDING'}
+                        onPress={() => {
+                          void haptics.selection();
+                          setPhysicalPhase(null);
+                          setChip(chip === 'PENDING' ? 'ALL' : 'PENDING');
+                        }}
+                      />
+                      <HubStamp
+                        label={t('mobile.returns.hubInProgress')}
+                        value={String(hub.inProgress)}
+                        warning={hub.inProgress > 0}
+                        selected={chip === 'APPROVED'}
+                        onPress={() => {
+                          void haptics.selection();
+                          setPhysicalPhase(null);
+                          setChip(chip === 'APPROVED' ? 'ALL' : 'APPROVED');
+                        }}
+                      />
+                    </View>
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t('mobile.returns.hubCaption', { resolved: String(hub.resolved) })}
+                    </AppText>
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t('mobile.returns.hubHint')}
+                    </AppText>
+                    {canCreate && createHref ? (
+                      <PrimaryButton
+                        label={t('mobile.returns.newReturn')}
+                        onPress={() => {
+                          void haptics.selection();
+                          router.push(createHref);
+                        }}
+                        style={returnCtaStyle(theme)}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+
+                <View
+                  style={{
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    overflow: 'hidden',
+                    ...orderBoardShadow(colorScheme),
+                  }}
+                >
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      ...(isRTL ? { right: 0 } : { left: 0 }),
+                      width: 3,
+                      backgroundColor: colors.brand,
+                      opacity: 0.55,
+                    }}
+                  />
+                  <View
+                    style={{
+                      padding: theme.spacing.md,
+                      gap: theme.spacing.md,
+                      ...(isRTL
+                        ? { paddingRight: theme.spacing.md + 4 }
+                        : { paddingLeft: theme.spacing.md + 4 }),
+                    }}
+                  >
+                    <DealerSearchBar
+                      value={search}
+                      onChangeText={setSearch}
+                      placeholder={searchPlaceholder}
+                    />
+                    <ReturnsStatusRail
+                      value={chip}
+                      onChange={(next) => {
+                        setPhysicalPhase(null);
+                        setChip(next);
+                      }}
+                    />
+                    <StatementDateTrigger
+                      value={datePreset}
+                      customFrom={customRange.from}
+                      customTo={customRange.to}
+                      onPress={() => setDateSheetOpen(true)}
+                    />
+                  </View>
+                </View>
+
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.sm,
+                  }}
+                >
+                  <AppText variant="label" weight={titleWeight}>
+                    {t('mobile.returns.title')}
+                  </AppText>
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.returns.count', { count: String(cards.length) })}
+                  </AppText>
+                </View>
               </View>
             ) : (
               <View
@@ -364,13 +574,15 @@ export function ReturnsListScreen({
         ListEmptyComponent={
           dealerSurface ? (
             <DealerEmptyState
-              title={t('mobile.returns.emptyTitle')}
-              body={t('mobile.returns.emptyBody')}
-              actionLabel={canCreate && createHref ? t('mobile.returns.newReturn') : undefined}
-              onAction={
-                canCreate && createHref
-                  ? () => router.push(createHref)
-                  : undefined
+              title={
+                filtersActive
+                  ? t('mobile.returns.emptyFilter')
+                  : t('mobile.returns.emptyTitle')
+              }
+              body={
+                filtersActive
+                  ? t('mobile.returns.emptyFilterHint')
+                  : t('mobile.returns.emptyBody')
               }
             />
           ) : (
@@ -394,6 +606,20 @@ export function ReturnsListScreen({
           </ListItemEnter>
         )}
       />
+
+      {dealerSurface ? (
+        <StatementDateSheet
+          open={dateSheetOpen}
+          onClose={() => setDateSheetOpen(false)}
+          value={datePreset}
+          customFrom={customRange.from}
+          customTo={customRange.to}
+          onChange={(next, range) => {
+            setDatePreset(next);
+            setCustomRange(next === 'custom' ? (range ?? {}) : {});
+          }}
+        />
+      ) : null}
 
       {adminControls ? (
         <ReturnsDealerSheet
@@ -420,5 +646,87 @@ export function ReturnsListScreen({
         />
       ) : null}
     </AppScreen>
+  );
+}
+
+function HubStamp({
+  label,
+  value,
+  warning,
+  selected,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  warning?: boolean;
+  selected?: boolean;
+  onPress: () => void;
+}) {
+  const { locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        gap: 6,
+        padding: theme.spacing.md,
+        borderRadius: theme.radius.lg,
+        backgroundColor: warning ? colors.warningSoft : colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: selected
+          ? colors.brand
+          : warning
+            ? `${colors.warning}55`
+            : colors.border,
+        overflow: 'hidden',
+      }}
+    >
+      {selected ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            backgroundColor: colors.brand,
+          }}
+        />
+      ) : null}
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.55,
+          fontSize: 11,
+          textAlign: 'center',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        weight={titleWeight}
+        dir="ltr"
+        numberOfLines={1}
+        style={{
+          textAlign: 'center',
+          fontVariant: ['tabular-nums'],
+          fontSize: 28,
+          lineHeight: locale === 'ar' ? 40 : 32,
+          color: warning ? colors.warning : colors.textPrimary,
+        }}
+      >
+        {value}
+      </AppText>
+    </AnimatedPressable>
   );
 }

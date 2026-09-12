@@ -174,6 +174,7 @@ describe('SalesOrdersService.getById ownership', () => {
         {
           id: 'l1',
           description: 'Sofa',
+          variantLabel: '2-seat linen',
           specifications: null,
           quantity: 1,
           unitPrice: 1000,
@@ -196,6 +197,9 @@ describe('SalesOrdersService.getById ownership', () => {
           id: 'po1',
           number: 'PO-1',
           status: 'IN_PROGRESS',
+          salesOrderLineId: 'l1',
+          variantLabel: '2-seat linen',
+          quantity: 2,
           currentStageCode: 'UPHOLSTERY',
           progressPercent: 60,
           stages: [
@@ -325,6 +329,13 @@ describe('SalesOrdersService.getById ownership', () => {
     });
     expect(stages[0]).not.toHaveProperty('assignees');
     expect(stages[0]).not.toHaveProperty('blockers');
+    expect(
+      (result.productionOrders as Array<Record<string, unknown>>)[0],
+    ).toMatchObject({
+      salesOrderLineId: 'l1',
+      variantLabel: '2-seat linen',
+      quantity: 2,
+    });
     assertNoDealerLeaks(result);
   });
 
@@ -334,9 +345,18 @@ describe('SalesOrdersService.getById ownership', () => {
     expect(result.manufacturingCost).toBe(400);
     expect(result.profit).toBe(600);
     expect(result.assignedEmployee).toEqual({ id: 'worker-1', name: 'Ali Hassan' });
-    const pos = result.productionOrders as { stages: Record<string, unknown>[]; photos: unknown[] }[];
+    const pos = result.productionOrders as {
+      stages: Record<string, unknown>[];
+      photos: unknown[];
+      salesOrderLineId?: string | null;
+      variantLabel?: string | null;
+      quantity?: number | null;
+    }[];
     expect(pos[0]!.stages.length).toBeGreaterThan(0);
     expect(pos[0]!.stages[0]).toHaveProperty('assignees');
     expect(pos[0]!.photos.length).toBeGreaterThan(0);
+    expect(pos[0]!.salesOrderLineId).toBe('l1');
+    expect(pos[0]!.variantLabel).toBe('2-seat linen');
+    expect(pos[0]!.quantity).toBe(2);
   });
 });

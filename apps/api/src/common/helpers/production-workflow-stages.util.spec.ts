@@ -50,6 +50,12 @@ const docs = [
 ];
 
 describe('production-workflow-stages.util', () => {
+  it('does not throw when stageDefinition is missing', () => {
+    const orphan = { status: 'PENDING', progressPercent: 0, stageDefinition: null, tasks: [] };
+    expect(mapWorkflowStageSafe(orphan).code).toBe('');
+    expect(mapWorkflowStageAdmin(orphan).code).toBe('');
+  });
+
   it('maps dealer-safe fields only and hides in-progress photos', () => {
     const safe = mapWorkflowStageSafe(stage, docs);
     expect(safe).toEqual({

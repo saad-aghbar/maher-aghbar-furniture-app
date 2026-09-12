@@ -151,6 +151,51 @@ describe('selectProductionFlow', () => {
     expect(stripped.photos).toHaveLength(1);
   });
 
+  it('legacy sales-order fallback uses the first PO, not highest progress', () => {
+    const order: SalesOrderDetail = {
+      ...salesOrder,
+      productionOrders: [
+        {
+          id: 'po-low',
+          number: 'PO-LOW',
+          status: 'IN_PROGRESS',
+          progressPercent: 10,
+          stages: [
+            {
+              code: 'CUT',
+              nameEn: 'Cutting',
+              sortOrder: 1,
+              status: 'IN_PROGRESS',
+              progressPercent: 10,
+            },
+          ],
+        },
+        {
+          id: 'po-high',
+          number: 'PO-HIGH',
+          status: 'IN_PROGRESS',
+          progressPercent: 90,
+          stages: [
+            {
+              code: 'PACK',
+              nameEn: 'Packing',
+              sortOrder: 1,
+              status: 'IN_PROGRESS',
+              progressPercent: 90,
+            },
+          ],
+        },
+      ],
+    };
+    const flow = selectProductionFlow(
+      { kind: 'sales-order', order },
+      'admin',
+      'en',
+    );
+    expect(flow.stages[0]?.code).toBe('CUT');
+    expect(flow.stages.map((s) => s.code)).not.toContain('PACK');
+  });
+
   it('nextStageAfter returns the next incomplete stage', () => {
     const stages: ProductionFlowStage[] = [
       {

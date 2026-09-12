@@ -52,6 +52,11 @@ const DOMAIN_USAGE: Record<string, { usedIn: string[]; openUsageTarget?: string;
       openUsageTarget: '/dev/dealer-home',
       role: 'Dealer',
     },
+    'dealer-receipts': {
+      usedIn: ['Dealer → Deliveries'],
+      openUsageTarget: '/dev/dealer-home',
+      role: 'Dealer',
+    },
     'dealer-ui': {
       usedIn: ['Dealer surfaces'],
       openUsageTarget: '/dev/dealer-home',
@@ -94,6 +99,11 @@ const DOMAIN_USAGE: Record<string, { usedIn: string[]; openUsageTarget?: string;
     },
     purchasing: {
       usedIn: ['Purchasing'],
+      openUsageTarget: '/dev/admin-home',
+      role: 'Admin',
+    },
+    reports: {
+      usedIn: ['Admin → Cost & Performance'],
       openUsageTarget: '/dev/admin-home',
       role: 'Admin',
     },

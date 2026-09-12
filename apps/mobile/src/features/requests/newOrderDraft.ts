@@ -23,7 +23,7 @@ export async function loadLocalDraft(): Promise<NewOrderLocalDraft | null> {
 }
 
 export async function saveLocalDraft(draft: NewOrderLocalDraft): Promise<void> {
-  const payload: NewOrderLocalDraft = { ...draft, version: 3 };
+  const payload: NewOrderLocalDraft = { ...draft, version: 4 };
   await storage.setItem(DRAFT_KEY, JSON.stringify(payload));
 }
 

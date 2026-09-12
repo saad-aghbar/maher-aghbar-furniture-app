@@ -1,0 +1,29 @@
+appId: jo.maheraghbar.furniture
+name: Admin verifies a scanned two-line submission
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*Orders.*|.*الطلبات.*|.*הזמנות.*"
+    optional: true
+- tapOn:
+    text: ".*RFQ.*|.*طلب.*|.*בקשה.*"
+    optional: true
+- assertVisible:
+    text: ".*Handwritten sheet.*|.*الورقة المكتوبة.*|.*גיליון בכתב יד.*"
+    optional: true
+- tapOn:
+    text: ".*Confirm spec.*|.*تأكيد المواصفات.*|.*אשר מפרט.*"
+    optional: true
+- tapOn:
+    text: ".*Correct spec.*|.*تصحيح المواصفات.*|.*תקן מפרט.*"
+    optional: true
+- tapOn:
+    text: ".*Save correction.*|.*حفظ التصحيح.*|.*שמור תיקון.*"
+    optional: true

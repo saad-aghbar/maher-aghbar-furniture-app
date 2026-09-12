@@ -155,6 +155,8 @@ export class ReportsService {
       delayedRows,
       openInvoices,
       outstandingAgg,
+      invoicedAgg,
+      openPurchases,
       dealersActive,
       pendingReturns,
       inventoryForLowStock,
@@ -215,6 +217,25 @@ export class ReportsService {
           status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
         },
         _sum: { outstandingAmount: true },
+      }),
+      this.prisma.invoice.aggregate({
+        where: {
+          archivedAt: null,
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
+        },
+        _sum: { total: true },
+      }),
+      this.prisma.purchaseOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            notIn: [
+              PurchaseOrderStatus.CANCELLED,
+              PurchaseOrderStatus.CLOSED,
+              PurchaseOrderStatus.RECEIVED,
+            ],
+          },
+        },
       }),
       this.prisma.customer.count({
         where: { archivedAt: null, status: 'ACTIVE' },
@@ -309,6 +330,8 @@ export class ReportsService {
       delayedOrders: delayedRows.length,
       openInvoices,
       outstandingReceivables: roundMoney(Number(outstandingAgg._sum.outstandingAmount ?? 0)),
+      revenueInvoiced: roundMoney(Number(invoicedAgg._sum.total ?? 0)),
+      openPurchases,
       dealersActive,
       pendingReturns,
       lowStockItems,
@@ -1587,6 +1610,9 @@ export class ReportsService {
     );
 
     return {
+      legacy: true,
+      canonicalPath: '/reports/cost/orders',
+      note: 'Catalog/planned manufacturing cost. Use GET /reports/cost/orders for posted actuals, planned, and variance on one row.',
       filters,
       totals: {
         sellerPrice: roundMoney(totals.sellerPrice),

@@ -29,6 +29,31 @@ export type ProductDetailViewModel = {
   notes: string[];
 };
 
+export type ProductDetailVariantInput = {
+  sku?: string | null;
+  width?: number | string | null;
+  height?: number | string | null;
+  depth?: number | string | null;
+  seatHeight?: number | string | null;
+  measurements?: Array<{
+    key?: string;
+    labelAr?: string | null;
+    labelEn?: string | null;
+    labelHe?: string | null;
+    value: number | string | null;
+    unit?: string | null;
+  }> | null;
+  price?: number | string | null;
+  dealerPrice?: number | string | null;
+  basePrice?: number | string | null;
+  manufacturingCost?: unknown;
+  bomDefaults?: unknown;
+  adminNotes?: unknown;
+  factoryNotesAr?: unknown;
+  factoryNotesEn?: unknown;
+  factoryNotesHe?: unknown;
+};
+
 function toNumber(value: number | string | null | undefined): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
@@ -56,11 +81,51 @@ function localizedCategoryName(
   return cat.nameEn || cat.nameAr || null;
 }
 
+function pickDim(
+  variant: ProductDetailVariantInput | null | undefined,
+  key: 'width' | 'height' | 'depth' | 'seatHeight',
+  fallback: number | string | null | undefined,
+): number | string | null | undefined {
+  if (!variant) return fallback;
+  const fromVariant = variant[key];
+  if (fromVariant == null || fromVariant === '') return fallback;
+  return fromVariant;
+}
+
+function resolveVariantDealerPrice(
+  variant: ProductDetailVariantInput | null | undefined,
+): number | null {
+  if (!variant) return null;
+  return (
+    toNumber(variant.dealerPrice) ??
+    toNumber(variant.price) ??
+    toNumber(variant.basePrice)
+  );
+}
+
+/** Drop factory cost / notes so dealer PDP never renders them. */
+export function stripVariantCosts<T extends Record<string, unknown>>(variant: T): T {
+  const {
+    manufacturingCost: _mc,
+    bomDefaults: _bd,
+    adminNotes: _an,
+    factoryNotesAr: _fa,
+    factoryNotesEn: _fe,
+    factoryNotesHe: _fh,
+    ...rest
+  } = variant;
+  return rest as T;
+}
+
 export function selectProductDetail(
   product: BrowseProduct,
   locale: string,
+  variant?: ProductDetailVariantInput | null,
 ): ProductDetailViewModel {
   const loc = asLocale(locale);
+  const safeVariant = variant
+    ? stripVariantCosts(variant as ProductDetailVariantInput & Record<string, unknown>)
+    : null;
   const name =
     locale === 'ar'
       ? product.nameAr || product.nameEn
@@ -82,19 +147,23 @@ export function selectProductDetail(
     seat: translate(loc, 'catalog.dimSeatHeight'),
   };
 
-  const wN = toNumber(product.width);
-  const hN = toNumber(product.height);
-  const dN = toNumber(product.depth);
-  const seatN = toNumber(product.seatHeight);
+  const width = pickDim(safeVariant, 'width', product.width);
+  const height = pickDim(safeVariant, 'height', product.height);
+  const depth = pickDim(safeVariant, 'depth', product.depth);
+  const seatHeight = pickDim(safeVariant, 'seatHeight', product.seatHeight);
 
-  // Always surface the four standard dealer measurement slots.
+  const wN = toNumber(width);
+  const hN = toNumber(height);
+  const dN = toNumber(depth);
+  const seatN = toNumber(seatHeight);
+
   const dimensions: ProductDetailDimension[] = [
-    { label: dimLabels.w, value: formatCm(product.width) ?? empty, kind: 'w' },
-    { label: dimLabels.h, value: formatCm(product.height) ?? empty, kind: 'h' },
-    { label: dimLabels.d, value: formatCm(product.depth) ?? empty, kind: 'd' },
+    { label: dimLabels.w, value: formatCm(width) ?? empty, kind: 'w' },
+    { label: dimLabels.h, value: formatCm(height) ?? empty, kind: 'h' },
+    { label: dimLabels.d, value: formatCm(depth) ?? empty, kind: 'd' },
     {
       label: dimLabels.seat,
-      value: formatCm(product.seatHeight) ?? empty,
+      value: formatCm(seatHeight) ?? empty,
       kind: 'seat',
     },
   ];
@@ -108,7 +177,17 @@ export function selectProductDetail(
         : null;
 
   const notes: string[] = [];
-  for (const m of product.customMeasurements ?? []) {
+  const customSource =
+    safeVariant?.measurements?.length
+      ? safeVariant.measurements.map((m) => ({
+          nameAr: m.labelAr ?? '',
+          nameEn: m.labelEn ?? m.key ?? '',
+          nameHe: m.labelHe ?? '',
+          value: m.value,
+        }))
+      : product.customMeasurements ?? [];
+
+  for (const m of customSource) {
     const label =
       locale === 'ar'
         ? m.nameAr || m.nameEn
@@ -129,16 +208,17 @@ export function selectProductDetail(
     }
   }
 
-  const sku = product.sku?.trim() || null;
+  const sku = (safeVariant?.sku ?? product.sku)?.trim() || null;
   const unit = product.unit?.trim() || null;
+  const price = resolveVariantDealerPrice(safeVariant) ?? resolveDealerBrowsePrice(product);
 
-  return {
+  const vm: ProductDetailViewModel = {
     id: product.id,
     name: name || product.nameEn || product.nameAr || empty,
     sku,
     unit,
     description: product.description?.trim() || null,
-    price: resolveDealerBrowsePrice(product),
+    price,
     currency: product.priceCurrency || 'ILS',
     isAvailable: product.isActive !== false,
     categoryId: product.categoryId ?? product.category?.id ?? null,
@@ -148,6 +228,8 @@ export function selectProductDetail(
     dimensionSummary,
     notes,
   };
+  assertProductDetailSafe(vm);
+  return vm;
 }
 
 export function assertProductDetailSafe(vm: ProductDetailViewModel): void {

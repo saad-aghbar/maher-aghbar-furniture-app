@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { attachMinimalWorkflowSnapshot } from './workflow-snapshot';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -51,7 +52,7 @@ export async function seedPiece5ManufacturingCostExamples(
     opts.dealers.find((d) => d.username === 'oasis' || /oasis/i.test(d.nameEn ?? d.name ?? '')) ??
     opts.dealers[1] ??
     opts.dealers[0];
-  const product = opts.products[0];
+  const product = opts.products[0]!;
   if (!oasis || !product) return;
 
   const catalogW = product.width != null ? Number(product.width) : 180;
@@ -158,6 +159,7 @@ export async function seedPiece5ManufacturingCostExamples(
           create: [
             {
               productId: product!.id,
+              ...variantLineFields(product),
               description: product!.nameEn,
               quantity: 1,
               unitPrice,
@@ -195,6 +197,7 @@ export async function seedPiece5ManufacturingCostExamples(
             create: [
               {
                 productId: product!.id,
+                ...variantLineFields(product),
                 description: `${product!.nameEn} — P5-${args.letter}`,
                 quantity: 1,
                 unitPrice,
@@ -216,6 +219,7 @@ export async function seedPiece5ManufacturingCostExamples(
                 ? [
                     {
                       productId: product!.id,
+                      ...variantLineFields(product),
                       description: `${product!.nameEn} — P5-${args.letter} line2`,
                       quantity: 1,
                       unitPrice,
@@ -358,6 +362,7 @@ export async function seedPiece5ManufacturingCostExamples(
           salesOrderLineId: optsPo.salesOrderLineId,
           customerId: oasis!.id,
           productId: product!.id,
+          ...variantPoFields(product),
           productDescription: product!.nameEn,
           quantity: 1,
           status: optsPo.status as never,

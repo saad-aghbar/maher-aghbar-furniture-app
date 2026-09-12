@@ -1,15 +1,22 @@
 import {
   isLaneTaskOpenable,
   lockReasonText,
+  mySalesOrdersFromResponse,
   selectWorkerOrderCard,
+  selectWorkerSalesOrderCard,
   workerOrderMatchesQuery,
+  workerSalesOrderHref,
 } from '../selectWorkerOrder';
-import type { WorkerMyOrder, WorkerOrderLaneNode } from '../api';
+import type { WorkerMyOrder, WorkerMySalesOrder, WorkerOrderLaneNode } from '../api';
 
 const order: WorkerMyOrder = {
   id: 'po-1',
   number: 'PO-1',
+  salesOrderId: 'so-1',
+  salesOrderLineId: 'line-1',
   salesOrderNumber: 'ORD-9',
+  variantLabel: null,
+  variantSku: null,
   status: 'IN_PROGRESS',
   quantity: 2,
   productDescription: 'Dining table',
@@ -28,12 +35,78 @@ describe('selectWorkerOrderCard', () => {
     expect(card).not.toHaveProperty('department');
     expect(card).not.toHaveProperty('stageName');
     expect(card.number).toBe('ORD-9');
+    expect(card.factoryOrderNumber).toBe('PO-1');
     expect(card.productTitle).toBe('Dining table');
     expect(card.blockedCount).toBe(1);
   });
 
   it('localizes the product title', () => {
     expect(selectWorkerOrderCard(order, 'ar').productTitle).toBe('طاولة طعام');
+  });
+
+  it('shows the variant label on the product title', () => {
+    const card = selectWorkerOrderCard({ ...order, variantLabel: 'Ukrainian' }, 'en');
+    expect(card.productTitle).toBe('Dining table · Ukrainian');
+    expect(card.variantLabel).toBe('Ukrainian');
+  });
+});
+
+describe('worker list sales-order grouping', () => {
+  const ukrainian: WorkerMyOrder = {
+    ...order,
+    id: 'po-2',
+    number: 'PO-2',
+    salesOrderLineId: 'line-2',
+    variantLabel: 'Ukrainian',
+    myTaskCount: 1,
+    actionableCount: 1,
+    blockedCount: 0,
+  };
+  const classic: WorkerMyOrder = {
+    ...order,
+    id: 'po-3',
+    number: 'PO-3',
+    salesOrderLineId: 'line-3',
+    variantLabel: 'Classic',
+    myTaskCount: 1,
+    actionableCount: 0,
+    blockedCount: 1,
+  };
+
+  it('groups three production orders into one sales-order card with variant labels', () => {
+    const grouped = mySalesOrdersFromResponse({
+      data: [{ ...order, variantLabel: 'Standard' }, ukrainian, classic],
+    });
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.items).toHaveLength(3);
+    const card = selectWorkerSalesOrderCard(grouped[0]!, 'en');
+    expect(card.itemCount).toBe(3);
+    expect(card.productTitle).toBe('Dining table · Standard · Ukrainian · Classic');
+    expect(card.number).toBe('ORD-9');
+    expect(card.factoryOrderNumber).toBeNull();
+    expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/orders/so-1');
+  });
+
+  it('skips the items list when the sales order has a single production order', () => {
+    const grouped: WorkerMySalesOrder[] = mySalesOrdersFromResponse({
+      orders: [
+        {
+          salesOrderId: 'so-1',
+          salesOrderNumber: 'ORD-9',
+          deadline: order.deadline,
+          priority: 'HIGH',
+          myTaskCount: 2,
+          actionableCount: 1,
+          blockedCount: 1,
+          items: [order],
+        },
+      ],
+      data: [],
+    });
+    const card = selectWorkerSalesOrderCard(grouped[0]!, 'en');
+    expect(card.itemCount).toBe(1);
+    expect(card.factoryOrderNumber).toBe('PO-1');
+    expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/lane/po-1');
   });
 });
 
@@ -49,6 +122,12 @@ describe('workerOrderMatchesQuery', () => {
     expect(workerOrderMatchesQuery(order, 'dining')).toBe(true);
     expect(workerOrderMatchesQuery(order, 'طاولة')).toBe(true);
     expect(workerOrderMatchesQuery(order, 'שולחן')).toBe(true);
+  });
+
+  it('matches variant labels so same-order rows stay distinguishable', () => {
+    expect(workerOrderMatchesQuery({ ...order, variantLabel: 'Ukrainian' }, 'ukrainian')).toBe(
+      true,
+    );
   });
 
   it('matches dealer name, external number, and assigned stage', () => {

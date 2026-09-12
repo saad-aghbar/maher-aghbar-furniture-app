@@ -34,6 +34,21 @@ export class QuotationLineDto {
   @IsUUID()
   productId?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  variantSku?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  variantLabel?: string;
+
   @ApiProperty()
   @IsString()
   @MinLength(1)

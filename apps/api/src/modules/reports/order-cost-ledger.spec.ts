@@ -2,6 +2,7 @@ import {
   actualMaterialFromTransactions,
   averagePerUnit,
   coverageStatus,
+  costVariance,
   marginFrom,
   saleValueFromSubtotals,
   skuLedgerFromTransactions,
@@ -45,10 +46,22 @@ describe('order-cost-ledger', () => {
     expect(marginFrom(200, 50)).toEqual({ grossMargin: 150, marginPct: 75 });
   });
 
+  it('subtracts labor from margin only when a rate produced a number', () => {
+    expect(marginFrom(200, 100, 40)).toEqual({ grossMargin: 60, marginPct: 30 });
+    expect(marginFrom(200, 100, null)).toEqual({ grossMargin: 100, marginPct: 50 });
+  });
+
   it('shows average per unit instead of inventing per-piece cost', () => {
     expect(averagePerUnit(80, 2)).toBe(40);
     expect(averagePerUnit(80, 1)).toBe(80);
     expect(averagePerUnit(null, 2)).toBeNull();
+  });
+
+  it('variance is actual minus planned and null when either side is missing', () => {
+    expect(costVariance(100, 120)).toBe(20);
+    expect(costVariance(100, 80)).toBe(-20);
+    expect(costVariance(null, 80)).toBeNull();
+    expect(costVariance(100, null)).toBeNull();
   });
 
   it('rolls usage per SKU without netting unpriced issues to zero', () => {

@@ -11,6 +11,7 @@ const ALL_TAB_NAMES: TabName[] = [
   'catalog',
   'schedule',
   'new-order',
+  'basket',
   'account',
   'tasks',
   'completed',

@@ -1,0 +1,26 @@
+appId: jo.maheraghbar.furniture
+name: Spec option picker — select foam, hide retired
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*Products.*|.*المنتجات.*|.*מוצרים.*"
+    optional: true
+- tapOn:
+    text: ".*Foam.*|.*إسفنج.*|.*ספוג.*"
+    optional: true
+- assertVisible:
+    text: ".*Foam 35.*|.*إسفنج 35.*|.*ספוג 35.*"
+    optional: true
+- tapOn:
+    text: ".*Foam 35.*|.*إسفנג 35.*|.*ספוג 35.*"
+    optional: true
+- tapOn:
+    text: ".*Confirm.*|.*تأكيد.*|.*אישור.*"
+    optional: true

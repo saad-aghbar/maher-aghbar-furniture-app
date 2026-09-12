@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { COMPANY_DOMAIN } from '../seed/util';
 import { encryptPortalPassword } from '../seed/secret-box';
+import { ensurePlaceholderHourlyRates } from '../seed/labor-rates';
 
 const DEMO_PORTAL_PASSWORD = '123';
 
@@ -472,6 +473,11 @@ export async function seedDemoPeople(prisma: PrismaClient, passwordHash: string)
       stageAssignees[code]!.push(user.id);
     }
   }
+
+  await ensurePlaceholderHourlyRates(
+    prisma,
+    workers.map((w) => w.id),
+  );
 
   const salesId =
     staff.find((s) => s.username === 'sales1')?.id ?? adminId;

@@ -921,7 +921,8 @@ model Product {
   productionOrders ProductionOrder[]
   dealerPrices     DealerPrice[]
   requestItems     RequestItem[]
-  productionProfile ProductProductionProfile?
+  variants         ProductVariant[]
+  productionProfiles ProductProductionProfile[]
   stageEstimates    ProductStageEstimate[]
   estimateStats     StageEstimateStat[]
   workflowConfiguration ProductWorkflowConfiguration?
@@ -929,27 +930,133 @@ model Product {
   stageInventoryOutputs ProductStageInventoryOutput[]
   stageInventoryInputs  ProductStageInventoryInput[]
   stageMaterialInputs   ProductStageMaterialInput[]
+  stageInstructions      ProductStageInstruction[]
 
   @@index([categoryId])
   @@map("products")
 }
 
-/// Per-dealer selling price for a catalog product
+/// Per-dealer selling price for a catalog product (optional per-variant).
 model DealerPrice {
   id         String   @id @default(uuid())
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   productId  String
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId  String?
+  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
   price      Decimal  @db.Decimal(18, 3)
   currency   String   @default("ILS")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([customerId, productId])
+  @@unique([customerId, productId, variantId])
   @@index([customerId])
   @@index([productId])
+  @@index([variantId])
   @@map("dealer_prices")
+}
+
+/// Sellable variation of a product. `isDefault` holds today's product dims/price/BOM.
+model ProductVariant {
+  id                 String                    @id @default(uuid())
+  productId          String
+  product            Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku                String                    @unique
+  code               String
+  nameAr             String
+  nameEn             String
+  nameHe             String?
+  isDefault          Boolean                   @default(false)
+  isActive           Boolean                    @default(true)
+  sortOrder          Int                       @default(0)
+  basePrice          Decimal?                  @db.Decimal(18, 3)
+  manufacturingCost Decimal?                  @db.Decimal(18, 3)
+  bomDefaults        Json?
+  imageUrl           String?
+  galleryUrls        String[]                  @default([])
+  workflowId         String?
+  workflow           ProductionWorkflow?        @relation(fields: [workflowId], references: [id])
+  archivedAt         DateTime?
+
+  width              Decimal?                  @db.Decimal(18, 3)
+  height             Decimal?                  @db.Decimal(18, 3)
+  depth              Decimal?                  @db.Decimal(18, 3)
+  seatHeight         Decimal?                  @db.Decimal(18, 3)
+  /// [{ key, labelAr, labelEn, labelHe?, value, unit }]
+  measurements       Json?
+  /// [{ labelAr, labelEn, labelHe?, qty }]
+  composition        Json?
+  /// [{ nameAr, nameEn, nameHe?, specOptionValueId?, width?, height?, qty, unit, inventoryItemId?, note? }]
+  includedItems      Json?
+  factoryNotesAr     String?
+  factoryNotesEn     String?
+  factoryNotesHe     String?
+  adminNotes         String?
+
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  options            ProductVariantOption[]
+  dealerPrices       DealerPrice[]
+  stageMaterialInputs   ProductStageMaterialInput[]
+  stageInventoryOutputs ProductStageInventoryOutput[]
+  stageInventoryInputs  ProductStageInventoryInput[]
+  stageEstimates        ProductStageEstimate[]
+  productionProfiles    ProductProductionProfile[]
+  stageOverrides        ProductWorkflowStageOverride[]
+  stageInstructions   ProductStageInstruction[]
+  requestItems       RequestItem[]
+  quotationLines     QuotationLine[]
+  salesOrderLines    SalesOrderLine[]
+  productionOrders   ProductionOrder[]
+  returnRequests     ReturnRequest[]
+  returnPieces       ReturnPiece[]
+
+  @@unique([productId, code])
+  @@index([productId, isActive])
+  @@index([productId, isDefault])
+  @@map("product_variants")
+}
+
+model ProductVariantOption {
+  id                 String          @id @default(uuid())
+  variantId          String
+  variant            ProductVariant   @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  specOptionValueId  String
+  specOptionValue    SpecOptionValue @relation(fields: [specOptionValueId], references: [id])
+  qty                Decimal?        @db.Decimal(18, 3)
+  note               String?
+  createdAt          DateTime        @default(now())
+
+  @@unique([variantId, specOptionValueId])
+  @@index([specOptionValueId])
+  @@map("product_variant_options")
+}
+
+/// Per-stage worker instructions on a product or variant workflow.
+model ProductStageInstruction {
+  id                String   @id @default(uuid())
+  productId         String
+  product           Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId         String?
+  variant           ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  workflowId        String
+  workflow          ProductionWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stageDefinitionId String
+  stageDefinition   ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id], onDelete: Cascade)
+  instructionsAr    String?
+  instructionsEn    String?
+  instructionsHe    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([productId, variantId, workflowId, stageDefinitionId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([workflowId])
+  @@index([stageDefinitionId])
+  @@map("product_stage_instructions")
 }
 
 model Material {
@@ -997,7 +1104,62 @@ model ColorReference {
   hex       String?
   createdAt DateTime @default(now())
 
+  specOptionValues SpecOptionValue[]
+
   @@map("color_references")
+}
+
+enum SpecOptionInputType {
+  SELECT
+  SELECT_WITH_QTY
+  DIMENSION
+  COLOR
+}
+
+model SpecOptionGroup {
+  id        String             @id @default(uuid())
+  code      String             @unique
+  nameAr    String
+  nameEn    String
+  nameHe    String?
+  inputType SpecOptionInputType @default(SELECT)
+  appliesTo String?
+  isActive  Boolean            @default(true)
+  sortOrder Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  values SpecOptionValue[]
+
+  @@map("spec_option_groups")
+}
+
+model SpecOptionValue {
+  id                String          @id @default(uuid())
+  groupId           String
+  group             SpecOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  code              String
+  nameAr            String
+  nameEn            String
+  nameHe            String?
+  hex               String?
+  numericValue      Decimal?        @db.Decimal(18, 3)
+  unit              String?
+  colorReferenceId  String?
+  colorReference    ColorReference? @relation(fields: [colorReferenceId], references: [id])
+  inventoryItemId   String?
+  inventoryItem     InventoryItem?  @relation(fields: [inventoryItemId], references: [id])
+  isActive          Boolean          @default(true)
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  variantOptions    ProductVariantOption[]
+  salesOrderLineOptions SalesOrderLineOption[]
+
+  @@unique([groupId, code])
+  @@index([groupId, isActive])
+  @@map("spec_option_values")
 }
 
 // ─── Suppliers & Purchasing ──────────────────────────────────────────────────
@@ -1382,6 +1544,7 @@ model InventoryItem {
   taskMaterialUsages     ProductionTaskMaterialUsage[]
   salesOrderMaterialRequirements SalesOrderLineMaterialRequirement[]
   recoveryLines    ReturnRecoveryLine[]
+  specOptionValues SpecOptionValue[]
 
   @@index([category])
   @@index([itemClass])
@@ -1655,6 +1818,8 @@ model ProductStageInventoryOutput {
   id                   String             @id @default(uuid())
   productId            String
   product              Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId            String?
+  variant              ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: Cascade)
   workflowNodeId       String?
   stageDefinitionId    String?
   itemClass            InventoryItemClass
@@ -1680,10 +1845,11 @@ model ProductStageInventoryOutput {
 
   consumedBy ProductStageInventoryInput[]
 
-  @@unique([productId, workflowNodeId])
+  @@unique([productId, workflowNodeId, variantId])
   @@index([productId])
   @@index([workflowNodeId])
   @@index([stageDefinitionId])
+  @@index([variantId])
   @@map("product_stage_inventory_outputs")
 }
 
@@ -1691,6 +1857,8 @@ model ProductStageInventoryInput {
   id                String                      @id @default(uuid())
   productId         String
   product           Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId         String?
+  variant           ProductVariant?            @relation(fields: [variantId], references: [id], onDelete: Cascade)
   workflowNodeId    String?
   stageDefinitionId String?
   outputId          String
@@ -1698,7 +1866,7 @@ model ProductStageInventoryInput {
   qtyPerUnit        Decimal                     @default(1) @db.Decimal(18, 3)
   createdAt         DateTime                    @default(now())
 
-  @@unique([productId, workflowNodeId, outputId])
+  @@unique([productId, workflowNodeId, outputId, variantId])
   @@index([productId])
   @@index([outputId])
   @@map("product_stage_inventory_inputs")
@@ -1709,6 +1877,8 @@ model ProductStageMaterialInput {
   id                String               @id @default(uuid())
   productId         String
   product           Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId         String?
+  variant           ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: Cascade)
   workflowNodeId    String?
   workflowNode      ProductionWorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
   stageDefinitionId String?
@@ -1722,11 +1892,12 @@ model ProductStageMaterialInput {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
-  @@unique([productId, workflowNodeId, inventoryItemId])
+  @@unique([productId, workflowNodeId, inventoryItemId, variantId])
   @@index([productId])
   @@index([workflowNodeId])
   @@index([inventoryItemId])
   @@index([stageDefinitionId])
+  @@index([variantId])
   @@map("product_stage_material_inputs")
 }
 
@@ -1788,7 +1959,11 @@ model RequestItem {
   category    String?
   productId   String?
   product     Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
-  productName String
+  variantId   String?
+  variant     ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantSku  String?
+  variantLabel String?
+  productName String?
   description String?
   quantity    Decimal             @db.Decimal(18, 3)
   unit        String              @default("pcs")
@@ -1807,6 +1982,8 @@ model RequestItem {
   foamDensity String?
   finish      String?
   accessories String?
+  options     Json?
+  orientation String?
   notes       String?
   customMeasurements Json?
   /// STANDARD | MODIFIED | CUSTOM — order line vs catalog template.
@@ -1815,6 +1992,7 @@ model RequestItem {
 
   @@index([requestId])
   @@index([productId])
+  @@index([variantId])
   @@map("request_items")
 }
 
@@ -1877,6 +2055,10 @@ model QuotationLine {
   quotation     Quotation  @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   productId     String?
   product       Product?   @relation(fields: [productId], references: [id])
+  variantId     String?
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantSku    String?
+  variantLabel  String?
   description   String
   quantity      Decimal    @db.Decimal(18, 3)
   unit          String     @default("pcs")
@@ -1901,6 +2083,7 @@ model QuotationLine {
   sortOrder     Int        @default(0)
 
   @@index([quotationId])
+  @@index([variantId])
   @@map("quotation_lines")
 }
 
@@ -1983,6 +2166,10 @@ model SalesOrderLine {
   salesOrder         SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
   productId          String?
   product            Product?   @relation(fields: [productId], references: [id])
+  variantId          String?
+  variant            ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantSku         String?
+  variantLabel       String?
   description        String
   specifications     String?
   quantity           Decimal    @db.Decimal(18, 3)
@@ -2007,9 +2194,27 @@ model SalesOrderLine {
   fabricProcurements FabricProcurement[]
   returns            ReturnRequest[]
   returnPieces       ReturnPiece[]
+  lineOptions        SalesOrderLineOption[]
 
   @@index([salesOrderId])
+  @@index([variantId])
   @@map("sales_order_lines")
+}
+
+/// Reportable option choices frozen onto a sales-order line. orderSpec remains the immutable snapshot.
+model SalesOrderLineOption {
+  id                 String          @id @default(uuid())
+  salesOrderLineId   String
+  salesOrderLine     SalesOrderLine  @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade)
+  specOptionValueId  String
+  specOptionValue    SpecOptionValue @relation(fields: [specOptionValueId], references: [id])
+  qty                Decimal?        @db.Decimal(18, 3)
+  note               String?
+  createdAt          DateTime        @default(now())
+
+  @@unique([salesOrderLineId, specOptionValueId])
+  @@index([specOptionValueId])
+  @@map("sales_order_line_options")
 }
 
 /// Authoritative manufacturing snapshot for a sales order before PO release (Piece 2).
@@ -2048,6 +2253,10 @@ model SalesOrderLineSetup {
   workflow                ProductionWorkflow?      @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   workflowConfirmedAt     DateTime?
   factoryNotes            String?
+  /// Arabic-first instruction block for every stage of this item.
+  instructionsAr          String?
+  instructionsEn          String?
+  instructionsHe          String?
   /// { pieceLabels, expectedPieceCount }
   packagingExpectation    Json?
   /// Document ids from the commercial order / RFQ
@@ -2219,6 +2428,7 @@ model ProductionStageDefinition {
   snapshotNodes  ProductionOrderWorkflowSnapshotNode[]
   stageOverrides ProductWorkflowStageOverride[]
   stageMaterialInputs ProductStageMaterialInput[]
+  stageInstructions   ProductStageInstruction[]
   laborRates          LaborRate[]
 
   @@map("production_stage_definitions")
@@ -2234,6 +2444,10 @@ model ProductionOrder {
   customerId            String?
   productId             String?
   product               Product?              @relation(fields: [productId], references: [id])
+  variantId             String?
+  variant               ProductVariant?      @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantSku            String?
+  variantLabel          String?
   productDescription    String
   quantity              Decimal               @db.Decimal(18, 3)
   specifications        String?
@@ -2250,11 +2464,16 @@ model ProductionOrder {
   status                ProductionOrderStatus @default(DRAFT)
   supervisorId          String?
   notes                 String?
+  /// Frozen item instruction block copied onto every stage of this production order.
+  instructionsAr        String?
+  instructionsEn        String?
+  instructionsHe        String?
   /// Hard Preparing → Production boundary. Null = still Orders Preparing (plan editable).
   releasedToFactoryAt   DateTime?
   releasedToFactoryById String?
   /// Frozen planned material cost at factory release. Never rewritten live.
   plannedMaterialCost   Decimal?              @db.Decimal(18, 3)
+  plannedLaborCost      Decimal?              @db.Decimal(18, 3)
   plannedCostBreakdown  Json?
   plannedCostFrozenAt   DateTime?
   originType            ProductionOrderOriginType @default(SALES_ORDER)
@@ -2296,6 +2515,7 @@ model ProductionOrder {
   @@index([committedDeliveryDate])
   @@index([plannedStartDate])
   @@index([plannedCompletionDate])
+  @@index([variantId])
   @@map("production_orders")
 }
 
@@ -2889,6 +3109,8 @@ model ReturnRequest {
   salesOrderLine   SalesOrderLine? @relation(fields: [salesOrderLineId], references: [id])
   productId      String?
   product        Product?          @relation(fields: [productId], references: [id])
+  variantId      String?
+  variant        ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
   /// Original production order the returned piece came from.
   sourceProductionOrderId String?
   sourceProductionOrder   ProductionOrder? @relation("ReturnSourceProductionOrder", fields: [sourceProductionOrderId], references: [id])
@@ -2948,6 +3170,7 @@ model ReturnRequest {
   @@index([deliveryId])
   @@index([salesOrderLineId])
   @@index([productId])
+  @@index([variantId])
   @@index([sourceProductionOrderId])
   @@index([lifecycleState])
   @@map("return_requests")
@@ -2965,6 +3188,8 @@ model ReturnPiece {
   salesOrderLine  SalesOrderLine?   @relation(fields: [salesOrderLineId], references: [id])
   productId       String?
   product         Product?          @relation(fields: [productId], references: [id])
+  variantId       String?
+  variant         ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
   productDesc     String
   specSnapshot    Json?
   state           ReturnPieceState  @default(AWAITING_RECEIPT)
@@ -3004,6 +3229,7 @@ model ReturnPiece {
   @@index([state])
   @@index([decision])
   @@index([salesOrderLineId])
+  @@index([variantId])
   @@map("return_pieces")
 }
 
@@ -3251,8 +3477,10 @@ model AiChatMessage {
 
 model ProductProductionProfile {
   id                   String   @id @default(uuid())
-  productId            String   @unique
+  productId            String
   product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId            String?
+  variant              ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
   totalStandardMinutes Int?
   setupMinutes         Int      @default(0)
   complexityFactor     Decimal  @default(1) @db.Decimal(8, 3)
@@ -3263,6 +3491,8 @@ model ProductProductionProfile {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  @@unique([productId, variantId])
+  @@index([variantId])
   @@map("product_production_profiles")
 }
 
@@ -3270,6 +3500,8 @@ model ProductStageEstimate {
   id                   String              @id @default(uuid())
   productId            String
   product              Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId            String?
+  variant              ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
   stageDefinitionId    String
   stageDefinition      ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id])
   setupMinutes         Int                 @default(0)
@@ -3286,8 +3518,9 @@ model ProductStageEstimate {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
-  @@unique([productId, stageDefinitionId])
+  @@unique([productId, stageDefinitionId, variantId])
   @@index([stageDefinitionId])
+  @@index([variantId])
   @@map("product_stage_estimates")
 }
 
@@ -3547,6 +3780,8 @@ model ProductionWorkflow {
   productConfigurations   ProductWorkflowConfiguration[]
   orderSnapshots          ProductionOrderWorkflowSnapshot[]
   salesOrderLineSetups    SalesOrderLineSetup[]
+  productVariants          ProductVariant[]
+  stageInstructions         ProductStageInstruction[]
 
   @@index([status])
   @@index([scope])
@@ -3659,6 +3894,8 @@ model ProductWorkflowStageOverride {
   configurationId       String
   configuration         ProductWorkflowConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
   productId             String
+  variantId             String?
+  variant               ProductVariant?        @relation(fields: [variantId], references: [id], onDelete: Cascade)
   workflowNodeId        String?
   workflowNode          ProductionWorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
   stageDefinitionId     String
@@ -3669,10 +3906,11 @@ model ProductWorkflowStageOverride {
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt
 
-  @@unique([configurationId, stageDefinitionId])
+  @@unique([configurationId, stageDefinitionId, variantId])
   @@index([productId])
   @@index([workflowNodeId])
   @@index([stageDefinitionId])
+  @@index([variantId])
   @@map("product_workflow_stage_overrides")
 }
 
@@ -3742,6 +3980,9 @@ model ProductionOrderWorkflowSnapshotNode {
   consumeOutputDefinitionIds Json?
   defaultWarehouseId    String?
   defaultWarehouse      Warehouse? @relation("SnapshotNodeDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
+  instructionsAr        String?
+  instructionsEn        String?
+  instructionsHe        String?
   sortOrder             Int      @default(0)
   displayX              Float?
   displayY              Float?

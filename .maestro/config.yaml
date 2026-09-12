@@ -1,0 +1,5 @@
+appId: jo.maheraghbar.furniture
+name: Maher mobile
+---
+# Shared Maestro config. Flows live in e2e/mobile/*.yaml.
+# Run via `pnpm mobile:e2e` (scripts/mobile-e2e.mjs). Not in the blocking CI job.

@@ -1,5 +1,6 @@
 import { SurfaceTabsLayout } from '@/navigation/SurfaceTabsLayout';
 import {
+  customerBasketTab,
   customerNewOrderTab,
   customerScheduleTab,
   customerTabs,
@@ -11,6 +12,7 @@ export default function CustomerTabsLayout() {
     // Hidden routes — registered for routing, href:null via visibility (not in customerTabs).
     { name: customerScheduleTab.name, labelKey: customerScheduleTab.labelKey },
     { name: customerNewOrderTab.name, labelKey: customerNewOrderTab.labelKey },
+    { name: customerBasketTab.name, labelKey: customerBasketTab.labelKey },
   ];
   return <SurfaceTabsLayout surface="customer" screens={screens} />;
 }

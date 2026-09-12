@@ -25,6 +25,7 @@ import {
   resolveDemoSnapshotInventory,
 } from './inventory-lifecycle';
 import { WF_SECTIONAL } from './workflows';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -415,6 +416,7 @@ export async function seedPiece8FactoryFloorExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -446,6 +448,7 @@ export async function seedPiece8FactoryFloorExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -511,6 +514,7 @@ export async function seedPiece8FactoryFloorExamples(
         salesOrderLineId: line.id,
         customerId: input.customerId,
         productId: input.productId,
+        ...variantPoFieldsForProductId(opts.products, input.productId),
         productDescription: input.description,
         quantity: qty,
         status: poStatus,

@@ -14,6 +14,7 @@ import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrderProductionPlanEditorScreen } from './OrderProductionPlanEditorScreen';
 import { useOrderProductionSetupActions } from './production-setup/query';
+import { productionOrderIdForLineId } from './productionOrderIdForLine';
 import { useSalesOrderQuery } from './query';
 
 /**
@@ -21,7 +22,13 @@ import { useSalesOrderQuery } from './query';
  * Always opens OrderProductionPlanEditorScreen (screenshot floor plan desk).
  * Creates the PO under the hood when missing — never mounts Setup Home / PrePo desk.
  */
-export function OrderProductionPlanScreen({ salesOrderId }: { salesOrderId: string }) {
+export function OrderProductionPlanScreen({
+  salesOrderId,
+  lineId,
+}: {
+  salesOrderId: string;
+  lineId?: string;
+}) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { user } = useAuth();
@@ -35,11 +42,16 @@ export function OrderProductionPlanScreen({ salesOrderId }: { salesOrderId: stri
   const attempted = useRef(false);
 
   const order = query.data;
-  const poId =
-    ensuredPoId ??
-    order?.productionReadinessSummary?.primaryProductionOrderId ??
-    order?.productionOrders?.[0]?.id ??
-    null;
+  const mappedPoId = productionOrderIdForLineId({
+    lineId,
+    productionOrders: order?.productionOrders,
+    setupLines: order?.productionSetup?.lines,
+    fallbackId:
+      order?.productionReadinessSummary?.primaryProductionOrderId ??
+      order?.productionOrders?.[0]?.id ??
+      null,
+  });
+  const poId = ensuredPoId ?? mappedPoId;
   const released = (order?.productionOrders ?? []).some((po) => {
     const row = po as { releasedToFactoryAt?: string | null };
     return Boolean(row.releasedToFactoryAt);
@@ -59,13 +71,19 @@ export function OrderProductionPlanScreen({ salesOrderId }: { salesOrderId: stri
     void (async () => {
       try {
         const result = await actions.ensurePlan.mutateAsync(undefined);
-        const id = result.primaryProductionOrderId ?? result.productionOrderIds[0] ?? null;
+        const refreshed = await query.refetch();
+        const id = productionOrderIdForLineId({
+          lineId,
+          productionOrders: refreshed.data?.productionOrders,
+          setupLines:
+            refreshed.data?.productionSetup?.lines ?? order?.productionSetup?.lines,
+          fallbackId: result.primaryProductionOrderId ?? result.productionOrderIds[0] ?? null,
+        });
         if (!id) {
           setBootError(t('mobile.orders.journey.planNeedsPo'));
           return;
         }
         setEnsuredPoId(id);
-        void query.refetch();
       } catch (err) {
         const message =
           err instanceof ApiError && err.message
@@ -84,6 +102,7 @@ export function OrderProductionPlanScreen({ salesOrderId }: { salesOrderId: stri
     actions.ensurePlan,
     query,
     booting,
+    lineId,
     t,
   ]);
 

@@ -167,12 +167,14 @@ export const nestedNavGroups: NestedNavGroup[] = [
   },
   {
     parentHref: '/products',
-    matchPrefixes: ['/products', '/categories', '/materials', '/fabrics'],
+    matchPrefixes: ['/products', '/categories', '/materials', '/fabrics', '/spec-options', '/spec-option-values'],
     items: [
       { href: '/products', key: 'products', anyPermissions: ['catalog.manage'] },
       { href: '/categories', key: 'categories', anyPermissions: ['catalog.manage'] },
       { href: '/materials', key: 'materials', anyPermissions: ['catalog.manage'] },
       { href: '/fabrics', key: 'fabrics', anyPermissions: ['catalog.manage'] },
+      { href: '/spec-options', key: 'specOptionGroups', anyPermissions: ['catalog.manage'] },
+      { href: '/spec-option-values', key: 'specOptionValues', anyPermissions: ['catalog.manage'] },
     ],
   },
   {

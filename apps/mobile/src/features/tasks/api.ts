@@ -33,6 +33,8 @@ export type {
   TaskWipOutput,
   TaskWipOutputPiece,
   WorkerMyOrder,
+  WorkerMySalesOrder,
+  MyOrdersResponse,
   WorkerOrderLaneNode,
   WorkerOrderWorkflow,
   WorkerTaskLock,

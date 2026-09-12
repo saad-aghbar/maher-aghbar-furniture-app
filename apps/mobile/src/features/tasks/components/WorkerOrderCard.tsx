@@ -26,6 +26,7 @@ export function WorkerOrderCard({ order, index = 0, animateEnter = true }: Props
         department: t('mobile.tasks.openWork'),
         productTitle: order.productTitle,
         orderNumber: order.number,
+        factoryOrderNumber: order.factoryOrderNumber,
         imageUrl: order.imageUrl,
         priority: order.priority,
         deadline: order.deadline,

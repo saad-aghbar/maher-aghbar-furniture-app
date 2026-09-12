@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -77,7 +78,7 @@ class BomDefaultsDto {
 
 class CustomMeasurementDto {
   @IsOptional() @IsString() id?: string;
-  @IsString() @MinLength(1) nameEn!: string;
+  @IsOptional() @IsString() nameEn?: string;
   @IsString() @MinLength(1) nameAr!: string;
   @IsOptional() @IsString() nameHe?: string;
   @IsOptional() @Type(() => Number) @IsNumber() value?: number | null;
@@ -89,7 +90,7 @@ class ProductDto {
   /** Optional — auto-generated when omitted. Not shown in product UIs. */
   @IsOptional() @IsString() @MinLength(1) sku?: string;
   @IsString() @MinLength(1) nameAr!: string;
-  @IsString() @MinLength(1) nameEn!: string;
+  @IsOptional() @IsString() nameEn?: string;
   @IsOptional() @IsString() nameHe?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional()
@@ -153,15 +154,31 @@ class BrowseProductsQueryDto extends ListActiveQueryDto {
   @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc';
 }
 
-function stripProductCosts<T extends Record<string, unknown>>(product: T, user?: AuthUser): T {
-  if (!user?.customerId) return product;
+function stripVariantDealerFields(variant: Record<string, unknown>): Record<string, unknown> {
   const {
     manufacturingCost: _mc,
     bomDefaults: _bd,
     adminNotes: _an,
-    basePrice: _bp,
+    factoryNotesAr: _fa,
+    factoryNotesEn: _fe,
+    factoryNotesHe: _fh,
     ...rest
-  } = product;
+  } = variant;
+  return rest;
+}
+
+function stripProductCosts<T extends Record<string, unknown>>(product: T, user?: AuthUser): T {
+  if (!user?.customerId) return product;
+  const rest: Record<string, unknown> = { ...product };
+  delete rest.manufacturingCost;
+  delete rest.bomDefaults;
+  delete rest.adminNotes;
+  delete rest.basePrice;
+  if (Array.isArray(rest.variants)) {
+    rest.variants = (rest.variants as unknown[]).map((row) =>
+      stripVariantDealerFields(row as Record<string, unknown>),
+    );
+  }
   return rest as T;
 }
 
@@ -194,6 +211,53 @@ class ColorDto {
   @IsOptional() @IsString() hex?: string;
 }
 
+const SPEC_OPTION_INPUT_TYPES = ['SELECT', 'SELECT_WITH_QTY', 'DIMENSION', 'COLOR'] as const;
+
+function isTruthyQuery(value?: string | boolean): boolean {
+  return value === true || value === 'true' || value === '1';
+}
+
+class SpecOptionGroupDto {
+  @IsString() @MinLength(1) code!: string;
+  @IsString() @MinLength(1) nameAr!: string;
+  @IsString() @MinLength(1) nameEn!: string;
+  @IsOptional() @IsString() nameHe?: string;
+  @IsOptional() @IsIn(SPEC_OPTION_INPUT_TYPES) inputType?: (typeof SPEC_OPTION_INPUT_TYPES)[number];
+  @IsOptional() @IsString() appliesTo?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @Type(() => Number) @IsNumber() sortOrder?: number;
+}
+
+class SpecOptionValueDto {
+  @IsUUID() groupId!: string;
+  @IsString() @MinLength(1) code!: string;
+  @IsString() @MinLength(1) nameAr!: string;
+  @IsString() @MinLength(1) nameEn!: string;
+  @IsOptional() @IsString() nameHe?: string;
+  @IsOptional() @IsString() hex?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() numericValue?: number;
+  @IsOptional() @IsString() unit?: string;
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUUID()
+  colorReferenceId?: string | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUUID()
+  inventoryItemId?: string | null;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @Type(() => Number) @IsNumber() sortOrder?: number;
+}
+
+class SpecOptionListQueryDto extends ListQueryDto {
+  @IsOptional() @IsString() includeInactive?: string;
+}
+
+class SpecOptionValueListQueryDto extends SpecOptionListQueryDto {
+  @IsOptional() @IsUUID() groupId?: string;
+  @IsOptional() @IsString() groupCode?: string;
+}
+
 class UnitDto {
   @IsString() @MinLength(1) code!: string;
   @IsString() @MinLength(1) nameEn!: string;
@@ -204,6 +268,10 @@ class UnitDto {
 const UNITS_KEY = 'units_of_measure';
 
 import { SequenceService } from '../../common/sequence.service';
+import { VariantsService } from './variants.service';
+import { CatalogPromotionService } from './catalog-promotion.service';
+import { TranslationService } from './translation.service';
+import { preferDealerPrice } from './dealer-price-prefer';
 
 @ApiTags('catalog')
 @Controller()
@@ -211,7 +279,23 @@ export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly variants: VariantsService,
+    private readonly promotion: CatalogPromotionService,
+    @Optional() private readonly translation?: TranslationService,
   ) {}
+
+  @Post('catalog/translate-name')
+  @RequirePermissions('catalog.manage')
+  async translateName(
+    @Body() body: { text?: string; kind?: 'name' | 'prose' },
+  ) {
+    const text = String(body?.text ?? '').trim();
+    if (body?.kind === 'prose') {
+      const nameEn = (await this.translation?.translateProse(text)) ?? '';
+      return { nameAr: text, nameEn, nameHe: '' };
+    }
+    return this.translation?.translateName(text) ?? { nameAr: text, nameEn: '', nameHe: '' };
+  }
 
   // ── Categories ─────────────────────────────────────────────────────────────
 
@@ -300,6 +384,9 @@ export class CatalogController {
     const where: Prisma.ProductWhereInput = {
       archivedAt: null,
       isActive: true,
+      ...(user.customerId
+        ? { variants: { some: { isActive: true, archivedAt: null } } }
+        : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.q
         ? {
@@ -326,13 +413,25 @@ export class CatalogController {
     ]);
 
     const dealerPriceMap = new Map<string, { price: unknown; currency: string }>();
+    const defaultVariantByProduct = new Map<string, { id: string; basePrice: unknown }>();
     if (user.customerId) {
       const productIds = rows.map((p) => p.id);
-      const dealerPrices = await this.prisma.dealerPrice.findMany({
-        where: { customerId: user.customerId, productId: { in: productIds } },
-      });
-      for (const dp of dealerPrices) {
-        dealerPriceMap.set(dp.productId, { price: dp.price, currency: dp.currency });
+      const [dealerPrices, defaultVariants] = await Promise.all([
+        this.prisma.dealerPrice.findMany({
+          where: { customerId: user.customerId, productId: { in: productIds } },
+        }),
+        this.prisma.productVariant.findMany({
+          where: { productId: { in: productIds }, isDefault: true, archivedAt: null },
+          select: { id: true, productId: true, basePrice: true },
+        }),
+      ]);
+      for (const v of defaultVariants) {
+        defaultVariantByProduct.set(v.productId, { id: v.id, basePrice: v.basePrice });
+      }
+      for (const product of rows) {
+        const def = defaultVariantByProduct.get(product.id);
+        const picked = preferDealerPrice(dealerPrices, product.id, def?.id);
+        if (picked) dealerPriceMap.set(product.id, { price: picked.price, currency: picked.currency });
       }
     }
 
@@ -342,10 +441,11 @@ export class CatalogController {
         user,
       );
       const dealerPrice = dealerPriceMap.get(product.id);
+      const defaultPrice = defaultVariantByProduct.get(product.id)?.basePrice;
       return {
         ...stripped,
         dealerPrice: dealerPrice?.price ?? null,
-        price: dealerPrice?.price ?? product.basePrice ?? null,
+        price: dealerPrice?.price ?? defaultPrice ?? product.basePrice ?? null,
         priceCurrency: dealerPrice?.currency ?? 'ILS',
       };
     });
@@ -408,7 +508,12 @@ export class CatalogController {
     }
 
     const rows = await this.prisma.product.findMany({
-      where: { id: { in: orderedIds }, archivedAt: null, isActive: true },
+      where: {
+        id: { in: orderedIds },
+        archivedAt: null,
+        isActive: true,
+        variants: { some: { isActive: true, archivedAt: null } },
+      },
       include: { category: true },
     });
     const byId = new Map(rows.map((p) => [p.id, p]));
@@ -416,8 +521,16 @@ export class CatalogController {
     const dealerPrices = await this.prisma.dealerPrice.findMany({
       where: { customerId: user.customerId, productId: { in: orderedIds } },
     });
+    const defaultVariants = await this.prisma.productVariant.findMany({
+      where: { productId: { in: orderedIds }, isDefault: true, archivedAt: null },
+      select: { id: true, productId: true, basePrice: true },
+    });
+    const defaultByProduct = new Map(defaultVariants.map((v) => [v.productId, v]));
     const dealerPriceMap = new Map(
-      dealerPrices.map((dp) => [dp.productId, { price: dp.price, currency: dp.currency }]),
+      orderedIds.map((id) => {
+        const picked = preferDealerPrice(dealerPrices, id, defaultByProduct.get(id)?.id);
+        return [id, picked] as const;
+      }),
     );
 
     const data = orderedIds
@@ -429,10 +542,11 @@ export class CatalogController {
           user,
         );
         const dealerPrice = dealerPriceMap.get(product.id);
+        const defaultPrice = defaultByProduct.get(product.id)?.basePrice;
         return {
           ...stripped,
           dealerPrice: dealerPrice?.price ?? null,
-          price: dealerPrice?.price ?? product.basePrice ?? null,
+          price: dealerPrice?.price ?? defaultPrice ?? product.basePrice ?? null,
           priceCurrency: dealerPrice?.currency ?? 'ILS',
         };
       });
@@ -450,20 +564,29 @@ export class CatalogController {
     if (!product) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
     }
+    if (user.customerId) {
+      const hasVariant = await this.prisma.productVariant.findFirst({
+        where: { productId: product.id, isActive: true, archivedAt: null },
+        select: { id: true },
+      });
+      if (!hasVariant) {
+        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+      }
+    }
 
     let dealerPrice: { price: unknown; currency: string } | null = null;
+    let defaultVariantPrice: unknown = null;
     if (user.customerId) {
-      const row = await this.prisma.dealerPrice.findUnique({
-        where: {
-          customerId_productId: {
-            customerId: user.customerId,
-            productId: product.id,
-          },
-        },
+      const defaultVariant = await this.prisma.productVariant.findFirst({
+        where: { productId: product.id, isDefault: true, archivedAt: null },
+        select: { id: true, basePrice: true },
       });
-      if (row) {
-        dealerPrice = { price: row.price, currency: row.currency };
-      }
+      defaultVariantPrice = defaultVariant?.basePrice ?? null;
+      const rows = await this.prisma.dealerPrice.findMany({
+        where: { customerId: user.customerId, productId: product.id },
+      });
+      const picked = preferDealerPrice(rows, product.id, defaultVariant?.id);
+      if (picked) dealerPrice = { price: picked.price, currency: picked.currency };
     }
 
     const stripped = stripProductCosts(
@@ -473,7 +596,7 @@ export class CatalogController {
     return {
       ...stripped,
       dealerPrice: dealerPrice?.price ?? null,
-      price: dealerPrice?.price ?? product.basePrice ?? null,
+      price: dealerPrice?.price ?? defaultVariantPrice ?? product.basePrice ?? null,
       priceCurrency: dealerPrice?.currency ?? 'ILS',
     };
   }
@@ -516,6 +639,12 @@ export class CatalogController {
       };
     });
     return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+  }
+
+  @Post('products/from-order-line/:lineId')
+  @RequirePermissions('catalog.manage')
+  createProductFromOrderLine(@Param('lineId') lineId: string, @CurrentUser() user: AuthUser) {
+    return this.promotion.createProductFromOrderLine(lineId, user.id);
   }
 
   @Get('products/:id')
@@ -584,11 +713,17 @@ export class CatalogController {
   /** Per-seller (dealer) sell prices for this product. Production cost is never dealer-scoped. */
   @Get('products/:id/dealer-prices')
   @RequirePermissions('catalog.manage')
-  async listProductDealerPrices(@Param('id') id: string) {
+  async listProductDealerPrices(
+    @Param('id') id: string,
+    @Query('variantId') variantId?: string,
+  ) {
     const product = await this.prisma.product.findFirst({ where: { id, archivedAt: null } });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
     return this.prisma.dealerPrice.findMany({
-      where: { productId: id },
+      where: {
+        productId: id,
+        ...(variantId ? { OR: [{ variantId }, { variantId: null }] } : {}),
+      },
       include: {
         customer: {
           select: {
@@ -612,12 +747,17 @@ export class CatalogController {
     await this.assertUnique('product', 'sku', sku);
     const bomDefaults = this.normalizeBom(dto.bomDefaults);
     const manufacturingCost = await this.resolveManufacturingCost(dto, bomDefaults);
-    const customMeasurements = this.normalizeCustomMeasurements(dto.customMeasurements);
+    const customMeasurements = await this.normalizeCustomMeasurements(dto.customMeasurements);
+    const nameAr = dto.nameAr.trim();
+    const nameEn =
+      (await this.translation?.fillEnglishName(nameAr, dto.nameEn)) ||
+      dto.nameEn?.trim() ||
+      nameAr;
     const row = await this.prisma.product.create({
       data: {
         sku,
-        nameAr: dto.nameAr,
-        nameEn: dto.nameEn,
+        nameAr,
+        nameEn,
         nameHe: dto.nameHe,
         description: dto.description,
         categoryId: dto.categoryId ?? null,
@@ -703,14 +843,23 @@ export class CatalogController {
         : undefined;
     const customMeasurements =
       dto.customMeasurements !== undefined
-        ? this.normalizeCustomMeasurements(dto.customMeasurements)
+        ? await this.normalizeCustomMeasurements(dto.customMeasurements)
+        : undefined;
+
+    const nameAr = dto.nameAr !== undefined ? dto.nameAr : existing.nameAr;
+    const nameEn =
+      dto.nameAr !== undefined || dto.nameEn !== undefined
+        ? (await this.translation?.fillEnglishName(nameAr, dto.nameEn)) ||
+          dto.nameEn?.trim() ||
+          existing.nameEn ||
+          nameAr
         : undefined;
 
     const row = await this.prisma.product.update({
       where: { id },
       data: {
-        ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr } : {}),
-        ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn } : {}),
+        ...(dto.nameAr !== undefined ? { nameAr } : {}),
+        ...(nameEn !== undefined ? { nameEn } : {}),
         ...(dto.nameHe !== undefined ? { nameHe: dto.nameHe } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
@@ -861,7 +1010,7 @@ export class CatalogController {
   // ── Fabrics ────────────────────────────────────────────────────────────────
 
   @Get('fabrics')
-  @RequirePermissions('catalog.manage')
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
   listFabrics(@Query() query: ListQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const where = query.q
@@ -917,7 +1066,7 @@ export class CatalogController {
   // ── Colors ─────────────────────────────────────────────────────────────────
 
   @Get('colors')
-  @RequirePermissions('catalog.manage')
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
   listColors(@Query() query: ListQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const where = query.q
@@ -960,6 +1109,173 @@ export class CatalogController {
     await this.prisma.colorReference.delete({ where: { id } });
     await this.audit(user.id, 'color.delete', 'ColorReference', id, null);
     return { ok: true };
+  }
+
+  // ── Spec option libraries ───────────────────────────────────────────────────
+
+  @Get('spec-option-groups')
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
+  listSpecOptionGroups(@Query() query: SpecOptionListQueryDto) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const where = {
+      ...(isTruthyQuery(query.includeInactive) ? {} : { isActive: true }),
+      ...(query.q
+        ? {
+            OR: [
+              { code: { contains: query.q, mode: 'insensitive' as const } },
+              { nameEn: { contains: query.q, mode: 'insensitive' as const } },
+              { nameAr: { contains: query.q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    return this.paged(this.prisma.specOptionGroup, { page, pageSize, skip, take }, where, {
+      sortOrder: 'asc',
+    });
+  }
+
+  @Post('spec-option-groups')
+  @RequirePermissions('catalog.manage')
+  async createSpecOptionGroup(@Body() dto: SpecOptionGroupDto, @CurrentUser() user: AuthUser) {
+    await this.assertUnique('specOptionGroup', 'code', dto.code);
+    const row = await this.prisma.specOptionGroup.create({
+      data: { ...dto, isActive: dto.isActive ?? true },
+    });
+    await this.audit(user.id, 'spec-option-group.create', 'SpecOptionGroup', row.id, row);
+    return row;
+  }
+
+  @Patch('spec-option-groups/:id')
+  @RequirePermissions('catalog.manage')
+  async updateSpecOptionGroup(
+    @Param('id') id: string,
+    @Body() dto: Partial<SpecOptionGroupDto>,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.specOptionGroup.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option group not found.' });
+    if (dto.code && dto.code !== existing.code) await this.assertUnique('specOptionGroup', 'code', dto.code);
+    const row = await this.prisma.specOptionGroup.update({ where: { id }, data: dto });
+    await this.audit(user.id, 'spec-option-group.update', 'SpecOptionGroup', id, row);
+    return row;
+  }
+
+  @Post('spec-option-groups/:id/deactivate')
+  @RequirePermissions('catalog.manage')
+  async deactivateSpecOptionGroup(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.specOptionGroup.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option group not found.' });
+    const row = await this.prisma.specOptionGroup.update({ where: { id }, data: { isActive: false } });
+    await this.audit(user.id, 'spec-option-group.deactivate', 'SpecOptionGroup', id, null);
+    return row;
+  }
+
+  @Post('spec-option-groups/:id/activate')
+  @RequirePermissions('catalog.manage')
+  async activateSpecOptionGroup(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.specOptionGroup.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option group not found.' });
+    const row = await this.prisma.specOptionGroup.update({ where: { id }, data: { isActive: true } });
+    await this.audit(user.id, 'spec-option-group.activate', 'SpecOptionGroup', id, null);
+    return row;
+  }
+
+  @Get('spec-option-values')
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
+  async listSpecOptionValues(@Query() query: SpecOptionValueListQueryDto) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    let groupId = query.groupId;
+    if (!groupId && query.groupCode) {
+      const group = await this.prisma.specOptionGroup.findUnique({ where: { code: query.groupCode } });
+      groupId = group?.id;
+    }
+    const where = {
+      ...(groupId ? { groupId } : {}),
+      ...(isTruthyQuery(query.includeInactive) ? {} : { isActive: true, group: { isActive: true } }),
+      ...(query.q
+        ? {
+            OR: [
+              { code: { contains: query.q, mode: 'insensitive' as const } },
+              { nameEn: { contains: query.q, mode: 'insensitive' as const } },
+              { nameAr: { contains: query.q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    return this.paged(this.prisma.specOptionValue, { page, pageSize, skip, take }, where, {
+      sortOrder: 'asc',
+    });
+  }
+
+  @Get('spec-option-values/:id')
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
+  async getSpecOptionValue(@Param('id') id: string) {
+    const row = await this.prisma.specOptionValue.findUnique({
+      where: { id },
+      include: { group: true, colorReference: true, inventoryItem: { select: { id: true, sku: true } } },
+    });
+    if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option value not found.' });
+    return row;
+  }
+
+  @Post('spec-option-values')
+  @RequirePermissions('catalog.manage')
+  async createSpecOptionValue(@Body() dto: SpecOptionValueDto, @CurrentUser() user: AuthUser) {
+    await this.assertValueCodeUnique(dto.groupId, dto.code);
+    const row = await this.prisma.specOptionValue.create({
+      data: {
+        ...dto,
+        colorReferenceId: dto.colorReferenceId || undefined,
+        inventoryItemId: dto.inventoryItemId || undefined,
+        isActive: dto.isActive ?? true,
+      },
+    });
+    await this.audit(user.id, 'spec-option-value.create', 'SpecOptionValue', row.id, row);
+    return row;
+  }
+
+  @Patch('spec-option-values/:id')
+  @RequirePermissions('catalog.manage')
+  async updateSpecOptionValue(
+    @Param('id') id: string,
+    @Body() dto: Partial<SpecOptionValueDto>,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.specOptionValue.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option value not found.' });
+    if (dto.code && dto.code !== existing.code) {
+      await this.assertValueCodeUnique(dto.groupId ?? existing.groupId, dto.code, id);
+    }
+    const row = await this.prisma.specOptionValue.update({
+      where: { id },
+      data: {
+        ...dto,
+        colorReferenceId: dto.colorReferenceId === '' ? null : dto.colorReferenceId,
+        inventoryItemId: dto.inventoryItemId === '' ? null : dto.inventoryItemId,
+      },
+    });
+    await this.audit(user.id, 'spec-option-value.update', 'SpecOptionValue', id, row);
+    return row;
+  }
+
+  @Post('spec-option-values/:id/deactivate')
+  @RequirePermissions('catalog.manage')
+  async deactivateSpecOptionValue(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.specOptionValue.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option value not found.' });
+    const row = await this.prisma.specOptionValue.update({ where: { id }, data: { isActive: false } });
+    await this.audit(user.id, 'spec-option-value.deactivate', 'SpecOptionValue', id, null);
+    return row;
+  }
+
+  @Post('spec-option-values/:id/activate')
+  @RequirePermissions('catalog.manage')
+  async activateSpecOptionValue(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.specOptionValue.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Spec option value not found.' });
+    const row = await this.prisma.specOptionValue.update({ where: { id }, data: { isActive: true } });
+    await this.audit(user.id, 'spec-option-value.activate', 'SpecOptionValue', id, null);
+    return row;
   }
 
   // ── Units (SystemSetting JSON) ─────────────────────────────────────────────
@@ -1082,8 +1398,20 @@ export class CatalogController {
     return { data, meta: paginatedMeta(pageInfo.page, pageInfo.pageSize, totalItems) };
   }
 
+  private async assertValueCodeUnique(groupId: string, code: string, excludeId?: string) {
+    const existing = await this.prisma.specOptionValue.findFirst({
+      where: { groupId, code, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: 'DUPLICATE_CODE',
+        message: `code "${code}" already exists in this group.`,
+      });
+    }
+  }
+
   private async assertUnique(
-    model: 'productCategory' | 'product' | 'material' | 'fabric' | 'colorReference',
+    model: 'productCategory' | 'product' | 'material' | 'fabric' | 'colorReference' | 'specOptionGroup',
     field: string,
     value: string,
   ) {
@@ -1130,32 +1458,38 @@ export class CatalogController {
     return { materials };
   }
 
-  private normalizeCustomMeasurements(
+  private async normalizeCustomMeasurements(
     rows: CustomMeasurementDto[] | null | undefined,
-  ): Array<{
+  ): Promise<Array<{
     id: string;
     nameEn: string;
     nameAr: string;
     nameHe?: string;
     value: number | null;
     unit?: string;
-  }> | null {
+  }> | null> {
     if (rows == null) return null;
-    return rows
-      .filter((r) => r && String(r.nameEn ?? '').trim() && String(r.nameAr ?? '').trim())
-      .map((r, index) => {
+    const kept = rows.filter((r) => r && String(r.nameAr ?? '').trim());
+    return Promise.all(
+      kept.map(async (r, index) => {
         const unitRaw = String(r.unit ?? 'cm').trim().slice(0, 24);
         const unit = unitRaw || 'cm';
+        const nameAr = String(r.nameAr).trim();
+        const nameEn =
+          (await this.translation?.fillEnglishName(nameAr, r.nameEn)) ||
+          String(r.nameEn ?? '').trim() ||
+          nameAr;
         return {
           id: String(r.id || '').trim() || `m-${Date.now().toString(36)}-${index}`,
-          nameEn: String(r.nameEn).trim(),
-          nameAr: String(r.nameAr).trim(),
+          nameEn,
+          nameAr,
           ...(r.nameHe?.trim() ? { nameHe: r.nameHe.trim() } : {}),
           value:
             r.value != null && Number.isFinite(Number(r.value)) ? Number(r.value) : null,
           unit,
         };
-      });
+      }),
+    );
   }
 
   private async loadMaterialCosts(): Promise<MaterialCostMap> {

@@ -37,6 +37,7 @@ import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
 import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 import { attachMinimalWorkflowSnapshot } from './workflow-snapshot';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId, variantIdFieldsForProductId } from './variant-attach';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -692,6 +693,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -724,6 +726,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -818,6 +821,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         salesOrderLineId: line.id,
         customerId: input.customerId,
         productId: input.productId,
+        ...variantPoFieldsForProductId(opts.products, input.productId),
         productDescription: input.description,
         quantity: qty,
         status: input.poStatus ?? ProductionOrderStatus.IN_PRODUCTION,
@@ -1851,6 +1855,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           salesOrderLineId: base.built.lineId,
           customerId: balqis.id,
           productId: product.id,
+          ...variantPoFields(product),
           productDescription: `REPLACEMENT — ${ret.number}`,
           quantity: 1,
           status: ProductionOrderStatus.PLANNED,
@@ -2026,6 +2031,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           salesOrderId: pieceBase.built.soId,
           salesOrderLineId: pieceBase.built.lineId,
           productId: pieceBase.built.productId,
+          ...variantIdFieldsForProductId(opts.products, pieceBase.built.productId),
           productDesc: 'Sofa',
           state: ReturnPieceState.IN_PROGRESS,
           decision: ReturnPieceDecision.REPAIR,
@@ -2039,6 +2045,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           salesOrderId: pieceBase.built.soId,
           salesOrderLineId: pieceBase.built.lineId,
           productId: pieceBase.built.productId,
+          ...variantIdFieldsForProductId(opts.products, pieceBase.built.productId),
           productDesc: 'Chair',
           state: ReturnPieceState.IN_PROGRESS,
           decision: ReturnPieceDecision.REPLACEMENT,
@@ -2052,6 +2059,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
           salesOrderId: pieceBase.built.soId,
           salesOrderLineId: pieceBase.built.lineId,
           productId: pieceBase.built.productId,
+          ...variantIdFieldsForProductId(opts.products, pieceBase.built.productId),
           productDesc: 'Chair',
           state: ReturnPieceState.IN_PROGRESS,
           decision: ReturnPieceDecision.SCRAP_RECOVERY,
@@ -2097,6 +2105,7 @@ export async function seedPiece11ExceptionsReturnsExamples(
         salesOrderId: recoveryBase.built.soId,
         salesOrderLineId: recoveryBase.built.lineId,
         productId: recoveryBase.built.productId,
+        ...variantIdFieldsForProductId(opts.products, recoveryBase.built.productId),
         productDesc: product.nameEn,
         state: ReturnPieceState.IN_PROGRESS,
         decision: ReturnPieceDecision.SCRAP_RECOVERY,

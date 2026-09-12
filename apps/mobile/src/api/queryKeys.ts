@@ -16,10 +16,20 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.catalog.details(), id] as const,
     adminDetails: () => [...queryKeys.catalog.all, 'admin-detail'] as const,
     adminDetail: (id: string) => [...queryKeys.catalog.adminDetails(), id] as const,
-    dealerPrices: (productId: string) =>
-      [...queryKeys.catalog.all, 'dealer-prices', productId] as const,
+    dealerPrices: (productId: string, variantId?: string | null) =>
+      [...queryKeys.catalog.all, 'dealer-prices', productId, variantId ?? null] as const,
     previouslyOrdered: () => [...queryKeys.catalog.all, 'previously-ordered'] as const,
     productCategories: () => [...queryKeys.catalog.all, 'product-categories'] as const,
+    variants: (productId: string, filters: unknown = {}) =>
+      [...queryKeys.catalog.all, 'variants', productId, filters] as const,
+    variant: (productId: string, variantId: string) =>
+      [...queryKeys.catalog.all, 'variant', productId, variantId] as const,
+    specOptionGroups: (filters: unknown = {}) =>
+      [...queryKeys.catalog.all, 'spec-option-groups', filters] as const,
+    specOptionValues: (filters: unknown = {}) =>
+      [...queryKeys.catalog.all, 'spec-option-values', filters] as const,
+    fabrics: () => [...queryKeys.catalog.all, 'fabrics'] as const,
+    colors: () => [...queryKeys.catalog.all, 'colors'] as const,
     materials: (filters: { q?: string; categoryGroup?: string } = {}) =>
       [...queryKeys.catalog.all, 'materials', filters] as const,
   },
@@ -64,6 +74,12 @@ export const queryKeys = {
     purchasing: () => [...queryKeys.reports.all, 'purchasing'] as const,
     costOrders: (q: string) => [...queryKeys.reports.all, 'cost-orders', q] as const,
     costDossier: (id: string) => [...queryKeys.reports.all, 'cost-dossier', id] as const,
+    costProducts: (q: string) => [...queryKeys.reports.all, 'cost-products', q] as const,
+    costReturns: (q: string) => [...queryKeys.reports.all, 'cost-returns', q] as const,
+    costReturnDossier: (id: string) => [...queryKeys.reports.all, 'cost-return', id] as const,
+    costCoverage: () => [...queryKeys.reports.all, 'cost-coverage'] as const,
+    laborRates: () => [...queryKeys.reports.all, 'labor-rates'] as const,
+    laborActuals: (q: string) => [...queryKeys.reports.all, 'labor-actuals', q] as const,
   },
   salesOrders: {
     all: ['sales-orders'] as const,
@@ -312,8 +328,8 @@ export const queryKeys = {
       [...queryKeys.workflow.all, 'order', productionOrderId] as const,
     productConfig: (productId: string) =>
       [...queryKeys.workflow.all, 'product-config', productId] as const,
-    productionSetup: (productId: string) =>
-      [...queryKeys.workflow.all, 'production-setup', productId] as const,
+    productionSetup: (productId: string, variantId?: string | null) =>
+      [...queryKeys.workflow.all, 'production-setup', productId, variantId ?? null] as const,
   },
 } as const;
 

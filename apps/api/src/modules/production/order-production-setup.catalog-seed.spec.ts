@@ -96,6 +96,22 @@ describe('Phase C catalog seedFromCatalog', () => {
         inventoryTracking: 'PRODUCES_FINISHED',
       },
     ],
+    variants: [
+      {
+        id: 'v-std',
+        isDefault: true,
+        factoryNotesAr: 'لف بسيط',
+        factoryNotesEn: 'Simple wrap',
+        factoryNotesHe: null,
+        width: 180,
+        height: 90,
+        depth: 85,
+        seatHeight: null,
+        composition: null,
+        bomDefaults: { materials: [] },
+        options: [],
+      },
+    ],
   };
 
   function soLine(overrides: Record<string, unknown> = {}) {
@@ -368,6 +384,9 @@ describe('Phase C catalog seedFromCatalog', () => {
     const foam = created.find((m) => m.sku === 'FOAM-1');
     expect(Number(foam?.expectedQty)).toBe(2);
     expect(update[0].data.manufacturingComplexity).toBe(ManufacturingComplexity.STANDARD);
+    expect(update[0].data.factoryNotes).toContain('لف بسيط');
+    expect(update[0].data.instructionsAr).toBe('لف بسيط');
+    expect(update[0].data.instructionsEn).toBe('Simple wrap');
     expect(inventory.tryReserveForSalesOrder).not.toHaveBeenCalled();
     expect(workflowSnapshots.assignWorkflowToProductionOrder).not.toHaveBeenCalled();
     expect(prisma.productionTask.update).not.toHaveBeenCalled();
@@ -687,5 +706,43 @@ describe('Phase C catalog seedFromCatalog', () => {
     );
     expect(result.ok).toBe(true);
     expect(result.issues).toEqual([]);
+  });
+
+  it('seeds the foam option SKU from the ordered variant', async () => {
+    const product = {
+      ...catalogProduct,
+      variants: [
+        {
+          id: 'v-250',
+          isDefault: false,
+          workflowId: null,
+          composition: [{ labelEn: '2-seater', qty: 1 }],
+          options: [
+            {
+              specOptionValue: {
+                inventoryItemId: 'inv-foam35',
+                inventoryItem: {
+                  id: 'inv-foam35',
+                  sku: 'FOAM-35',
+                  nameEn: 'Foam 35',
+                  category: 'FOAM',
+                  unit: 'pcs',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const { service, prisma } = makeService({
+      soLine: soLine({ variantId: 'v-250', product }),
+    });
+    await service.seedFromCatalog('so-1', 'line-milano', staff);
+    const update = prisma.salesOrderLineSetup.update.mock.calls.find((c: any[]) =>
+      c[0]?.data?.materialRequirements,
+    );
+    const created = update[0].data.materialRequirements.create as Array<{ sku?: string }>;
+    expect(created.find((m) => m.sku === 'FOAM-35')).toBeTruthy();
+    expect(created.find((m) => m.sku === 'WOOD-1')).toBeTruthy();
   });
 });

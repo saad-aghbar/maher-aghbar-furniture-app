@@ -6,6 +6,8 @@ import {
   standardMeasurementsForProduct,
 } from './productMeasurements';
 import type { DealerRef } from './people';
+import { seedSpecOptionLibraries } from './spec-options';
+import { backfillDefaultVariants } from './backfill-default-variants';
 
 export type ProductRef = {
   id: string;
@@ -94,6 +96,7 @@ const COLORS = [
   { code: 'CLR-WHT', nameEn: 'Painted White', nameAr: 'أبيض مطلي', hex: '#F5F1EA' },
   { code: 'CLR-GRY', nameEn: 'Warm Grey', nameAr: 'رمادي دافئ', hex: '#8A857C' },
   { code: 'CLR-TEAK', nameEn: 'Teak', nameAr: 'تيك', hex: '#B8860B' },
+  { code: 'CLR-GOLD', nameEn: 'Gold', nameAr: 'ذهبي', hex: '#C9A227' },
 ];
 
 export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
@@ -160,6 +163,12 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
       data: { code: c.code, nameEn: c.nameEn, nameAr: c.nameAr, hex: c.hex },
     });
   }
+
+  const specOptions = await seedSpecOptionLibraries(prisma);
+  console.log(`  spec options: ${specOptions.groups} groups · ${specOptions.values} values`);
+
+  const variants = await backfillDefaultVariants(prisma);
+  console.log(`  default variants: ${variants.created} created`);
 
   for (const dealer of dealers) {
     const off = ['balqis', 'deadsea', 'nile'].includes(dealer.username) ? 0.06 : 0.1;

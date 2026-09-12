@@ -4,8 +4,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AIJobStatus, Locale, Prisma, RequestSource, RequestStatus } from '@maher/database';
-import type { ExtractionProvider, OcrProvider, SupportedLocale } from '@maher/integrations';
+import { AIJobStatus, DocumentVisibility, Locale, Prisma, RequestSource, RequestStatus } from '@maher/database';
+import type {
+  ExtractionProvider,
+  ExtractionResult,
+  OcrProvider,
+  SpecExtractionContext,
+  SupportedLocale,
+} from '@maher/integrations';
+import { constrainItemToLibrary, mergeExtractionConsensus } from '@maher/integrations';
 import { existsSync, promises as fs } from 'fs';
 import { join } from 'path';
 import { PrismaService } from '../../common/prisma.service';
@@ -24,6 +31,7 @@ import {
 } from './ai-intake.mapper';
 import { buildReviewFromJob, validateApprovePayload } from './ai-intake.review';
 import { NotificationsService } from '../notifications/notifications.service';
+import { buildHandwrittenSheetPdf } from './handwritten-sheet-pdf';
 
 function toLocale(lang: string | undefined): Locale {
   if (lang === 'ar') return Locale.ar;
@@ -714,6 +722,112 @@ export class AiIntakeService {
     }
   }
 
+  private uploadRoot() {
+    return process.env.LOCAL_UPLOAD_DIR
+      ? process.env.LOCAL_UPLOAD_DIR
+      : join(process.cwd(), '../../uploads');
+  }
+
+  private async loadSpecContext(): Promise<SpecExtractionContext> {
+    const [groups, products, variants] = await Promise.all([
+      this.prisma.specOptionGroup.findMany({
+        where: { isActive: true },
+        include: { values: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.prisma.product.findMany({
+        where: { isActive: true, archivedAt: null },
+        select: { id: true, sku: true, nameAr: true, nameEn: true },
+        take: 80,
+      }),
+      this.prisma.productVariant.findMany({
+        where: { isActive: true, archivedAt: null },
+        select: { id: true, productId: true, sku: true, nameAr: true, nameEn: true },
+        take: 120,
+      }),
+    ]);
+    return {
+      locale: 'ar',
+      optionGroups: groups.map((g) => ({
+        code: g.code,
+        values: g.values.map((v) => ({
+          code: v.code,
+          nameEn: v.nameEn,
+          nameAr: v.nameAr,
+          nameHe: v.nameHe,
+        })),
+      })),
+      products,
+      variants,
+    };
+  }
+
+  private async readStorageBuffer(storageKey: string): Promise<Buffer | null> {
+    const fullPath = join(this.uploadRoot(), storageKey);
+    if (existsSync(fullPath)) return fs.readFile(fullPath);
+    try {
+      const stream = await this.storage.getObjectStream(storageKey);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    } catch {
+      return null;
+    }
+  }
+
+  private isImageSource(mime?: string, storageKey?: string) {
+    if (mime?.startsWith('image/')) return true;
+    return Boolean(storageKey?.match(/\.(png|jpe?g|webp|gif|heic)$/i));
+  }
+
+  private async extractFromImage(
+    buffer: Buffer,
+    mime: string,
+    ctx: SpecExtractionContext,
+  ): Promise<ExtractionResult | null> {
+    if (!this.extract.extractSpecFromImage) return null;
+    const primary = await this.extract.extractSpecFromImage(buffer, mime, ctx);
+    const verifyModel = process.env.AI_VISION_MODEL_VERIFY;
+    if (!verifyModel) {
+      return {
+        ...primary,
+        items: (primary.items ?? []).map((row) => constrainItemToLibrary(row, ctx)),
+      };
+    }
+    const previous = process.env.AI_VISION_MODEL;
+    process.env.AI_VISION_MODEL = verifyModel;
+    try {
+      const secondary = await this.extract.extractSpecFromImage(buffer, mime, ctx);
+      return mergeExtractionConsensus(primary, secondary, ctx);
+    } finally {
+      if (previous === undefined) delete process.env.AI_VISION_MODEL;
+      else process.env.AI_VISION_MODEL = previous;
+    }
+  }
+
+  private async persistSheetPdf(jobId: string, image: Buffer, userId: string) {
+    const pdf = await buildHandwrittenSheetPdf(image);
+    const stored = await this.storage.putObject(
+      `handwritten-sheet-${jobId}.pdf`,
+      'application/pdf',
+      pdf,
+    );
+    await this.prisma.document.create({
+      data: {
+        fileName: 'handwritten-sheet.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: pdf.length,
+        storageKey: stored.key,
+        category: 'HANDWRITTEN_SHEET',
+        description: `AI_JOB:${jobId}`,
+        visibility: DocumentVisibility.INTERNAL,
+        uploadedById: userId,
+      },
+    });
+  }
+
   /**
    * Extract order fields from an upload for the dealer create-order form.
    * Does not create an RFQ — returns a preview payload the UI can merge into the form.
@@ -741,14 +855,40 @@ export class AiIntakeService {
     });
 
     try {
-      const originalText = await this.resolveSourceText({
-        storageKey: input.storageKey,
-        mimeHint: input.mimeHint,
-      });
-      const extracted = await this.extract.extractStructured(originalText, {
-        customerId: input.customerId,
-        targetLanguage: fromLocale(targetLanguage),
-      });
+      const ctx = await this.loadSpecContext();
+      const mime =
+        input.mimeHint ??
+        (input.storageKey.match(/\.(png|jpe?g|webp|gif)$/i)
+          ? `image/${input.storageKey.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg')}`
+          : 'application/octet-stream');
+      const buffer = await this.readStorageBuffer(input.storageKey);
+      let extracted: ExtractionResult | null = null;
+      if (buffer && this.isImageSource(mime, input.storageKey)) {
+        try {
+          extracted = await this.extractFromImage(buffer, mime, ctx);
+        } catch {
+          extracted = null;
+        }
+        try {
+          await this.persistSheetPdf(job.id, buffer, input.userId);
+        } catch {
+          // Keep extraction even if the A4 record cannot be written.
+        }
+      }
+      if (!extracted?.items?.length) {
+        const originalText = await this.resolveSourceText({
+          storageKey: input.storageKey,
+          mimeHint: input.mimeHint,
+        });
+        extracted = await this.extract.extractStructured(originalText, {
+          customerId: input.customerId,
+          targetLanguage: fromLocale(targetLanguage),
+        });
+        extracted = {
+          ...extracted,
+          items: (extracted.items ?? []).map((row) => constrainItemToLibrary(row, ctx)),
+        };
+      }
 
       const jobWithFields = await this.prisma.aIExtractionJob.update({
         where: { id: job.id },
@@ -765,7 +905,9 @@ export class AiIntakeService {
       });
 
       const fieldMap = fieldMapFromJobFields(jobWithFields.fields);
-      const lineItems = resolveLineItems(jobWithFields.fields);
+      const lineItems = extracted.items?.length
+        ? extracted.items
+        : resolveLineItems(jobWithFields.fields);
       const primary = lineItems[0];
 
       const preview = {
@@ -796,10 +938,19 @@ export class AiIntakeService {
           height: item.height ?? undefined,
           depth: item.depth ?? undefined,
           notes: item.notes ?? undefined,
+          variantLabel: item.variantLabel ?? undefined,
+          orientation: item.orientation ?? undefined,
+          woodType: item.woodType ?? undefined,
+          woodColor: item.woodColor ?? undefined,
+          foamDensity: item.foamDensity ?? undefined,
+          finish: item.finish ?? undefined,
+          optionCodes: item.optionCodes ?? undefined,
+          unrecognizedOptions: item.unrecognizedOptions ?? undefined,
+          confidence: item.confidence ?? 0.8,
+          lowConfidenceFields: item.lowConfidenceFields ?? [],
         })),
       };
 
-      // Prefer first line-item notes as fabric description when it looks like fabric detail
       if (primary?.notes && /fabric/i.test(primary.notes) && !preview.fabricDescription) {
         preview.fabricDescription = primary.notes;
       }
@@ -813,6 +964,7 @@ export class AiIntakeService {
           newValues: {
             storageKey: input.storageKey,
             productName: preview.productName ?? null,
+            itemCount: preview.items.length,
           } as Prisma.InputJsonValue,
         },
       });
@@ -840,6 +992,16 @@ export class AiIntakeService {
     }
     const updated = await this.prisma.aIExtractionJob.update({
       where: { id: jobId },
+      data: { requestId },
+    });
+    await this.prisma.document.updateMany({
+      where: {
+        requestId: null,
+        OR: [
+          { description: `AI_JOB:${jobId}` },
+          ...(job.storageKey ? [{ storageKey: job.storageKey }] : []),
+        ],
+      },
       data: { requestId },
     });
     await this.prisma.auditEvent.create({

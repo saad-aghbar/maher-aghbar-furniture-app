@@ -56,6 +56,8 @@
   "mfgCostStatusInProgress": "Cost to date",
   "mfgCostStatusIncomplete": "Incomplete valuation",
   "mfgCostStatusEstimatedOnly": "Estimated only",
+  "mfgCostLabor": "Labor",
+  "mfgCostAllInHint": "Materials + labor",
   "autoCalculated": "Auto-calculated",
   "fromInventoryCosts": "Auto from inventory material prices",
   "profit": "Profit",

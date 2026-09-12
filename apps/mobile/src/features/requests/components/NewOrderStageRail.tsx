@@ -22,10 +22,11 @@ type NewOrderStageRailProps = {
 };
 
 export function NewOrderStageRail({ step }: NewOrderStageRailProps) {
-  const { t, isRTL } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const dealer = dealerTokens(colors);
   const reduce = useReducedMotion();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const progress = useSharedValue(stageProgress(step));
 
   useEffect(() => {
@@ -41,10 +42,9 @@ export function NewOrderStageRail({ step }: NewOrderStageRailProps) {
   }));
 
   const labels = [
-    t('mobile.newOrder.steps.product'),
-    t('mobile.newOrder.steps.details'),
-    t('mobile.newOrder.steps.customer'),
-    t('mobile.newOrder.steps.attachments'),
+    t('mobile.newOrder.steps.items'),
+    t('mobile.newOrder.steps.delivery'),
+    t('mobile.newOrder.steps.review'),
   ];
 
   return (
@@ -105,7 +105,7 @@ export function NewOrderStageRail({ step }: NewOrderStageRailProps) {
                 </View>
                 <AppText
                   variant="caption"
-                  weight={state === 'active' ? 'semibold' : 'medium'}
+                  weight={state === 'active' ? titleWeight : 'medium'}
                   numberOfLines={1}
                   style={{
                     color: state === 'upcoming' ? colors.textMuted : colors.brand,

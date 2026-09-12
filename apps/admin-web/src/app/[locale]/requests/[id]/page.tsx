@@ -50,6 +50,20 @@ interface RequestItem {
   width?: number | string | null;
   height?: number | string | null;
   depth?: number | string | null;
+  variantLabel?: string | null;
+  woodType?: string | null;
+  woodColor?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
+  orientation?: string | null;
+  fabrics?: Array<{ type?: string | null; color?: string | null; role?: string | null }> | null;
+  provenance?: Array<{
+    key: string;
+    ai: string | null;
+    dealer: string | null;
+    source: string;
+  }> | null;
 }
 
 interface RequestDetail {
@@ -61,6 +75,7 @@ interface RequestDetail {
   externalOrderNumber?: string | null;
   contactName?: string | null;
   deliveryAddress?: string | null;
+  endCustomerName?: string | null;
   requiredDeliveryDate?: string | null;
   offeredDeliveryDate?: string | null;
   notes?: string | null;
@@ -76,8 +91,16 @@ interface RequestDetail {
     nameHe?: string | null;
   } | null;
   items: RequestItem[];
-  documents?: Array<{ id: string; fileName: string }>;
+  documents?: Array<{
+    id: string;
+    fileName: string;
+    mimeType?: string | null;
+    category?: string | null;
+    downloadPath?: string | null;
+  }>;
   quotations?: Array<{ id: string; number: string; status: string }>;
+  aiJobs?: Array<{ id: string; number: string; status: string }>;
+  reviewHistory?: Array<{ at: string; action: string; message?: string | null }>;
 }
 
 function localDealerMinimumRequestYmd(now = new Date()): string {
@@ -266,6 +289,24 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const verifyMutation = useMutation({
+    mutationFn: (body: {
+      itemId?: string;
+      action: 'CONFIRM' | 'CORRECT';
+      message?: string;
+      fields?: Record<string, string>;
+    }) =>
+      apiFetch(`/api/v1/requests/${params.id}/verify-spec`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => {
+      setMessage(tc('confirmSpec'));
+      await qc.invalidateQueries({ queryKey: ['admin-rfq', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   const uploadMutation = useMutation({
     mutationFn: async (args: { file?: File; url?: string }) => {
       const qs = `category=RFQ_ATTACHMENT&requestId=${params.id}`;
@@ -417,6 +458,14 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             />
           </div>
           <div>
+            <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('endCustomerName')}</dt>
+            <dd className="font-medium">{data.endCustomerName?.trim() || '—'}</dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('deliveryAddress')}</dt>
+            <dd className="font-medium">{data.deliveryAddress?.trim() || '—'}</dd>
+          </div>
+          <div>
             <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('requestedDelivery')}</dt>
             <dd className="font-medium" dir="ltr">
               {data.requiredDeliveryDate ? String(data.requiredDeliveryDate).slice(0, 10) : '—'}
@@ -523,6 +572,47 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       </Card>
       </MotionSection>
 
+      {(data.documents ?? []).some(
+        (d) =>
+          (d.category ?? '').includes('HANDWRITTEN') ||
+          (d.fileName ?? '').toLowerCase().includes('handwritten') ||
+          (d.mimeType ?? '').startsWith('image/'),
+      ) ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card title={tc('rfqSheetRecord')}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(data.documents ?? [])
+                .filter(
+                  (d) =>
+                    (d.category ?? '').includes('HANDWRITTEN') ||
+                    (d.fileName ?? '').toLowerCase().includes('handwritten') ||
+                    (d.mimeType ?? '').startsWith('image/') ||
+                    (d.mimeType ?? '').includes('pdf'),
+                )
+                .map((d) => (
+                  <div key={d.id} className="space-y-2">
+                    {(d.mimeType ?? '').startsWith('image/') && d.downloadPath ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`${API_URL}${d.downloadPath}`}
+                        alt={d.fileName}
+                        className="max-h-64 w-full rounded border border-[var(--maher-border)] object-contain"
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      className="text-sm underline"
+                      onClick={() => void openDocument(d.id)}
+                    >
+                      {d.fileName}
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </Card>
+        </MotionSection>
+      ) : null}
+
       <MotionSection className="maher-form-section" as="div">
       <Card title={tc('lineItems')} padded={data.status === 'DRAFT'}>
         {data.status === 'DRAFT' ? (
@@ -550,6 +640,11 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <span>{item.productName}</span>
+                        {item.variantLabel ? (
+                          <span className="text-sm text-[var(--maher-text-secondary)]">
+                            {item.variantLabel}
+                          </span>
+                        ) : null}
                         {complexity ? (
                           <Badge
                             variant={
@@ -568,7 +663,63 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                     <TableNumericCell>{String(item.quantity)}</TableNumericCell>
                     <TableCell>{item.notes || item.description || '—'}</TableCell>
                     <TableCell>
-                      {[item.material, item.fabric, item.color].filter(Boolean).join(' / ') || '—'}
+                      {[
+                        item.variantLabel,
+                        [item.width, item.height, item.depth].filter((n) => n != null && n !== '').join('×') || null,
+                        item.orientation,
+                        item.woodType,
+                        item.foamDensity,
+                        item.finish,
+                        item.material,
+                        item.fabric,
+                        item.color,
+                        ...(item.fabrics ?? []).map((row) =>
+                          [row.type, row.color, row.role].filter(Boolean).join(' · '),
+                        ),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || '—'}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          loading={verifyMutation.isPending}
+                          onClick={() =>
+                            verifyMutation.mutate({ itemId: item.id, action: 'CONFIRM' })
+                          }
+                        >
+                          {tc('confirmSpec')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          loading={verifyMutation.isPending}
+                          onClick={() =>
+                            verifyMutation.mutate({
+                              itemId: item.id,
+                              action: 'CORRECT',
+                              message: [
+                                item.variantLabel,
+                                [item.width, item.height, item.depth].filter(Boolean).join('×'),
+                              ]
+                                .filter(Boolean)
+                                .join(' · '),
+                              fields: {
+                                width: String(item.width ?? ''),
+                                height: String(item.height ?? ''),
+                                depth: String(item.depth ?? ''),
+                              },
+                            })
+                          }
+                        >
+                          {tc('correctSpec')}
+                        </Button>
+                      </div>
+                      {(item.provenance ?? [])
+                        .filter((row) => row.source !== 'missing')
+                        .map((row) => (
+                          <div key={row.key} className="mt-1 text-sm text-[var(--maher-text-secondary)]">
+                            {row.key}: {tc('aiValue')} {row.ai ?? '—'} · {tc('dealerValue')} {row.dealer ?? '—'}
+                          </div>
+                        ))}
                     </TableCell>
                   </TableRow>
                 );
@@ -597,9 +748,23 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             }}
           />
           {(data.documents?.length ?? 0) > 0 ? (
-            <ul className="space-y-1 text-sm">
-              {data.documents!.map((d) => (
-                <li key={d.id}>
+            <ul className="space-y-2 text-sm">
+              {[...data.documents!].sort((a, b) => {
+                const pin = (d: { category?: string | null; fileName?: string }) =>
+                  (d.category ?? '').includes('HANDWRITTEN') || (d.fileName ?? '').includes('handwritten')
+                    ? 0
+                    : 1;
+                return pin(a) - pin(b);
+              }).map((d) => (
+                <li key={d.id} className="space-y-1">
+                  {(d.mimeType ?? '').startsWith('image/') && d.downloadPath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`${API_URL}${d.downloadPath}`}
+                      alt={d.fileName}
+                      className="max-h-56 rounded border border-[var(--maher-border)]"
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="font-medium text-brand hover:underline"

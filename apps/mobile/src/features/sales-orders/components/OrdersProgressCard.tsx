@@ -1,10 +1,11 @@
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { statusLabel as i18nStatusLabel } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
+import { StatusBadge } from '@/components/badges/StatusBadge';
 import { DeskCard, ProductThumb } from '@/components/desk';
-import { DirectionalIcon } from '@/components/DirectionalIcon';
-import { alignStart, useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import {
@@ -16,7 +17,10 @@ import type { JourneyAttention, JourneyPrimaryCta, JourneyReadiness } from '../a
 import { buildLaneCardPresentation } from '../laneOrderCard';
 import { dealerLifecycleCardCopy } from '../dealerLifecycleCardCopy';
 import { orderProgressChipFlags } from '../ordersReturnedLens';
+import { selectOrderStationStub } from '../selectDealerOrders';
+import { OrderStationStub } from './OrderStationStub';
 import { resolveOrderMediaUri } from './OrderCardMedia';
+import { orderBoardShadow } from './orderFloorStyle';
 
 export type OrdersProgressCardModel = {
   id: string;
@@ -109,8 +113,8 @@ export function OrdersProgressCard({
   onPrimaryCta,
   layout = 'stack',
 }: Props) {
-  const { t, formatCurrency, formatDate, formatDateTime, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, formatDate, formatDateTime, formatNumber, isRTL, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   if (variant === 'admin') {
@@ -132,10 +136,7 @@ export function OrdersProgressCard({
   }
 
   const pct = Math.max(0, Math.min(100, Math.round(order.progressPercent || 0)));
-  const urgent =
-    (order.priority ?? '').toUpperCase() === 'URGENT' ||
-    (order.priority ?? '').toUpperCase() === 'HIGH';
-  const accent = urgent ? colors.warning : colors.brand;
+  const stub = selectOrderStationStub(order);
   const lifecycleCopy = dealerLifecycleCardCopy(
     {
       status: order.status,
@@ -147,149 +148,269 @@ export function OrdersProgressCard({
     formatDate,
   );
   const showConfirm = Boolean(lifecycleCopy?.confirmCta && onConfirmReceipt);
+  const accent = showConfirm ? colors.warning : colors.brand;
+  const qtyLabel =
+    order.quantity != null && Number.isFinite(Number(order.quantity))
+      ? String(order.quantity)
+      : '—';
+  const amountLabel =
+    order.sellerPrice != null
+      ? `${formatNumber(order.sellerPrice)} ₪`
+      : '—';
+  const a11y = `${order.number} ${order.title} ${stub.progressLabel}`;
 
   return (
-    <DeskCard
-      accent={accent}
+    <AnimatedPressable
+      variant="card"
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
       onPress={() => {
         void haptics.selection();
         onPress();
       }}
-      accessibilityLabel={`${order.number} ${order.title} ${pct}%`}
-      style={{ marginBottom: theme.spacing.sm }}
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surface,
+        overflow: 'hidden',
+        marginBottom: theme.spacing.sm,
+        ...orderBoardShadow(colorScheme),
+      }}
     >
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: accent,
+          opacity: showConfirm ? 0.9 : 0.55,
+        }}
+      />
+
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          gap: theme.spacing.md,
-          alignItems: 'flex-start',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.sm + 2,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <ProductThumb
-          uri={resolveOrderMediaUri(order.imageUrl)}
-          size={MEDIA}
-          radius={theme.radius.lg}
+        <StatusBadge
+          status={order.status}
+          label={i18nStatusLabel(locale, order.status)}
+          dot
         />
-        <View
-          style={{
-            flex: 1,
-            minWidth: 0,
-            gap: 4,
-            alignItems: alignStart(isRTL),
-          }}
-        >
-          <AppText variant="label" weight={titleWeight} numberOfLines={2} style={{ width: '100%' }}>
-            {order.title}
-          </AppText>
-          <AppText
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            dir={order.kind === 'rfq' ? 'auto' : 'ltr'}
-            style={{ letterSpacing: 0.2 }}
-          >
-            {order.kind === 'rfq' ? t('mobile.orders.rfqLabel') : order.number}
-          </AppText>
-          {order.sellerPrice != null ? (
-            <AppText variant="caption" color="muted" dir="ltr" style={{ width: '100%' }}>
-              {formatCurrency(order.sellerPrice)}
-            </AppText>
-          ) : null}
-          {lifecycleCopy?.summary ? (
-            <AppText variant="caption" color="secondary" style={{ width: '100%' }}>
-              {lifecycleCopy.summary}
-            </AppText>
-          ) : order.deliveryDate ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
-              {formatDate(order.deliveryDate)}
-            </AppText>
-          ) : null}
-          {lifecycleCopy?.lifecycleStatus ? (
-            <AppText variant="caption" weight="medium" style={{ color: colors.brand }}>
-              {lifecycleCopy.lifecycleStatus}
-            </AppText>
-          ) : null}
-        </View>
-
-        <View
-          style={{
-            alignSelf: 'center',
-            width: 22,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <DirectionalIcon>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </DirectionalIcon>
-        </View>
+        <AppText variant="caption" color="brand" weight="semibold">
+          {t('common.details')}
+        </AppText>
       </View>
 
-      {order.kind !== 'rfq' ? (
+      <View
+        style={{
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+        }}
+      >
         <View
           style={{
-            marginTop: theme.spacing.sm,
-            paddingTop: theme.spacing.sm,
-            borderTopWidth: 1,
-            borderTopColor: colors.borderMuted,
-            gap: theme.spacing.xs,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'stretch',
+            gap: theme.spacing.md,
           }}
         >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: theme.spacing.sm,
-            }}
-          >
-            <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flex: 1 }}>
-              {order.progressLabel?.trim() || t('mobile.orders.progress')}
+          <ProductThumb
+            uri={resolveOrderMediaUri(order.imageUrl)}
+            size={64}
+            radius={theme.radius.md}
+          />
+          <View style={{ flex: 1, minWidth: 0, gap: 4, justifyContent: 'center' }}>
+            <AppText
+              weight={titleWeight}
+              numberOfLines={2}
+              style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 16 }}
+            >
+              {order.title}
             </AppText>
-            <AppText variant="caption" weight="semibold" style={{ color: accent }} dir="ltr">
-              {`${pct}%`}
+            <AppText
+              variant="caption"
+              color="muted"
+              dir={order.kind === 'rfq' ? 'auto' : 'ltr'}
+              numberOfLines={1}
+            >
+              {order.kind === 'rfq' ? t('mobile.orders.rfqLabel') : order.number}
             </AppText>
           </View>
+          <OrderStationStub kind={stub.kind} progressLabel={stub.progressLabel} />
+        </View>
+
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <DealerTicketInset
+            label={t('mobile.orders.qty')}
+            value={qtyLabel}
+            isRTL={isRTL}
+            locale={locale}
+            ltr
+          />
+          <DealerTicketInset
+            label={t('mobile.orders.amount')}
+            value={amountLabel}
+            isRTL={isRTL}
+            locale={locale}
+            ltr
+          />
+        </View>
+
+        {order.kind !== 'rfq' && onProgressPress ? (
           <WorkflowProgressHit
             progressPercent={pct}
             height={5}
-            accessibilityLabel={
-              onProgressPress ? t('mobile.productionFlow.openWorkflow') : undefined
-            }
-            onPress={
-              onProgressPress
-                ? () => {
-                    void haptics.selection();
-                    onProgressPress();
-                  }
-                : undefined
-            }
+            accessibilityLabel={t('mobile.productionFlow.openWorkflow')}
+            onPress={() => {
+              void haptics.selection();
+              onProgressPress();
+            }}
           />
-          {showConfirm ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${t('lifecycle.confirmReceived')} ${order.number}`}
-              onPress={() => {
-                void haptics.selection();
-                onConfirmReceipt?.();
-              }}
+        ) : null}
+      </View>
+
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.sm + 2,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          backgroundColor: showConfirm ? colors.warningSoft : colors.surfaceSecondary,
+        }}
+      >
+        {showConfirm ? (
+          <AnimatedPressable
+            variant="button"
+            accessibilityRole="button"
+            accessibilityLabel={`${t('lifecycle.confirmReceived')} ${order.number}`}
+            onPress={() => {
+              void haptics.selection();
+              onConfirmReceipt?.();
+            }}
+            style={{ flex: 1 }}
+          >
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              numberOfLines={2}
               style={{
-                marginTop: theme.spacing.sm,
-                alignSelf: isRTL ? 'flex-end' : 'flex-start',
-                paddingHorizontal: theme.spacing.md,
-                paddingVertical: theme.spacing.sm,
-                borderRadius: theme.radius.lg,
-                backgroundColor: colors.brand,
+                color: colors.warning,
+                textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              <AppText variant="caption" weight="semibold" style={{ color: colors.onBrand }}>
-                {t('lifecycle.confirmWhenReceived')}
-              </AppText>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-    </DeskCard>
+              {t('lifecycle.confirmWhenReceived')}
+            </AppText>
+          </AnimatedPressable>
+        ) : (
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            numberOfLines={2}
+            style={{
+              flex: 1,
+              color: colors.textSecondary,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          >
+            {lifecycleCopy?.lifecycleStatus ||
+              order.progressLabel?.trim() ||
+              t('mobile.orders.viewOrder')}
+          </AppText>
+        )}
+        <View
+          style={{
+            width: 18,
+            height: 3,
+            borderRadius: 2,
+            backgroundColor: showConfirm ? colors.warning : colors.brand,
+          }}
+        />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+function DealerTicketInset({
+  label,
+  value,
+  isRTL,
+  locale,
+  ltr,
+}: {
+  label: string;
+  value: string;
+  isRTL: boolean;
+  locale: string;
+  ltr?: boolean;
+}) {
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  return (
+    <View
+      style={{
+        flex: 1,
+        minWidth: 0,
+        gap: 4,
+        padding: theme.spacing.md,
+        borderRadius: theme.radius.lg,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.45,
+          fontSize: 10,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        variant="caption"
+        weight={titleWeight}
+        dir={ltr ? 'ltr' : undefined}
+        numberOfLines={2}
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {value}
+      </AppText>
+    </View>
   );
 }
 

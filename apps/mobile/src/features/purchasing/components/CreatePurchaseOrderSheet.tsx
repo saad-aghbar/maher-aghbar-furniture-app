@@ -50,7 +50,7 @@ export function CreatePurchaseOrderSheet({
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(height);
+  const pickerHeights = pickerViewportHeights(Math.round(height));
   const sheetHeight = pickerHeights.sheet;
   const warehouseListHeight = pickerHeights.warehouse;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';

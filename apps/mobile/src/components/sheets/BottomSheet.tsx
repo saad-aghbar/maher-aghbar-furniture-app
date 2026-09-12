@@ -36,6 +36,18 @@ const SHEET_HEIGHT_SPRING = {
   overshootClamping: true,
 } as const;
 
+/** Default sheet cap: ~70% of the window. Keyboard-open shrinks the cap. */
+export function resolveSheetHeightCap(opts: {
+  windowHeight: number;
+  maxHeight?: number;
+  keyboardHeight?: number;
+}): number {
+  const cap = opts.maxHeight ?? Math.round(opts.windowHeight * 0.7);
+  const keyboardHeight = opts.keyboardHeight ?? 0;
+  if (keyboardHeight <= 0) return cap;
+  return Math.min(cap, Math.max(240, opts.windowHeight - keyboardHeight));
+}
+
 type BottomSheetProps = {
   open: boolean;
   onClose: () => void;
@@ -93,7 +105,20 @@ export function BottomSheet({
   const { isScanning } = useCodeScannerState();
   const { isOpen: isAccessoryCamera } = useAccessoryCameraState();
   const { isOpen: isLocationMap } = useLocationMapVisibility();
-  const { isOpen: isOverlayYield, setOpen: setOverlayYield } = useSheetOverlayYield();
+  const { isOpen: isOverlayYield, acquire, release } = useSheetOverlayYield();
+  const yieldHeldRef = useRef(false);
+
+  const acquireYield = useCallback(() => {
+    if (yieldHeldRef.current) return;
+    yieldHeldRef.current = true;
+    acquire();
+  }, [acquire]);
+
+  const releaseYield = useCallback(() => {
+    if (!yieldHeldRef.current) return;
+    yieldHeldRef.current = false;
+    release();
+  }, [release]);
 
   const closeMs = theme.motion.duration.slow + 40;
 
@@ -141,11 +166,15 @@ export function BottomSheet({
     [expandedHeight, insets.top, windowH],
   );
 
-  const heightCap = useMemo(() => {
-    const cap = maxHeight ?? Math.round(windowH * 0.7);
-    if (keyboardHeight <= 0) return cap;
-    return Math.min(cap, Math.max(240, windowH - keyboardHeight));
-  }, [maxHeight, keyboardHeight, windowH]);
+  const heightCap = useMemo(
+    () =>
+      resolveSheetHeightCap({
+        windowHeight: windowH,
+        maxHeight,
+        keyboardHeight,
+      }),
+    [maxHeight, keyboardHeight, windowH],
+  );
 
   const [animHeight, setAnimHeight] = useState(() => Math.min(320, heightCap));
 
@@ -187,7 +216,7 @@ export function BottomSheet({
       dragY.value = 0;
 
       if (overlay) {
-        setOverlayYield(true);
+        acquireYield();
         setOverlayModalVisible(false);
         const t = setTimeout(() => {
           setOverlayModalVisible(true);
@@ -207,7 +236,7 @@ export function BottomSheet({
       expandedSV.value = 0;
       if (overlay) {
         setOverlayModalVisible(false);
-        setOverlayYield(false);
+        releaseYield();
       }
       if (wasOpenRef.current) {
         wasOpenRef.current = false;
@@ -219,7 +248,13 @@ export function BottomSheet({
       }
     }, closeMs);
     return () => clearTimeout(t);
-  }, [open, overlay, closeMs, setOverlayYield, expandedSV, dragY]);
+  }, [open, overlay, closeMs, acquireYield, releaseYield, expandedSV, dragY]);
+
+  useEffect(() => {
+    return () => {
+      releaseYield();
+    };
+  }, [releaseYield]);
 
   const wasYieldingRef = useRef(false);
   useEffect(() => {
@@ -474,6 +509,7 @@ export function BottomSheet({
             dragging={dragging}
           >
             <Animated.View
+              testID="bottom-sheet-panel"
               accessibilityViewIsModal
               onLayout={fitContent && !expanded ? onSheetLayout : undefined}
               style={[
@@ -532,7 +568,10 @@ export function BottomSheet({
                   ) : null}
                 </Animated.View>
               </GestureDetector>
-              <View style={expandable || !fitContent ? styles.fillBody : styles.fitBody}>
+              <View
+                testID="bottom-sheet-body"
+                style={expandable || !fitContent ? styles.fillBody : styles.fitBody}
+              >
                 {children}
               </View>
             </Animated.View>

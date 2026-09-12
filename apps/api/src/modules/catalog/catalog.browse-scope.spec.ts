@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import type { AuthUser } from '@maher/types';
 import { CatalogController } from './catalog.controller';
 import type { PrismaService } from '../../common/prisma.service';
@@ -87,6 +88,7 @@ describe('CatalogController.browseProducts scope', () => {
     const prisma = {
       product: { count, findMany },
       dealerPrice: { findMany: dealerPriceFindMany },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction,
     };
 
@@ -94,6 +96,8 @@ describe('CatalogController.browseProducts scope', () => {
     const controller = new CatalogController(
       prisma as unknown as PrismaService,
       sequences,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
     );
     return { controller, dealerPriceFindMany, findMany };
   }
@@ -122,14 +126,17 @@ describe('CatalogController.browseProducts scope', () => {
       dealerPrice: {
         findMany: jest.fn().mockImplementation(async (args: { where: { customerId: string } }) => {
           expect(args.where.customerId).toBe('customer-a');
-          return [{ productId: 'p1', customerId: 'customer-a', price: 850, currency: 'ILS' }];
+          return [{ productId: 'p1', customerId: 'customer-a', variantId: null, price: 850, currency: 'ILS' }];
         }),
       },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
     };
     const ctrl = new CatalogController(
       prismaDealerOnly as unknown as PrismaService,
       { next: jest.fn() } as never,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
     );
     const result = await ctrl.browseProducts({ page: 1, pageSize: 20 } as never, dealerA);
     const row = result.data[0] as Record<string, unknown>;
@@ -150,14 +157,17 @@ describe('CatalogController.browseProducts scope', () => {
       },
       dealerPrice: {
         findMany: jest.fn().mockResolvedValue([
-          { productId: 'p1', customerId: 'customer-a', price: 850, currency: 'ILS' },
+          { productId: 'p1', customerId: 'customer-a', variantId: null, price: 850, currency: 'ILS' },
         ]),
       },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
     };
     const ctrl = new CatalogController(
       prisma as unknown as PrismaService,
       { next: jest.fn() } as never,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
     );
     const result = await ctrl.browseProducts({ page: 1, pageSize: 20 } as never, dealerA);
     const row = result.data[0] as unknown as { price: number };
@@ -215,54 +225,76 @@ describe('CatalogController.browseProductById scope', () => {
   };
 
   it('returns dealer-scoped price and strips costs for dealer', async () => {
-    const findUnique = jest.fn().mockResolvedValue({
-      productId: 'p1',
-      customerId: 'customer-a',
-      price: 850,
-      currency: 'ILS',
-    });
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        productId: 'p1',
+        customerId: 'customer-a',
+        variantId: null,
+        price: 850,
+        currency: 'ILS',
+      },
+    ]);
     const prisma = {
       product: {
         findFirst: jest.fn().mockResolvedValue(productRow),
       },
-      dealerPrice: { findUnique },
+      productVariant: { findFirst: jest.fn().mockResolvedValue({ id: 'v-std', basePrice: 900 }) },
+      dealerPrice: { findMany },
     };
     const ctrl = new CatalogController(
       prisma as unknown as PrismaService,
       { next: jest.fn() } as never,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
     );
     const result = (await ctrl.browseProductById('p1', dealerA)) as Record<string, unknown>;
     expect(result.price).toBe(850);
     expect(result.dealerPrice).toBe(850);
     expect(result.description).toBe('Comfortable sofa');
     assertNoDealerLeaks(result);
-    expect(findUnique).toHaveBeenCalledWith({
+    expect(findMany).toHaveBeenCalledWith({
       where: {
-        customerId_productId: {
-          customerId: 'customer-a',
-          productId: 'p1',
-        },
+        customerId: 'customer-a',
+        productId: 'p1',
       },
     });
   });
 
   it('never loads another dealer’s price for detail', async () => {
-    const findUnique = jest.fn().mockImplementation(async (args: {
-      where: { customerId_productId: { customerId: string } };
+    const findMany = jest.fn().mockImplementation(async (args: {
+      where: { customerId: string };
     }) => {
-      expect(args.where.customerId_productId.customerId).toBe('customer-a');
+      expect(args.where.customerId).toBe('customer-a');
       expect(JSON.stringify(args)).not.toContain('customer-b');
-      return { price: 850, currency: 'ILS' };
+      return [{ price: 850, currency: 'ILS', variantId: null, productId: 'p1' }];
     });
     const prisma = {
       product: { findFirst: jest.fn().mockResolvedValue(productRow) },
-      dealerPrice: { findUnique },
+      productVariant: { findFirst: jest.fn().mockResolvedValue({ id: 'v-std', basePrice: 900 }) },
+      dealerPrice: { findMany },
     };
     const ctrl = new CatalogController(
       prisma as unknown as PrismaService,
       { next: jest.fn() } as never,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
     );
     await ctrl.browseProductById('p1', dealerA);
-    expect(findUnique).toHaveBeenCalled();
+    expect(findMany).toHaveBeenCalled();
+  });
+
+  it('hides products with no active variant from dealers', async () => {
+    const prisma = {
+      product: { findFirst: jest.fn().mockResolvedValue(productRow) },
+      productVariant: { findFirst: jest.fn().mockResolvedValue(null) },
+      dealerPrice: { findMany: jest.fn() },
+    };
+    const ctrl = new CatalogController(
+      prisma as unknown as PrismaService,
+      { next: jest.fn() } as never,
+      { ensureDefaultVariant: jest.fn(), syncDefaultVariantFromProduct: jest.fn() } as never,
+      { createProductFromOrderLine: jest.fn() } as never,
+    );
+    await expect(ctrl.browseProductById('p1', dealerA)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

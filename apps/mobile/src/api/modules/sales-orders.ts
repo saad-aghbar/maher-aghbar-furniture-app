@@ -286,6 +286,16 @@ export type SalesOrderLineItem = {
   finish?: string | null;
   accessories?: string | null;
   notes?: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
+};
+
+export type SalesOrderLine = {
+  id: string;
+  description?: string | null;
+  quantity?: number | string | null;
+  variantLabel?: string | null;
 };
 
 export type SalesOrderDetail = {
@@ -336,6 +346,10 @@ export type SalesOrderDetail = {
     incomplete?: boolean;
     estimatedTotal?: number | null;
     actualTotal?: number | null;
+    estimatedMaterials?: number | null;
+    actualMaterials?: number | null;
+    estimatedLabor?: number | null;
+    actualLabor?: number | null;
     varianceCost?: number | null;
     variancePct?: number | null;
     scrapCost?: number | null;
@@ -371,12 +385,24 @@ export type SalesOrderDetail = {
     documents?: SalesOrderDocument[];
   } | null;
   orderedItems?: SalesOrderLineItem[];
+  lines?: SalesOrderLine[];
   productionOrders?: {
     id: string;
     number: string;
     status: string;
     progressPercent?: number | null;
     progressLabel?: string;
+    salesOrderLineId?: string | null;
+    variantLabel?: string | null;
+    quantity?: number | string | null;
+    workflow?: {
+      id?: string;
+      code?: string | null;
+      nameEn?: string | null;
+      nameAr?: string | null;
+      nameHe?: string | null;
+    } | null;
+    currentStageCode?: string | null;
     stages?: SalesOrderStage[];
     photos?: SalesOrderDocument[];
   }[];
@@ -416,6 +442,15 @@ export type SalesOrderDetail = {
   /** Piece 2: setup released; floor still needs worker assignment (pre–Release to factory). */
   workerAssignmentRequired?: boolean;
   productionSetupStatus?: string | null;
+  productionSetup?: {
+    id?: string;
+    status?: string;
+    releasedAt?: string | null;
+    lines?: Array<{
+      id: string;
+      salesOrderLineId: string;
+    }>;
+  } | null;
   /** Worst line complexity: STANDARD | MODIFIED | CUSTOM */
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
   /** Hard Preparing → Production boundary crossed. */
@@ -435,6 +470,7 @@ export type CommercialSummaryLine = {
   unitPrice: number;
   lineTotal: number;
   manufacturingComplexity?: string | null;
+  productId?: string | null;
   commercialPriceStatus: string;
   commercialPriceSource?: string | null;
   commercialPriceNote?: string | null;
@@ -481,10 +517,14 @@ export type ManufacturingCostingPayload = {
   finalizedAt: string | null;
   estimated: {
     total: number | null;
+    materials?: number | null;
+    labor?: number | null;
     byCategory: Record<string, { qty: number; cost: number }>;
   };
   actual: {
     total: number | null;
+    materials?: number | null;
+    labor?: number | null;
     toDate: number | null;
     scrapCost: number;
     returnCredit: number;
@@ -519,6 +559,30 @@ export type ManufacturingCostingPayload = {
     varianceCost: number | null;
     status: string;
   }>;
+  productionOrders?: Array<{
+    id: string;
+    number: string;
+    status: string;
+    estimatedTotal: number | null;
+    actualTotal: number | null;
+    costingStatus: string;
+  }>;
+  labor?: {
+    estimated: number | null;
+    actual: number | null;
+    byStage: Array<{
+      stageDefinitionId: string;
+      stageCode: string | null;
+      estimated: number | null;
+      actual: number | null;
+      minutes: number;
+    }>;
+    byWorker: Array<{
+      userId: string;
+      minutes: number;
+      actual: number | null;
+    }>;
+  } | null;
   taskTrace?: Array<{
     taskId: string;
     stageCode: string | null;
@@ -784,6 +848,9 @@ export type OrderProductionSetupLine = {
   requestedFabricLabel: string | null;
   fabric?: SetupLineFabric;
   factoryNotes: string | null;
+  instructionsAr?: string | null;
+  instructionsEn?: string | null;
+  instructionsHe?: string | null;
   packagingExpectation: SetupPackagingExpectation;
   referenceDocumentIds: string[] | unknown;
   attachments?: SetupAttachment[];
@@ -888,6 +955,9 @@ export type OrderProductionSetupReleasePreview = {
 export type PatchOrderSetupLineInput = {
   manufacturingName?: string;
   factoryNotes?: string | null;
+  instructionsAr?: string | null;
+  instructionsEn?: string | null;
+  instructionsHe?: string | null;
   orderDimensions?: SetupDims;
   measurements?: SetupOrderMeasurement[];
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';

@@ -70,6 +70,44 @@ export class CustomMeasurementItemDto {
   value!: string;
 }
 
+export class RequestItemOptionDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  specOptionValueId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  groupCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  qty?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class RequestItemDto {
   @ApiProperty()
   @IsString()
@@ -80,6 +118,21 @@ export class RequestItemDto {
   @IsOptional()
   @IsUUID()
   productId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  variantSku?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  variantLabel?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -141,6 +194,43 @@ export class RequestItemDto {
   @ValidateNested({ each: true })
   @Type(() => FabricSelectionDto)
   fabrics?: FabricSelectionDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  woodType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  woodColor?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  foamDensity?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  finish?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  accessories?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  orientation?: string;
+
+  @ApiPropertyOptional({ type: [RequestItemOptionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RequestItemOptionDto)
+  options?: RequestItemOptionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

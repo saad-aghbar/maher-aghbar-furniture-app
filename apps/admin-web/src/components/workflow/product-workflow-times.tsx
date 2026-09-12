@@ -50,9 +50,11 @@ function stageEstimateMinutes(row: ProductStageEstimateRow): number {
 export function ProductWorkflowTimes({
   productId,
   workflowId,
+  variantId,
 }: {
   productId: string;
   workflowId: string;
+  variantId?: string | null;
 }) {
   const locale = useLocale();
   const t = useTranslations('mobile');
@@ -66,10 +68,14 @@ export function ProductWorkflowTimes({
   });
 
   const estimatesQuery = useQuery({
-    queryKey: ['product-stage-estimates', productId],
+    queryKey: ['product-stage-estimates', productId, variantId ?? null],
     enabled: Boolean(productId),
     queryFn: () =>
-      apiFetch<ProductStageEstimateRow[]>(`/api/v1/scheduling/products/${productId}/stage-estimates`),
+      apiFetch<ProductStageEstimateRow[]>(
+        `/api/v1/scheduling/products/${productId}/stage-estimates${
+          variantId ? `?variantId=${encodeURIComponent(variantId)}` : ''
+        }`,
+      ),
   });
 
   const estimateMap = useMemo(() => {

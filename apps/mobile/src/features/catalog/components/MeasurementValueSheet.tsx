@@ -25,7 +25,7 @@ function labelOrFallback(
   return value === key ? fallback : value;
 }
 
-function useUnitDraft(active: boolean, unit: string, fallback = 'cm') {
+export function useUnitDraft(active: boolean, unit: string, fallback = 'cm') {
   const [draftUnit, setDraftUnit] = useState(unit || fallback);
   const [customUnit, setCustomUnit] = useState('');
   const [customUnitMode, setCustomUnitMode] = useState(false);

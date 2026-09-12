@@ -44,6 +44,7 @@ import { LockedTextField } from '@/components/forms/LockedTextField';
 import { CopyNotesButton } from '@/components/forms/CopyNotesButton';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
@@ -79,9 +80,12 @@ import {
   OrderSectionHeader,
 } from './components/OrderBoardCard';
 import { OrderIdentityBoard } from './components/OrderIdentityBoard';
+import { OrderStationStub } from './components/OrderStationStub';
+import { selectOrderStationStub } from './selectDealerOrders';
 import { LinkedTablePanel } from './components/LinkedTablePanel';
 import { OrderDetailSkeleton } from './components/OrderDetailSkeleton';
 import { CommercialSummaryPanel } from './components/CommercialSummaryPanel';
+import { CatalogPromotionBoard } from './components/CatalogPromotionBoard';
 import { orderBoardShadow } from './components/orderFloorStyle';
 import {
   adminLifecycleAccentKey,
@@ -577,15 +581,24 @@ export function OrderDetailScreen({
           <OfflineBanner />
         </View>
       ) : null}
-      <Animated.View style={[{ paddingHorizontal: theme.spacing.lg }, headerFade]}>
-        <DetailNav
-          onBack={() => router.back()}
-          title={vm.number}
-          subtitle={vm.showCosts ? vm.dealerName : null}
-          trailing={<StatusBadge status={vm.status} dot />}
-          onMore={actionsSheet.length ? () => setSheetOpen(true) : undefined}
-        />
-      </Animated.View>
+      {variant === 'dealer' ? (
+        <View style={{ paddingHorizontal: theme.spacing.lg }}>
+          <DealerOrderTitle
+            title={vm.number}
+            onMore={actionsSheet.length ? () => setSheetOpen(true) : undefined}
+          />
+        </View>
+      ) : (
+        <Animated.View style={[{ paddingHorizontal: theme.spacing.lg }, headerFade]}>
+          <DetailNav
+            onBack={() => router.back()}
+            title={vm.number}
+            subtitle={vm.showCosts ? vm.dealerName : null}
+            trailing={<StatusBadge status={vm.status} dot />}
+            onMore={actionsSheet.length ? () => setSheetOpen(true) : undefined}
+          />
+        </Animated.View>
+      )}
 
       <Animated.ScrollView
         style={{ flex: 1 }}
@@ -602,7 +615,7 @@ export function OrderDetailScreen({
         }
         contentContainerStyle={{ paddingBottom: stickyPad }}
       >
-        <ImageCarousel uris={galleryUris} height={260} />
+        {variant === 'dealer' ? null : <ImageCarousel uris={galleryUris} height={260} />}
 
         <View
           style={{
@@ -720,6 +733,21 @@ export function OrderDetailScreen({
                 vm.lifecycle
                   ? lifecycleAccent(vm.lifecycle, colors)
                   : colors.brand
+              }
+              mediaUri={
+                variant === 'dealer' ? (galleryUris[0] ?? null) : undefined
+              }
+              stub={
+                variant === 'dealer' ? (
+                  <OrderStationStub
+                    {...selectOrderStationStub({
+                      kind: 'order',
+                      status: vm.status,
+                      deliveryStatus: vm.deliveryStatus,
+                      progressPercent: vm.progressPercent,
+                    })}
+                  />
+                ) : undefined
               }
             />
           </ListItemEnter>
@@ -1442,6 +1470,15 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
+          {variant === 'admin' && raw?.commercialSummary ? (
+            <ListItemEnter index={nextIndex()}>
+              <CatalogPromotionBoard
+                orderId={orderId}
+                lines={raw.commercialSummary.lines}
+              />
+            </ListItemEnter>
+          ) : null}
+
           {vm.invoices.length ? (
             <ListItemEnter index={nextIndex()}>
               <LinkedTablePanel
@@ -1904,6 +1941,91 @@ function LineItemCard({
         <AppText variant="caption" color="secondary">
           {item.notes}
         </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+function DealerOrderTitle({
+  title,
+  onMore,
+}: {
+  title: string;
+  onMore?: () => void;
+}) {
+  const { t, isRTL, locale } = useLocale();
+  const { theme, colors, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const leadSize = theme.sizes.touch.min;
+  const moreFill = colorScheme === 'dark' ? colors.brand : colors.brandSoft;
+  const moreInk = colorScheme === 'dark' ? colors.onBrand : colors.brand;
+
+  return (
+    <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          zIndex: 1,
+          justifyContent: 'center',
+        }}
+      >
+        <ScreenBackLead fallback={'/(app)/(customer)/(tabs)/orders' as Href} />
+      </View>
+      <AppText
+        variant="largeTitle"
+        weight={titleWeight}
+        align="center"
+        numberOfLines={1}
+        dir="ltr"
+        style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
+      >
+        {title}
+      </AppText>
+      {onMore ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { left: 0 } : { right: 0 }),
+            zIndex: 1,
+            justifyContent: 'center',
+          }}
+        >
+          <AnimatedPressable
+            variant="button"
+            onPress={() => {
+              void haptics.selection();
+              onMore();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.orderDetail.actions')}
+            style={{
+              minWidth: leadSize,
+              minHeight: leadSize,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: moreFill,
+                borderWidth: 1,
+                borderColor: colors.brand,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={moreInk} />
+            </View>
+          </AnimatedPressable>
+        </View>
       ) : null}
     </View>
   );

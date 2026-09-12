@@ -333,8 +333,8 @@ export class SchedulingController {
 
   @RequirePermissions('catalog.manage')
   @Get('products/:id/production-profile')
-  getProductionProfile(@Param('id') id: string) {
-    return this.scheduling.getProductionProfile(id);
+  getProductionProfile(@Param('id') id: string, @Query('variantId') variantId?: string) {
+    return this.scheduling.getProductionProfile(id, variantId || null);
   }
 
   @RequirePermissions('catalog.manage')
@@ -343,14 +343,15 @@ export class SchedulingController {
     @Param('id') id: string,
     @Body() dto: ProductionProfileDto,
     @CurrentUser() user: AuthUser,
+    @Query('variantId') variantId?: string,
   ) {
-    return this.scheduling.upsertProductionProfile(id, dto, user.id);
+    return this.scheduling.upsertProductionProfile(id, dto, user.id, variantId || null);
   }
 
   @RequirePermissions('catalog.manage')
   @Get('products/:id/stage-estimates')
-  getStageEstimates(@Param('id') id: string) {
-    return this.scheduling.listStageEstimates(id);
+  getStageEstimates(@Param('id') id: string, @Query('variantId') variantId?: string) {
+    return this.scheduling.listStageEstimates(id, variantId || null);
   }
 
   @RequirePermissions('catalog.manage')
@@ -359,8 +360,9 @@ export class SchedulingController {
     @Param('id') id: string,
     @Body() dto: ProductStageEstimatesDto,
     @CurrentUser() user: AuthUser,
+    @Query('variantId') variantId?: string,
   ) {
-    return this.scheduling.upsertStageEstimates(id, dto.items, user.id);
+    return this.scheduling.upsertStageEstimates(id, dto.items, user.id, variantId || null);
   }
 
   // ── Estimate learning ───────────────────────────────────────────────────

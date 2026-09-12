@@ -381,6 +381,8 @@ export type ProductionSetupStage = {
   /** 1-based step shown in setup list (parallels share a step). */
   flowStep?: number;
   stageCode?: string;
+  minutesPerUnit?: number | null;
+  setupMinutes?: number | null;
 };
 
 export type ProductionSetupResponse = {
@@ -431,8 +433,9 @@ export type ProductionSetupResponse = {
   }>;
 };
 
-export function getProductProductionSetup(productId: string) {
-  return apiGet<ProductionSetupResponse>(`/products/${productId}/production-setup`);
+export function getProductProductionSetup(productId: string, variantId?: string | null) {
+  const qs = variantId ? `?variantId=${encodeURIComponent(variantId)}` : '';
+  return apiGet<ProductionSetupResponse>(`/products/${productId}/production-setup${qs}`);
 }
 
 export function putProductProductionSetup(
@@ -454,10 +457,14 @@ export function putProductProductionSetup(
       consumeOutputIds?: string[];
       consumeWorkflowNodeIds?: string[];
       materialInputs?: Array<{ sku: string; qtyPerUnit: number }>;
+      minutesPerUnit?: number | null;
+      setupMinutes?: number | null;
     }>;
   },
+  variantId?: string | null,
 ) {
-  return apiPut<ProductionSetupResponse>(`/products/${productId}/production-setup`, body);
+  const qs = variantId ? `?variantId=${encodeURIComponent(variantId)}` : '';
+  return apiPut<ProductionSetupResponse>(`/products/${productId}/production-setup${qs}`, body);
 }
 
 export function customizeProductionOrderWorkflow(

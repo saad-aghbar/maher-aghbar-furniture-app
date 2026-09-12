@@ -6,7 +6,8 @@ export type DealerDeliveryFilter = 'all' | 'upcoming' | 'attention' | 'delivered
 export type DealerDeliveryGroupKey = 'attention' | 'upcoming' | 'later' | 'delivered';
 export type UpcomingGroupKey = 'today' | 'thisWeek' | 'later';
 export type DealerSummaryTileKey = 'upcoming' | 'week' | 'awaiting' | 'delayed';
-export type DealerDeliveryTone = 'brand' | 'warning' | 'info' | 'success' | 'muted';
+export type DealerDeliveryTone = 'brand' | 'warning' | 'success' | 'muted';
+export type DealerScheduleStubKind = 'confirmed' | 'expected' | 'review' | 'delayed' | 'delivered';
 
 export function filterFromSummaryKey(key: DealerSummaryTileKey): DealerDeliveryFilter {
   if (key === 'awaiting' || key === 'delayed') return 'attention';
@@ -20,7 +21,7 @@ export function deliveryCardTone(status: string | null | undefined): DealerDeliv
       return 'warning';
     case 'READY_FOR_DELIVERY':
     case 'OUT_FOR_DELIVERY':
-      return 'info';
+      return 'brand';
     case 'DELIVERED':
       return 'success';
     case 'CANCELLED':
@@ -277,6 +278,7 @@ export function matchDealerDeliverySearch(
     row.productName.nameEn,
     row.productName.nameAr,
     row.productName.nameHe,
+    row.deliveryAddress,
   ]
     .filter(Boolean)
     .join(' ')
@@ -314,4 +316,50 @@ export function selectDeliveryTimeline(row: {
     { key: 'out', done: out, current: currentKey === 'out' },
     { key: 'delivered', done: delivered, current: currentKey === 'delivered' },
   ];
+}
+
+export const DEALER_JOURNEY_LABEL_KEY: Record<string, string> = {
+  received: 'mobile.orderDetail.schedule.timelineReceived',
+  confirmed: 'mobile.orderDetail.schedule.timelineConfirmed',
+  production: 'mobile.orderDetail.schedule.timelineProduction',
+  ready: 'mobile.orderDetail.schedule.timelineReady',
+  out: 'mobile.orderDetail.schedule.timelineOut',
+  delivered: 'mobile.orderDetail.schedule.timelineDelivered',
+};
+
+export const DEALER_STUB_CAPTION_KEY: Record<DealerScheduleStubKind, string> = {
+  confirmed: 'mobile.orders.stubConfirmed',
+  expected: 'mobile.orders.stubExpected',
+  review: 'mobile.orders.stubReview',
+  delayed: 'mobile.orders.stubDelayed',
+  delivered: 'mobile.orders.stubDelivered',
+};
+
+/** Ticket stub for a dealer delivery — calendar day + customer-safe caption. */
+export function selectScheduleStub(row: {
+  customerStatus?: string | null;
+  calendarDate?: string | null;
+  committedDeliveryDate?: string | null;
+  projectedDeliveryDate?: string | null;
+  plannedDeliveryDate?: string | null;
+  requestedDeliveryDate?: string | null;
+  actualDeliveryDate?: string | null;
+}): {
+  ymd: string | null;
+  kind: DealerScheduleStubKind;
+} {
+  const status = String(row.customerStatus ?? '');
+  const ymd =
+    toYmdSlice(row.calendarDate) ??
+    toYmdSlice(row.committedDeliveryDate) ??
+    toYmdSlice(row.projectedDeliveryDate) ??
+    toYmdSlice(row.plannedDeliveryDate) ??
+    toYmdSlice(row.requestedDeliveryDate);
+  if (status === 'DELIVERED') {
+    return { ymd: toYmdSlice(row.actualDeliveryDate) ?? ymd, kind: 'delivered' };
+  }
+  if (status === 'MAY_BE_DELAYED' || status === 'DELAYED') return { ymd, kind: 'delayed' };
+  if (status === 'AWAITING_CONFIRMATION') return { ymd, kind: 'review' };
+  if (toYmdSlice(row.committedDeliveryDate)) return { ymd, kind: 'confirmed' };
+  return { ymd, kind: 'expected' };
 }

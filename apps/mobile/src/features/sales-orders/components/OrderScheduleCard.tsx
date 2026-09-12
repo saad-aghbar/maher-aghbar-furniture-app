@@ -1,17 +1,20 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerScheduleDateStub } from '@/features/scheduling/components/DealerScheduleDateStub';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { OwnOrderSchedule } from '@/api/modules/scheduling';
 import { selectChangeDateCta, selectOrderPromiseSummary } from '../selectSchedulePromise';
 import {
   DEALER_DATE_FIELD_LABEL_KEY,
+  DEALER_JOURNEY_LABEL_KEY,
   selectDealerDateFields,
   selectDeliveryTimeline,
+  selectScheduleStub,
 } from '@/features/scheduling/selectDealerDeliveries';
-import { OrderBoardCard, OrderSectionHeader } from './OrderBoardCard';
 
 type Props = {
   schedule: OwnOrderSchedule | null | undefined;
@@ -19,50 +22,23 @@ type Props = {
   onChangeDate: () => void;
 };
 
-function FieldCaption({ label }: { label: string }) {
-  const { isRTL } = useLocale();
-  return (
-    <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-      {label}
-    </AppText>
-  );
-}
-
-function FieldValue({ value, muted }: { value: string; muted?: boolean }) {
-  const { isRTL } = useLocale();
-  return (
-    <AppText
-      variant="body"
-      weight="semibold"
-      color={muted ? 'muted' : undefined}
-      style={{ textAlign: isRTL ? 'right' : 'left' }}
-    >
-      {value}
-    </AppText>
-  );
-}
-
-const TIMELINE_KEYS = [
-  ['received', 'mobile.orderDetail.schedule.timelineReceived'],
-  ['confirmed', 'mobile.orderDetail.schedule.timelineConfirmed'],
-  ['production', 'mobile.orderDetail.schedule.timelineProduction'],
-  ['ready', 'mobile.orderDetail.schedule.timelineReady'],
-  ['out', 'mobile.orderDetail.schedule.timelineOut'],
-  ['delivered', 'mobile.orderDetail.schedule.timelineDelivered'],
+const JOURNEY_ROWS = [
+  ['received', 'confirmed', 'production'],
+  ['ready', 'out', 'delivered'],
 ] as const;
 
 /** Dealer-facing promise summary + change-date CTA — never shows factory internals. */
 export function OrderScheduleCard({ schedule, isLoading, onChangeDate }: Props) {
-  const { t, formatDate, isRTL } = useLocale();
+  const { t, formatDate, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   if (isLoading) {
     return (
-      <OrderBoardCard accent={colors.brand}>
-        <OrderSectionHeader
-          icon="calendar-outline"
-          label={t('mobile.orderDetail.schedule.title')}
-        />
+      <DealerBoard
+        title={t('mobile.orderDetail.schedule.title')}
+        titleWeight={titleWeight}
+      >
         <View
           style={{
             height: 16,
@@ -71,7 +47,7 @@ export function OrderScheduleCard({ schedule, isLoading, onChangeDate }: Props) 
             width: '60%',
           }}
         />
-      </OrderBoardCard>
+      </DealerBoard>
     );
   }
 
@@ -102,93 +78,196 @@ export function OrderScheduleCard({ schedule, isLoading, onChangeDate }: Props) 
     customerStatus: status,
     committedDeliveryDate: committed,
   });
+  const currentKey = timeline.find((step) => step.current)?.key;
+  const stub = selectScheduleStub({
+    customerStatus: status,
+    calendarDate: committed ?? projected ?? planned ?? requested,
+    committedDeliveryDate: committed,
+    projectedDeliveryDate: projected,
+    plannedDeliveryDate: planned,
+    requestedDeliveryDate: requested,
+    actualDeliveryDate: actual,
+  });
 
   return (
-    <OrderBoardCard accent={colors.brand}>
-      <OrderSectionHeader
-        icon="calendar-outline"
-        label={t('mobile.orderDetail.schedule.timelineTitle')}
-        trailing={<StatusBadge status={String(status)} dot />}
-      />
-
-      {summary.compactDates && committed && !delayed ? (
-        <FieldValue
-          value={t('mobile.orderDetail.schedule.compactOnTrack', {
-            date: formatDate(committed),
-          })}
-        />
-      ) : (
-        <View style={{ gap: theme.spacing.xs }}>
-          {awaiting ? (
-            <FieldCaption label={t('mobile.orders.notConfirmed')} />
-          ) : null}
-          {dateFields.map((field) => (
-            <View key={field.kind} style={{ gap: 2 }}>
-              <FieldCaption label={t(DEALER_DATE_FIELD_LABEL_KEY[field.kind])} />
-              <FieldValue value={formatDate(field.ymd)} muted={field.kind === 'requested'} />
-            </View>
-          ))}
-          {dateFields.length === 0 ? (
-            <FieldCaption label={t('mobile.orderDetail.schedule.noDateYet')} />
-          ) : null}
-          {delayed ? (
-            <FieldCaption label={t('mobile.orders.productionDelay')} />
-          ) : null}
-          {delayed && (schedule.scheduleUpdating || !projected) ? (
-            <FieldCaption label={t('mobile.orders.scheduleUpdating')} />
-          ) : !delayed && schedule.customerSafeReason ? (
-            <FieldCaption label={t('mobile.orders.scheduleUpdating')} />
-          ) : null}
-        </View>
-      )}
-
-      <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.xs }}>
-        {timeline.map((step, index) => {
-          const labelKey = TIMELINE_KEYS[index]?.[1] ?? '';
-          return (
-            <View
-              key={step.key}
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-              }}
+    <DealerBoard
+      title={t('mobile.orderDetail.schedule.timelineTitle')}
+      titleWeight={titleWeight}
+      trailing={<StatusBadge status={String(status)} dot />}
+      accentColor={delayed ? colors.warning : colors.brand}
+    >
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'stretch',
+          gap: theme.spacing.md,
+        }}
+      >
+        <DealerScheduleDateStub ymd={stub.ymd} kind={stub.kind} />
+        <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.sm, justifyContent: 'center' }}>
+          {summary.compactDates && committed && !delayed ? (
+            <AppText
+              weight={titleWeight}
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
             >
-              <View
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 5,
-                  backgroundColor: step.done
-                    ? colors.brand
-                    : step.current
-                      ? colors.warning
-                      : colors.border,
-                }}
-              />
-              <AppText
-                variant="caption"
-                weight={step.current ? 'semibold' : 'regular'}
-                color={step.done || step.current ? undefined : 'muted'}
-              >
-                {t(labelKey)}
-              </AppText>
+              {t('mobile.orderDetail.schedule.compactOnTrack', {
+                date: formatDate(committed),
+              })}
+            </AppText>
+          ) : (
+            <View style={{ gap: theme.spacing.sm }}>
+              {awaiting ? (
+                <AppText variant="caption" color="brand" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t('mobile.orders.notConfirmed')}
+                </AppText>
+              ) : null}
+              {dateFields.length === 0 ? (
+                <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t('mobile.orderDetail.schedule.noDateYet')}
+                </AppText>
+              ) : (
+                dateFields.map((field) => (
+                  <View
+                    key={field.kind}
+                    style={{
+                      gap: 4,
+                      padding: theme.spacing.md,
+                      borderRadius: theme.radius.lg,
+                      backgroundColor: colors.surfaceSecondary,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{
+                        textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                        letterSpacing: locale === 'ar' ? 0 : 0.45,
+                        fontSize: 10,
+                        textAlign: isRTL ? 'right' : 'left',
+                      }}
+                    >
+                      {t(DEALER_DATE_FIELD_LABEL_KEY[field.kind])}
+                    </AppText>
+                    <AppText
+                      variant="caption"
+                      weight={titleWeight}
+                      dir="ltr"
+                      style={{
+                        textAlign: isRTL ? 'right' : 'left',
+                        color: field.kind === 'requested' ? colors.textMuted : colors.textPrimary,
+                      }}
+                    >
+                      {formatDate(field.ymd)}
+                    </AppText>
+                  </View>
+                ))
+              )}
+              {delayed ? (
+                <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t('mobile.orders.productionDelay')}
+                </AppText>
+              ) : null}
+              {delayed && (schedule.scheduleUpdating || !projected) ? (
+                <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t('mobile.orders.scheduleUpdating')}
+                </AppText>
+              ) : !delayed && schedule.customerSafeReason ? (
+                <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t('mobile.orders.scheduleUpdating')}
+                </AppText>
+              ) : null}
             </View>
-          );
-        })}
+          )}
+        </View>
+      </View>
+
+      <View style={{ gap: theme.spacing.sm }}>
+        {JOURNEY_ROWS.map((row) => (
+          <View
+            key={row.join('-')}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              gap: theme.spacing.sm,
+            }}
+          >
+            {row.map((key) => {
+              const step = timeline.find((item) => item.key === key);
+              const current = step?.current;
+              const done = step?.done;
+              return (
+                <View
+                  key={key}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 56,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: current ? colors.brand : colors.border,
+                    backgroundColor: current
+                      ? colors.brandSoft
+                      : done
+                        ? colors.surfaceSecondary
+                        : colors.surface,
+                    padding: theme.spacing.sm,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <AppText
+                    variant="caption"
+                    numberOfLines={2}
+                    align="center"
+                    style={{
+                      color: current || done ? colors.textPrimary : colors.textMuted,
+                      fontSize: 10,
+                    }}
+                  >
+                    {t(DEALER_JOURNEY_LABEL_KEY[key] ?? '')}
+                  </AppText>
+                  {current ? (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 8,
+                        right: 8,
+                        height: 3,
+                        backgroundColor: colors.brand,
+                        borderTopLeftRadius: 2,
+                        borderTopRightRadius: 2,
+                      }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       {cta.mode !== 'hidden' ? (
-        <SecondaryButton
+        <PrimaryButton
           label={t(cta.labelKey)}
           onPress={onChangeDate}
           disabled={cta.mode === 'locked'}
+          style={{
+            borderRadius: theme.radius.full,
+            minHeight: theme.sizes.touch.min,
+            paddingVertical: 0,
+          }}
         />
       ) : null}
 
       {cta.mode === 'locked' && schedule.dateChangeReason ? (
-        <FieldCaption label={schedule.dateChangeReason} />
+        <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+          {schedule.dateChangeReason}
+        </AppText>
       ) : null}
-    </OrderBoardCard>
+    </DealerBoard>
   );
 }

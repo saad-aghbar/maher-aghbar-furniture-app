@@ -173,6 +173,16 @@ describe('Production Plan host contracts', () => {
       '/(app)/(admin)/orders/so-1/production-plan?lineId=L1',
     );
   });
+
+  it('OrderProductionPlanScreen maps lineId onto the matching production order', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const hostPath = path.join(__dirname, '..', 'OrderProductionPlanScreen.tsx');
+    const src = fs.readFileSync(hostPath, 'utf8');
+    expect(src).toContain('productionOrderIdForLineId');
+    expect(src).toContain('lineId');
+  });
 });
 
 describe('Orders vs Production bucket consistency', () => {

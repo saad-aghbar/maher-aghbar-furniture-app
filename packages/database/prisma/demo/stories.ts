@@ -19,10 +19,19 @@ export type StoryKind =
   | 'rework_current'
   | 'rework_historical';
 
+export type DemoStoryLine = {
+  sku: string;
+  variantCode?: string;
+  qty: number;
+  fabric?: string;
+  wood?: string;
+};
+
 export type DemoStory = {
   id: string;
   dealer: string;
   sku: string;
+  variantCode?: string;
   qty: number;
   kind: StoryKind;
   /** Last COMPLETED stage code (ignored for kinds that imply a full/empty path). */
@@ -33,7 +42,9 @@ export type DemoStory = {
   fabric?: string;
   wood?: string;
   notes?: string;
-  /** Days after 2026-06-16. */
+  /** Extra basket lines on the same sales order. */
+  extraLines?: DemoStoryLine[];
+  /** Days after 2026-08-22. */
   orderDay: number;
   deliveryLeadDays: number;
   /**
@@ -84,34 +95,59 @@ function pick<T>(arr: readonly T[], i: number): T {
   return arr[i % arr.length]!;
 }
 
+/** Compress the old two-month story days into the 21-day window. */
+function windowDay(old: number): number {
+  return Math.min(20, Math.max(0, Math.round((old * 20) / 62)));
+}
+
+export function storyLinesOf(story: DemoStory): DemoStoryLine[] {
+  return [
+    {
+      sku: story.sku,
+      variantCode: story.variantCode ?? 'STD',
+      qty: story.qty,
+      fabric: story.fabric,
+      wood: story.wood,
+    },
+    ...(story.extraLines ?? []),
+  ];
+}
+
 export function buildDemoStories(): DemoStory[] {
   const flagship: DemoStory[] = [
     {
       id: 'nile-abdoun-lounge',
       dealer: 'nile',
       sku: 'SOF-3S-STD',
+      variantCode: 'KARINA',
       qty: 2,
       kind: 'delivered',
       payment: 'paid',
       projectName: 'Abdoun lounge set',
-      fabric: 'Velvet Sand',
+      fabric: 'Velvet Navy',
       wood: 'Beech',
-      orderDay: 4,
-      deliveryLeadDays: 28,
+      orderDay: windowDay(4),
+      deliveryLeadDays: 14,
+      extraLines: [
+        { sku: 'ARM-01', variantCode: 'SAND', qty: 2, fabric: 'Velvet Sand', wood: 'Beech' },
+        { sku: 'TABLE-CF', variantCode: 'WAL', qty: 1, wood: 'Oak' },
+      ],
       notes: 'Match sand velvet lot from the showroom swatch.',
     },
     {
       id: 'oasis-sweifieh-sectional',
       dealer: 'oasis',
       sku: 'SOF-L-SEC',
+      variantCode: 'CREAM',
       qty: 1,
       kind: 'in_production',
       completeThrough: 'CARPENTRY',
       projectName: 'Sweifieh sectional',
       fabric: 'Boucle Cream',
       wood: 'Beech',
-      orderDay: 42,
-      deliveryLeadDays: 35,
+      orderDay: windowDay(42),
+      deliveryLeadDays: 18,
+      extraLines: [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 2, fabric: 'Velvet Sand' }],
     },
     {
       id: 'nile-fresh-production-blank',
@@ -122,7 +158,7 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Nile blank production start',
       fabric: 'Velvet Sand',
       wood: 'Beech',
-      orderDay: 62,
+      orderDay: windowDay(62),
       deliveryLeadDays: 30,
       notes:
         'Just entered production — empty materials, WIP, and floor progress. Use for production hub / setup checks.',
@@ -138,7 +174,7 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Noor banquettes 4 of 6 frames',
       fabric: 'Velvet Navy',
       wood: 'Beech',
-      orderDay: 44,
+      orderDay: windowDay(44),
       deliveryLeadDays: 32,
       notes: 'Partial SEMI: 4 of 6 frames produced; remaining 2 still open.',
     },
@@ -146,24 +182,26 @@ export function buildDemoStories(): DemoStory[] {
       id: 'balqis-abdali-banquettes',
       dealer: 'balqis',
       sku: 'CUS-BANQ',
+      variantCode: 'NAVY',
       qty: 6,
       kind: 'ready_delivery',
       projectName: 'Abdali hotel banquettes',
       fabric: 'Velvet Navy',
       wood: 'Beech',
-      orderDay: 18,
-      deliveryLeadDays: 40,
+      orderDay: windowDay(18),
+      deliveryLeadDays: 16,
     },
     {
       id: 'cedar-italian-velvet',
       dealer: 'cedar',
       sku: 'SOF-RECL',
+      variantCode: 'ITAL',
       qty: 1,
       kind: 'at_risk_material',
       projectName: 'Cedar Italian velvet recliner',
       fabric: 'Italian velvet',
       wood: 'Beech',
-      orderDay: 50,
+      orderDay: windowDay(50),
       deliveryLeadDays: 30,
       notes: 'Waiting inbound Italian velvet PO (SUP-FABRIC).',
     },
@@ -178,7 +216,7 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Diwan wingback frame gate',
       fabric: 'Velvet Navy',
       wood: 'Beech',
-      orderDay: 46,
+      orderDay: windowDay(46),
       deliveryLeadDays: 28,
       notes: 'Waiting on carpentry frames (SEMI lots) before foam/upholstery.',
     },
@@ -191,7 +229,7 @@ export function buildDemoStories(): DemoStory[] {
       completeThrough: 'PAINTING',
       projectName: 'Jabal contract dining',
       wood: 'Oak',
-      orderDay: 20,
+      orderDay: windowDay(20),
       deliveryLeadDays: 22,
     },
     {
@@ -203,7 +241,7 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Oasis club armchair QC',
       fabric: 'Velvet Sand',
       wood: 'Beech',
-      orderDay: 38,
+      orderDay: windowDay(38),
       deliveryLeadDays: 24,
     },
     {
@@ -216,7 +254,7 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Nile loveseat recovered',
       fabric: 'Linen Natural',
       wood: 'Beech',
-      orderDay: 8,
+      orderDay: windowDay(8),
       deliveryLeadDays: 30,
     },
     {
@@ -229,7 +267,7 @@ export function buildDemoStories(): DemoStory[] {
       returnInfo: { reason: ReturnReason.DELIVERY_DAMAGE, qty: 1, approval: 'APPROVED' },
       projectName: 'Zaatar ottoman scuff',
       fabric: 'Velvet Sand',
-      orderDay: 12,
+      orderDay: windowDay(12),
       deliveryLeadDays: 21,
     },
     {
@@ -240,7 +278,7 @@ export function buildDemoStories(): DemoStory[] {
       kind: 'proposed',
       projectName: 'Qasr suite dining',
       wood: 'Oak',
-      orderDay: 58,
+      orderDay: windowDay(58),
       deliveryLeadDays: 28,
     },
     {
@@ -251,7 +289,7 @@ export function buildDemoStories(): DemoStory[] {
       kind: 'draft',
       projectName: 'Noor club chair hold',
       fabric: 'Leatherette Black',
-      orderDay: 60,
+      orderDay: windowDay(60),
       deliveryLeadDays: 25,
     },
     {
@@ -263,8 +301,9 @@ export function buildDemoStories(): DemoStory[] {
       projectName: 'Rawnaq dining six',
       fabric: 'Linen Olive',
       wood: 'Beech',
-      orderDay: 55,
+      orderDay: windowDay(55),
       deliveryLeadDays: 26,
+      extraLines: [{ sku: 'TABLE-DIN-6', variantCode: 'STD', qty: 1, wood: 'Oak' }],
     },
   ];
 
@@ -277,13 +316,20 @@ export function buildDemoStories(): DemoStory[] {
       id: `${kind}-${n}`,
       dealer,
       sku,
+      variantCode: n % 3 === 0 ? 'STD' : undefined,
       qty: sku.startsWith('CHAIR') ? 4 : 1,
       kind,
       projectName: EXTRA_PROJECT_NAMES[n] ?? `Amman Residence ${n + 1}`,
-      orderDay: 6 + ((n * 3) % 50),
-      deliveryLeadDays: 24 + (n % 10),
+      orderDay: n % 21,
+      deliveryLeadDays: 12 + (n % 8),
       fabric: 'Velvet Sand',
       wood: 'Beech',
+      extraLines:
+        n % 5 === 1 && sku !== 'TABLE-SIDE'
+          ? [{ sku: 'TABLE-SIDE', variantCode: 'STD', qty: 1 }]
+          : n % 5 === 3 && sku !== 'CUS-OTT' && sku !== 'ARM-01'
+            ? [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 1, fabric: 'Velvet Sand' }]
+            : undefined,
       ...partial,
     });
     n += 1;

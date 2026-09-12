@@ -29,25 +29,47 @@ type SnapNodeInput = {
   nodeKey: string;
 };
 
+function pickScoped<T extends { variantId?: string | null }>(
+  rows: T[],
+  variantId?: string | null,
+): T[] {
+  const wanted = variantId ?? null;
+  const scoped = rows.filter((row) => (row.variantId ?? null) === wanted);
+  if (scoped.length > 0 || wanted == null) return scoped;
+  return rows.filter((row) => row.variantId == null);
+}
+
 export async function loadProductInventoryOutputs(
   prisma: PrismaClient,
   productId: string,
+  variantId?: string | null,
 ): Promise<ProductStageOutputRow[]> {
-  return prisma.productStageInventoryOutput.findMany({ where: { productId } });
+  const rows = await prisma.productStageInventoryOutput.findMany({ where: { productId } });
+  return pickScoped(rows, variantId);
 }
 
-export async function loadProductInventoryInputs(prisma: PrismaClient, productId: string) {
-  return prisma.productStageInventoryInput.findMany({
+export async function loadProductInventoryInputs(
+  prisma: PrismaClient,
+  productId: string,
+  variantId?: string | null,
+) {
+  const rows = await prisma.productStageInventoryInput.findMany({
     where: { productId },
     include: { output: true },
   });
+  return pickScoped(rows, variantId);
 }
 
-export async function loadProductMaterialInputs(prisma: PrismaClient, productId: string) {
-  return prisma.productStageMaterialInput.findMany({
+export async function loadProductMaterialInputs(
+  prisma: PrismaClient,
+  productId: string,
+  variantId?: string | null,
+) {
+  const rows = await prisma.productStageMaterialInput.findMany({
     where: { productId },
     include: { inventoryItem: { select: { sku: true, unit: true } } },
   });
+  return pickScoped(rows, variantId);
 }
 
 export function resolveDemoSnapshotInventory(
@@ -352,6 +374,7 @@ type RecipeProduct = {
   nameEn: string;
   nameAr: string;
   nameHe?: string | null;
+  variantId?: string | null;
 };
 
 /**
@@ -385,15 +408,17 @@ export async function ensureFurnitureInventoryRecipes(
     const packaging = byCode.get('PACKAGING');
     const materialPrep = byCode.get('MATERIAL_PREP');
 
+    const variantId = product.variantId ?? null;
     const existingPrep = materialPrep
       ? await prisma.productStageInventoryOutput.findFirst({
-          where: { productId: product.id, workflowNodeId: materialPrep.id },
+          where: { productId: product.id, workflowNodeId: materialPrep.id, variantId },
         })
       : null;
     if (materialPrep && !existingPrep) {
       await prisma.productStageInventoryOutput.create({
         data: {
           productId: product.id,
+          variantId,
           workflowNodeId: materialPrep.id,
           stageDefinitionId: materialPrep.stageDefinitionId,
           itemClass: InventoryItemClass.RAW_MATERIAL,
@@ -429,12 +454,13 @@ export async function ensureFurnitureInventoryRecipes(
         });
       }
       let out = await prisma.productStageInventoryOutput.findFirst({
-        where: { productId: product.id, workflowNodeId: carpentry.id },
+        where: { productId: product.id, workflowNodeId: carpentry.id, variantId },
       });
       if (!out) {
         out = await prisma.productStageInventoryOutput.create({
           data: {
             productId: product.id,
+            variantId,
             workflowNodeId: carpentry.id,
             stageDefinitionId: carpentry.stageDefinitionId,
             itemClass: InventoryItemClass.SEMI_FINISHED_GOOD,
@@ -478,12 +504,13 @@ export async function ensureFurnitureInventoryRecipes(
         });
       }
       let out = await prisma.productStageInventoryOutput.findFirst({
-        where: { productId: product.id, workflowNodeId: packaging.id },
+        where: { productId: product.id, workflowNodeId: packaging.id, variantId },
       });
       if (!out) {
         out = await prisma.productStageInventoryOutput.create({
           data: {
             productId: product.id,
+            variantId,
             workflowNodeId: packaging.id,
             stageDefinitionId: packaging.stageDefinitionId,
             itemClass: InventoryItemClass.FINISHED_GOOD,
@@ -512,12 +539,13 @@ export async function ensureFurnitureInventoryRecipes(
       }
       if (frameOutputId) {
         const link = await prisma.productStageInventoryInput.findFirst({
-          where: { productId: product.id, workflowNodeId: packaging.id, outputId: frameOutputId },
+          where: { productId: product.id, workflowNodeId: packaging.id, outputId: frameOutputId, variantId },
         });
         if (!link) {
           await prisma.productStageInventoryInput.create({
             data: {
               productId: product.id,
+              variantId,
               workflowNodeId: packaging.id,
               stageDefinitionId: packaging.stageDefinitionId,
               outputId: frameOutputId,

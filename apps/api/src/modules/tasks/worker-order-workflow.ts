@@ -125,6 +125,8 @@ function compactSearchValue(value: string): string {
 export type WorkerOrderSearchRow = {
   number: string;
   productDescription?: string | null;
+  variantLabel?: string | null;
+  variantSku?: string | null;
   product?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null } | null;
   salesOrder?: {
     number?: string | null;
@@ -155,6 +157,8 @@ export function workerOrderSearchHaystack(order: WorkerOrderSearchRow): string {
     order.salesOrder?.number,
     order.salesOrder?.externalOrderNumber,
     order.productDescription,
+    order.variantLabel,
+    order.variantSku,
     order.product?.nameEn,
     order.product?.nameAr,
     order.product?.nameHe,
@@ -183,6 +187,98 @@ export function workerOrderMatchesSearch(order: WorkerOrderSearchRow, needle: st
   return tokens.every(
     (token) => haystack.includes(token) || haystack.includes(compactSearchValue(token)),
   );
+}
+
+const PRIORITY_RANK: Record<string, number> = {
+  URGENT: 0,
+  HIGH: 1,
+  NORMAL: 2,
+  MEDIUM: 2,
+  LOW: 3,
+};
+
+function higherPriority(a: string, b: string): string {
+  const ra = PRIORITY_RANK[a.toUpperCase()] ?? 9;
+  const rb = PRIORITY_RANK[b.toUpperCase()] ?? 9;
+  return ra <= rb ? a : b;
+}
+
+function earlierDeadline(
+  a: Date | string | null | undefined,
+  b: Date | string | null | undefined,
+): Date | string | null {
+  if (a == null) return b ?? null;
+  if (b == null) return a;
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
+}
+
+export type WorkerMyOrderGroupItem = {
+  id: string;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
+  externalOrderNumber?: string | null;
+  dealer?: unknown;
+  deadline?: Date | string | null;
+  priority: string;
+  myTaskCount: number;
+  actionableCount: number;
+  blockedCount: number;
+};
+
+export type WorkerMySalesOrderGroup<T extends WorkerMyOrderGroupItem> = {
+  salesOrderId: string | null;
+  salesOrderNumber: string | null;
+  externalOrderNumber: string | null;
+  dealer: T['dealer'] | null;
+  deadline: Date | string | null;
+  priority: string;
+  myTaskCount: number;
+  actionableCount: number;
+  blockedCount: number;
+  items: T[];
+};
+
+/** One floor card per sales order; orphan production orders stay their own card. */
+export function groupMyOrdersBySalesOrder<T extends WorkerMyOrderGroupItem>(
+  items: T[],
+): WorkerMySalesOrderGroup<T>[] {
+  const groups: WorkerMySalesOrderGroup<T>[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = item.salesOrderId?.trim() || `po:${item.id}`;
+    const idx = indexByKey.get(key);
+    if (idx == null) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        salesOrderId: item.salesOrderId ?? null,
+        salesOrderNumber: item.salesOrderNumber ?? null,
+        externalOrderNumber: item.externalOrderNumber ?? null,
+        dealer: item.dealer ?? null,
+        deadline: item.deadline ?? null,
+        priority: item.priority,
+        myTaskCount: item.myTaskCount,
+        actionableCount: item.actionableCount,
+        blockedCount: item.blockedCount,
+        items: [item],
+      });
+      continue;
+    }
+    const group = groups[idx]!;
+    group.items.push(item);
+    group.myTaskCount += item.myTaskCount;
+    group.actionableCount += item.actionableCount;
+    group.blockedCount += item.blockedCount;
+    group.priority = higherPriority(group.priority, item.priority);
+    group.deadline = earlierDeadline(group.deadline, item.deadline);
+    if (!group.dealer && item.dealer) group.dealer = item.dealer;
+    if (!group.salesOrderNumber && item.salesOrderNumber) {
+      group.salesOrderNumber = item.salesOrderNumber;
+    }
+    if (!group.externalOrderNumber && item.externalOrderNumber) {
+      group.externalOrderNumber = item.externalOrderNumber;
+    }
+  }
+  return groups;
 }
 
 export function joinWaitOnNames(names: string[]): string {

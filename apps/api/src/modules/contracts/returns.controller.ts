@@ -61,6 +61,9 @@ const RETURN_INCLUDE = {
       description: true,
       quantity: true,
       productId: true,
+      variantId: true,
+      variantSku: true,
+      variantLabel: true,
       product: {
         select: {
           id: true,
@@ -301,8 +304,13 @@ export class ReturnsController {
     const issuePhotoUrls = issueKeys
       .map((k) => this.photoUrl(k))
       .filter((u): u is string => Boolean(u));
+    const lineLabel =
+      row.salesOrderLine && 'variantLabel' in row.salesOrderLine
+        ? ((row.salesOrderLine as { variantLabel?: string | null }).variantLabel ?? null)
+        : null;
     return {
       ...rest,
+      variantLabel: lineLabel,
       reasonPhotoKey,
       issuePhotoKey,
       reasonPhotoUrl: reasonPhotoUrls[0] ?? null,
@@ -474,6 +482,7 @@ export class ReturnsController {
         salesOrderId: dto.salesOrderId,
         salesOrderLineId: identity.salesOrderLineId,
         productId: identity.productId,
+        variantId: identity.variantId,
         sourceProductionOrderId: identity.sourceProductionOrderId,
         deliveryId: dto.deliveryId,
         productDesc: dto.productDesc,

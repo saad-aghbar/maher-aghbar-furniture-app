@@ -10,6 +10,9 @@ export type { RequestDetail, RequestEditPolicy };
 export type CreateRequestItemInput = {
   productName: string;
   productId?: string;
+  variantId?: string;
+  variantSku?: string;
+  variantLabel?: string;
   quantity: number;
   unit?: string;
   notes?: string;
@@ -30,6 +33,21 @@ export type CreateRequestItemInput = {
   }>;
   description?: string;
   customMeasurements?: { label: string; value: string }[];
+  woodType?: string;
+  woodColor?: string;
+  foamDensity?: string;
+  finish?: string;
+  accessories?: string;
+  orientation?: string;
+  options?: Array<{
+    specOptionValueId?: string;
+    groupCode?: string;
+    code?: string;
+    nameEn?: string;
+    nameAr?: string;
+    qty?: number;
+    note?: string;
+  }>;
 };
 
 export type CreateRequestInput = {
@@ -140,6 +158,18 @@ export async function markRequestNeedsInformation(
     `/requests/${encodeURIComponent(id)}/needs-information`,
     { reason, notes: reason },
   );
+}
+
+export async function verifyRequestSpec(
+  id: string,
+  body: {
+    itemId?: string;
+    action: 'CONFIRM' | 'CORRECT';
+    message?: string;
+    fields?: Record<string, string>;
+  },
+): Promise<RequestDetail> {
+  return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/verify-spec`, body);
 }
 
 export async function closeRequest(id: string): Promise<RequestDetail> {

@@ -108,7 +108,7 @@ describe('scheduling capacity wiring', () => {
     prisma.product.findMany.mockResolvedValue([
       {
         id: 'prod-1',
-        productionProfile: { bufferPercent: 10 },
+        productionProfiles: [{ bufferPercent: 10 }],
         stageEstimates: [
           {
             isRequired: true,
@@ -154,7 +154,7 @@ describe('scheduling capacity wiring', () => {
     prisma.product.findMany.mockResolvedValue([
       {
         id: 'prod-1',
-        productionProfile: null,
+        productionProfiles: [],
         stageEstimates: [
           {
             isRequired: true,
@@ -224,7 +224,7 @@ describe('scheduling capacity wiring', () => {
     prisma.product.findMany.mockResolvedValue([
       {
         id: 'prod-1',
-        productionProfile: null,
+        productionProfiles: [],
         stageEstimates: [
           {
             isRequired: true,

@@ -27,8 +27,12 @@ const FILL_DARK = [
 ] as const;
 const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A'] as const;
 
-const TAB_ICON: Record<ReportsCategory, keyof typeof Ionicons.glyphMap> = {
+const TAB_ICON: Partial<Record<ReportsCategory, keyof typeof Ionicons.glyphMap>> = {
+  money: 'wallet-outline',
   orders: 'layers-outline',
+  products: 'cube-outline',
+  returns: 'return-down-back-outline',
+  coverage: 'alert-circle-outline',
   dashboard: 'grid-outline',
   sales: 'briefcase-outline',
   production: 'construct-outline',
@@ -201,7 +205,7 @@ export function ReportsTabBar({ tabs, value, onChange }: Props) {
                 }}
               >
                 <Ionicons
-                  name={TAB_ICON[item.key]}
+                  name={TAB_ICON[item.key] ?? 'ellipse-outline'}
                   size={14}
                   color={focused ? colors.brand : colors.textSecondary}
                 />

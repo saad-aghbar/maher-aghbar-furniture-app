@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -109,6 +109,18 @@ class ProductionSetupStageDto {
   @ValidateNested({ each: true })
   @Type(() => ProductionSetupMaterialInputDto)
   materialInputs?: ProductionSetupMaterialInputDto[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minutesPerUnit?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  setupMinutes?: number | null;
 }
 
 class ProductionSetupPutDto {
@@ -130,19 +142,23 @@ export class ProductionSetupController {
 
   @Get(':productId/production-setup')
   @RequirePermissions('catalog.manage')
-  getSetup(@Param('productId') productId: string) {
-    return this.setup.getSetup(productId);
+  getSetup(@Param('productId') productId: string, @Query('variantId') variantId?: string) {
+    return this.setup.getSetup(productId, variantId || null);
   }
 
   @Get(':productId/production-setup/preview')
   @RequirePermissions('catalog.manage')
-  preview(@Param('productId') productId: string) {
-    return this.setup.preview(productId);
+  preview(@Param('productId') productId: string, @Query('variantId') variantId?: string) {
+    return this.setup.preview(productId, variantId || null);
   }
 
   @Put(':productId/production-setup')
   @RequirePermissions('catalog.manage')
-  putSetup(@Param('productId') productId: string, @Body() dto: ProductionSetupPutDto) {
-    return this.setup.putSetup(productId, dto);
+  putSetup(
+    @Param('productId') productId: string,
+    @Body() dto: ProductionSetupPutDto,
+    @Query('variantId') variantId?: string,
+  ) {
+    return this.setup.putSetup(productId, dto, variantId || null);
   }
 }

@@ -230,21 +230,28 @@ export function useUpsertProductWorkflowMutation(productId: string) {
   });
 }
 
-export function useProductProductionSetupQuery(productId: string, enabled = true) {
+export function useProductProductionSetupQuery(
+  productId: string,
+  enabled = true,
+  variantId?: string | null,
+) {
   return useQuery({
-    queryKey: queryKeys.workflow.productionSetup(productId),
-    queryFn: () => getProductProductionSetup(productId),
+    queryKey: queryKeys.workflow.productionSetup(productId, variantId),
+    queryFn: () => getProductProductionSetup(productId, variantId),
     enabled: enabled && Boolean(productId),
   });
 }
 
-export function usePutProductProductionSetupMutation(productId: string) {
+export function usePutProductProductionSetupMutation(
+  productId: string,
+  variantId?: string | null,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: Parameters<typeof putProductProductionSetup>[1]) =>
-      putProductProductionSetup(productId, body),
+      putProductProductionSetup(productId, body, variantId),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: queryKeys.workflow.productionSetup(productId) });
+      await qc.invalidateQueries({ queryKey: queryKeys.workflow.productionSetup(productId, variantId) });
     },
   });
 }

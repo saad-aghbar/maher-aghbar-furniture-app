@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import {
-  emptyUserIdentityForm,
-  hydrateUserIdentityForm,
   submittedRoleId,
-  submittedStageDefinitionIds,
   type UserIdentityForm,
 } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
@@ -13,7 +10,7 @@ import type { UserRow } from '@/api/modules/users';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { BottomSheet, resolveSheetHeightCap } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -22,11 +19,13 @@ import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
 import { identityUsesDepartment, UserIdentityFields } from './UserIdentityFields';
 import {
+  HourlyRateField,
   UserActiveToggle,
   UserFormError,
   UserFormFooter,
   UserFormSection,
 } from './userSheetForm';
+import { formFromUser, updateUserBody } from '../userForm';
 import { useStageLibraryQuery } from '@/features/workflow/query';
 
 type Props = {
@@ -45,29 +44,8 @@ type FormState = {
   isActive: boolean;
   departmentId: string;
   identity: UserIdentityForm;
+  hourlyRate: string;
 };
-
-function formFromUser(user: UserRow): FormState {
-  const assigned = user.roles?.[0]?.role;
-  const identity = assigned
-    ? {
-        ...hydrateUserIdentityForm(assigned),
-        stageDefinitionIds:
-          assigned.kind === 'PRODUCTION_WORKER' || assigned.code === 'PRODUCTION_WORKER'
-            ? (user.stageDefinitionIds ?? [])
-            : [],
-      }
-    : emptyUserIdentityForm();
-  return {
-    username: user.username ?? '',
-    password: '',
-    firstName: user.firstName ?? '',
-    lastName: user.lastName ?? '',
-    isActive: user.isActive,
-    departmentId: user.departmentId ?? user.department?.id ?? '',
-    identity,
-  };
-}
 
 /**
  * Edit user sheet — username, password, names, active, role, department.
@@ -77,7 +55,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
   const { theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.92), 820);
+  const sheetHeight = resolveSheetHeightCap({ windowHeight: height });
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const rolesQuery = useRolesQuery(open && !passwordMode);
@@ -86,7 +64,9 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
   const stagesQuery = useStageLibraryQuery(open && !passwordMode);
   const updateMutation = useUpdateUserMutation();
 
-  const [form, setForm] = useState<FormState | null>(null);
+  const [form, setForm] = useState<FormState | null>(() =>
+    user ? formFromUser(user) : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [deptOpen, setDeptOpen] = useState(false);
 
@@ -179,17 +159,16 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
     try {
       await updateMutation.mutateAsync({
         id: user.id,
-        body: {
+        body: updateUserBody({
           username,
           firstName,
           lastName,
           isActive: form.isActive,
-          roleIds: [roleId],
-          ...(showDepartment
-            ? { departmentId: form.departmentId || null }
-            : { departmentId: null }),
-          stageDefinitionIds: submittedStageDefinitionIds(form.identity),
-        },
+          roleId,
+          departmentId: showDepartment ? form.departmentId || null : null,
+          identity: form.identity,
+          hourlyRate: form.hourlyRate,
+        }),
       });
       void haptics.confirmLight();
       onClose();
@@ -287,6 +266,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                     onChangeText={(v) => set('username', v)}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    accessibilityLabel={t('users.username')}
                   />
                   <AppText
                     variant="caption"
@@ -339,6 +319,15 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                   stagesLoading={stagesQuery.isLoading}
                   titleWeight={titleWeight}
                 />
+
+                {form.identity.identityRoleCode === 'PRODUCTION_WORKER' &&
+                form.identity.employeeType === 'WORKER' ? (
+                  <HourlyRateField
+                    value={form.hourlyRate}
+                    onChange={(hourlyRate) => set('hourlyRate', hourlyRate)}
+                    titleWeight={titleWeight}
+                  />
+                ) : null}
 
                 {showDepartment ? (
                   <UserFormSection

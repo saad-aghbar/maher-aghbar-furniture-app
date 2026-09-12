@@ -1,0 +1,23 @@
+appId: jo.maheraghbar.furniture
+name: Admin sets a worker hourly rate
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Users.*|.*المستخدمون.*|.*משתמשים.*"
+    optional: true
+- tapOn:
+    text: ".*Workers.*|.*العمّال.*|.*עובדים.*"
+    optional: true
+- tapOn:
+    text: ".*Hourly rate.*|.*أجر الساعة.*|.*שכר שעתי.*"
+    optional: true
+- assertVisible:
+    text: ".*Hourly rate.*|.*أجر الساعة.*|.*שכר שעתי.*"
+    optional: true
+- tapOn:
+    text: ".*Save.*|.*حفظ.*|.*שמור.*"
+    optional: true

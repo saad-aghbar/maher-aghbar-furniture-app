@@ -1,0 +1,37 @@
+appId: jo.maheraghbar.furniture
+name: Admin Cost & Performance — filter, dossier, materials
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*More.*|.*المزيد.*|.*עוד.*"
+    optional: true
+- tapOn:
+    text: ".*Cost & Performance.*|.*التكلفة والأداء.*|.*עלות וביצוע.*"
+    optional: true
+- tapOn:
+    text: ".*This month.*|.*هذا الشهر.*|.*החודש.*"
+    optional: true
+- tapOn:
+    text: ".*Labor.*|.*العمالة.*|.*עבודה.*"
+    optional: true
+- tapOn:
+    text: ".*Orders.*|.*طلبات.*|.*הזמנות.*"
+- tapOn:
+    text: "SO-.*"
+    optional: true
+- assertVisible:
+    text: ".*Materials.*|.*المواد.*|.*חומרים.*"
+    optional: true
+- tapOn:
+    text: ".*Materials.*|.*المواد.*|.*חומרים.*"
+    optional: true
+- tapOn:
+    text: ".*Back.*|.*رجوع.*|.*חזרה.*"
+    optional: true

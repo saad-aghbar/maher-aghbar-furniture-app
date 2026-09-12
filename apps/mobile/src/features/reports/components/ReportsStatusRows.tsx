@@ -5,15 +5,17 @@ import { Divider } from '@/components/layout/Divider';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { formatCurrency, formatNumber } from '@/i18n/format';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { StatusCountRow } from '../selectReports';
 
 type Props = {
   rows: StatusCountRow[];
+  onPressStatus?: (status: string) => void;
 };
 
 /** Inset status ledger — badge + count, money on the opposite edge. */
-export function ReportsStatusRows({ rows }: Props) {
+export function ReportsStatusRows({ rows, onPressStatus }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -39,7 +41,15 @@ export function ReportsStatusRows({ rows }: Props) {
         return (
           <View key={`${row.status}-${index}`}>
             {index > 0 ? <Divider compact plain style={{ marginVertical: 0 }} /> : null}
-            <View
+            <AnimatedPressable
+              variant="card"
+              accessibilityRole="button"
+              accessibilityLabel={row.status}
+              onPress={() => {
+                if (!onPressStatus) return;
+                void haptics.selection();
+                onPressStatus(row.status);
+              }}
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
                 alignItems: 'center',
@@ -71,7 +81,7 @@ export function ReportsStatusRows({ rows }: Props) {
                   </AppText>
                 ) : null}
               </View>
-            </View>
+            </AnimatedPressable>
           </View>
         );
       })}

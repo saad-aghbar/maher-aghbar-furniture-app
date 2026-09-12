@@ -111,6 +111,9 @@ export const taskDetailFixture: TaskDetail = {
     salesOrder: { id: 'so-1', number: 'ORD-1256' },
     quantity: 4,
     specifications: 'Please assemble the pieces according to the dimensions in the drawing.',
+    instructionsAr: 'لف بسيط',
+    instructionsEn: 'Simple wrap',
+    instructionsHe: null,
   },
   stageDefinition: {
     code: 'CUT',

@@ -26,6 +26,7 @@ import {
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
 import { defaultBinIdForWarehouse, ensureDefaultWarehouseBin } from '../seed/warehouse-bins';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -542,6 +543,7 @@ export async function seedPiece10FinishedOutboundExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -573,6 +575,7 @@ export async function seedPiece10FinishedOutboundExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -637,6 +640,7 @@ export async function seedPiece10FinishedOutboundExamples(
         salesOrderLineId: line.id,
         customerId: input.customerId,
         productId: input.productId,
+        ...variantPoFieldsForProductId(opts.products, input.productId),
         productDescription: input.description,
         quantity: qty,
         status: input.poStatus ?? ProductionOrderStatus.READY_FOR_DELIVERY,

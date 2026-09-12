@@ -11,6 +11,7 @@ import {
   SalesOrderStatus,
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -61,6 +62,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             productName: product.nameEn,
             quantity: 1,
             width: catalogW,
@@ -98,6 +100,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             productName: product.nameEn,
             quantity: 2,
             fabricType: 'Velvet',
@@ -140,6 +143,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             productName: product.nameEn,
             quantity: 1,
             width: catalogW + 20,
@@ -176,6 +180,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             description: product.nameEn,
             quantity: qty,
             unitPrice,
@@ -212,6 +217,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             description: product.nameEn,
             quantity: qty,
             unitPrice,
@@ -254,6 +260,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             description: `${product.nameEn} (custom width)`,
             quantity: 1,
             unitPrice,
@@ -291,6 +298,7 @@ export async function seedPiece1LifecycleExamples(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             description: `${product.nameEn} (custom width)`,
             specifications: `Fabric: Linen Sand; Dims: ${customW}×${catalogH}×${catalogD} cm`,
             quantity: 1,

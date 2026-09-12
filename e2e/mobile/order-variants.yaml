@@ -1,0 +1,28 @@
+appId: jo.maheraghbar.furniture
+name: Variant through Cost & Performance products
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*More.*|.*المزيد.*|.*עוד.*"
+    optional: true
+- tapOn:
+    text: ".*Cost & Performance.*|.*التكلفة والأداء.*|.*עלות וביצוע.*"
+    optional: true
+- tapOn:
+    text: ".*Products.*|.*المنتجات.*|.*מוצרים.*"
+- assertVisible:
+    text: ".*Products & variants.*|.*المنتجات والتنويعات.*|.*מוצרים ווריאנטים.*"
+    optional: true
+- tapOn:
+    text: "KARINA-250"
+    optional: true
+- assertVisible:
+    text: "SO-.*"
+    optional: true

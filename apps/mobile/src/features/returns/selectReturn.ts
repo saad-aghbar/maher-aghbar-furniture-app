@@ -14,10 +14,15 @@ export type ReturnLifecyclePhase =
   | 'BEING_RESOLVED'
   | 'RESOLVED';
 
+export type DealerReturnDesk = 'all' | 'open' | 'progress' | 'resolved';
+
+export type DealerReturnRailTone = 'brand' | 'warning' | 'success' | 'error';
+
 export type ReturnCardModel = {
   id: string;
   number: string;
   productDesc: string;
+  variantLabel: string | null;
   quantityLabel: string;
   reason: string;
   reasonLabelKey: string;
@@ -26,6 +31,7 @@ export type ReturnCardModel = {
   physicalStatus: string;
   inventoryFate: string | null;
   needInfoNote: string | null;
+  createdAt: string | null;
   /** Human lifecycle phase for dealer UI. */
   lifecyclePhase: ReturnLifecyclePhase;
   lifecycleLabelKey: string;
@@ -204,6 +210,7 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
     id: row.id,
     number: row.number,
     productDesc: row.productDesc?.trim() || '—',
+    variantLabel: row.variantLabel?.trim() || null,
     quantityLabel: Number.isFinite(qty) ? String(qty) : String(row.quantity ?? '—'),
     reason: row.reason,
     reasonLabelKey: returnReasonLabelKey(row.reason),
@@ -212,6 +219,7 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
     physicalStatus,
     inventoryFate,
     needInfoNote,
+    createdAt: row.createdAt ?? null,
     lifecyclePhase,
     lifecycleLabelKey: returnLifecycleLabelKey(lifecyclePhase),
     dealerName: localizedName(
@@ -257,8 +265,7 @@ export function returnMatchesStatusChip(
     return (
       phase === 'APPROVED' ||
       phase === 'WAITING_RETURN' ||
-      phase === 'BEING_RESOLVED' ||
-      approval === 'APPROVED'
+      phase === 'BEING_RESOLVED'
     );
   }
   if (chip === 'REJECTED') {
@@ -285,6 +292,75 @@ const FLOOR_STARTED = new Set([
   'READY_FOR_DELIVERY',
   'COMPLETED',
 ]);
+
+export function dealerReturnDesk(phase: ReturnLifecyclePhase): Exclude<DealerReturnDesk, 'all'> {
+  if (phase === 'REPORTED' || phase === 'UNDER_REVIEW') return 'open';
+  if (phase === 'RESOLVED') return 'resolved';
+  return 'progress';
+}
+
+export function dealerReturnRailTone(
+  phase: ReturnLifecyclePhase,
+  approvalStatus?: string | null,
+): DealerReturnRailTone {
+  if (phase === 'RESOLVED') {
+    return (approvalStatus ?? '').toUpperCase() === 'REJECTED' ? 'error' : 'success';
+  }
+  if (phase === 'REPORTED' || phase === 'UNDER_REVIEW' || phase === 'WAITING_RETURN') {
+    return 'warning';
+  }
+  return 'brand';
+}
+
+export function returnListDay(createdAt?: string | null): string {
+  return (createdAt ?? '').slice(0, 10);
+}
+
+export function selectDealerReturnHub(
+  rows: Array<{
+    approvalStatus?: string | null;
+    physicalStatus?: string | null;
+    inventoryFate?: string | null;
+  }>,
+): { open: number; inProgress: number; resolved: number } {
+  let open = 0;
+  let inProgress = 0;
+  let resolved = 0;
+  for (const row of rows) {
+    const desk = dealerReturnDesk(mapReturnLifecyclePhase(row));
+    if (desk === 'open') open += 1;
+    else if (desk === 'progress') inProgress += 1;
+    else resolved += 1;
+  }
+  return { open, inProgress, resolved };
+}
+
+export function filterDealerReturnCards(
+  cards: ReturnCardModel[],
+  opts: { q?: string; dateFrom?: string; dateTo?: string },
+): ReturnCardModel[] {
+  const q = (opts.q ?? '').trim().toLowerCase();
+  const { dateFrom, dateTo } = opts;
+  return cards.filter((card) => {
+    const day = returnListDay(card.createdAt);
+    if (dateFrom && day && day < dateFrom) return false;
+    if (dateTo && day && day > dateTo) return false;
+    if (q) {
+      const hay = [
+        card.number,
+        card.productDesc,
+        card.salesOrderNumber,
+        card.dealerOrderNumber,
+        card.reason,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
 
 /** Unreleased return work opens the plan desk; released work opens production detail. */
 export function returnWorkOrderHref(wo: {

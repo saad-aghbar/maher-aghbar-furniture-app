@@ -81,6 +81,7 @@ const KEYS = [
   'mobile.production.origin.all',
   'mobile.production.origin.normal',
   'mobile.production.origin.returned',
+  'mobile.returns.variant',
 ] as const;
 
 describe('returns i18n', () => {

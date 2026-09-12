@@ -12,6 +12,7 @@ describe('selectTask', () => {
   it('maps list fields without progress percentages', () => {
     const card = selectTaskCard(openTasksFixture[0], 'en');
     expect(card.orderNumber).toBe('ORD-1256');
+    expect(card.factoryOrderNumber).toBe('PO-220');
     expect(card.requiredWork).toBe('Cutting');
     expect(card.priority).toBe('urgent');
     expect(card.emphasize).toBe(true);
@@ -26,6 +27,17 @@ describe('selectTask', () => {
     expect(card.orderNumber).toBe('ORD-1256');
   });
 
+  it('shows variant labels and the factory production-order number', () => {
+    const card = selectTaskCard(
+      { ...openTasksFixture[0]!, variantLabel: 'Ukrainian' },
+      'en',
+    );
+    expect(card.productTitle).toBe('Dining Table · Ukrainian');
+    expect(card.variantLabel).toBe('Ukrainian');
+    expect(card.orderNumber).toBe('ORD-1256');
+    expect(card.factoryOrderNumber).toBe('PO-220');
+  });
+
   it('sorts urgent before normal', () => {
     const sorted = sortUrgentFirst(
       openTasksFixture.map((item) => selectTaskCard(item, 'en')),
@@ -37,6 +49,7 @@ describe('selectTask', () => {
   it('maps detail actions and strips progress', () => {
     const vm = selectTaskDetail(taskDetailFixture, 'en');
     expect(vm.instructions).toContain('drawing');
+    expect(vm.orderInstructions).toBe('Simple wrap');
     expect(vm.attachments).toHaveLength(1);
     expect(vm.canStart).toBe(false); // IN_PROGRESS
     expect(vm.canStop).toBe(true);
@@ -47,6 +60,13 @@ describe('selectTask', () => {
     expect(vm.canCarryOver).toBe(false);
     expect(vm.isTerminal).toBe(false);
     assertNoProgressLeak(vm);
+  });
+
+  it('keeps order instructions when a variant label is present', () => {
+    const vm = selectTaskDetail({ ...taskDetailFixture, variantLabel: 'Ukrainian' }, 'en');
+    expect(vm.orderInstructions).toBe('Simple wrap');
+    expect(vm.productTitle).toBe('Dining Table · Ukrainian');
+    expect(vm.factoryOrderNumber).toBe('PO-220');
   });
 
   it('marks COMPLETED as terminal with dock actions off', () => {
@@ -89,6 +109,7 @@ describe('selectTask', () => {
     expect(vm.productTitle).toBe('طاولة طعام');
     expect(vm.orderNumber).toBe('ORD-1256');
     expect(vm.instructions).toContain('طاولة طعام');
+    expect(vm.orderInstructions).toBe('لف بسيط');
     expect(vm.instructions).toMatch(/اتبع|القص|المواصفات|الرسم/);
   });
 

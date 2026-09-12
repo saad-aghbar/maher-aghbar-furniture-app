@@ -22,30 +22,8 @@ type Props = {
   onToggle: () => void;
 };
 
-function sectionMeta(
-  key: FloorBoardSectionKey,
-  colors: ReturnType<typeof useTheme>['colors'],
-): {
-  accent: string;
-  soft: string;
-  icon: keyof typeof Ionicons.glyphMap;
-} {
-  if (key === 'today') {
-    return {
-      accent: colors.brand,
-      soft: colors.brandSoft,
-      icon: 'sunny-outline',
-    };
-  }
-  return {
-    accent: colors.warning,
-    soft: colors.warningSoft,
-    icon: 'time-outline',
-  };
-}
-
 /**
- * Today / Past section header — elevated floor board with chevron toggle.
+ * Today / Past group header — parchment band, brand rail, not a warning desk.
  */
 export function OrdersDaySectionHeader({
   title,
@@ -58,8 +36,8 @@ export function OrdersDaySectionHeader({
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const rotate = useSharedValue(expanded ? 1 : 0);
-  const { accent, soft, icon } = sectionMeta(sectionKey, colors);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const icon = sectionKey === 'today' ? 'sunny-outline' : 'time-outline';
 
   useEffect(() => {
     const d = withMotionDuration(durations.chip, reduce);
@@ -90,21 +68,22 @@ export function OrdersDaySectionHeader({
         marginBottom: theme.spacing.sm,
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: expanded ? accent : colors.borderStrong,
+        borderColor: colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
       }}
     >
       <View
+        pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0,
           bottom: 0,
           ...pinStart(isRTL),
           width: 3,
-          backgroundColor: accent,
-          opacity: expanded ? 0.9 : 0.45,
+          backgroundColor: colors.brand,
+          opacity: 0.55,
         }}
       />
       <View
@@ -117,7 +96,7 @@ export function OrdersDaySectionHeader({
           paddingVertical: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
           ...extraStartPadding(isRTL, theme.spacing.md + 4),
-          backgroundColor: expanded ? soft : 'transparent',
+          backgroundColor: colors.surfaceSecondary,
         }}
       >
         <View
@@ -128,42 +107,40 @@ export function OrdersDaySectionHeader({
             flex: 1,
           }}
         >
-          <View
+          <Ionicons name={icon} size={16} color={colors.brand} />
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            numberOfLines={1}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surface,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
+              flexShrink: 1,
+              color: colors.brand,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.7,
+              fontSize: 11,
+              textAlign: isRTL ? 'right' : 'left',
             }}
           >
-            <Ionicons name={icon} size={16} color={accent} />
-          </View>
-          <AppText variant="label" weight={titleWeight} style={{ color: accent, flexShrink: 1 }}>
             {title}
           </AppText>
         </View>
         <View
           style={{
             minWidth: 28,
-            height: 28,
             paddingHorizontal: 8,
-            borderRadius: 14,
-            backgroundColor: colors.background,
-            borderWidth: 1,
+            paddingVertical: 3,
+            borderRadius: theme.radius.full,
+            backgroundColor: colors.brandSoft,
+            borderWidth: StyleSheet.hairlineWidth,
             borderColor: colors.brand,
             alignItems: 'center',
-            justifyContent: 'center',
           }}
         >
           <AppText
             variant="caption"
             weight="semibold"
             dir="ltr"
-            style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
+            style={{ color: colors.brand, fontVariant: ['tabular-nums'], fontSize: 12 }}
           >
             {String(count)}
           </AppText>
@@ -173,19 +150,15 @@ export function OrdersDaySectionHeader({
             width: 28,
             height: 28,
             borderRadius: 14,
-            backgroundColor: colors.background,
-            borderWidth: 1,
-            borderColor: colors.brand,
+            backgroundColor: colors.surface,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.border,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
           <Animated.View style={chevronStyle}>
-            <Ionicons
-              name="chevron-forward"
-              size={14}
-              color={colors.brand}
-            />
+            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
           </Animated.View>
         </View>
       </View>

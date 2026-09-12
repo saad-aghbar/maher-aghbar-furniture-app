@@ -1,7 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,7 +10,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
+import { localizedName } from '@maher/i18n';
+import { listSpecOptionGroups, listSpecOptionValues } from '@/api/modules/catalog';
+import { listProductVariants } from '@/api/modules/catalogAdmin';
+import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -24,17 +28,24 @@ import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { BackButton } from '@/components/BackButton';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
-import { FadeIn, haptics, ListItemEnter } from '@/motion';
+import { AnimatedPressable, FadeIn, haptics, ListItemEnter } from '@/motion';
 import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import type { BrowseProduct } from './api';
 import { ProductDetailSkeleton } from './components/ProductDetailSkeleton';
 import { ProductImageCarousel } from './components/ProductImageCarousel';
 import { RelatedProductsRail } from './components/RelatedProductsRail';
-import { navigateToNewOrderWithProduct } from './newOrderDeepLink';
+import { useToast } from '@/components/feedback/Toast';
+import { navigateToBasketReview, navigateToNewOrderWithProduct } from './newOrderDeepLink';
+import { useOptionalOrderBasket } from '@/features/requests/OrderBasketProvider';
+import { OrderLineSpecSheet } from '@/features/requests/components/OrderLineSpecSheet';
+import { emptyOrderLine, type NewOrderLine } from '@/features/requests/newOrderLine';
+import { lineHasProduct } from '@/features/requests/newOrderBasket';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useBrowseProductQuery, usePreviouslyOrderedQuery } from './query';
 import {
   selectProductDetail,
+  stripVariantCosts,
   type ProductDetailDimension,
 } from './selectProductDetail';
 import { useDealerFavorites } from './useDealerFavorites';
@@ -72,6 +83,8 @@ export function ProductDetailScreen({
 }: ProductDetailScreenProps) {
   const { user } = useAuth();
   const { t, formatCurrency, locale, isRTL } = useLocale();
+  const { showToast } = useToast();
+  const basket = useOptionalOrderBasket();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
@@ -83,7 +96,29 @@ export function ProductDetailScreen({
   const dark = colorScheme === 'dark';
 
   const [qty, setQty] = useState(1);
+  const [variantId, setVariantId] = useState<string | null>(null);
+  const [variantCleared, setVariantCleared] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [customizeLine, setCustomizeLine] = useState<NewOrderLine | null>(null);
   const query = useBrowseProductQuery(productId, allowed && !forceState);
+  const variantsQuery = useQuery({
+    queryKey: queryKeys.catalog.variants(productId, { includeInactive: false }),
+    queryFn: () => listProductVariants(productId, false),
+    enabled: isDealer && allowed && !forceState && Boolean(productId),
+    staleTime: 30_000,
+  });
+  const specGroupsQuery = useQuery({
+    queryKey: queryKeys.catalog.specOptionGroups({ pageSize: 100 }),
+    queryFn: () => listSpecOptionGroups({ page: 1, pageSize: 100 }),
+    enabled: isDealer && allowed && !forceState,
+    staleTime: 60_000,
+  });
+  const specValuesQuery = useQuery({
+    queryKey: queryKeys.catalog.specOptionValues({ pageSize: 200 }),
+    queryFn: () => listSpecOptionValues({ page: 1, pageSize: 200 }),
+    enabled: isDealer && allowed && !forceState,
+    staleTime: 60_000,
+  });
   const refreshing = query.isRefetching && !query.isLoading;
   const favorites = useDealerFavorites(isDealer ? user?.id : undefined);
   const orderedQuery = usePreviouslyOrderedQuery(isDealer && allowed && !forceState);
@@ -93,7 +128,12 @@ export function ProductDetailScreen({
   const raw: BrowseProduct | undefined =
     forceState === 'success' || forceState === 'offline' ? fixture : query.data;
 
-  const vm = raw ? selectProductDetail(raw, locale) : null;
+  const variants = variantsQuery.data ?? [];
+  const selectedVariant = variants.find((row) => row.id === variantId) ?? null;
+  const safeVariant = selectedVariant
+    ? stripVariantCosts(selectedVariant as unknown as Record<string, unknown>)
+    : null;
+  const vm = raw ? selectProductDetail(raw, locale, safeVariant) : null;
 
   const showOrderCta = isDealer && (canCreate || Boolean(forceState));
   /** Persistent tab bar + FAB never unmount — footer must clear them. */
@@ -102,15 +142,22 @@ export function ProductDetailScreen({
     theme.spacing.sm,
     isDealer ? DEALER_TAB_BAR_CLEARANCE : undefined,
   );
-  const footerInnerH = 118;
+  const footerInnerH = 168;
   const scrollBottomPad = showOrderCta
     ? footerInnerH + footerClearance + theme.spacing.lg
     : 40 + Math.max(insets.bottom, theme.spacing.md);
 
+  useEffect(() => {
+    if (variantId || !variants.length || variantCleared) return;
+    const def = variants.find((row) => row.isDefault) ?? variants[0];
+    if (def) setVariantId(def.id);
+  }, [variants, variantId, variantCleared]);
+
+  const displayPrice = vm?.price ?? null;
   const lineTotal = useMemo(() => {
-    if (vm?.price == null) return null;
-    return vm.price * qty;
-  }, [vm?.price, qty]);
+    if (displayPrice == null) return null;
+    return displayPrice * qty;
+  }, [displayPrice, qty]);
 
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
@@ -156,9 +203,44 @@ export function ProductDetailScreen({
     );
   }
 
-  const onCreateOrder = () => {
+  const catalogPick = () => {
+    const label = selectedVariant
+      ? localizedName(locale, selectedVariant) || selectedVariant.code
+      : undefined;
+    return {
+      productId: vm.id,
+      quantity: String(qty),
+      customProductName: vm.name,
+      variantId: variantId ?? undefined,
+      variantLabel: label,
+      variantSku: selectedVariant?.sku,
+    };
+  };
+
+  const onAddToBasket = () => {
+    void haptics.confirmLight();
+    if (basket) {
+      basket.addFromCatalog(catalogPick());
+      showToast({ variant: 'success', message: t('mobile.productDetail.addedToBasket') });
+      return;
+    }
+    navigateToNewOrderWithProduct(router, vm.id, qty, variantId ?? undefined, {
+      variantLabel: catalogPick().variantLabel,
+      variantSku: catalogPick().variantSku,
+    });
+  };
+
+  const onOrderNow = () => {
     void haptics.confirmMedium();
-    navigateToNewOrderWithProduct(router, vm.id, qty);
+    if (basket) {
+      basket.addFromCatalog(catalogPick(), true);
+      navigateToBasketReview(router);
+      return;
+    }
+    navigateToNewOrderWithProduct(router, vm.id, qty, variantId ?? undefined, {
+      variantLabel: catalogPick().variantLabel,
+      variantSku: catalogPick().variantSku,
+    });
   };
 
   const bumpQty = (delta: number) => {
@@ -267,6 +349,142 @@ export function ProductDetailScreen({
                 </AppText>
               ) : null}
 
+              {isDealer && variants.length > 0 ? (
+                <View
+                  style={{
+                    marginTop: theme.spacing.sm,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    overflow: 'hidden',
+                    ...cardLift,
+                  }}
+                >
+                  <View
+                    style={{
+                      paddingHorizontal: theme.spacing.md,
+                      paddingTop: theme.spacing.md,
+                      paddingBottom: theme.spacing.sm,
+                    }}
+                  >
+                    <AppText variant="label" weight={titleWeight}>
+                      {t('mobile.productDetail.pickVariant')}
+                    </AppText>
+                  </View>
+                  {variants.map((row, index) => {
+                    const selected = variantId === row.id;
+                    const label = localizedName(locale, row) || row.code;
+                    return (
+                      <View
+                        key={row.id}
+                        style={{
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'center',
+                          minHeight: theme.sizes.touch.min,
+                          paddingHorizontal: theme.spacing.md,
+                          paddingVertical: theme.spacing.sm,
+                          borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                          borderTopColor: colors.border,
+                          backgroundColor: selected ? colors.brandSoft : colors.surface,
+                          gap: theme.spacing.sm,
+                        }}
+                      >
+                        <AnimatedPressable
+                          variant="button"
+                          accessibilityRole="button"
+                          accessibilityLabel={label}
+                          accessibilityState={{ selected }}
+                          testID={`pdp-variant-${row.id}`}
+                          onPress={() => {
+                            void haptics.selection();
+                            setVariantCleared(false);
+                            setVariantId(row.id);
+                          }}
+                          style={{ flex: 1, minHeight: theme.sizes.touch.min, justifyContent: 'center' }}
+                        >
+                          <AppText weight={titleWeight}>{label}</AppText>
+                          <AppText variant="caption" color="muted" dir="ltr">
+                            {[row.sku, row.width != null ? `${row.width}` : null]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </AppText>
+                        </AnimatedPressable>
+                        {selected ? (
+                          <Ionicons name="checkmark-circle" size={22} color={colors.brand} />
+                        ) : (
+                          <Ionicons name="add-circle-outline" size={22} color={colors.brand} />
+                        )}
+                        {selected ? (
+                          <AnimatedPressable
+                            variant="button"
+                            accessibilityRole="button"
+                            accessibilityLabel={t('mobile.productDetail.clearVariant')}
+                            onPress={() => {
+                              void haptics.selection();
+                              setVariantCleared(true);
+                              setVariantId(null);
+                            }}
+                            hitSlop={8}
+                          >
+                            <Ionicons name="close-circle-outline" size={20} color={colors.textMuted} />
+                          </AnimatedPressable>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              {selectedVariant && isDealer && showOrderCta ? (
+                <AnimatedPressable
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('mobile.newOrder.customize')}
+                  testID="pdp-customize-variant"
+                  onPress={() => {
+                    void haptics.selection();
+                    const label =
+                      localizedName(locale, selectedVariant) || selectedVariant.code;
+                    setCustomizeLine(
+                      emptyOrderLine({
+                        productId: vm.id,
+                        customProductName: vm.name,
+                        quantity: String(qty),
+                        variantId: selectedVariant.id,
+                        variantLabel: label,
+                        variantSku: selectedVariant.sku ?? '',
+                        dimWidth:
+                          selectedVariant.width != null ? String(selectedVariant.width) : '',
+                        dimHeight:
+                          selectedVariant.height != null ? String(selectedVariant.height) : '',
+                        dimDepth:
+                          selectedVariant.depth != null ? String(selectedVariant.depth) : '',
+                        dimSeat:
+                          selectedVariant.seatHeight != null
+                            ? String(selectedVariant.seatHeight)
+                            : '',
+                      }),
+                    );
+                    setCustomizeOpen(true);
+                  }}
+                  style={{
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.brandSoft,
+                    paddingHorizontal: theme.spacing.md,
+                    justifyContent: 'center',
+                    marginTop: theme.spacing.sm,
+                  }}
+                >
+                  <AppText weight={titleWeight} color="brand">
+                    {t('mobile.newOrder.customize')}
+                  </AppText>
+                </AnimatedPressable>
+              ) : null}
+
               <View
                 style={{
                   marginTop: theme.spacing.xs,
@@ -290,7 +508,7 @@ export function ProductDetailScreen({
                     dir="ltr"
                     style={{ fontSize: 26, lineHeight: 32, color: colors.textPrimary }}
                   >
-                    {vm.price != null ? formatCurrency(vm.price) : '—'}
+                    {displayPrice != null ? formatCurrency(displayPrice) : '—'}
                   </AppText>
                   {vm.unit ? (
                     <AppText variant="caption" color="muted">
@@ -624,7 +842,8 @@ export function ProductDetailScreen({
                       overflow: 'hidden',
                     }}
                   >
-                    <Pressable
+                    <AnimatedPressable
+                      variant="button"
                       onPress={() => bumpQty(-1)}
                       accessibilityRole="button"
                       accessibilityLabel={t('mobile.productDetail.qtyDecrease')}
@@ -638,7 +857,7 @@ export function ProductDetailScreen({
                       <AppText variant="title" weight="semibold">
                         −
                       </AppText>
-                    </Pressable>
+                    </AnimatedPressable>
                     <AppText
                       variant="label"
                       weight="semibold"
@@ -647,7 +866,8 @@ export function ProductDetailScreen({
                     >
                       {qty}
                     </AppText>
-                    <Pressable
+                    <AnimatedPressable
+                      variant="button"
                       onPress={() => bumpQty(1)}
                       accessibilityRole="button"
                       accessibilityLabel={t('mobile.productDetail.qtyIncrease')}
@@ -661,7 +881,7 @@ export function ProductDetailScreen({
                       <AppText variant="title" weight="semibold">
                         +
                       </AppText>
-                    </Pressable>
+                    </AnimatedPressable>
                   </View>
 
                   <View style={{ flex: 1, alignItems: isRTL ? 'flex-start' : 'flex-end' }}>
@@ -675,15 +895,50 @@ export function ProductDetailScreen({
                 </View>
 
                 <PrimaryButton
-                  label={t('mobile.productDetail.orderThisProduct')}
-                  onPress={onCreateOrder}
+                  label={t('mobile.productDetail.addToBasket')}
+                  onPress={onAddToBasket}
                   style={{ borderRadius: theme.radius.xl, minHeight: 50 }}
                   haptic="medium"
+                />
+                <SecondaryButton
+                  label={t('mobile.productDetail.orderNow')}
+                  onPress={onOrderNow}
+                  style={{ borderRadius: theme.radius.xl, minHeight: 50 }}
                 />
               </View>
             </View>
           </View>
         </FloatingActionDock>
+      ) : null}
+
+      {isDealer ? (
+        <OrderLineSpecSheet
+          open={customizeOpen}
+          onClose={() => {
+            setCustomizeOpen(false);
+            setCustomizeLine(null);
+          }}
+          onConfirm={() => {
+            if (customizeLine && basket) {
+              basket.setLines((prev) => {
+                if (!prev.some(lineHasProduct)) return [customizeLine];
+                return [...prev.filter(lineHasProduct), customizeLine];
+              });
+              showToast({
+                variant: 'success',
+                message: t('mobile.productDetail.addedToBasket'),
+              });
+            }
+            setCustomizeOpen(false);
+            setCustomizeLine(null);
+          }}
+          confirmLabel={t('mobile.productDetail.addToBasket')}
+          line={customizeLine}
+          onChange={setCustomizeLine}
+          variants={variants}
+          groups={specGroupsQuery.data?.data ?? []}
+          values={specValuesQuery.data?.data ?? []}
+        />
       ) : null}
     </AppScreen>
   );

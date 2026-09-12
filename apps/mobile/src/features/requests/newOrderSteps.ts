@@ -1,24 +1,34 @@
-export type NewOrderStep = 1 | 2 | 3 | 4;
+export type NewOrderStep = 1 | 2 | 3;
 
-/** Map legacy 6-step drafts onto the 4-step wizard. */
+const FOUR_TO_THREE: Record<1 | 2 | 3 | 4, NewOrderStep> = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 3,
+};
+
+/** Map legacy 6-step and 4-step drafts onto the 3-step wizard. */
 export function migrateDraftStep(step: number, version: number): NewOrderStep {
   const clamped = Math.min(Math.max(Math.floor(step) || 1, 1), 6);
+  let four: 1 | 2 | 3 | 4;
   if (version >= 2) {
-    return Math.min(4, Math.max(1, clamped)) as NewOrderStep;
+    four = Math.min(4, Math.max(1, clamped)) as 1 | 2 | 3 | 4;
+  } else {
+    const legacyMap: Record<number, 1 | 2 | 3 | 4> = {
+      1: 1,
+      2: 2,
+      3: 3,
+      4: 2,
+      5: 4,
+      6: 4,
+    };
+    four = legacyMap[clamped] ?? 1;
   }
-  const legacyMap: Record<number, NewOrderStep> = {
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 2,
-    5: 4,
-    6: 4,
-  };
-  return legacyMap[clamped] ?? 1;
+  return FOUR_TO_THREE[four];
 }
 
 export function clampWizardStep(step: number): NewOrderStep {
-  return Math.min(4, Math.max(1, Math.floor(step) || 1)) as NewOrderStep;
+  return Math.min(3, Math.max(1, Math.floor(step) || 1)) as NewOrderStep;
 }
 
 /** Fields that must survive navigation between steps (local draft shape). */

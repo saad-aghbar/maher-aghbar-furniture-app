@@ -12,9 +12,12 @@ describe('return replacement seed', () => {
   it('copies the original line manufacturing baseline', () => {
     const snapshot = specSnapshotFromLine({
       productId: 'prod-1',
+      variantId: 'var-250',
+      variantSku: 'KAR-250',
+      variantLabel: 'Ukrainian 250',
       description: 'Model 204 Chair',
       specifications: 'Walnut · Velvet 302',
-      orderSpec: { width: 75, fabric: 'Velvet 302 Sand' },
+      orderSpec: { width: 75, fabric: 'Velvet 302 Sand', orientation: 'LEFT' },
       manufacturingComplexity: 'MODIFIED',
       productionSetup: {
         workflowId: 'wf-1',
@@ -35,6 +38,10 @@ describe('return replacement seed', () => {
       },
     });
     expect(snapshot.productId).toBe('prod-1');
+    expect(snapshot.variantId).toBe('var-250');
+    expect(snapshot.variantLabel).toBe('Ukrainian 250');
+    expect((snapshot.orderSpec as { width: number; orientation?: string }).width).toBe(75);
+    expect((snapshot.orderSpec as { orientation?: string }).orientation).toBe('LEFT');
     expect(snapshot.workflowId).toBe('wf-1');
     expect(snapshot.materials).toHaveLength(1);
     expect(snapshot.materials?.[0]?.sku).toBe('VEL-302');

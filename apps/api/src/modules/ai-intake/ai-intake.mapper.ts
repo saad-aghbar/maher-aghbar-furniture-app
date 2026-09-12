@@ -45,6 +45,20 @@ export function parseItemsFromFields(
         material: row.material != null ? String(row.material) : null,
         category: row.category != null ? String(row.category) : null,
         notes: row.notes != null ? String(row.notes) : null,
+        variantLabel: row.variantLabel != null ? String(row.variantLabel) : null,
+        orientation: row.orientation != null ? String(row.orientation) : null,
+        woodType: row.woodType != null ? String(row.woodType) : null,
+        woodColor: row.woodColor != null ? String(row.woodColor) : null,
+        foamDensity: row.foamDensity != null ? String(row.foamDensity) : null,
+        finish: row.finish != null ? String(row.finish) : null,
+        optionCodes: Array.isArray(row.optionCodes) ? row.optionCodes.map(String) : null,
+        unrecognizedOptions: Array.isArray(row.unrecognizedOptions)
+          ? row.unrecognizedOptions.map(String)
+          : null,
+        confidence: typeof row.confidence === 'number' ? row.confidence : null,
+        lowConfidenceFields: Array.isArray(row.lowConfidenceFields)
+          ? row.lowConfidenceFields.map(String)
+          : null,
       }));
   } catch {
     return [];
@@ -117,6 +131,12 @@ export function lineItemsToRequestCreate(
       height: parseDim(item.height),
       depth: parseDim(item.depth),
       notes: notes || undefined,
+      variantLabel: item.variantLabel ?? undefined,
+      orientation: item.orientation ?? undefined,
+      woodType: item.woodType ?? undefined,
+      woodColor: item.woodColor ?? undefined,
+      foamDensity: item.foamDensity ?? undefined,
+      finish: item.finish ?? undefined,
     };
     return mapRequestItemCreate(dto, index, null);
   });

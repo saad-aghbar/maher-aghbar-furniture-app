@@ -311,7 +311,7 @@ export class ProductionService {
 
     const enriched = data.map((row) => {
       const byCode = row.currentStageCode
-        ? row.stages.find((s) => s.stageDefinition.code === row.currentStageCode)
+        ? row.stages.find((s) => s.stageDefinition?.code === row.currentStageCode)
         : null;
       const inProgress = row.stages.find((s) => s.status === 'IN_PROGRESS');
       const stage = byCode ?? inProgress ?? null;
@@ -1323,9 +1323,13 @@ export class ProductionService {
 
     // Dealers see sanitized stage DAG + completed-stage work photos only.
     if (user?.customerId) {
-      const { stages: _s, tasks: _t, openBlockers: _b, documents: _d, ...rest } = base;
+      const { stages: _s, tasks: _t, openBlockers: _b, documents: _d, product, ...rest } = base;
+      const { manufacturingCost: _mc, ...safeProduct } = (product ?? {}) as typeof product & {
+        manufacturingCost?: unknown;
+      };
       return {
         ...rest,
+        product: product ? safeProduct : product,
         stages: (order.stages ?? []).map((s) =>
           decorateInspectionJourneyFields(
             mapWorkflowStageSafe(s, taskPhotos),

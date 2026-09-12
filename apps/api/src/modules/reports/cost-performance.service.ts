@@ -6,7 +6,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { positiveUnitCost } from '../inventory/issue-unit-cost';
 import { applyReceiptPrices, coverageSummary, receiptPriceByItem } from '../inventory/cost-coverage';
-import { laborMoneyFromMinutes, resolveHourlyRate } from '../tasks/labor-rate';
+import { rollupLaborCost, type LaborCostBlock } from '../production/labor-costing';
 import { ensureTaskTimeEntry } from '../tasks/ensure-time-entry';
 import { freezePlannedCostAtRelease } from '../production/planned-cost-snapshot';
 import {
@@ -15,14 +15,20 @@ import {
   marginFrom,
   saleValueFromSubtotals,
   skuLedgerFromTransactions,
+  costVariance,
 } from './order-cost-ledger';
 import { aggregateFactoryTime } from './order-time';
-import { deriveProductStats } from './product-cost-analytics';
+import { deriveKeyedStats, deriveProductStats } from './product-cost-analytics';
 import {
   lifetimeCost,
   originBucket,
   recoveryOutcomeValue,
 } from './return-cost-rollup';
+import {
+  costOrdersWhere,
+  costReturnsWhere,
+  LABOR_NOT_CONFIGURED,
+} from './cost-query';
 
 const ISSUE_TYPES: InventoryTxType[] = [
   InventoryTxType.PRODUCTION_ISSUE,
@@ -39,29 +45,22 @@ export class CostPerformanceService {
     }
   }
 
-  async listOrders(query: {
-    from?: string;
-    to?: string;
-    customerId?: string;
-    page?: number;
-    pageSize?: number;
-    user?: AuthUser;
-  }) {
+  async listOrders(    query: {
+      from?: string;
+      to?: string;
+      customerId?: string;
+      productId?: string;
+      variantId?: string;
+      optionValueId?: string;
+      status?: string;
+      page?: number;
+      pageSize?: number;
+      user?: AuthUser;
+    }) {
     this.assertCostRead(query.user);
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
-    const where: Prisma.SalesOrderWhereInput = {
-      archivedAt: null,
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.from || query.to
-        ? {
-            orderDate: {
-              ...(query.from ? { gte: new Date(`${query.from}T00:00:00.000Z`) } : {}),
-              ...(query.to ? { lte: new Date(`${query.to}T23:59:59.999Z`) } : {}),
-            },
-          }
-        : {}),
-    };
+    const where = costOrdersWhere(query);
 
     const [total, orders] = await Promise.all([
       this.prisma.salesOrder.count({ where }),
@@ -95,7 +94,15 @@ export class CostPerformanceService {
               actualCompletionDate: true,
               plannedMaterialCost: true,
               plannedCostFrozenAt: true,
-              tasks: { select: { actualMinutes: true, isRework: true } },
+              tasks: {
+                select: {
+                  id: true,
+                  actualMinutes: true,
+                  isRework: true,
+                  assignedEmployeeId: true,
+                  stageDefinitionId: true,
+                },
+              },
             },
           },
         },
@@ -129,6 +136,21 @@ export class CostPerformanceService {
       txsByPo.set(poId, list);
     }
 
+    const taskIds = orders
+      .flatMap((order) => order.productionOrders.flatMap((po) => po.tasks.map((task) => task.id)))
+      .filter(Boolean);
+    const [rates, entries] = await Promise.all([
+      typeof this.prisma.laborRate?.findMany === 'function'
+        ? this.prisma.laborRate.findMany()
+        : Promise.resolve([]),
+      taskIds.length && typeof this.prisma.taskTimeEntry?.findMany === 'function'
+        ? this.prisma.taskTimeEntry.findMany({
+            where: { taskId: { in: taskIds } },
+            select: { taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
     const data = orders.map((order) => {
       const orderTxs = order.productionOrders.flatMap((po) => txsByPo.get(po.id) ?? []);
       const ledger = actualMaterialFromTransactions(orderTxs);
@@ -145,7 +167,20 @@ export class CostPerformanceService {
         : order.productionOrders.some((po) => po.plannedCostFrozenAt)
           ? order.productionOrders.reduce((sum, po) => sum + (positiveUnitCost(po.plannedMaterialCost) ?? 0), 0) || null
           : positiveUnitCost(order.manufacturingCost);
-      const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost);
+      const labor =
+        rollupLaborCost({
+          rates,
+          tasks: order.productionOrders.flatMap((po) =>
+            po.tasks.map((task) => ({
+              id: task.id,
+              stageDefinitionId: task.stageDefinitionId,
+            })),
+          ),
+          entries: entries.filter((entry) =>
+            order.productionOrders.some((po) => po.tasks.some((task) => task.id === entry.taskId)),
+          ),
+        })?.actual ?? LABOR_NOT_CONFIGURED;
+      const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost, labor);
       const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
       return {
         id: order.id,
@@ -163,9 +198,11 @@ export class CostPerformanceService {
         averageCostPerUnit: averagePerUnit(ledger.actualCost, qty),
         saleValue,
         plannedCost: planned,
+        variance: costVariance(planned, ledger.actualCost),
         grossMargin,
         marginPct,
         coverage: ledger.coverage,
+        labor,
         workerEffortMinutes: time.workerEffortMinutes,
         wallClockMinutes: time.wallClockMinutes,
       };
@@ -278,7 +315,10 @@ export class CostPerformanceService {
 
     const saleValue = saleValueFromSubtotals(order.invoices[0]?.subtotal, order.subtotal);
     const planned = order.plannedCostFrozenAt ? positiveUnitCost(order.manufacturingCost) : null;
-    const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost);
+    const labor = await this.laborForTasks(
+      originalPos.flatMap((po) => po.tasks),
+    );
+    const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost, labor.total);
 
     const usageEnrichment = originalPos.flatMap((po) => po.materialUsages).map((row) => ({
       sku: row.sku,
@@ -300,10 +340,6 @@ export class CostPerformanceService {
       return sum + row.extendedCost;
     }, 0);
 
-    const labor = await this.laborForTasks(
-      originalPos.flatMap((po) => po.tasks),
-    );
-
     const returnCost = await this.returnLifetime(order.id, returnPos, txs);
     const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
 
@@ -317,10 +353,12 @@ export class CostPerformanceService {
         saleValue,
         actualProductionCost: ledger.actualCost,
         plannedCost: planned,
+        variance: costVariance(planned, ledger.actualCost),
         plannedFrozenAt: order.plannedCostFrozenAt,
         grossMargin,
         marginPct,
         coverage: ledger.coverage,
+        labor: labor.total,
         quantity: qty,
         averageCostPerUnit: averagePerUnit(ledger.actualCost, qty),
         perPieceTracked: false,
@@ -395,13 +433,25 @@ export class CostPerformanceService {
     };
   }
 
-  async listReturns(query: { user?: AuthUser; page?: number; pageSize?: number }) {
+  async listReturns(query: {
+    user?: AuthUser;
+    page?: number;
+    pageSize?: number;
+    from?: string;
+    to?: string;
+    customerId?: string;
+    productId?: string;
+    variantId?: string;
+    status?: string;
+  }) {
     this.assertCostRead(query.user);
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const where = costReturnsWhere(query);
     const [total, rows] = await Promise.all([
-      this.prisma.returnRequest.count(),
+      this.prisma.returnRequest.count({ where }),
       this.prisma.returnRequest.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -424,15 +474,46 @@ export class CostPerformanceService {
     return this.returnRow(returnId, true);
   }
 
-  async productAnalytics(user?: AuthUser) {
+  async productAnalytics(
+    user?: AuthUser,
+    query: {
+      productId?: string;
+      variantId?: string;
+      optionValueId?: string;
+      status?: string;
+      from?: string;
+      to?: string;
+      customerId?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) {
     this.assertCostRead(user);
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
     const orders = await this.prisma.salesOrder.findMany({
-      where: { archivedAt: null },
+      where: costOrdersWhere(query),
       select: {
         id: true,
         lines: {
           select: {
             productId: true,
+            variantId: true,
+            variantSku: true,
+            variantLabel: true,
+            lineOptions: {
+              select: {
+                specOptionValueId: true,
+                specOptionValue: {
+                  select: {
+                    code: true,
+                    nameEn: true,
+                    nameAr: true,
+                    group: { select: { code: true, nameEn: true, nameAr: true } },
+                  },
+                },
+              },
+            },
             productionOrders: {
               where: { archivedAt: null, originType: 'SALES_ORDER' },
               select: {
@@ -472,7 +553,8 @@ export class CostPerformanceService {
 
     const histories = orders.flatMap((order) =>
       order.lines
-        .filter((line) => line.productId)
+        .filter((line) => line.productId && (!query.productId || line.productId === query.productId))
+        .filter((line) => !query.variantId || line.variantId === query.variantId)
         .map((line) => {
           const lineTxs = line.productionOrders.flatMap((po) => byPo.get(po.id) ?? []);
           const ledger = actualMaterialFromTransactions(lineTxs);
@@ -482,22 +564,82 @@ export class CostPerformanceService {
           );
           return {
             productId: line.productId!,
+            variantId: line.variantId ?? null,
+            variantSku: line.variantSku ?? null,
+            variantLabel: line.variantLabel ?? null,
+            options: line.lineOptions,
             actualCost: ledger.actualCost,
             workerEffortMinutes: minutes,
           };
         }),
     );
     const stats = deriveProductStats(histories);
+    const variantStats = deriveKeyedStats(
+      histories
+        .filter((row) => row.variantId)
+        .map((row) => ({ ...row, key: row.variantId! })),
+      (key) => ({ variantId: key }),
+    );
+    const optionHistories = histories.flatMap((row) =>
+      (row.options ?? []).map((opt) => ({
+        ...row,
+        key: opt.specOptionValueId,
+        optionValueId: opt.specOptionValueId,
+        optionCode: opt.specOptionValue.code,
+        optionName: opt.specOptionValue.nameEn,
+        groupCode: opt.specOptionValue.group.code,
+        groupName: opt.specOptionValue.group.nameEn,
+      })),
+    );
+    const optionStats = deriveKeyedStats(optionHistories, (key) => ({ optionValueId: key }));
+    const total = stats.length;
+    const pageRows = stats.slice((page - 1) * pageSize, page * pageSize);
     const products = await this.prisma.product.findMany({
-      where: { id: { in: stats.map((s) => s.productId) } },
+      where: { id: { in: pageRows.map((s) => s.productId) } },
       select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
+    const variantIds = variantStats.map((row) => row.variantId);
+    const variants = variantIds.length
+      ? await this.prisma.productVariant.findMany({
+          where: { id: { in: variantIds } },
+          select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, productId: true },
+        })
+      : [];
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+    const optionMeta = new Map(
+      optionHistories.map((row) => [
+        row.optionValueId,
+        {
+          optionValueId: row.optionValueId,
+          optionCode: row.optionCode,
+          optionName: row.optionName,
+          groupCode: row.groupCode,
+          groupName: row.groupName,
+        },
+      ]),
+    );
     return {
       derived: true,
-      products: stats.map((row) => ({
+      labor: LABOR_NOT_CONFIGURED,
+      data: pageRows.map((row) => ({
         ...row,
         product: byId.get(row.productId) ?? null,
+      })),
+      meta: paginatedMeta(page, pageSize, total),
+      products: pageRows.map((row) => ({
+        ...row,
+        product: byId.get(row.productId) ?? null,
+      })),
+      variants: variantStats.map((row) => ({
+        ...row,
+        variant: variantById.get(row.variantId) ??
+          histories.find((h) => h.variantId === row.variantId) ??
+          null,
+      })),
+      byOption: optionStats.map((row) => ({
+        ...row,
+        ...(optionMeta.get(row.optionValueId) ?? {}),
       })),
     };
   }
@@ -694,33 +836,109 @@ export class CostPerformanceService {
 
   private async laborForTasks(
     tasks: Array<{
+      id?: string;
       actualMinutes: number | null;
       assignedEmployeeId: string | null;
       stageDefinitionId: string | null;
     }>,
   ) {
-    const rates = await this.prisma.laborRate.findMany();
+    const rates =
+      typeof this.prisma.laborRate?.findMany === 'function' ? await this.prisma.laborRate.findMany() : [];
+    const taskIds = tasks.map((task) => task.id).filter((id): id is string => Boolean(id));
+    const entries =
+      taskIds.length && typeof this.prisma.taskTimeEntry?.findMany === 'function'
+        ? await this.prisma.taskTimeEntry.findMany({
+            where: { taskId: { in: taskIds } },
+            select: { taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
+          })
+        : [];
+    const block = rollupLaborCost({
+      rates,
+      tasks: tasks
+        .filter((task) => task.id)
+        .map((task) => ({
+          id: task.id!,
+          stageDefinitionId: task.stageDefinitionId,
+        })),
+      entries,
+    });
     if (!rates.length) {
-      return { enabled: false, total: null as number | null, note: 'Labor money is hidden until a rate model exists.' };
-    }
-    const now = new Date();
-    let total = 0;
-    let any = false;
-    for (const task of tasks) {
-      const rate = resolveHourlyRate(rates, now, {
-        stageDefinitionId: task.stageDefinitionId,
-        userId: task.assignedEmployeeId,
-      });
-      const money = laborMoneyFromMinutes(task.actualMinutes ?? 0, rate);
-      if (money != null) {
-        total += money;
-        any = true;
-      }
+      return {
+        enabled: false,
+        total: null as number | null,
+        note: 'Labor money is hidden until a rate model exists.',
+        byWorker: [] as LaborCostBlock['byWorker'],
+        byStage: [] as LaborCostBlock['byStage'],
+      };
     }
     return {
       enabled: true,
-      total: any ? total : null,
-      note: any ? null : 'No matching rate for the recorded time.',
+      total: block?.actual ?? null,
+      note: block?.actual == null ? 'No matching rate for the recorded time.' : null,
+      byWorker: block?.byWorker ?? [],
+      byStage: block?.byStage ?? [],
+    };
+  }
+
+  async listLaborActuals(
+    query: { from?: string; to?: string; user?: AuthUser },
+  ) {
+    this.assertCostRead(query.user);
+    if (
+      typeof this.prisma.taskTimeEntry?.findMany !== 'function' ||
+      typeof this.prisma.laborRate?.findMany !== 'function'
+    ) {
+      return { labor: null, byWorker: [], byStage: [] };
+    }
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+    const entries = await this.prisma.taskTimeEntry.findMany({
+      where: {
+        ...(from || to
+          ? {
+              startedAt: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
+      },
+      select: {
+        taskId: true,
+        userId: true,
+        minutes: true,
+        startedAt: true,
+        endedAt: true,
+        user: { select: { id: true, firstName: true, lastName: true } },
+        task: {
+          select: {
+            id: true,
+            stageDefinitionId: true,
+            stageDefinition: { select: { code: true, nameEn: true, nameAr: true } },
+          },
+        },
+      },
+    });
+    const rates = await this.prisma.laborRate.findMany();
+    const block = rollupLaborCost({
+      rates,
+      tasks: entries.map((entry) => ({
+        id: entry.task.id,
+        stageDefinitionId: entry.task.stageDefinitionId,
+        stageCode: entry.task.stageDefinition?.code ?? null,
+      })),
+      entries,
+    });
+    return {
+      labor: block,
+      byWorker: (block?.byWorker ?? []).map((row) => {
+        const entry = entries.find((item) => item.userId === row.userId);
+        const name = entry?.user
+          ? `${entry.user.firstName} ${entry.user.lastName}`.trim()
+          : row.userId;
+        return { ...row, name };
+      }),
+      byStage: block?.byStage ?? [],
     };
   }
 
@@ -833,6 +1051,7 @@ export class CostPerformanceService {
       status: row.lifecycleState,
       createdAt: row.createdAt,
       salesOrder: row.salesOrder,
+      variantId: row.variantId ?? null,
       pieceCount: row.pieces.length,
       repairCost,
       replacementCost,

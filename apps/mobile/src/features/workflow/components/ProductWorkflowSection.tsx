@@ -78,9 +78,9 @@ export function ProductWorkflowSection({
     return Math.max(0, nodeCount - timed.size);
   }, [estimatesQuery.data, selectedId, workflowsQuery.data]);
 
-  function openTimesChart(workflowId: string) {
+  function openProductionSetup() {
     void haptics.selection();
-    router.push(`/(app)/(admin)/products/${productId}/workflow-times?workflowId=${workflowId}`);
+    router.push(`/(app)/(admin)/products/${productId}/production-setup`);
   }
 
   return (
@@ -102,7 +102,7 @@ export function ProductWorkflowSection({
 
       {selectedId ? (
         <Pressable
-          onPress={() => openTimesChart(selectedId)}
+          onPress={() => openProductionSetup()}
           style={({ pressed }) => ({
             borderRadius: theme.radius.lg,
             borderWidth: 1,
@@ -219,7 +219,7 @@ export function ProductWorkflowSection({
                   onPress={() => {
                     void haptics.selection();
                     if (active) {
-                      openTimesChart(wf.id);
+                      openProductionSetup();
                       return;
                     }
                     upsertMutation.mutate(wf.id, {

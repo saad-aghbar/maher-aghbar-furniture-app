@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import {
   MonthCalendar,
@@ -10,8 +9,10 @@ import {
   type CalendarCursor,
 } from '@/components/calendar';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerFormError, DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
 import { formatDate, useLocale } from '@/i18n';
-import { AnimatedPressable, haptics } from '@/motion';
+import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { useAvailabilityQuery } from '@/features/scheduling/query';
 import {
@@ -46,8 +47,9 @@ export function ChangeDeliveryDateSheet({
   errorMessage,
   onSubmit,
 }: Props) {
-  const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { t, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const initial = current ? current.slice(0, 10) : '';
   const [value, setValue] = useState(initial);
   const [cursor, setCursor] = useState<CalendarCursor>(() =>
@@ -118,7 +120,7 @@ export function ChangeDeliveryDateSheet({
   const canSubmit = Boolean(toDeliveryYmd(value));
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={title} sheetHeight={640}>
+    <BottomSheet open={open} onClose={onClose} title={title} expandable sheetHeight={640}>
       <View style={{ gap: theme.spacing.md, flex: 1 }}>
         <ScrollView
           style={{ flex: 1 }}
@@ -146,19 +148,24 @@ export function ChangeDeliveryDateSheet({
             </AppText>
           ) : null}
 
-          <View style={{ opacity: availabilityUpdating ? 0.72 : 1, gap: theme.spacing.sm }}>
-            <CalendarLegend variant="dealer" compact />
-            <MonthCalendar
-              value={value}
-              onSelect={setValue}
-              monthCursor={cursor}
-              onMonthChange={setCursor}
-              dayMeta={dayMeta}
-              minDate={display.earliestDate ?? undefined}
-              disableUnavailable
-              variant="dealer"
-            />
-          </View>
+          <DealerBoard
+            title={t('mobile.dealerAccount.calendarMonthTitle')}
+            titleWeight={titleWeight}
+          >
+            <View style={{ opacity: availabilityUpdating ? 0.72 : 1, gap: theme.spacing.sm }}>
+              <CalendarLegend variant="dealer" compact />
+              <MonthCalendar
+                value={value}
+                onSelect={setValue}
+                monthCursor={cursor}
+                onMonthChange={setCursor}
+                dayMeta={dayMeta}
+                minDate={display.earliestDate ?? undefined}
+                disableUnavailable
+                variant="dealer"
+              />
+            </View>
+          </DealerBoard>
 
           {value ? (
             <AppText variant="caption" color="secondary">
@@ -168,105 +175,21 @@ export function ChangeDeliveryDateSheet({
             </AppText>
           ) : null}
 
-          {errorMessage ? (
-            <AppText variant="caption" color="error">
-              {errorMessage}
-            </AppText>
-          ) : null}
+          {errorMessage ? <DealerFormError message={errorMessage} /> : null}
         </ScrollView>
 
-        <View
-          style={{
-            paddingTop: theme.spacing.md,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.sm,
+        <DealerFormFooter
+          confirmLabel={confirmLabel}
+          onConfirm={() => {
+            const ymd = toDeliveryYmd(value);
+            if (!ymd) return;
+            void haptics.confirmMedium();
+            onSubmit(`${ymd}T12:00:00.000Z`);
           }}
-        >
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.orderDetail.cancel')}
-            disabled={loading}
-            onPress={() => {
-              void haptics.selection();
-              onClose();
-            }}
-            style={{
-              flex: 1,
-              minHeight: theme.sizes.touch.min,
-              borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: theme.spacing.md,
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: 1,
-              borderColor: colors.border,
-              opacity: loading ? 0.55 : 1,
-            }}
-          >
-            <AppText variant="label" weight="medium" style={{ color: colors.textSecondary }}>
-              {t('mobile.orderDetail.cancel')}
-            </AppText>
-          </AnimatedPressable>
-
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={confirmLabel}
-            accessibilityState={{ busy: Boolean(loading), disabled: !canSubmit }}
-            disabled={loading || !canSubmit}
-            onPress={() => {
-              const ymd = toDeliveryYmd(value);
-              if (!ymd) return;
-              void haptics.confirmMedium();
-              onSubmit(`${ymd}T12:00:00.000Z`);
-            }}
-            style={{
-              flex: 1.35,
-              minHeight: theme.sizes.touch.min,
-              borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: theme.spacing.sm,
-              paddingHorizontal: theme.spacing.lg,
-              backgroundColor: canSubmit ? colors.brand : colors.disabledFill,
-              opacity: loading ? 0.75 : 1,
-              ...(colorScheme === 'dark'
-                ? {
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.35,
-                    shadowRadius: 10,
-                  }
-                : {
-                    shadowColor: colors.brand,
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.28,
-                    shadowRadius: 12,
-                  }),
-            }}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.onBrand} />
-            ) : (
-              <>
-                <AppText
-                  variant="label"
-                  weight="semibold"
-                  style={{ color: canSubmit ? colors.onBrand : colors.disabled }}
-                >
-                  {confirmLabel}
-                </AppText>
-                <Ionicons
-                  name="checkmark"
-                  size={18}
-                  color={canSubmit ? colors.onBrand : colors.disabled}
-                />
-              </>
-            )}
-          </AnimatedPressable>
-        </View>
+          onCancel={onClose}
+          loading={loading}
+          disabled={loading || !canSubmit}
+        />
       </View>
     </BottomSheet>
   );

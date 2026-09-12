@@ -77,3 +77,82 @@ export async function getBrowseProduct(id: string): Promise<BrowseProduct> {
 export async function listPreviouslyOrderedProducts(): Promise<{ data: BrowseProduct[] }> {
   return apiGet<{ data: BrowseProduct[] }>('/catalog/browse/previously-ordered');
 }
+
+export type SpecOptionGroup = {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  inputType: 'SELECT' | 'SELECT_WITH_QTY' | 'DIMENSION' | 'COLOR';
+  appliesTo?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type SpecOptionValue = {
+  id: string;
+  groupId: string;
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  hex?: string | null;
+  numericValue?: number | string | null;
+  unit?: string | null;
+  colorReferenceId?: string | null;
+  inventoryItemId?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export async function listSpecOptionGroups(
+  params: PageParams & { q?: string; includeInactive?: boolean } = {},
+): Promise<PaginatedResponse<SpecOptionGroup>> {
+  const { includeInactive, ...rest } = params;
+  const qs = toSearchParams({
+    ...rest,
+    includeInactive: includeInactive ? 'true' : undefined,
+  });
+  return apiGet<PaginatedResponse<SpecOptionGroup>>(`/spec-option-groups${qs}`);
+}
+
+export async function listSpecOptionValues(
+  params: PageParams & {
+    q?: string;
+    groupId?: string;
+    groupCode?: string;
+    includeInactive?: boolean;
+  } = {},
+): Promise<PaginatedResponse<SpecOptionValue>> {
+  const { includeInactive, ...rest } = params;
+  const qs = toSearchParams({
+    ...rest,
+    includeInactive: includeInactive ? 'true' : undefined,
+  });
+  return apiGet<PaginatedResponse<SpecOptionValue>>(`/spec-option-values${qs}`);
+}
+
+export async function getSpecOptionValue(id: string): Promise<SpecOptionValue> {
+  return apiGet<SpecOptionValue>(`/spec-option-values/${encodeURIComponent(id)}`);
+}
+
+export type CatalogNamedRow = {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  color?: string | null;
+  hex?: string | null;
+};
+
+export async function listCatalogFabrics(q?: string) {
+  const qs = toSearchParams({ page: 1, pageSize: 200, q });
+  return apiGet<PaginatedResponse<CatalogNamedRow>>(`/fabrics${qs}`);
+}
+
+export async function listCatalogColors(q?: string) {
+  const qs = toSearchParams({ page: 1, pageSize: 200, q });
+  return apiGet<PaginatedResponse<CatalogNamedRow>>(`/colors${qs}`);
+}

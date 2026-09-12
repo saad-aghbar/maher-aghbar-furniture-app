@@ -1,19 +1,21 @@
-import { StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View } from 'react-native';
 import { statusLabel as i18nStatusLabel } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { ProductThumb } from '@/components/desk/ProductThumb';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { DealerDeliveryDto } from '@/api/modules/scheduling';
 import {
+  DEALER_JOURNEY_LABEL_KEY,
   deliveryCardTone,
   productLabel,
-  selectCompactCardLine,
-  toYmdSlice,
+  selectDeliveryTimeline,
+  selectScheduleStub,
 } from '@/features/scheduling/selectDealerDeliveries';
-import { OrderCardMedia } from './OrderCardMedia';
+import { DealerScheduleDateStub } from '@/features/scheduling/components/DealerScheduleDateStub';
+import { resolveOrderMediaUri } from './OrderCardMedia';
 import { orderBoardShadow } from './orderFloorStyle';
 
 type Props = {
@@ -26,64 +28,51 @@ type Props = {
 
 function toneColor(
   tone: ReturnType<typeof deliveryCardTone>,
-  colors: { brand: string; warning: string; info: string; success: string; textMuted: string },
+  colors: { brand: string; warning: string; success: string; textMuted: string },
 ): string {
   if (tone === 'warning') return colors.warning;
-  if (tone === 'info') return colors.info;
   if (tone === 'success') return colors.success;
   if (tone === 'muted') return colors.textMuted;
   return colors.brand;
 }
 
+/**
+ * Dealer delivery ticket — date stub + address/qty inset, not a flat media row.
+ */
 export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flush }: Props) {
-  const { t, formatDate, isRTL, locale } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const name = productLabel(row, locale);
-  const compact = selectCompactCardLine(row);
   const status = String(row.customerStatus ?? '');
-  const dateYmd = toYmdSlice(compact.dateYmd);
-  const requested = toYmdSlice(row.requestedDeliveryDate);
-  const planned = toYmdSlice(row.plannedDeliveryDate);
-  const earliest = toYmdSlice(row.projectedDeliveryDate ?? row.suggestedDeliveryDate);
-  const committed = toYmdSlice(row.committedDeliveryDate);
-  const projected = toYmdSlice(row.projectedDeliveryDate);
-  const delayed = status === 'MAY_BE_DELAYED' || status === 'DELAYED';
+  const stub = selectScheduleStub(row);
+  const timeline = selectDeliveryTimeline({
+    customerStatus: status,
+    committedDeliveryDate: row.committedDeliveryDate,
+  });
+  const currentStep = timeline.find((step) => step.current);
+  const journeyLabel = currentStep
+    ? t(DEALER_JOURNEY_LABEL_KEY[currentStep.key] ?? '')
+    : '';
   const showReview =
     status === 'AWAITING_CONFIRMATION' &&
     (row.canUpdateDeliveryDate || row.canRequestDateChange) &&
     Boolean(onReviewDate);
-  const accent = toneColor(deliveryCardTone(status), colors);
+  const railTone = deliveryCardTone(status);
+  const accent = toneColor(railTone, colors);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const productUri = resolveOrderMediaUri(row.imageUrl);
+  const qtyLabel =
+    row.quantity != null && Number.isFinite(Number(row.quantity))
+      ? String(row.quantity)
+      : '—';
+  const address = row.deliveryAddress?.trim() || '—';
 
-  const a11yDate = dateYmd ? formatDate(dateYmd) : '';
   const a11y = t('mobile.orders.a11yCard', {
     number: row.salesOrderNumber,
     product: name,
     status: i18nStatusLabel(locale, status),
-    date: a11yDate,
+    date: stub.ymd ?? '',
   });
-
-  let dateLine: string | null = null;
-  if (compact.compact && dateYmd && !delayed) {
-    dateLine = t('mobile.orders.compactOnTrack', { date: formatDate(dateYmd) });
-  } else if (planned && !committed) {
-    dateLine = `${t('mobile.orders.plannedShort')} ${formatDate(planned)} · ${t('mobile.orders.notConfirmed')}`;
-  } else if (status === 'AWAITING_CONFIRMATION') {
-    dateLine = planned
-      ? `${t('mobile.orders.plannedShort')} ${formatDate(planned)} · ${t('mobile.orders.notConfirmed')}`
-      : earliest
-        ? `${t('mobile.orders.expectedShort')} ${formatDate(earliest)} · ${t('mobile.orders.notConfirmed')}`
-        : requested
-          ? `${t('mobile.orders.requestedShort')} ${formatDate(requested)} · ${t('mobile.orders.notConfirmed')}`
-          : t('mobile.orders.notConfirmed');
-  } else if (committed) {
-    dateLine =
-      projected && projected !== committed
-        ? `${t('mobile.orders.confirmedShort')} ${formatDate(committed)} · ${t('mobile.orders.currentExpected')} ${formatDate(projected)}`
-        : `${t('mobile.orders.confirmedShort')} ${formatDate(committed)}`;
-  } else if (dateYmd) {
-    dateLine = formatDate(dateYmd);
-  }
 
   return (
     <ListItemEnter index={index}>
@@ -106,6 +95,7 @@ export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flus
         }}
       >
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -113,117 +103,179 @@ export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flus
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.7,
+            opacity: railTone === 'brand' ? 0.55 : 0.9,
           }}
         />
 
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.md,
-            paddingTop: theme.spacing.md,
-            paddingBottom: theme.spacing.sm,
-            paddingHorizontal: theme.spacing.md,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.lg,
+            paddingVertical: theme.spacing.sm + 2,
             ...(isRTL
-              ? { paddingRight: theme.spacing.md + 4 }
-              : { paddingLeft: theme.spacing.md + 4 }),
-            alignItems: 'flex-start',
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
           }}
         >
-          <OrderCardMedia imageUrl={row.imageUrl ?? null} size={88} />
+          <StatusBadge status={status} label={i18nStatusLabel(locale, status)} dot />
+          <AppText variant="caption" color="brand" weight="semibold">
+            {t('common.details')}
+          </AppText>
+        </View>
+
+        <View
+          style={{
+            padding: theme.spacing.lg,
+            gap: theme.spacing.md,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
           <View
             style={{
-              flex: 1,
-              minWidth: 0,
-              gap: 4,
-              alignItems: isRTL ? 'flex-end' : 'flex-start',
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'stretch',
+              gap: theme.spacing.md,
             }}
           >
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: theme.spacing.sm,
-                width: '100%',
-              }}
-            >
-              <AppText variant="label" weight={titleWeight} numberOfLines={2} style={{ flex: 1 }}>
+            <ProductThumb uri={productUri} size={64} radius={theme.radius.md} />
+            <View style={{ flex: 1, minWidth: 0, gap: 4, justifyContent: 'center' }}>
+              <AppText
+                weight={titleWeight}
+                numberOfLines={2}
+                style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 16 }}
+              >
                 {name}
-                {row.quantity != null && row.quantity > 1 ? ` × ${row.quantity}` : ''}
               </AppText>
-              <StatusBadge status={status} dot />
+              <AppText variant="caption" color="muted" dir="ltr" numberOfLines={1}>
+                {row.salesOrderNumber}
+              </AppText>
             </View>
-            <AppText
-              variant="caption"
-              color="secondary"
-              numberOfLines={1}
-              dir="ltr"
-              style={{ letterSpacing: 0.2 }}
-            >
-              {row.salesOrderNumber}
-            </AppText>
-            {status === 'AWAITING_CONFIRMATION' ? (
-              <AppText variant="caption" color="brand" weight="medium">
-                {t('mobile.orders.notConfirmed')}
-              </AppText>
-            ) : null}
-            {delayed ? (
-              <AppText variant="caption" color="muted" numberOfLines={2}>
-                {t('mobile.orders.productionDelay')}
-              </AppText>
-            ) : null}
-            {delayed && (row.scheduleUpdating || !projected) ? (
-              <AppText variant="caption" color="muted" numberOfLines={2}>
-                {t('mobile.orders.scheduleUpdating')}
-              </AppText>
-            ) : !delayed && row.customerSafeReason ? (
-              <AppText variant="caption" color="muted" numberOfLines={2}>
-                {t('mobile.orders.scheduleUpdating')}
-              </AppText>
-            ) : null}
+            <DealerScheduleDateStub ymd={stub.ymd} kind={stub.kind} />
+          </View>
+
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              gap: theme.spacing.sm,
+            }}
+          >
+            <InsetCell
+              label={t('mobile.orders.address')}
+              value={address}
+              isRTL={isRTL}
+              locale={locale}
+            />
+            <InsetCell
+              label={t('mobile.orders.qty')}
+              value={qtyLabel}
+              isRTL={isRTL}
+              locale={locale}
+              ltr
+            />
           </View>
         </View>
 
         <View
           style={{
-            marginHorizontal: theme.spacing.md,
-            marginBottom: theme.spacing.md,
-            paddingTop: theme.spacing.sm,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: colors.border,
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.lg,
+            paddingVertical: theme.spacing.sm + 2,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            backgroundColor: showReview ? colors.warningSoft : colors.surfaceSecondary,
           }}
         >
           <AppText
             variant="caption"
-            color="secondary"
+            weight={titleWeight}
             numberOfLines={2}
-            style={{ flex: 1, color: accent }}
+            style={{
+              flex: 1,
+              color: showReview ? colors.warning : colors.textSecondary,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
           >
-            {dateLine}
+            {showReview
+              ? t('mobile.orders.reviewDate')
+              : journeyLabel || t('mobile.orders.viewOrder')}
           </AppText>
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: 4,
+              width: 18,
+              height: 3,
+              borderRadius: 2,
+              backgroundColor: showReview ? colors.warning : colors.brand,
             }}
-          >
-            <AppText variant="caption" weight="semibold" color="brand">
-              {showReview ? t('mobile.orders.reviewDate') : t('mobile.orders.viewOrder')}
-            </AppText>
-            <Ionicons
-              name={isRTL ? 'chevron-back' : 'chevron-forward'}
-              size={14}
-              color={colors.brand}
-            />
-          </View>
+          />
         </View>
       </AnimatedPressable>
     </ListItemEnter>
+  );
+}
+
+function InsetCell({
+  label,
+  value,
+  isRTL,
+  locale,
+  ltr,
+}: {
+  label: string;
+  value: string;
+  isRTL: boolean;
+  locale: string;
+  ltr?: boolean;
+}) {
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  return (
+    <View
+      style={{
+        flex: 1,
+        minWidth: 0,
+        gap: 4,
+        padding: theme.spacing.md,
+        borderRadius: theme.radius.lg,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.45,
+          fontSize: 10,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        variant="caption"
+        weight={titleWeight}
+        dir={ltr ? 'ltr' : undefined}
+        numberOfLines={2}
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {value}
+      </AppText>
+    </View>
   );
 }

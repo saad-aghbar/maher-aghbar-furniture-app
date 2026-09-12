@@ -58,6 +58,7 @@ interface UserRow {
     nameEn?: string | null;
   } | null;
   stageDefinitionIds?: string[];
+  hourlyRate?: number | null;
   roles?: Array<{
     role: {
       id: string;
@@ -103,6 +104,7 @@ interface UserFormState {
   isActive: boolean;
   identity: UserIdentityForm;
   departmentId: string;
+  hourlyRate: string;
 }
 
 type Segment = 'workers' | 'staff' | 'customers' | 'admins' | 'all';
@@ -172,6 +174,7 @@ const emptyForm = (segment: Segment = 'workers'): UserFormState => ({
   isActive: true,
   identity: identityFromSegment(segment),
   departmentId: '',
+  hourlyRate: '',
 });
 
 export default function UsersPage() {
@@ -311,6 +314,8 @@ function UsersHub() {
       }
       const usesDepartment = false;
       const stageIds = submittedStageDefinitionIds(form.identity);
+      const hourlyRateRaw = form.hourlyRate.trim();
+      const hourlyRate = hourlyRateRaw ? Number(hourlyRateRaw.replace(',', '.')) : undefined;
 
       if (editing) {
         const firstName = form.firstName.trim();
@@ -329,6 +334,7 @@ function UsersHub() {
             roleIds: [roleId],
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
             stageDefinitionIds: stageIds,
+            ...(hourlyRate != null && Number.isFinite(hourlyRate) ? { hourlyRate } : {}),
           }),
         });
       }
@@ -344,6 +350,7 @@ function UsersHub() {
           roleIds: [roleId],
           ...(form.password.trim() ? { password: form.password } : {}),
           stageDefinitionIds: stageIds,
+          ...(hourlyRate != null && Number.isFinite(hourlyRate) ? { hourlyRate } : {}),
         }),
       });
     },
@@ -421,6 +428,7 @@ function UsersHub() {
       isActive: user.isActive,
       identity,
       departmentId: user.departmentId ?? user.department?.id ?? '',
+      hourlyRate: user.hourlyRate == null ? '' : String(user.hourlyRate),
     });
     setFormError(null);
     setFormOpen(true);
@@ -858,6 +866,15 @@ function UsersHub() {
             </div>
           ) : null}
           {showFormStageSkills ? (
+            <>
+              <Input
+                label={t('hourlyRate')}
+                value={form.hourlyRate}
+                onChange={(e) => setForm((f) => ({ ...f, hourlyRate: e.target.value }))}
+                hint={t('hourlyRateHint')}
+                inputMode="decimal"
+                dir="ltr"
+              />
             <fieldset className="grid gap-2">
               <legend className="text-sm font-medium text-text-primary">{t('stageSkills')}</legend>
               <p className="text-xs text-text-tertiary">{t('stageSkillsHint')}</p>
@@ -896,6 +913,7 @@ function UsersHub() {
                 </div>
               )}
             </fieldset>
+            </>
           ) : null}
         </div>
       </Modal>

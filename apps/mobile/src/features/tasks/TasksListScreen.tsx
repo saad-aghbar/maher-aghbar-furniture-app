@@ -30,9 +30,9 @@ import {
   TasksSegmentRail,
   type TasksSegment,
 } from './components/TasksSegmentRail';
+import { WorkerSalesOrderCard } from './components/WorkerSalesOrderCard';
 import { TasksListSkeleton } from './components/TasksListSkeleton';
 import type { TaskListItem } from './api';
-import { WorkerOrderCard } from './components/WorkerOrderCard';
 import {
   flattenTasksPages,
   useCompletedDealersQuery,
@@ -41,7 +41,11 @@ import {
   type TasksListQueryFilters,
 } from './query';
 import { selectTaskCard, sortUrgentFirst } from './selectTask';
-import { selectWorkerOrderCard, workerOrderMatchesQuery } from './selectWorkerOrder';
+import {
+  mySalesOrdersFromResponse,
+  selectWorkerSalesOrderCard,
+  workerSalesOrderMatchesQuery,
+} from './selectWorkerOrder';
 
 export type TasksListVariant = 'open' | 'completed';
 
@@ -159,9 +163,9 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
         : sortUrgentFirst(fixtureItems)
       : sortUrgentFirst(liveItems);
 
-  const orderCards = (ordersQuery.data?.data ?? [])
-    .filter((row) => workerOrderMatchesQuery(row, debouncedSearch))
-    .map((row) => selectWorkerOrderCard(row, locale));
+  const orderCards = mySalesOrdersFromResponse(ordersQuery.data)
+    .filter((row) => workerSalesOrderMatchesQuery(row, debouncedSearch))
+    .map((row) => selectWorkerSalesOrderCard(row, locale));
 
   const subtitleKey = isCompleted
     ? 'mobile.tasks.subtitleDone'
@@ -410,7 +414,13 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
           }
           ListHeaderComponent={header}
           renderItem={({ item, index }) => (
-            <WorkerOrderCard order={item} index={index} animateEnter={animateEnter} />
+            <WorkerSalesOrderCard
+              order={item}
+              segment={ordersSegment}
+              q={debouncedSearch}
+              index={index}
+              animateEnter={animateEnter}
+            />
           )}
           ListEmptyComponent={
             isFilterUpdating ? (

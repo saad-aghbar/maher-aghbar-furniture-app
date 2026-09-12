@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, ammanLocal } from './clock';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; nameEn?: string; name?: string; username?: string };
 type ProductRef = {
@@ -215,6 +216,7 @@ export async function seedPiece7DealerFinanceExamples(
         lines: {
           create: bag.lines.map((l) => ({
             productId: l.productId,
+            ...variantLineFieldsForProductId(opts.products, l.productId),
             description: l.description,
             quantity: money(l.qty),
             unitPrice: money(l.unitPrice),

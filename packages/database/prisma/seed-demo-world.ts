@@ -13,7 +13,7 @@ import { seedCatalog } from './seed/catalog';
 import { seedInventory } from './seed/inventory';
 import { seedPurchasing } from './seed/purchasing';
 import { seedPlatformExtras } from './seed/platform-extras';
-import { seedSequences } from './seed/sequences';
+import { seedSpecOptionLibraries } from './seed/spec-options';
 import { attachProductWorkflowConfigurations } from './seed/workflow';
 import { seedProductEstimates } from './seed/product-estimates';
 import { seedDealerOrdersRecent } from './seed/dealer-orders-recent';
@@ -86,6 +86,9 @@ export async function seedLaunchWorld(
 
   const { dealers } = await seedPeople(prisma, passwordHash, { includeWorkers: false });
   console.log(`  people: admin + ${dealers.length} dealers (no workers)`);
+
+  const specOptions = await seedSpecOptionLibraries(prisma);
+  console.log(`  spec options: ${specOptions.groups} groups · ${specOptions.values} values`);
 
   await seedSequences(prisma);
 

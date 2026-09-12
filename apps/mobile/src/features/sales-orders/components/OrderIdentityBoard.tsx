@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { ProductThumb } from '@/components/desk';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrderBoardCard } from './OrderBoardCard';
@@ -16,6 +18,8 @@ type Props = {
   deliveryLabel?: string | null;
   showCosts: boolean;
   accent?: string;
+  mediaUri?: string | null;
+  stub?: ReactNode;
 };
 
 /**
@@ -32,6 +36,8 @@ export function OrderIdentityBoard({
   deliveryLabel,
   showCosts,
   accent,
+  mediaUri,
+  stub,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -73,26 +79,40 @@ export function OrderIdentityBoard({
         </View>
       }
     >
-      <AppText
-        variant="title"
-        weight={titleWeight}
-        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'stretch',
+          gap: theme.spacing.md,
+        }}
       >
-        {title}
-      </AppText>
-      {metaLine ? (
-        <AppText
-          variant="caption"
-          color="secondary"
-          dir="ltr"
-          style={{
-            letterSpacing: locale === 'ar' ? 0 : 0.2,
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        >
-          {metaLine}
-        </AppText>
-      ) : null}
+        {mediaUri !== undefined ? (
+          <ProductThumb uri={mediaUri} size={72} radius={theme.radius.md} />
+        ) : null}
+        <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xs }}>
+          <AppText
+            variant="title"
+            weight={titleWeight}
+            style={{ textAlign: isRTL ? 'right' : 'left' }}
+          >
+            {title}
+          </AppText>
+          {metaLine ? (
+            <AppText
+              variant="caption"
+              color="secondary"
+              dir="ltr"
+              style={{
+                letterSpacing: locale === 'ar' ? 0 : 0.2,
+                textAlign: isRTL ? 'right' : 'left',
+              }}
+            >
+              {metaLine}
+            </AppText>
+          ) : null}
+        </View>
+        {stub}
+      </View>
 
       <View
         style={{

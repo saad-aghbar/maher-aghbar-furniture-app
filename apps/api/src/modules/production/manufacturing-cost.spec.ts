@@ -580,4 +580,229 @@ describe('ManufacturingCostService', () => {
       factoryAbsorbed: 10,
     });
   });
+
+  it('rolls actual labor per worker rate into the manufacturing payload', async () => {
+    const finalizedAt = new Date('2026-01-15T12:00:00Z');
+    const prisma = {
+      productionOrder: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          number: 'PO-1',
+          status: 'IN_PROGRESS',
+          quantity: 1,
+          salesOrderId: 'so-1',
+          salesOrderLineId: 'line-1',
+          productId: 'p1',
+          variantId: null,
+          product: { nameEn: 'Sofa' },
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'po-1', productId: 'p1', variantId: null, quantity: 1 },
+        ]),
+      },
+      productionTask: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 't1', stageDefinitionId: 'uph', stageDefinition: { code: 'UPH' } },
+        ]),
+      },
+      laborRate: {
+        findMany: jest.fn().mockResolvedValue([
+          { userId: 'a', hourlyRate: 20, effectiveFrom: new Date('2026-01-01'), effectiveTo: null },
+          { userId: 'b', hourlyRate: 40, effectiveFrom: new Date('2026-01-01'), effectiveTo: null },
+        ]),
+      },
+      taskTimeEntry: {
+        findMany: jest.fn().mockResolvedValue([
+          { taskId: 't1', userId: 'a', minutes: 60, startedAt: new Date('2026-01-03'), endedAt: null },
+          { taskId: 't1', userId: 'b', minutes: 30, startedAt: new Date('2026-01-03'), endedAt: null },
+        ]),
+      },
+      productStageEstimate: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineSetup: {
+        findUnique: jest.fn().mockResolvedValue({
+          salesOrderLine: { quantity: 1 },
+          materialRequirements: [
+            {
+              sku: 'FAB-1',
+              displayName: 'Velvet',
+              category: 'FABRIC',
+              expectedQty: 10,
+              inventoryItem: { sku: 'FAB-1', nameEn: 'Velvet', category: 'FABRIC' },
+            },
+          ],
+        }),
+      },
+      productionTaskMaterialUsage: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'u1',
+            productionOrderId: 'po-1',
+            taskId: 't1',
+            sku: 'FAB-1',
+            expectedQty: 10,
+            actualQty: 10,
+            returnedQty: 0,
+            scrapQty: 0,
+            unitCost: 10,
+            extendedCost: 100,
+            valuedAt: finalizedAt,
+            finalizedAt,
+            inventoryItem: { nameEn: 'Velvet', category: 'FABRIC', itemClass: 'RAW_MATERIAL' },
+            task: {
+              isRework: false,
+              stageDefinition: { code: 'CUT' },
+              assignedEmployee: { firstName: 'A', lastName: 'B', username: 'carpenter' },
+            },
+          },
+        ]),
+      },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 10 }]),
+      },
+      inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
+    expect(payload.actual.total).toBe(140);
+    expect(payload.actual.materials).toBe(100);
+    expect(payload.actual.labor).toBe(40);
+    expect(payload.labor?.actual).toBe(40);
+    expect(payload.labor?.byWorker).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: 'a', actual: 20 }),
+        expect.objectContaining({ userId: 'b', actual: 20 }),
+      ]),
+    );
+  });
+
+  it('makes estimated.total all-in from materials plus stage-estimate labor', async () => {
+    const prisma = {
+      productionOrder: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          number: 'PO-1',
+          status: 'PLANNED',
+          quantity: 1,
+          salesOrderId: 'so-1',
+          salesOrderLineId: 'line-1',
+          productId: 'p1',
+          variantId: null,
+          product: { nameEn: 'Sofa' },
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'po-1', productId: 'p1', variantId: null, quantity: 1 },
+        ]),
+      },
+      productionTask: { findMany: jest.fn().mockResolvedValue([]) },
+      laborRate: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            stageDefinitionId: 'uph',
+            hourlyRate: 30,
+            effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+            effectiveTo: null,
+          },
+        ]),
+      },
+      taskTimeEntry: { findMany: jest.fn().mockResolvedValue([]) },
+      productStageEstimate: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            productId: 'p1',
+            variantId: null,
+            stageDefinitionId: 'uph',
+            quantityScalingMode: 'LINEAR',
+            setupMinutes: 0,
+            minutesPerUnit: 60,
+            fixedMinutes: 0,
+            batchSize: null,
+            batchMinutes: null,
+            maxParallelUnits: null,
+            stageDefinition: { code: 'UPH' },
+          },
+        ]),
+      },
+      salesOrderLineSetup: {
+        findUnique: jest.fn().mockResolvedValue({
+          salesOrderLine: { quantity: 1 },
+          materialRequirements: [
+            {
+              sku: 'FAB-1',
+              displayName: 'Velvet',
+              category: 'FABRIC',
+              expectedQty: 10,
+              inventoryItem: { sku: 'FAB-1', nameEn: 'Velvet', category: 'FABRIC' },
+            },
+          ],
+        }),
+      },
+      productionTaskMaterialUsage: { findMany: jest.fn().mockResolvedValue([]) },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 5 }]),
+      },
+      inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      salesOrderLineMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
+    expect(payload.estimated.materials).toBe(50);
+    expect(payload.estimated.labor).toBe(30);
+    expect(payload.estimated.total).toBe(80);
+    expect(payload.labor?.estimated).toBe(30);
+    expect(payload.actual.total).toBeNull();
+  });
+
+  it('splits per-item estimates by quantity share so they sum to the order total', async () => {
+    const prisma = {
+      salesOrder: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'so-1',
+          number: 'SO-1',
+          lines: [
+            {
+              id: 'line-1',
+              description: 'Sofa',
+              quantity: 2,
+              productionSetup: {
+                manufacturingName: 'Sofa',
+                materialRequirements: [
+                  {
+                    sku: 'FAB-1',
+                    displayName: 'Velvet',
+                    category: 'FABRIC',
+                    expectedQty: 10,
+                    inventoryItem: { sku: 'FAB-1', nameEn: 'Velvet', category: 'FABRIC' },
+                  },
+                ],
+              },
+            },
+          ],
+          productionOrders: [
+            { id: 'po-1', number: 'PO-1', status: 'PLANNED', quantity: 1, salesOrderLineId: 'line-1' },
+            { id: 'po-2', number: 'PO-2', status: 'PLANNED', quantity: 1, salesOrderLineId: 'line-1' },
+          ],
+        }),
+      },
+      productionTaskMaterialUsage: { findMany: jest.fn().mockResolvedValue([]) },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 5 }]),
+      },
+      inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const payload = await makeService(prisma as never).forSalesOrder('so-1', adminUser());
+    expect(payload.estimated.materials).toBe(100);
+    expect(payload.estimated.total).toBe(100);
+    expect(payload.lines).toEqual([
+      expect.objectContaining({
+        salesOrderLineId: 'line-1',
+        quantity: 2,
+        estimatedTotal: 100,
+      }),
+    ]);
+    const poEstimates = (payload.productionOrders ?? []).map((row) => row.estimatedTotal);
+    expect(poEstimates).toEqual([50, 50]);
+    expect(poEstimates.reduce((sum, n) => sum + (n ?? 0), 0)).toBe(payload.estimated.total);
+  });
 });

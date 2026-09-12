@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { COMPANY_DOMAIN } from './util';
 import { encryptPortalPassword } from './secret-box';
+import { ensurePlaceholderHourlyRates } from './labor-rates';
 
 const DEMO_PORTAL_PASSWORD = '123';
 
@@ -210,6 +211,10 @@ export async function seedPeople(
 
   const floorWorker = await ensureFloorWorker(prisma, passwordHash);
   workers.push({ id: floorWorker.id, username: 'floor', departmentCode: 'PROD' });
+  await ensurePlaceholderHourlyRates(
+    prisma,
+    workers.map((w) => w.id),
+  );
 
   /** Stage code → preferred assignee user ids */
   const stageAssignees: Record<string, string[]> = {

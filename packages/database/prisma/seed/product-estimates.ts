@@ -3,7 +3,12 @@
  * so scheduling uses real per-stage times (not stage-def fallbacks).
  */
 import type { PrismaClient, QuantityScalingMode } from '@prisma/client';
-import type { ProductRef } from './catalog';
+
+export type EstimateTarget = {
+  id: string;
+  categoryCode: string;
+  variantId?: string | null;
+};
 
 const CATEGORY_FACTOR: Record<string, number> = {
   SOFA: 1.35,
@@ -51,7 +56,7 @@ function qty1Minutes(row: {
 
 export async function seedProductEstimates(
   prisma: PrismaClient,
-  products: ProductRef[],
+  products: EstimateTarget[],
 ): Promise<{ profiles: number; estimates: number }> {
   const stages = await prisma.productionStageDefinition.findMany({
     where: { isActive: true },
@@ -83,53 +88,70 @@ export async function seedProductEstimates(
         fixedMinutes,
       });
 
-      await prisma.productStageEstimate.upsert({
+      const existingEstimate = await prisma.productStageEstimate.findFirst({
         where: {
-          productId_stageDefinitionId: {
-            productId: product.id,
-            stageDefinitionId: stage.id,
-          },
-        },
-        create: {
           productId: product.id,
           stageDefinitionId: stage.id,
-          quantityScalingMode: base.mode,
-          setupMinutes,
-          minutesPerUnit,
-          fixedMinutes,
-          workerCountRequired: 1,
-          isRequired: true,
-        },
-        update: {
-          quantityScalingMode: base.mode,
-          setupMinutes,
-          minutesPerUnit,
-          fixedMinutes,
-          isRequired: true,
+          variantId: product.variantId ?? null,
         },
       });
+      if (existingEstimate) {
+        await prisma.productStageEstimate.update({
+          where: { id: existingEstimate.id },
+          data: {
+            quantityScalingMode: base.mode,
+            setupMinutes,
+            minutesPerUnit,
+            fixedMinutes,
+            isRequired: true,
+          },
+        });
+      } else {
+        await prisma.productStageEstimate.create({
+          data: {
+            productId: product.id,
+            variantId: product.variantId ?? null,
+            stageDefinitionId: stage.id,
+            quantityScalingMode: base.mode,
+            setupMinutes,
+            minutesPerUnit,
+            fixedMinutes,
+            workerCountRequired: 1,
+            isRequired: true,
+          },
+        });
+      }
       estimates += 1;
     }
 
-    await prisma.productProductionProfile.upsert({
-      where: { productId: product.id },
-      create: {
-        productId: product.id,
-        totalStandardMinutes: total,
-        setupMinutes: 0,
-        complexityFactor: factor,
-        defaultBatchSize: 1,
-        bufferPercent: 10,
-        isSchedulingEnabled: true,
-        minimumLeadTimeDays: product.categoryCode === 'CUSTOM' ? 21 : 14,
-      },
-      update: {
-        totalStandardMinutes: total,
-        complexityFactor: factor,
-        bufferPercent: 10,
-        isSchedulingEnabled: true,
-      },
+    const existingProfile = await prisma.productProductionProfile.findFirst({
+      where: { productId: product.id, variantId: product.variantId ?? null },
     });
+    if (existingProfile) {
+      await prisma.productProductionProfile.update({
+        where: { id: existingProfile.id },
+        data: {
+          totalStandardMinutes: total,
+          complexityFactor: factor,
+          bufferPercent: 10,
+          isSchedulingEnabled: true,
+        },
+      });
+    } else {
+      await prisma.productProductionProfile.create({
+        data: {
+          productId: product.id,
+          variantId: product.variantId ?? null,
+          totalStandardMinutes: total,
+          setupMinutes: 0,
+          complexityFactor: factor,
+          defaultBatchSize: 1,
+          bufferPercent: 10,
+          isSchedulingEnabled: true,
+          minimumLeadTimeDays: product.categoryCode === 'CUSTOM' ? 21 : 14,
+        },
+      });
+    }
     profiles += 1;
   }
 

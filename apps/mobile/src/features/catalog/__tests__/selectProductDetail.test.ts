@@ -1,6 +1,7 @@
 import {
   assertProductDetailSafe,
   selectProductDetail,
+  stripVariantCosts,
 } from '../selectProductDetail';
 import { catalogProductsFixture } from '../fixtures';
 import type { BrowseProduct } from '../api';
@@ -52,5 +53,39 @@ describe('selectProductDetail', () => {
     const vm = selectProductDetail(catalogProductsFixture[0]!, 'ar');
     expect(vm.name).toBe('كنبة عصرية');
     expect(vm.dimensions.find((d) => d.kind === 'w')?.label).toBe('العرض');
+  });
+
+  it('follows the selected variant for measurements, summary, and price', () => {
+    const vm = selectProductDetail(catalogProductsFixture[0]!, 'en', {
+      sku: 'SOF-UKR',
+      width: 250,
+      height: 92,
+      depth: 100,
+      seatHeight: 46,
+      dealerPrice: 990,
+      manufacturingCost: 210,
+      basePrice: 1100,
+      bomDefaults: { hidden: true },
+      adminNotes: 'factory only',
+    });
+    expect(vm.sku).toBe('SOF-UKR');
+    expect(vm.price).toBe(990);
+    expect(vm.dimensionSummary).toBe('250 × 92 × 100 cm');
+    expect(vm.dimensions.find((d) => d.kind === 'w')?.value).toBe('250 cm');
+    assertProductDetailSafe(vm);
+    expect(JSON.stringify(vm)).not.toMatch(/manufacturingCost|basePrice|bomDefaults|adminNotes/);
+  });
+
+  it('stripVariantCosts drops factory cost keys for dealer PDP', () => {
+    const stripped = stripVariantCosts({
+      id: 'v1',
+      sku: 'SOF-UKR',
+      dealerPrice: 990,
+      manufacturingCost: 210,
+      bomDefaults: { x: 1 },
+      adminNotes: 'no',
+      factoryNotesAr: 'x',
+    });
+    expect(stripped).toEqual({ id: 'v1', sku: 'SOF-UKR', dealerPrice: 990 });
   });
 });

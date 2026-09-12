@@ -12,9 +12,50 @@ import {
 } from '../../common/helpers/order-costing.util';
 import { roundMoney } from '../../common/helpers/money.util';
 import { MANUFACTURING_INVENTORY_COST_BASIS } from './manufacturing-cost-basis';
+import { rollupLaborCost, type LaborCostBlock } from './labor-costing';
+import { pickVariantScopedRows } from '@maher/types';
+import type { QuantityScalingMode } from '../scheduling/domain/types';
 
 function money(n: number): number {
   return Number(roundMoney(n));
+}
+
+function addMoneyNullable(a: number | null, b: number | null): number | null {
+  if (a == null && b == null) return null;
+  return money((a ?? 0) + (b ?? 0));
+}
+
+function positiveQty(n: unknown, fallback = 1): number {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+function scalePlannedRows(rows: PlannedRow[], share: number): PlannedRow[] {
+  if (share === 1) return rows;
+  return rows.map((row) => ({ ...row, plannedQty: row.plannedQty * share }));
+}
+
+/** Materials stay on `.materials`; `.total` is materials + labor (all-in). */
+function applyAllInTotals(payload: ManufacturingCostingPayload): ManufacturingCostingPayload {
+  const materialsEst = payload.estimated.materials ?? payload.estimated.total;
+  const materialsAct = payload.actual.materials ?? payload.actual.total;
+  const laborEst = payload.labor?.estimated ?? null;
+  const laborAct = payload.labor?.actual ?? null;
+  payload.estimated.materials = materialsEst;
+  payload.actual.materials = materialsAct;
+  payload.estimated.labor = laborEst;
+  payload.actual.labor = laborAct;
+  payload.estimated.total = addMoneyNullable(materialsEst, laborEst);
+  payload.actual.total = addMoneyNullable(materialsAct, laborAct);
+  payload.actual.toDate = payload.actual.total;
+  if (payload.estimated.total != null && payload.actual.total != null) {
+    payload.variance.cost = money(payload.actual.total - payload.estimated.total);
+    payload.variance.pct =
+      payload.estimated.total > 0
+        ? money((payload.variance.cost / payload.estimated.total) * 100)
+        : null;
+  }
+  return payload;
 }
 
 export type ManufacturingCostStatus =
@@ -56,11 +97,17 @@ export type ManufacturingCostingPayload = {
   valuationPolicy: typeof MANUFACTURING_INVENTORY_COST_BASIS.id;
   netQtyFormula: typeof MANUFACTURING_INVENTORY_COST_BASIS.netQtyFormula;
   estimated: {
+    /** All-in: materials + labor. */
     total: number | null;
+    materials: number | null;
+    labor: number | null;
     byCategory: Record<string, { qty: number; cost: number }>;
   };
   actual: {
+    /** All-in: materials + labor. */
     total: number | null;
+    materials: number | null;
+    labor: number | null;
     toDate: number | null;
     scrapCost: number;
     returnCredit: number;
@@ -98,6 +145,7 @@ export type ManufacturingCostingPayload = {
     isRework: boolean;
     finalizedAt: string | null;
   }>;
+  labor: LaborCostBlock | null;
 };
 
 const FINAL_PO_STATUSES = new Set(['COMPLETED', 'READY_FOR_DELIVERY']);
@@ -164,11 +212,11 @@ export class ManufacturingCostService {
     const [usages, planned] = await Promise.all([
       this.loadUsagesForPo(po.id),
       po.salesOrderLineId
-        ? this.loadPlannedForSoLine(po.salesOrderLineId)
+        ? this.loadPlannedForSoLine(po.salesOrderLineId, Number(po.quantity))
         : this.loadPlannedForProductionOrder(po.id),
     ]);
 
-    return this.hydrateEstimated(
+    const payload = await this.hydrateEstimated(
       this.buildPayload({
         usages,
         planned,
@@ -176,6 +224,8 @@ export class ManufacturingCostService {
         includeTrace: true,
       }),
     );
+    payload.labor = await this.laborForProductionOrders([po.id]);
+    return applyAllInTotals(payload);
   }
 
   async forSalesOrder(
@@ -212,7 +262,13 @@ export class ManufacturingCostService {
           },
         },
         productionOrders: {
-          select: { id: true, number: true, status: true, salesOrderLineId: true },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            quantity: true,
+            salesOrderLineId: true,
+          },
         },
       },
     });
@@ -248,25 +304,24 @@ export class ManufacturingCostService {
         includeTrace: true,
       }),
     );
+    payload.labor = await this.laborForProductionOrders(poIds);
+    applyAllInTotals(payload);
 
     payload.lines = await Promise.all(
       order.lines.map(async (line) => {
         const linePlanned = planned.filter((p) => p.salesOrderLineId === line.id);
-        const linePoIds = new Set(
-          order.productionOrders
-            .filter((p) => p.salesOrderLineId === line.id)
-            .map((p) => p.id),
-        );
+        const linePos = order.productionOrders.filter((p) => p.salesOrderLineId === line.id);
+        const linePoIds = new Set(linePos.map((p) => p.id));
         const lineUsages = usages.filter((u) => linePoIds.has(u.productionOrderId));
         const linePayload = await this.hydrateEstimated(
           this.buildPayload({
             usages: lineUsages,
             planned: linePlanned,
-            poStatuses: order.productionOrders
-              .filter((p) => p.salesOrderLineId === line.id)
-              .map((p) => p.status),
+            poStatuses: linePos.map((p) => p.status),
           }),
         );
+        linePayload.labor = await this.laborForProductionOrders([...linePoIds]);
+        applyAllInTotals(linePayload);
         return {
           salesOrderLineId: line.id,
           manufacturingName:
@@ -283,8 +338,12 @@ export class ManufacturingCostService {
     payload.productionOrders = await Promise.all(
       order.productionOrders.map(async (p) => {
         const pUsages = usages.filter((u) => u.productionOrderId === p.id);
-        const pPlanned = planned.filter((pl) =>
-          order.lines.some((l) => l.id === p.salesOrderLineId && pl.salesOrderLineId === l.id),
+        const line = order.lines.find((l) => l.id === p.salesOrderLineId);
+        const lineQty = positiveQty(line?.quantity);
+        const share = positiveQty(p.quantity) / lineQty;
+        const pPlanned = scalePlannedRows(
+          planned.filter((pl) => pl.salesOrderLineId === p.salesOrderLineId),
+          share,
         );
         const pPayload = await this.hydrateEstimated(
           this.buildPayload({
@@ -293,6 +352,8 @@ export class ManufacturingCostService {
             poStatuses: [p.status],
           }),
         );
+        pPayload.labor = await this.laborForProductionOrders([p.id]);
+        applyAllInTotals(pPayload);
         return {
           id: p.id,
           number: p.number,
@@ -316,6 +377,10 @@ export class ManufacturingCostService {
         incomplete: full.incomplete,
         estimatedTotal: full.estimated.total,
         actualTotal: full.actual.total,
+        estimatedMaterials: full.estimated.materials,
+        actualMaterials: full.actual.materials,
+        estimatedLabor: full.labor?.estimated ?? null,
+        actualLabor: full.labor?.actual ?? null,
         varianceCost: full.variance.cost,
         variancePct: full.variance.pct,
         scrapCost: full.actual.scrapCost,
@@ -422,6 +487,10 @@ export class ManufacturingCostService {
         incomplete: full.incomplete,
         estimatedTotal: full.estimated.total,
         actualTotal: full.actual.total,
+        estimatedMaterials: full.estimated.materials,
+        actualMaterials: full.actual.materials,
+        estimatedLabor: full.labor?.estimated ?? null,
+        actualLabor: full.labor?.actual ?? null,
         varianceCost: full.variance.cost,
         variancePct: full.variance.pct,
         scrapCost: full.actual.scrapCost,
@@ -639,9 +708,16 @@ export class ManufacturingCostService {
         status === 'FINAL' && latestFinal ? latestFinal.toISOString() : null,
       valuationPolicy: MANUFACTURING_INVENTORY_COST_BASIS.id,
       netQtyFormula: MANUFACTURING_INVENTORY_COST_BASIS.netQtyFormula,
-      estimated: { total: estimatedTotal, byCategory: byCategoryEst },
+      estimated: {
+        total: estimatedTotal,
+        materials: estimatedTotal,
+        labor: null,
+        byCategory: byCategoryEst,
+      },
       actual: {
         total: actualTotal,
+        materials: actualTotal,
+        labor: null,
         toDate: actualTotal,
         scrapCost: money(scrapCost),
         returnCredit: money(returnCredit),
@@ -652,6 +728,7 @@ export class ManufacturingCostService {
       bySku,
       incompleteSkus,
       taskTrace,
+      labor: null,
     };
   }
 
@@ -741,7 +818,10 @@ export class ManufacturingCostService {
     }));
   }
 
-  private async loadPlannedForSoLine(salesOrderLineId: string): Promise<PlannedRow[]> {
+  private async loadPlannedForSoLine(
+    salesOrderLineId: string,
+    units?: number | null,
+  ): Promise<PlannedRow[]> {
     const setup = await this.prisma.salesOrderLineSetup.findUnique({
       where: { salesOrderLineId },
       select: {
@@ -759,6 +839,7 @@ export class ManufacturingCostService {
     });
     if (!setup) return [];
     const lineQty = Number(setup.salesOrderLine.quantity) || 1;
+    const qty = units != null && Number(units) > 0 ? Number(units) : lineQty;
     return setup.materialRequirements
       .map((m) => {
         const sku = m.sku ?? m.inventoryItem?.sku;
@@ -770,7 +851,7 @@ export class ManufacturingCostService {
           sku,
           displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
           category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,
-          plannedQty: expected * lineQty,
+          plannedQty: expected * qty,
         };
       })
       .filter((x): x is PlannedRow => Boolean(x));
@@ -899,10 +980,12 @@ export class ManufacturingCostService {
     payload.estimated.total = anyEstimated
       ? money(payload.bySku.reduce((s, r) => s + (r.estimatedCost ?? 0), 0))
       : null;
+    payload.estimated.materials = payload.estimated.total;
     if (allowProvisionalActual || anyActual) {
       payload.actual.total = anyActual
         ? money(payload.bySku.reduce((s, r) => s + (r.actualCost ?? 0), 0))
         : null;
+      payload.actual.materials = payload.actual.total;
       payload.actual.toDate = payload.actual.total;
     }
 
@@ -953,6 +1036,92 @@ export class ManufacturingCostService {
     }
 
     return payload;
+  }
+
+  private async laborForProductionOrders(productionOrderIds: string[]): Promise<LaborCostBlock | null> {
+    if (!productionOrderIds.length) return null;
+    if (
+      typeof this.prisma.laborRate?.findMany !== 'function' ||
+      typeof this.prisma.taskTimeEntry?.findMany !== 'function'
+    ) {
+      return null;
+    }
+    const [orders, tasks, rates] = await Promise.all([
+      this.prisma.productionOrder.findMany({
+        where: { id: { in: productionOrderIds } },
+        select: { id: true, productId: true, variantId: true, quantity: true },
+      }),
+      this.prisma.productionTask.findMany({
+        where: { productionOrderId: { in: productionOrderIds } },
+        select: {
+          id: true,
+          stageDefinitionId: true,
+          stageDefinition: { select: { code: true } },
+        },
+      }),
+      this.prisma.laborRate.findMany(),
+    ]);
+    const taskIds = tasks.map((task) => task.id);
+    const entries = taskIds.length
+      ? await this.prisma.taskTimeEntry.findMany({
+          where: { taskId: { in: taskIds } },
+          select: {
+            taskId: true,
+            userId: true,
+            minutes: true,
+            startedAt: true,
+            endedAt: true,
+          },
+        })
+      : [];
+    const productIds = [...new Set(orders.map((po) => po.productId).filter(Boolean))] as string[];
+    const estimateRows =
+      productIds.length && typeof this.prisma.productStageEstimate?.findMany === 'function'
+      ? await this.prisma.productStageEstimate.findMany({
+          where: { productId: { in: productIds } },
+          select: {
+            productId: true,
+            variantId: true,
+            stageDefinitionId: true,
+            quantityScalingMode: true,
+            setupMinutes: true,
+            minutesPerUnit: true,
+            fixedMinutes: true,
+            batchSize: true,
+            batchMinutes: true,
+            maxParallelUnits: true,
+            stageDefinition: { select: { code: true } },
+          },
+        })
+      : [];
+    const estimates = orders.flatMap((po) => {
+      const scoped = pickVariantScopedRows(
+        estimateRows.filter((row) => row.productId === po.productId),
+        po.variantId,
+      );
+      return scoped.map((row) => ({
+        stageDefinitionId: row.stageDefinitionId,
+        stageCode: row.stageDefinition.code,
+        quantityScalingMode: row.quantityScalingMode as QuantityScalingMode,
+        quantity: Number(po.quantity) || 1,
+        setupMinutes: row.setupMinutes,
+        minutesPerUnit: row.minutesPerUnit,
+        fixedMinutes: row.fixedMinutes,
+        batchSize: row.batchSize,
+        batchMinutes: row.batchMinutes,
+        maxParallelUnits: row.maxParallelUnits,
+      }));
+    });
+    return rollupLaborCost({
+      rates,
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        stageDefinitionId: task.stageDefinitionId,
+        stageCode: task.stageDefinition?.code ?? null,
+      })),
+      entries,
+      estimates,
+    });
   }
 }
 

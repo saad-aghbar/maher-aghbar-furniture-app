@@ -546,11 +546,28 @@ export class WorkflowController {
 
   @Get('products/:productId/workflow-configuration')
   @RequirePermissions('catalog.manage')
-  async getProductWorkflow(@Param('productId') productId: string) {
-    return this.prisma.productWorkflowConfiguration.findUnique({
+  async getProductWorkflow(
+    @Param('productId') productId: string,
+    @Query('variantId') variantId?: string,
+  ) {
+    const variantScope = variantId || null;
+    const config = await this.prisma.productWorkflowConfiguration.findUnique({
       where: { productId },
-      include: { workflow: true, stageOverrides: true },
+      include: {
+        workflow: true,
+        stageOverrides: { where: { variantId: variantScope } },
+      },
     });
+    if (!variantScope) return config;
+    const variant = await this.prisma.productVariant.findFirst({
+      where: { id: variantScope, productId },
+      select: { id: true, workflowId: true },
+    });
+    return {
+      ...config,
+      variantId: variantScope,
+      variantWorkflowId: variant?.workflowId ?? null,
+    };
   }
 
   @Patch('products/:productId/workflow-configuration')
@@ -558,21 +575,30 @@ export class WorkflowController {
   async upsertProductWorkflow(
     @Param('productId') productId: string,
     @Body() dto: ProductWorkflowDto,
+    @Query('variantId') variantId?: string,
   ) {
+    const variantScope = variantId || null;
+    if (variantScope) {
+      await this.prisma.productVariant.update({
+        where: { id: variantScope },
+        data: { workflowId: dto.workflowId },
+      });
+    }
     const config = await this.prisma.productWorkflowConfiguration.upsert({
       where: { productId },
       create: { productId, workflowId: dto.workflowId },
-      update: { workflowId: dto.workflowId },
+      update: variantScope ? {} : { workflowId: dto.workflowId },
     });
     if (dto.overrides) {
       await this.prisma.productWorkflowStageOverride.deleteMany({
-        where: { configurationId: config.id },
+        where: { configurationId: config.id, variantId: variantScope },
       });
       for (const o of dto.overrides) {
         await this.prisma.productWorkflowStageOverride.create({
           data: {
             configurationId: config.id,
             productId,
+            variantId: variantScope,
             stageDefinitionId: o.stageDefinitionId,
             workflowNodeId: o.workflowNodeId,
             applicability: o.applicability,
@@ -583,7 +609,10 @@ export class WorkflowController {
     }
     return this.prisma.productWorkflowConfiguration.findUnique({
       where: { id: config.id },
-      include: { workflow: true, stageOverrides: true },
+      include: {
+        workflow: true,
+        stageOverrides: { where: { variantId: variantScope } },
+      },
     });
   }
 

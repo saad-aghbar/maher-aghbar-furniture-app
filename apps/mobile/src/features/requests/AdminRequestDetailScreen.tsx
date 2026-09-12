@@ -14,6 +14,7 @@ import { toastMessageForError } from '@/api/queryClient';
 import { createQuotation } from '@/api/modules/quotations';
 import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { quotationLinesFromRequestItems } from './quotationLinesFromRequest';
+import { formatRequestItemSpec } from './requestItemSpec';
 import {
   closeRequest,
   confirmRequestDelivery,
@@ -24,6 +25,7 @@ import {
   markRequestUnderReview,
   submitRequest,
   updateRequest,
+  verifyRequestSpec,
 } from '@/api/modules/requests';
 import { resolveDocumentUrl, uploadFile, uploadFromUrl } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
@@ -50,6 +52,8 @@ import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
 import { RequestIdentityBoard } from '@/features/requests/components/RequestIdentityBoard';
+import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
+import { SpecCorrectSheet } from '@/features/requests/components/SpecCorrectSheet';
 import {
   RfqStageRail,
   isRfqWaitingForReview,
@@ -80,21 +84,6 @@ function priorityLabel(
   const key = `mobile.production.priority.${priority.toUpperCase()}`;
   const label = t(key);
   return label === key ? priority : label;
-}
-
-function itemSpecs(item: {
-  material?: string | null;
-  fabric?: string | null;
-  fabricType?: string | null;
-  color?: string | null;
-  fabricColor?: string | null;
-}): string {
-  const parts = [
-    item.material,
-    item.fabricType ?? item.fabric,
-    item.fabricColor ?? item.color,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' / ') : '—';
 }
 
 function complexityLabel(
@@ -221,6 +210,7 @@ export function AdminRequestDetailScreen({
   >([]);
   const [deliveryChangeDate, setDeliveryChangeDate] = useState('');
   const [deliveryChangeReason, setDeliveryChangeReason] = useState('');
+  const [correctItem, setCorrectItem] = useState<RequestItem | null>(null);
 
   useEffect(() => {
     if (initialStage) setPickedStage(initialStage);
@@ -335,6 +325,24 @@ export function AdminRequestDetailScreen({
     onError: (err) => {
       setMessage(null);
       setError(isApiError(err) ? err.message : t('mobile.adminRequest.saveFailed'));
+      void haptics.error();
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: (body: {
+      itemId?: string;
+      action: 'CONFIRM' | 'CORRECT';
+      message?: string;
+      fields?: Record<string, string>;
+    }) => verifyRequestSpec(requestId, body),
+    onSuccess: async () => {
+      setMessage(t('mobile.adminRequest.specConfirmed'));
+      void haptics.confirmMedium();
+      await invalidate();
+    },
+    onError: (err) => {
+      setError(isApiError(err) ? err.message : t('mobile.adminRequest.actionFailed'));
       void haptics.error();
     },
   });
@@ -684,6 +692,49 @@ export function AdminRequestDetailScreen({
           />
         </ListItemEnter>
 
+        {galleryUris.length > 1 ? (
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard title={t('mobile.adminRequest.sheetRecord')} titleWeight={titleWeight}>
+              <ImageCarousel uris={galleryUris} height={220} />
+            </DealerBoard>
+          </ListItemEnter>
+        ) : galleryUris.length === 1 ? (
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard title={t('mobile.adminRequest.sheetRecord')} titleWeight={titleWeight}>
+              <ImageCarousel uris={galleryUris} height={220} />
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
+        {(detail.documents ?? []).some((doc) => (doc.category ?? '').includes('HANDWRITTEN') || (doc.fileName ?? '').endsWith('.pdf')) ? (
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard title={t('mobile.adminRequest.openPdf')} titleWeight={titleWeight}>
+              {(detail.documents ?? [])
+                .filter(
+                  (doc) =>
+                    (doc.category ?? '').includes('HANDWRITTEN') ||
+                    (doc.mimeType ?? '').includes('pdf') ||
+                    (doc.fileName ?? '').toLowerCase().endsWith('.pdf'),
+                )
+                .map((doc) => (
+                  <AnimatedPressable
+                    key={doc.id}
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={doc.fileName}
+                    onPress={() => {
+                      void haptics.selection();
+                      void openDocument(doc.id);
+                    }}
+                    style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}
+                  >
+                    <AppText>{doc.fileName}</AppText>
+                  </AnimatedPressable>
+                ))}
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
         <ListItemEnter index={nextIndex()}>
           <RfqStageRail
             stage={stage}
@@ -898,6 +949,14 @@ export function AdminRequestDetailScreen({
                 label={t('mobile.adminRequest.priority')}
                 value={priorityLabel(detail.priority, t)}
               />
+              <MetaCell
+                label={t('mobile.adminRequest.endCustomer')}
+                value={detail.endCustomerName?.trim() || '—'}
+              />
+              <MetaCell
+                label={t('mobile.adminRequest.deliveryAddress')}
+                value={detail.deliveryAddress?.trim() || '—'}
+              />
             </View>
 
             <TextField
@@ -1059,6 +1118,11 @@ export function AdminRequestDetailScreen({
                       >
                         {item.productName}
                       </AppText>
+                      {item.variantLabel ? (
+                        <AppText variant="caption" color="muted">
+                          {item.variantLabel}
+                        </AppText>
+                      ) : null}
                       <View
                         style={{
                           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -1128,7 +1192,7 @@ export function AdminRequestDetailScreen({
                         </AppText>
                       </View>
                     ) : null}
-                    {itemSpecs(item) !== '—' ? (
+                    {formatRequestItemSpec(item) !== '—' ? (
                       <View style={{ gap: 2 }}>
                         <AppText
                           variant="caption"
@@ -1142,8 +1206,44 @@ export function AdminRequestDetailScreen({
                           {t('mobile.adminRequest.specs')}
                         </AppText>
                         <AppText variant="caption" color="secondary">
-                          {itemSpecs(item)}
+                          {formatRequestItemSpec(item)}
                         </AppText>
+                      </View>
+                    ) : null}
+                    {(item.provenance ?? []).some((row) => row.source !== 'missing') ? (
+                      <View style={{ gap: theme.spacing.xs }}>
+                        <AppText variant="caption" color="muted">
+                          {t('mobile.adminRequest.aiVsDealer')}
+                        </AppText>
+                        {(item.provenance ?? [])
+                          .filter((row) => row.source !== 'missing')
+                          .map((row) => (
+                            <AppText key={row.key} variant="caption" color="secondary">
+                              {row.key}: {t('mobile.adminRequest.aiValue')} {row.ai ?? '—'} ·{' '}
+                              {t('mobile.adminRequest.dealerValue')} {row.dealer ?? '—'}
+                            </AppText>
+                          ))}
+                      </View>
+                    ) : null}
+                    {canUpdate && item.id ? (
+                      <View style={{ gap: theme.spacing.sm }}>
+                        <SecondaryButton
+                          label={t('mobile.adminRequest.confirmSpec')}
+                          onPress={() =>
+                            verifyMutation.mutate({ itemId: item.id, action: 'CONFIRM' })
+                          }
+                          loading={verifyMutation.isPending}
+                          style={floorBtn}
+                        />
+                        <TertiaryButton
+                          label={t('mobile.adminRequest.correctSpec')}
+                          onPress={() => {
+                            void haptics.selection();
+                            setCorrectItem(item);
+                          }}
+                          loading={verifyMutation.isPending}
+                          style={floorBtn}
+                        />
                       </View>
                     ) : null}
                   </View>
@@ -1551,6 +1651,21 @@ export function AdminRequestDetailScreen({
         cancelLabel={t('mobile.adminRequest.cancel')}
         destructive
         onConfirm={() => workflowMutation.mutate({ kind: 'close' })}
+      />
+      <SpecCorrectSheet
+        open={Boolean(correctItem)}
+        item={correctItem}
+        onClose={() => setCorrectItem(null)}
+        onSave={(fields) => {
+          if (!correctItem?.id) return;
+          verifyMutation.mutate({
+            itemId: correctItem.id,
+            action: 'CORRECT',
+            message: formatRequestItemSpec(correctItem),
+            fields,
+          });
+          setCorrectItem(null);
+        }}
       />
     </AppScreen>
   );

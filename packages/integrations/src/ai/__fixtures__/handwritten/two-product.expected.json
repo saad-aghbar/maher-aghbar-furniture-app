@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "productName": "كرينا",
+      "quantity": "1",
+      "width": "250",
+      "height": "90",
+      "depth": "95",
+      "foamDensity": "D35",
+      "orientation": "LEFT"
+    },
+    {
+      "productName": "ميلانو",
+      "quantity": "2",
+      "width": "160",
+      "height": "85",
+      "depth": "90",
+      "foamDensity": "D40",
+      "lowConfidenceFields": ["width"]
+    }
+  ]
+}

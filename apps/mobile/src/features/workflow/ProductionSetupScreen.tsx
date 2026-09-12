@@ -16,6 +16,7 @@ import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
 import {
   patchAdminProduct,
+  patchProductVariant,
   type AdminBomLine,
 } from '@/api/modules/catalogAdmin';
 import type { ProductionSetupStage } from '@/api/modules/workflow';
@@ -49,6 +50,7 @@ import { WorkflowPageHeader, WorkflowStatusPill } from './components/WorkflowPag
 
 type Props = {
   productId: string;
+  variantId?: string | null;
   backFallback?: Href;
 };
 
@@ -615,6 +617,7 @@ function StageSetupRow({
 
 export function ProductionSetupScreen({
   productId,
+  variantId = null,
   backFallback = '/(app)/(admin)/products',
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -622,8 +625,8 @@ export function ProductionSetupScreen({
   const dark = colorScheme === 'dark';
   const { showToast } = useToast();
   const qc = useQueryClient();
-  const setupQuery = useProductProductionSetupQuery(productId);
-  const saveMutation = usePutProductProductionSetupMutation(productId);
+  const setupQuery = useProductProductionSetupQuery(productId, true, variantId);
+  const saveMutation = usePutProductProductionSetupMutation(productId, variantId);
   const [editing, setEditing] = useState<ProductionSetupStage | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ProductionSetupStage>>({});
   const [bomDraft, setBomDraft] = useState<SetupBomLine[] | null>(null);
@@ -651,7 +654,7 @@ export function ProductionSetupScreen({
     if (bomDraft) {
       setBomSaving(true);
       try {
-        await patchAdminProduct(productId, {
+        const bomBody = {
           bomDefaults: {
             materials: bomDraft
               .filter((line) => line.sku && line.qty > 0)
@@ -662,8 +665,14 @@ export function ProductionSetupScreen({
                 category: line.category ?? undefined,
               })),
           },
-        });
-        await qc.invalidateQueries({ queryKey: queryKeys.catalog.adminDetail(productId) });
+        };
+        if (variantId) {
+          await patchProductVariant(productId, variantId, bomBody);
+          await qc.invalidateQueries({ queryKey: queryKeys.catalog.variant(productId, variantId) });
+        } else {
+          await patchAdminProduct(productId, bomBody);
+          await qc.invalidateQueries({ queryKey: queryKeys.catalog.adminDetail(productId) });
+        }
         await qc.invalidateQueries({ queryKey: queryKeys.catalog.detail(productId) });
       } catch (err) {
         void haptics.error();
@@ -716,6 +725,8 @@ export function ProductionSetupScreen({
             .filter((row) => row.sku && row.qtyPerUnit > 0)
             .filter((row) => bomLines.some((line) => line.sku === row.sku))
             .map((row) => ({ sku: row.sku, qtyPerUnit: row.qtyPerUnit })),
+          minutesPerUnit: s.minutesPerUnit ?? 0,
+          setupMinutes: s.setupMinutes ?? 0,
         })),
       },
       {

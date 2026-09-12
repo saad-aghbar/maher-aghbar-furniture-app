@@ -19,13 +19,15 @@ import {
   IsEmail,
   IsEnum,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { Locale, Prisma, RoleKind } from '@maher/database';
@@ -45,6 +47,7 @@ import { encryptPortalPassword } from '../../common/helpers/secret-box';
 import { SequenceService } from '../../common/sequence.service';
 import { provisionLinkedDealerCustomer, roleCodesIncludeCustomer } from '../../common/helpers/provision-dealer-customer.util';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { versionHourlyRate } from '../tasks/labor-rate';
 
 function splitCodes(value: unknown): string[] | undefined {
   if (value == null || value === '') return undefined;
@@ -143,6 +146,12 @@ class CreateUserDto {
   @IsArray()
   @IsUUID('4', { each: true })
   stageDefinitionIds?: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  hourlyRate?: number;
 }
 
 class UpdateUserDto {
@@ -202,6 +211,12 @@ class UpdateUserDto {
   @IsString()
   @MinLength(1)
   password?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  hourlyRate?: number;
 }
 
 const userSelect = {
@@ -225,6 +240,12 @@ const userSelect = {
   workerSkills: {
     where: { isActive: true },
     select: { stageDefinitionId: true },
+  },
+  laborRates: {
+    where: { effectiveTo: null },
+    orderBy: { effectiveFrom: 'desc' },
+    take: 1,
+    select: { hourlyRate: true, effectiveFrom: true },
   },
 } as const;
 
@@ -272,13 +293,18 @@ export class UsersController {
     }
   }
 
-  private withStageIds<T extends { workerSkills?: Array<{ stageDefinitionId: string }> }>(
-    user: T,
-  ) {
-    const { workerSkills, ...rest } = user;
+  private withStageIds<
+    T extends {
+      workerSkills?: Array<{ stageDefinitionId: string }>;
+      laborRates?: Array<{ hourlyRate: unknown }>;
+    },
+  >(user: T) {
+    const { workerSkills, laborRates, ...rest } = user;
+    const current = laborRates?.[0]?.hourlyRate;
     return {
       ...rest,
       stageDefinitionIds: (workerSkills ?? []).map((s) => s.stageDefinitionId),
+      hourlyRate: current == null || current === '' ? null : Number(current),
     };
   }
 
@@ -463,6 +489,17 @@ export class UsersController {
     }
 
     await this.syncWorkerSkills(user.id, skillIds);
+    await versionHourlyRate(this.prisma, {
+      userId: user.id,
+      hourlyRate: dto.hourlyRate,
+      actorId: actor.id,
+    });
+    if (dto.hourlyRate !== undefined) {
+      user = await this.prisma.user.findFirstOrThrow({
+        where: { id: user.id },
+        select: userSelect,
+      });
+    }
 
     await this.prisma.auditEvent.create({
       data: {
@@ -617,6 +654,18 @@ export class UsersController {
       dto.stageDefinitionIds,
     );
     await this.syncWorkerSkills(id, skillIds);
+    await versionHourlyRate(this.prisma, {
+      userId: id,
+      hourlyRate: dto.hourlyRate,
+      actorId: actor.id,
+    });
+    const presented =
+      dto.hourlyRate === undefined
+        ? user
+        : await this.prisma.user.findFirstOrThrow({
+            where: { id },
+            select: userSelect,
+          });
     if (dto.isActive !== undefined && dto.isActive !== existing.isActive) {
       this.scheduling?.enqueueEmployeeReplan(id, dto.isActive ? 'increase' : 'decrease');
     } else if (dto.roleIds !== undefined && dto.stageDefinitionIds === undefined) {
@@ -646,7 +695,7 @@ export class UsersController {
       },
     });
 
-    return this.withStageIds(user);
+    return this.withStageIds(presented);
   }
 
   @Post('users/:id/activate')

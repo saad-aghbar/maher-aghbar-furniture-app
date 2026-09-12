@@ -65,6 +65,10 @@ export type TaskListItem = {
   productImageUrls?: string[] | null;
   factoryOrderNumber?: string | null;
   salesOrderNumber?: string | null;
+  salesOrderId?: string | null;
+  salesOrderLineId?: string | null;
+  variantLabel?: string | null;
+  variantSku?: string | null;
   /** Piece 8 floor enrichment when list API provides it. */
   floorHint?: FloorTaskHint | null;
   needsWipReceive?: boolean | null;
@@ -83,9 +87,16 @@ export type TaskListItem = {
       nameHe?: string | null;
     } | null;
     salesOrder?: { id: string; number: string } | null;
+    salesOrderLineId?: string | null;
+    variantLabel?: string | null;
+    variantSku?: string | null;
     returnRequestId?: string | null;
     returnPieceId?: string | null;
     originType?: string | null;
+    instructionsAr?: string | null;
+    instructionsEn?: string | null;
+    instructionsHe?: string | null;
+    notes?: string | null;
   };
   stageDefinition?: {
     id?: string;
@@ -202,7 +213,11 @@ export type MyOrderSegment = 'open' | 'today' | 'active';
 export type WorkerMyOrder = {
   id: string;
   number: string;
+  salesOrderId?: string | null;
+  salesOrderLineId?: string | null;
   salesOrderNumber: string | null;
+  variantLabel?: string | null;
+  variantSku?: string | null;
   externalOrderNumber?: string | null;
   status: string;
   quantity: string | number | null;
@@ -236,6 +251,24 @@ export type WorkerMyOrder = {
   blockedCount: number;
 };
 
+export type WorkerMySalesOrder = {
+  salesOrderId: string | null;
+  salesOrderNumber: string | null;
+  externalOrderNumber?: string | null;
+  dealer?: WorkerMyOrder['dealer'] | null;
+  deadline: string | null;
+  priority: string;
+  myTaskCount: number;
+  actionableCount: number;
+  blockedCount: number;
+  items: WorkerMyOrder[];
+};
+
+export type MyOrdersResponse = {
+  orders: WorkerMySalesOrder[];
+  data: WorkerMySalesOrder[];
+};
+
 export type WorkerOrderWorkflow = WorkerMyOrder & {
   lane: WorkerOrderLaneNode[];
 };
@@ -244,7 +277,7 @@ export async function listMyOrders(segment: MyOrderSegment = 'open', q?: string)
   const qs = new URLSearchParams({ segment });
   const needle = q?.trim();
   if (needle) qs.set('q', needle);
-  return apiGet<{ data: WorkerMyOrder[] }>(`/tasks/my-orders?${qs.toString()}`);
+  return apiGet<MyOrdersResponse>(`/tasks/my-orders?${qs.toString()}`);
 }
 
 export async function getMyOrderWorkflow(productionOrderId: string) {

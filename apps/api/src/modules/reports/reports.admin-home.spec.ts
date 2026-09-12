@@ -30,11 +30,12 @@ describe('ReportsService.adminHome', () => {
       },
       invoice: {
         count: jest.fn().mockResolvedValue(3),
-        aggregate: jest.fn().mockResolvedValue({ _sum: { outstandingAmount: 1200 } }),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { outstandingAmount: 1200, total: 5000 } }),
       },
       customer: { count: jest.fn().mockResolvedValue(5) },
       returnRequest: { count: jest.fn().mockResolvedValue(0) },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
+      purchaseOrder: { count: jest.fn().mockResolvedValue(2) },
       productionOrder: { count: jest.fn().mockResolvedValue(4) },
       productionSchedule: { findMany: jest.fn().mockResolvedValue([]) },
       productionTask: {

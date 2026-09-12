@@ -11,10 +11,16 @@ import type { EmailProvider, WhatsAppProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
 import {
   buildOrderLineSpecSnapshot,
+  catalogDimRefFromEffective,
   classifyManufacturingComplexity,
   parseManufacturingComplexity,
+  resolveEffectiveVariant,
   type ManufacturingComplexityCode,
+  type OrderSpecOption,
+  type ProductLike,
+  type ProductVariantLike,
 } from '@maher/types';
+import { dealerOrCatalogOptions, pickRfqItemForLine, type RfqSpecItem } from './rfq-item-spec';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
@@ -151,8 +157,10 @@ export class QuotationsService {
     width?: unknown;
     height?: unknown;
     depth?: unknown;
+    variantLabel?: string | null;
   }): string {
     const parts: string[] = [];
+    if (line.variantLabel) parts.push(line.variantLabel);
     if (line.material) parts.push(`Material: ${line.material}`);
     if (line.fabric) parts.push(`Fabric: ${line.fabric}`);
     if (line.color) parts.push(`Color: ${line.color}`);
@@ -207,6 +215,9 @@ export class QuotationsService {
     );
     return {
       productId: line.productId,
+      variantId: line.variantId,
+      variantSku: line.variantSku,
+      variantLabel: line.variantLabel,
       description: line.description,
       quantity: line.quantity,
       unit: line.unit ?? 'pcs',
@@ -511,28 +522,30 @@ export class QuotationsService {
     const [dealerPrices, products] = await Promise.all([
       this.prisma.dealerPrice.findMany({
         where: { customerId: quotation.customerId },
-        select: { productId: true, price: true },
+        select: { productId: true, variantId: true, price: true },
       }),
       productIds.length
         ? this.prisma.product.findMany({
             where: { id: { in: productIds } },
-            select: { id: true, basePrice: true },
+            select: {
+              id: true,
+              basePrice: true,
+              variants: { select: { id: true, basePrice: true } },
+            },
           })
         : Promise.resolve([]),
     ]);
-    const dealerMap = new Map(dealerPrices.map((d) => [d.productId, Number(d.price)]));
-    const baseMap = new Map(
-      products.map((p) => [p.id, p.basePrice != null ? Number(p.basePrice) : null]),
-    );
 
     const lines = (quotation.lines ?? []).map((line) => {
       const complexity = parseManufacturingComplexity(
         (line as { manufacturingComplexity?: string | null }).manufacturingComplexity,
       );
-      const ref =
-        (line.productId && dealerMap.get(line.productId)) ||
-        (line.productId ? baseMap.get(line.productId) : null) ||
-        null;
+      const ref = this.catalogSellPrice({
+        productId: line.productId,
+        variantId: (line as { variantId?: string | null }).variantId,
+        dealerPrices,
+        products,
+      });
       const referenceUnitPrice = ref != null && ref > 0 ? ref : null;
       return {
         ...line,
@@ -585,12 +598,42 @@ export class QuotationsService {
   }
 
   /** Resolve product + seller unit price. STANDARD may prefill; MOD/CUSTOM never invent a price. */
+  private catalogSellPrice(input: {
+    productId?: string | null;
+    variantId?: string | null;
+    dealerPrices: Array<{ productId: string; variantId?: string | null; price: unknown }>;
+    products: Array<{
+      id: string;
+      basePrice?: unknown;
+      variants?: Array<{ id: string; basePrice?: unknown }>;
+    }>;
+  }): number | null {
+    if (!input.productId) return null;
+    const variantId = input.variantId ?? null;
+    const exact = input.dealerPrices.find(
+      (row) => row.productId === input.productId && (row.variantId ?? null) === variantId,
+    );
+    if (exact != null && Number(exact.price) > 0) return Number(exact.price);
+    const productLevel = input.dealerPrices.find(
+      (row) => row.productId === input.productId && row.variantId == null,
+    );
+    if (productLevel != null && Number(productLevel.price) > 0) return Number(productLevel.price);
+    const product = input.products.find((row) => row.id === input.productId);
+    const variant = variantId ? product?.variants?.find((row) => row.id === variantId) : null;
+    if (variant?.basePrice != null && Number(variant.basePrice) > 0) return Number(variant.basePrice);
+    if (product?.basePrice != null && Number(product.basePrice) > 0) return Number(product.basePrice);
+    return null;
+  }
+
   private async resolveSellerLines(
     customerId: string,
     lines: CreateQuotationDto['lines'],
   ): Promise<CreateQuotationDto['lines']> {
     const [dealerPrices, products] = await Promise.all([
-      this.prisma.dealerPrice.findMany({ where: { customerId } }),
+      this.prisma.dealerPrice.findMany({
+        where: { customerId },
+        select: { productId: true, variantId: true, price: true },
+      }),
       this.prisma.product.findMany({
         where: { archivedAt: null, isActive: true },
         select: {
@@ -600,10 +643,13 @@ export class QuotationsService {
           nameAr: true,
           nameHe: true,
           basePrice: true,
+          variants: {
+            where: { archivedAt: null },
+            select: { id: true, sku: true, nameAr: true, nameEn: true, isDefault: true, basePrice: true },
+          },
         },
       }),
     ]);
-    const dealerMap = new Map(dealerPrices.map((d) => [d.productId, Number(d.price)]));
 
     const matchProduct = (line: CreateQuotationDto['lines'][number]) => {
       if (line.productId) {
@@ -633,15 +679,22 @@ export class QuotationsService {
       const explicitProductId = Boolean(line.productId);
       const product = matchProduct(line);
       const productId = line.productId ?? product?.id;
+      const variant =
+        (line.variantId ? product?.variants?.find((row) => row.id === line.variantId) : null) ??
+        product?.variants?.find((row) => row.isDefault) ??
+        null;
+      const variantId = line.variantId ?? variant?.id ?? undefined;
       const complexity = this.sellerLineComplexity({
         manufacturingComplexity: line.manufacturingComplexity,
         explicitProductId,
       });
       const incoming = Number(line.unitPrice);
-      const catalogRef =
-        (productId && dealerMap.get(productId)) ||
-        (product?.basePrice != null ? Number(product.basePrice) : null) ||
-        null;
+      const catalogRef = this.catalogSellPrice({
+        productId,
+        variantId,
+        dealerPrices,
+        products,
+      });
       let unitPrice = Number.isFinite(incoming) && incoming > 0 ? incoming : 0;
       if (
         this.sellingPriceMissing(unitPrice) &&
@@ -653,6 +706,9 @@ export class QuotationsService {
       return {
         ...line,
         productId,
+        variantId,
+        variantSku: line.variantSku ?? variant?.sku,
+        variantLabel: line.variantLabel ?? variant?.nameAr ?? variant?.nameEn,
         unitPrice,
         manufacturingComplexity: complexity,
       };
@@ -1056,13 +1112,47 @@ export class QuotationsService {
                 where: { id: { in: productIds } },
                 select: {
                   id: true,
+                  sku: true,
+                  nameEn: true,
+                  nameAr: true,
+                  nameHe: true,
                   width: true,
                   height: true,
                   depth: true,
                   seatHeight: true,
                   customMeasurements: true,
                   imageUrl: true,
-                  nameEn: true,
+                  variants: {
+                    where: { archivedAt: null },
+                    select: {
+                      id: true,
+                      productId: true,
+                      sku: true,
+                      code: true,
+                      nameAr: true,
+                      nameEn: true,
+                      nameHe: true,
+                      isDefault: true,
+                      width: true,
+                      height: true,
+                      depth: true,
+                      seatHeight: true,
+                      measurements: true,
+                      composition: true,
+                      includedItems: true,
+                      imageUrl: true,
+                      options: {
+                        include: {
+                          specOptionValue: {
+                            include: {
+                              group: { select: { code: true } },
+                              inventoryItem: { select: { id: true } },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
                 },
               })
             : [];
@@ -1096,26 +1186,83 @@ export class QuotationsService {
               total: quotation.total,
               lines: {
                 create: quotation.lines.map((line, index) => {
-                  const catalog = line.productId
-                    ? productMap.get(line.productId)
-                    : null;
-                  const catalogRef = catalog
+                  const product = line.productId ? productMap.get(line.productId) : null;
+                  const variantId =
+                    (line as { variantId?: string | null }).variantId ??
+                    product?.variants?.find((row) => row.isDefault)?.id ??
+                    null;
+                  const variantRow =
+                    (variantId ? product?.variants?.find((row) => row.id === variantId) : null) ??
+                    product?.variants?.find((row) => row.isDefault) ??
+                    null;
+                  const variantLike: ProductVariantLike | null = variantRow
                     ? {
-                        width: catalog.width != null ? Number(catalog.width) : null,
-                        height: catalog.height != null ? Number(catalog.height) : null,
-                        depth: catalog.depth != null ? Number(catalog.depth) : null,
-                        seatHeight:
-                          catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
-                        customMeasurements: (
-                          catalog as { customMeasurements?: unknown }
-                        ).customMeasurements,
+                        ...(variantRow as ProductVariantLike),
+                        options: (variantRow.options ?? []).map((row) => ({
+                          specOptionValueId: row.specOptionValueId,
+                          groupCode: row.specOptionValue?.group?.code ?? null,
+                          code: row.specOptionValue?.code ?? null,
+                          nameAr: row.specOptionValue?.nameAr ?? null,
+                          nameEn: row.specOptionValue?.nameEn ?? null,
+                          nameHe: row.specOptionValue?.nameHe ?? null,
+                          qty: row.qty != null ? Number(row.qty) : null,
+                          note: row.note ?? null,
+                          inventoryItemId: row.specOptionValue?.inventoryItemId ?? null,
+                        })),
                       }
                     : null;
+                  const effective =
+                    product
+                      ? resolveEffectiveVariant({
+                          product: product as unknown as ProductLike,
+                          variant: variantLike,
+                        })
+                      : null;
+                  const catalogFromVariant = effective
+                    ? catalogDimRefFromEffective(effective)
+                    : null;
+                  const catalogRef = catalogFromVariant
+                    ? {
+                        width:
+                          catalogFromVariant.width != null
+                            ? Number(catalogFromVariant.width)
+                            : null,
+                        height:
+                          catalogFromVariant.height != null
+                            ? Number(catalogFromVariant.height)
+                            : null,
+                        depth:
+                          catalogFromVariant.depth != null
+                            ? Number(catalogFromVariant.depth)
+                            : null,
+                        seatHeight:
+                          catalogFromVariant.seatHeight != null
+                            ? Number(catalogFromVariant.seatHeight)
+                            : null,
+                        customMeasurements: catalogFromVariant.customMeasurements,
+                        standardOptions: catalogFromVariant.standardOptions,
+                        options: catalogFromVariant.options,
+                        composition: catalogFromVariant.composition,
+                        includedItems: catalogFromVariant.includedItems,
+                      }
+                    : product
+                      ? {
+                          width: product.width != null ? Number(product.width) : null,
+                          height: product.height != null ? Number(product.height) : null,
+                          depth: product.depth != null ? Number(product.depth) : null,
+                          seatHeight:
+                            product.seatHeight != null ? Number(product.seatHeight) : null,
+                          customMeasurements: (
+                            product as { customMeasurements?: unknown }
+                          ).customMeasurements,
+                        }
+                      : null;
                   const stored = parseManufacturingComplexity(line.manufacturingComplexity);
                   const complexity =
                     stored ??
                     classifyManufacturingComplexity({
                       productId: line.productId,
+                      variantId,
                       width: line.width != null ? Number(line.width) : null,
                       height: line.height != null ? Number(line.height) : null,
                       depth: line.depth != null ? Number(line.depth) : null,
@@ -1125,10 +1272,30 @@ export class QuotationsService {
                       ).customMeasurements,
                       catalog: catalogRef,
                     });
+                  const rfqItems = (quotation.request as { items?: RfqSpecItem[] } | null)?.items;
+                  const rfqItem = pickRfqItemForLine(rfqItems, line, index);
+                  const snapshotOptions = dealerOrCatalogOptions(
+                    rfqItem,
+                    (effective?.options ?? []).map((row) => ({
+                      specOptionValueId: row.specOptionValueId,
+                      qty: row.qty != null ? Number(row.qty) : null,
+                      note: row.note ?? null,
+                    })),
+                  );
                   const orderSpec = buildOrderLineSpecSnapshot({
                     productId: line.productId,
+                    variantId,
+                    variantSku:
+                      (line as { variantSku?: string | null }).variantSku ??
+                      effective?.sku ??
+                      null,
+                    variantLabel:
+                      (line as { variantLabel?: string | null }).variantLabel ??
+                      effective?.nameAr ??
+                      effective?.nameEn ??
+                      null,
                     productName: line.description,
-                    productImageRef: catalog?.imageUrl ?? null,
+                    productImageRef: effective?.imageUrl ?? product?.imageUrl ?? null,
                     quantity: Number(line.quantity),
                     catalog: catalogRef,
                     width: line.width != null ? Number(line.width) : null,
@@ -1136,8 +1303,13 @@ export class QuotationsService {
                     depth: line.depth != null ? Number(line.depth) : null,
                     fabric: line.fabric,
                     color: line.color,
-                    fabrics: (line as { fabrics?: unknown }).fabrics,
+                    fabrics: rfqItem?.fabrics ?? (line as { fabrics?: unknown }).fabrics,
                     material: line.material,
+                    woodType: (rfqItem?.woodType as string | null | undefined) ?? undefined,
+                    woodColor: (rfqItem?.woodColor as string | null | undefined) ?? undefined,
+                    foamDensity: (rfqItem?.foamDensity as string | null | undefined) ?? undefined,
+                    finish: (rfqItem?.finish as string | null | undefined) ?? undefined,
+                    accessories: (rfqItem?.accessories as string | null | undefined) ?? undefined,
                     customMeasurements: (
                       line as { customMeasurements?: unknown }
                     ).customMeasurements,
@@ -1145,11 +1317,41 @@ export class QuotationsService {
                     attachmentIds,
                     dealerReference: requestRow?.externalOrderNumber ?? null,
                     requiredDeliveryDate: requiredDeliveryDate ?? null,
+                    options: snapshotOptions.length
+                      ? (snapshotOptions as OrderSpecOption[])
+                      : catalogFromVariant?.options,
+                    composition: catalogFromVariant?.composition,
+                    orientation: rfqItem?.orientation as string | null | undefined,
+                    includedItems: catalogFromVariant?.includedItems,
                   });
+                  const optionCreates = snapshotOptions
+                    .filter((row) => row.specOptionValueId)
+                    .map((row) => ({
+                      specOptionValueId: row.specOptionValueId!,
+                      qty: row.qty != null ? row.qty : undefined,
+                      note: row.note ?? undefined,
+                    }));
                   return {
                     productId: line.productId,
+                    variantId: variantId ?? undefined,
+                    variantSku:
+                      (line as { variantSku?: string | null }).variantSku ??
+                      effective?.sku ??
+                      undefined,
+                    variantLabel:
+                      (line as { variantLabel?: string | null }).variantLabel ??
+                      effective?.nameAr ??
+                      effective?.nameEn ??
+                      undefined,
                     description: line.description,
-                    specifications: this.lineSpecifications(line),
+                    specifications: this.lineSpecifications({
+                      ...line,
+                      variantLabel:
+                        (line as { variantLabel?: string | null }).variantLabel ??
+                        effective?.nameAr ??
+                        effective?.nameEn ??
+                        null,
+                    }),
                     quantity: line.quantity,
                     unitPrice: line.unitPrice,
                     discountValue: line.discountValue,
@@ -1168,6 +1370,9 @@ export class QuotationsService {
                         : 'DEALER_PRICE_OR_BASE',
                     orderSpec: orderSpec as unknown as Prisma.InputJsonValue,
                     sortOrder: index,
+                    lineOptions: optionCreates.length
+                      ? { create: optionCreates }
+                      : undefined,
                   };
                 }),
               },
@@ -1287,6 +1492,9 @@ export class QuotationsService {
     const nextVersion = quotation.version + 1;
     const lineData = quotation.lines.map((line, index) => ({
       productId: line.productId ?? undefined,
+      variantId: (line as { variantId?: string | null }).variantId ?? undefined,
+      variantSku: (line as { variantSku?: string | null }).variantSku ?? undefined,
+      variantLabel: (line as { variantLabel?: string | null }).variantLabel ?? undefined,
       description: line.description,
       quantity: line.quantity,
       unit: line.unit,

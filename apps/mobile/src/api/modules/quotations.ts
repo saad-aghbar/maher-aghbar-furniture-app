@@ -10,6 +10,9 @@ export type CreateQuotationLineInput = {
   unitPrice: number;
   unit?: string;
   productId?: string;
+  variantId?: string;
+  variantSku?: string;
+  variantLabel?: string;
   material?: string;
   fabric?: string;
   color?: string;

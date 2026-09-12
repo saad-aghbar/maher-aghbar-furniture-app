@@ -108,10 +108,14 @@ describe('TasksService.listMyOrders assignment', () => {
   it('returns an assigned carpentry order that is still unreleased', async () => {
     const { service } = makeService([assignedCarpentry]);
     const result = await service.listMyOrders('worker-a', 'open');
-    expect(result.data).toHaveLength(1);
-    expect(result.data[0]).toMatchObject({
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0]?.salesOrderId).toBe('so-1');
+    expect(result.orders[0]?.salesOrderNumber).toBe('ORD-9');
+    expect(result.orders[0]?.items).toHaveLength(1);
+    expect(result.orders[0]?.items[0]).toMatchObject({
       id: 'po-1',
       number: 'PO-1',
+      salesOrderId: 'so-1',
       salesOrderNumber: 'ORD-9',
       externalOrderNumber: 'EXT-441',
       status: 'PLANNED',
@@ -120,6 +124,7 @@ describe('TasksService.listMyOrders assignment', () => {
       myTaskCount: 1,
       blockedCount: 1,
     });
+    expect(result.data).toEqual(result.orders);
   });
 
   it('does not invent orders when the worker has no remaining assignment', async () => {
@@ -170,9 +175,73 @@ describe('TasksService.listMyOrders assignment', () => {
     };
     const { service } = makeService([laterDeadline]);
     const today = await service.listMyOrders('worker-a', 'today');
-    expect(today.data).toEqual([]);
+    expect(today.orders).toEqual([]);
     const found = await service.listMyOrders('worker-a', 'today', 'ORD-9');
-    expect(found.data).toHaveLength(1);
-    expect(found.data[0]?.salesOrderNumber).toBe('ORD-9');
+    expect(found.orders).toHaveLength(1);
+    expect(found.orders[0]?.salesOrderNumber).toBe('ORD-9');
+    expect(found.orders[0]?.items[0]?.id).toBe('po-1');
+  });
+
+  it('groups three production orders on the same sales order into one card', async () => {
+    const second = {
+      ...assignedCarpentry,
+      id: 'po-2',
+      number: 'PO-2',
+      variantLabel: 'Ukrainian',
+      variantSku: 'DIN-UKR',
+      salesOrderLineId: 'line-2',
+      quantity: 1,
+      productDescription: 'Dining table Ukrainian',
+    };
+    const third = {
+      ...assignedCarpentry,
+      id: 'po-3',
+      number: 'PO-3',
+      variantLabel: 'Classic',
+      variantSku: 'DIN-CLS',
+      salesOrderLineId: 'line-3',
+      quantity: 2,
+      productDescription: 'Dining table Classic',
+    };
+    const { service } = makeService([
+      { ...assignedCarpentry, variantLabel: 'Standard', variantSku: 'DIN-STD', salesOrderLineId: 'line-1' },
+      second,
+      third,
+    ]);
+    const result = await service.listMyOrders('worker-a', 'open');
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0]?.salesOrderId).toBe('so-1');
+    expect(result.orders[0]?.salesOrderNumber).toBe('ORD-9');
+    expect(result.orders[0]?.items).toHaveLength(3);
+    expect(result.orders[0]?.myTaskCount).toBe(3);
+    expect(result.orders[0]?.items.map((item) => item.variantLabel)).toEqual([
+      'Standard',
+      'Ukrainian',
+      'Classic',
+    ]);
+    expect(result.orders[0]?.items.map((item) => item.id)).toEqual(['po-1', 'po-2', 'po-3']);
+    expect(result.orders[0]?.items[1]).toMatchObject({
+      salesOrderLineId: 'line-2',
+      variantSku: 'DIN-UKR',
+      number: 'PO-2',
+    });
+  });
+
+  it('keeps production orders without a sales order as their own cards', async () => {
+    const orphan = {
+      ...assignedCarpentry,
+      id: 'po-orphan',
+      number: 'PO-RET-1',
+      salesOrder: null,
+      variantLabel: 'Return seat',
+    };
+    const { service } = makeService([assignedCarpentry, orphan]);
+    const result = await service.listMyOrders('worker-a', 'open');
+    expect(result.orders).toHaveLength(2);
+    expect(result.orders[0]?.salesOrderId).toBe('so-1');
+    expect(result.orders[0]?.items).toHaveLength(1);
+    expect(result.orders[1]?.salesOrderId).toBeNull();
+    expect(result.orders[1]?.items[0]?.id).toBe('po-orphan');
+    expect(result.orders[1]?.items[0]?.variantLabel).toBe('Return seat');
   });
 });

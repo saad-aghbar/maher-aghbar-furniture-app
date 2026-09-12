@@ -824,8 +824,8 @@ export async function seedDealerOrdersRecent(
           const productHasEstimates =
             (await prisma.productStageEstimate.count({ where: { productId: line.productId } })) > 0 &&
             Boolean(
-              await prisma.productProductionProfile.findUnique({
-                where: { productId: line.productId },
+              await prisma.productProductionProfile.findFirst({
+                where: { productId: line.productId, variantId: null },
               }),
             );
           const requiresReview = !productHasEstimates;

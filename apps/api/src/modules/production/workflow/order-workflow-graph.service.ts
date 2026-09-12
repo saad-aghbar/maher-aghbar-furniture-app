@@ -146,7 +146,9 @@ export class OrderWorkflowGraphService {
         };
       }
       // Legacy fallback: project from stage instances + live dependsOnCodes
-      const nodes = po.stages.map((s) => {
+      const nodes = po.stages
+        .filter((s) => s.stageDefinition)
+        .map((s) => {
         const timer = audience === 'admin' ? adminTimerFields(s.tasks[0]) : null;
         const qualityGate = isQualityGateStage({
           code: s.stageDefinition.code,
@@ -209,8 +211,11 @@ export class OrderWorkflowGraphService {
       };
       });
       const edges = po.stages.flatMap((s) =>
-        (s.stageDefinition.dependsOnCodes ?? []).map((from) => ({ from, to: s.stageDefinition.code })),
-      );
+        (s.stageDefinition?.dependsOnCodes ?? []).map((from) => ({
+          from,
+          to: s.stageDefinition?.code ?? '',
+        })),
+      ).filter((e) => e.to);
       const progressPercent =
         audience === 'dealer'
           ? po.progressPercent

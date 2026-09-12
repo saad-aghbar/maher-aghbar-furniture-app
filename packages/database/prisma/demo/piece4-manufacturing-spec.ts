@@ -15,6 +15,7 @@ import {
   SalesOrderStatus,
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 type DealerRef = { id: string; code: string; name?: string; nameEn?: string; username?: string };
 type ProductRef = {
@@ -26,6 +27,12 @@ type ProductRef = {
   height?: unknown;
   depth?: unknown;
   bomDefaults?: unknown;
+  defaultVariantId?: string;
+  defaultVariantSku?: string;
+  defaultVariantLabel?: string;
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
 };
 
 type MaterialCreate = {
@@ -76,7 +83,10 @@ export async function seedPiece4ManufacturingSpecExamples(
   const workflowId = workflowConfig?.workflowId ?? null;
 
   const stageMaterials = await prisma.productStageMaterialInput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     include: {
       inventoryItem: {
         select: {
@@ -130,7 +140,10 @@ export async function seedPiece4ManufacturingSpecExamples(
   }
 
   const packagingOutputs = await prisma.productStageInventoryOutput.findMany({
-    where: { productId: product.id },
+    where: {
+      productId: product.id,
+      ...(product.defaultVariantId ? { variantId: product.defaultVariantId } : {}),
+    },
     select: { expectedPieceCount: true, pieceLabels: true, inventoryTracking: true },
   });
   const finished =
@@ -180,6 +193,7 @@ export async function seedPiece4ManufacturingSpecExamples(
           create: [
             {
               productId: input.productId ?? undefined,
+              ...variantLineFieldsForProductId(opts.products, input.productId ?? undefined),
               description: input.description,
               quantity: input.quantity,
               unitPrice,
@@ -225,6 +239,7 @@ export async function seedPiece4ManufacturingSpecExamples(
         data: {
           salesOrderId: existing.id,
           productId: input.productId ?? undefined,
+          ...variantLineFieldsForProductId(opts.products, input.productId ?? undefined),
           description: input.description,
           specifications: input.specifications,
           quantity: input.quantity,
@@ -258,6 +273,7 @@ export async function seedPiece4ManufacturingSpecExamples(
           create: [
             {
               productId: input.productId ?? undefined,
+              ...variantLineFieldsForProductId(opts.products, input.productId ?? undefined),
               description: input.description,
               specifications: input.specifications,
               quantity: input.quantity,
@@ -685,6 +701,7 @@ export async function seedPiece4ManufacturingSpecExamples(
       {
         complexity: ManufacturingComplexity.STANDARD,
         productId: product.id as string | null,
+        ...variantLineFieldsForProductId(opts.products, product.id as string | null),
         description: product.nameEn,
         quantity: 1,
         orderSpec: {
@@ -700,6 +717,7 @@ export async function seedPiece4ManufacturingSpecExamples(
       {
         complexity: ManufacturingComplexity.MODIFIED,
         productId: product.id as string | null,
+        ...variantLineFieldsForProductId(opts.products, product.id as string | null),
         description: `${product.nameEn} (mod width)`,
         quantity: 1,
         orderSpec: {
@@ -715,6 +733,7 @@ export async function seedPiece4ManufacturingSpecExamples(
       {
         complexity: ManufacturingComplexity.CUSTOM,
         productId: null as string | null,
+        ...variantLineFieldsForProductId(opts.products, null as string | null),
         description: 'Bespoke ottoman — multi-line CUSTOM',
         quantity: 1,
         orderSpec: {
@@ -751,6 +770,7 @@ export async function seedPiece4ManufacturingSpecExamples(
         lines: {
           create: lineDefs.map((l) => ({
             productId: l.productId ?? undefined,
+            ...variantLineFieldsForProductId(opts.products, l.productId ?? undefined),
             description: l.description,
             quantity: l.quantity,
             unitPrice,
@@ -799,6 +819,7 @@ export async function seedPiece4ManufacturingSpecExamples(
             data: {
               salesOrderId: so.id,
               productId: l.productId ?? undefined,
+              ...variantLineFieldsForProductId(opts.products, l.productId ?? undefined),
               description: l.description,
               quantity: l.quantity,
               unitPrice,
@@ -826,6 +847,7 @@ export async function seedPiece4ManufacturingSpecExamples(
             lines: {
               create: lineDefs.map((l) => ({
                 productId: l.productId ?? undefined,
+                ...variantLineFieldsForProductId(opts.products, l.productId ?? undefined),
                 description: l.description,
                 quantity: l.quantity,
                 unitPrice,
@@ -979,6 +1001,7 @@ export async function seedPiece4ManufacturingSpecExamples(
           salesOrderLineId: line.id,
           customerId: oasis.id,
           productId: product.id,
+          ...variantPoFields(product),
           productDescription: product.nameEn,
           quantity: 1,
           status: 'PLANNED',

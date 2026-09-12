@@ -18,6 +18,8 @@ export type IndustrialFloorTaskCardModel = {
   department: string;
   productTitle: string;
   orderNumber: string;
+  /** Factory production-order number when it differs from the sales order. */
+  factoryOrderNumber?: string | null;
   imageUrl: string | null;
   priority: PriorityLevel;
   deadline: string | null;
@@ -397,6 +399,18 @@ export function IndustrialFloorTaskCard({
               valueLtr
               emphasize
             />
+            {task.factoryOrderNumber ? (
+              <>
+                <Divider compact />
+                <MetaRow
+                  iconName="construct-outline"
+                  label={t('mobile.tasks.cardFactory')}
+                  value={task.factoryOrderNumber}
+                  isRTL={isRTL}
+                  valueLtr
+                />
+              </>
+            ) : null}
             <Divider compact />
             <MetaRow
               iconName="layers-outline"

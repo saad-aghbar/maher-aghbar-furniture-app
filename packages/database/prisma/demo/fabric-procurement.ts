@@ -25,6 +25,7 @@ import {
   SalesOrderStatus,
 } from '@prisma/client';
 import { VAT, lineTotals, money } from '../seed/util';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId } from './variant-attach';
 
 const SO_NUMBER = 'SO-FB1042';
 const QT_NUMBER = 'QT-FB1042';
@@ -160,6 +161,7 @@ export async function seedDemoFabricProcurement(
         create: [
           {
             productId: product.id,
+            ...variantLineFields(product),
             description: `${product.nameEn} — three fabrics`,
             quantity: 1,
             unitPrice,
@@ -216,6 +218,7 @@ export async function seedDemoFabricProcurement(
         lines: {
           create: {
             productId: product.id,
+            ...variantLineFields(product),
             description: `${product.nameEn} — three fabrics`,
             specifications: 'Velvet 302 · Bouclé 611 · Linen 180',
             quantity: 1,
@@ -251,6 +254,7 @@ export async function seedDemoFabricProcurement(
           create: [
             {
               productId: product.id,
+              ...variantLineFields(product),
               description: `${product.nameEn} — three fabrics`,
               specifications: 'Velvet 302 · Bouclé 611 · Linen 180',
               quantity: 1,

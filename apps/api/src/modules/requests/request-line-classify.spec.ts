@@ -58,9 +58,77 @@ describe('classifyRequestItemDto', () => {
       }),
     ).toBe('CUSTOM');
   });
+
+  it('keeps a variant with foam, paint, piping and cushions as STANDARD', () => {
+    expect(
+      classifyRequestItemDto(
+        {
+          productName: 'Karina',
+          productId: 'p1',
+          variantId: 'v-250',
+          quantity: 1,
+          width: 250,
+          height: 85,
+          depth: 95,
+          foamDensity: 'D35',
+          finish: 'GOLD',
+        },
+        {
+          id: 'p1',
+          width: 250,
+          height: 85,
+          depth: 95,
+          catalog: {
+            width: 250,
+            height: 85,
+            depth: 95,
+            standardOptions: {
+              foamDensity: 'D35',
+              finish: 'GOLD',
+              accessories: 'BACK_MATCH',
+            },
+            options: [
+              { groupCode: 'FOAM_DENSITY', code: 'D35' },
+              { groupCode: 'PAINT_COLOR', code: 'GOLD' },
+              { groupCode: 'PIPING_STYLE', code: 'BACK_MATCH' },
+            ],
+          },
+        },
+      ),
+    ).toBe('STANDARD');
+  });
 });
 
 describe('mapRequestItemCreate', () => {
+  it('writes variantId, variant sku, and wood/foam fields', () => {
+    const row = mapRequestItemCreate(
+      {
+        productName: 'Karina',
+        productId: 'p1',
+        variantId: 'v-250',
+        quantity: 1,
+        woodType: 'BEECH',
+        foamDensity: 'D35',
+        orientation: 'LEFT',
+        options: [{ specOptionValueId: 'opt-1', groupCode: 'FOAM_DENSITY', code: 'D35' }],
+      },
+      0,
+      {
+        id: 'p1',
+        variantSku: 'KARINA-250',
+        variantLabel: 'أوكرانيه',
+      },
+    );
+    expect(row.variantId).toBe('v-250');
+    expect(row.variantSku).toBe('KARINA-250');
+    expect(row.woodType).toBe('BEECH');
+    expect(row.foamDensity).toBe('D35');
+    expect(row.orientation).toBe('LEFT');
+    expect(row.options).toEqual([
+      expect.objectContaining({ specOptionValueId: 'opt-1', code: 'D35' }),
+    ]);
+  });
+
   it('writes fabrics JSON and still fills singular type/color', () => {
     const row = mapRequestItemCreate(
       {

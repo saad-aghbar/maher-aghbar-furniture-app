@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
+import { localizedName } from '@maher/i18n';
 import { extractPreview, linkAiJobToRequest } from '@/api/modules/ai-intake';
 import {
   createCustomerAddress,
@@ -19,6 +20,13 @@ import {
   type CreateRequestInput,
   type RequestPriority,
 } from '@/api/modules/requests';
+import {
+  listCatalogColors,
+  listCatalogFabrics,
+  listSpecOptionGroups,
+  listSpecOptionValues,
+} from '@/api/modules/catalog';
+import { listProductVariants } from '@/api/modules/catalogAdmin';
 import { uploadFile } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
@@ -31,22 +39,23 @@ import { PhoneField } from '@/components/forms/PhoneField';
 import { KeyboardAwareScreen } from '@/components/layout/KeyboardAwareScreen';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
-import { FadeIn, FormShake, SlideIn, haptics } from '@/motion';
+import { FadeIn, FormShake, ListItemEnter, SlideIn, haptics } from '@/motion';
 import { dealerTokens, useTheme } from '@/theme';
 import { useBrowseProductQuery, useFavoriteProductsQuery, usePreviouslyOrderedQuery } from '@/features/catalog/query';
+import { useDealerFavorites } from '@/features/catalog/useDealerFavorites';
 import { useAvailabilityQuery } from '@/features/scheduling/query';
 import type { AvailabilityRequest } from '@/api/modules/scheduling';
 import { catalogPickForOrderHref } from '@/features/catalog/catalogPickForOrder';
 import {
   isCatalogOrderDeepLink,
+  navigateToBasketReview,
   parseDeepLinkProductId,
   parseDeepLinkQty,
+  parseDeepLinkVariantId,
+  parseDeepLinkText,
 } from '@/features/catalog/newOrderDeepLink';
-import { useDealerFavorites } from '@/features/catalog/useDealerFavorites';
-import {
-  DealerGlassCard,
-  DealerSectionHeader,
-} from '@/features/dealer-ui';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { DeliveryAvailabilityCard } from './components/DeliveryAvailabilityCard';
 import { availabilityMonthWindow, localDealerMinimumRequestYmd, selectDeliveryAvailability } from './selectDeliveryAvailability';
 import {
@@ -60,8 +69,12 @@ import { NewOrderFloatingDock } from './components/NewOrderFloatingDock';
 import { NewOrderQtyStepper } from './components/NewOrderQtyStepper';
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { NewOrderStageRail } from './components/NewOrderStageRail';
-import { ProductQuickPickSheet } from './components/ProductQuickPickSheet';
+import { OrderBasketItemRail } from './components/OrderBasketItemRail';
+import { OrderLineSpecSheet } from './components/OrderLineSpecSheet';
+import { CropPreviewSheet } from './components/CropPreviewSheet';
 import { ReviewStep } from './components/ReviewStep';
+import { selectReviewBasketLine } from './selectReviewBasket';
+import { ScanReviewScreen } from './ScanReviewScreen';
 import {
   dealerFabricsPayload,
   emptyDealerFabricRow,
@@ -79,11 +92,8 @@ import {
 } from './newOrderDraft';
 import { newOrderDockMode, newOrderDockScrollPad } from './newOrderDockMode';
 import {
-  emptyDimensionFields,
   formatDimensionsNotes,
-  parseDimNumber,
   seedDimensionsFromProduct,
-  toRequestCustomMeasurements,
   type NewOrderDimensionFields,
 } from './newOrderMeasurements';
 import {
@@ -91,6 +101,23 @@ import {
   isCustomCatalogProduct,
 } from './newOrderProductKind';
 import { resolveExternalOrderNumber } from './resolveExternalOrderNumber';
+import {
+  emptyOrderLine,
+  lineToRequestItem,
+  type NewOrderLine,
+} from './newOrderLine';
+import { useOrderBasket } from './OrderBasketProvider';
+import {
+  applyCatalogProductToBasket,
+  lineHasProduct,
+  patchBasketLine,
+} from './newOrderBasket';
+import {
+  previewHasLowConfidence,
+  previewItemsToScanLines,
+  scanLinesToBasket,
+  type ScanReviewLine,
+} from './scanReview';
 import { clampWizardStep, type NewOrderStep } from './newOrderSteps';
 import type { PendingAttachment } from './pendingAttachment';
 import {
@@ -120,11 +147,19 @@ export function NewOrderScreen() {
     productId?: string;
     qty?: string;
     fromCatalog?: string;
+    variantId?: string;
+    variantLabel?: string;
+    variantSku?: string;
   }>();
   const fromCatalog = isCatalogOrderDeepLink(params);
   const catalogProductId = parseDeepLinkProductId(params.productId);
   const catalogQty = parseDeepLinkQty(params.qty);
-  const catalogDeepLinkKey = fromCatalog ? `${catalogProductId}:${catalogQty}` : '';
+  const catalogVariantId = parseDeepLinkVariantId(params.variantId);
+  const catalogVariantLabel = parseDeepLinkText(params.variantLabel);
+  const catalogVariantSku = parseDeepLinkText(params.variantSku);
+  const catalogDeepLinkKey = fromCatalog
+    ? `${catalogProductId}:${catalogQty}:${catalogVariantId}:${catalogVariantLabel}`
+    : '';
   const allowed = can(user, 'request.create');
   const canUpload = can(user, 'document.manage');
   const canAi = can(user, 'request.create') || can(user, 'ai-intake.manage');
@@ -135,16 +170,14 @@ export function NewOrderScreen() {
   const [shake, setShake] = useState(0);
   const [hydrated, setHydrated] = useState(false);
 
-  const [productId, setProductId] = useState(catalogProductId);
-  const [customProductName, setCustomProductName] = useState('');
-  const [quantity, setQuantity] = useState(fromCatalog ? catalogQty : '1');
+  const orderBasket = useOrderBasket();
+  const lines = orderBasket.lines;
+  const setLines = orderBasket.setLines;
+  const [activeLineId, setActiveLineId] = useState<string | null>(null);
+  const [specSheetOpen, setSpecSheetOpen] = useState(false);
   const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [priority, setPriority] = useState<RequestPriority>('NORMAL');
 
-  const [fabric, setFabric] = useState('');
-  const [fabricDescription, setFabricDescription] = useState('');
-  const [fabrics, setFabrics] = useState<DealerFabricRow[]>([emptyDealerFabricRow()]);
-  const [dimensions, setDimensions] = useState<NewOrderDimensionFields>(emptyDimensionFields);
   const [orderNotes, setOrderNotes] = useState('');
 
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -160,8 +193,12 @@ export function NewOrderScreen() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [aiJobId, setAiJobId] = useState<string | null>(null);
   const [aiState, setAiState] = useState<DealerAiIntakeState>('idle');
+  const [scanReviewOpen, setScanReviewOpen] = useState(false);
+  const [scanLines, setScanLines] = useState<ScanReviewLine[]>([]);
+  const [scanPhotoUri, setScanPhotoUri] = useState<string | null>(null);
+  const [cropPreviewOpen, setCropPreviewOpen] = useState(false);
+  const [aiConfirmNeeded, setAiConfirmNeeded] = useState(false);
 
-  const [pickSheet, setPickSheet] = useState<'favorites' | 'ordered' | null>(null);
   const [addressSheetOpen, setAddressSheetOpen] = useState(false);
   const [saveAddressSheetOpen, setSaveAddressSheetOpen] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -176,7 +213,103 @@ export function NewOrderScreen() {
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
 
+  const activeLine = lines.find((line) => line.id === activeLineId) ?? lines[0] ?? emptyOrderLine();
+  const productId = activeLine.productId;
+  const customProductName = activeLine.customProductName;
+  const quantity = activeLine.quantity;
+  const fabrics = activeLine.fabrics.length ? activeLine.fabrics : [emptyDealerFabricRow()];
+  const fabric = fabrics[0]?.type ?? '';
+  const fabricDescription = fabrics[0]?.notes ?? '';
+  const dimensions: NewOrderDimensionFields = {
+    width: activeLine.dimWidth,
+    height: activeLine.dimHeight,
+    depth: activeLine.dimDepth,
+    seat: activeLine.dimSeat,
+    custom: activeLine.customMeasurements,
+  };
+
+  const patchActive = (partial: Partial<NewOrderLine>) => {
+    const id = activeLine.id;
+    setLines((prev) => patchBasketLine(prev, id, partial));
+    if (!activeLineId) setActiveLineId(id);
+  };
+  const setProductId = (value: string) => patchActive({ productId: value });
+  const setCustomProductName = (value: string) => patchActive({ customProductName: value });
+  const setQuantity = (value: string | ((prev: string) => string)) => {
+    setLines((prev) => {
+      const id = activeLine.id;
+      const current = prev.find((line) => line.id === id) ?? activeLine;
+      const next = typeof value === 'function' ? value(current.quantity) : value;
+      return patchBasketLine(prev, id, { quantity: next });
+    });
+  };
+  const setFabrics = (
+    value: DealerFabricRow[] | ((prev: DealerFabricRow[]) => DealerFabricRow[]),
+  ) => {
+    setLines((prev) => {
+      const id = activeLine.id;
+      const current = prev.find((line) => line.id === id) ?? activeLine;
+      const next = typeof value === 'function' ? value(current.fabrics) : value;
+      return patchBasketLine(prev, id, { fabrics: next });
+    });
+  };
+  const setFabric = (value: string | ((prev: string) => string)) => {
+    const next = typeof value === 'function' ? value(fabric) : value;
+    setFabrics((rows) => {
+      const copy = rows.length ? [...rows] : [emptyDealerFabricRow()];
+      copy[0] = { ...emptyDealerFabricRow(), ...copy[0], type: next };
+      return copy;
+    });
+  };
+  const setFabricDescription = (value: string | ((prev: string) => string)) => {
+    const next = typeof value === 'function' ? value(fabricDescription) : value;
+    setFabrics((rows) => {
+      const copy = rows.length ? [...rows] : [emptyDealerFabricRow()];
+      copy[0] = { ...emptyDealerFabricRow(), ...copy[0], notes: next };
+      return copy;
+    });
+  };
+  const setDimensions = (value: NewOrderDimensionFields) => {
+    patchActive({
+      dimWidth: value.width,
+      dimHeight: value.height,
+      dimDepth: value.depth,
+      dimSeat: value.seat,
+      customMeasurements: value.custom,
+    });
+  };
+
   const productQuery = useBrowseProductQuery(productId || undefined, Boolean(productId));
+  const specGroupsQuery = useQuery({
+    queryKey: queryKeys.catalog.specOptionGroups({ pageSize: 100 }),
+    queryFn: () => listSpecOptionGroups({ page: 1, pageSize: 100 }),
+    enabled: allowed,
+    staleTime: 60_000,
+  });
+  const specValuesQuery = useQuery({
+    queryKey: queryKeys.catalog.specOptionValues({ pageSize: 200 }),
+    queryFn: () => listSpecOptionValues({ page: 1, pageSize: 200 }),
+    enabled: allowed,
+    staleTime: 60_000,
+  });
+  const fabricsQuery = useQuery({
+    queryKey: queryKeys.catalog.fabrics(),
+    queryFn: () => listCatalogFabrics(),
+    enabled: allowed,
+    staleTime: 60_000,
+  });
+  const colorsQuery = useQuery({
+    queryKey: queryKeys.catalog.colors(),
+    queryFn: () => listCatalogColors(),
+    enabled: allowed,
+    staleTime: 60_000,
+  });
+  const variantsQuery = useQuery({
+    queryKey: queryKeys.catalog.variants(productId, { includeInactive: false }),
+    queryFn: () => listProductVariants(productId, false),
+    enabled: allowed && Boolean(productId),
+    staleTime: 30_000,
+  });
   const favorites = useDealerFavorites(user?.id);
   const orderedQuery = usePreviouslyOrderedQuery(Boolean(user?.customerId));
   const favoriteProductsQuery = useFavoriteProductsQuery(
@@ -231,25 +364,25 @@ export function NewOrderScreen() {
       // also runs when New Order was already mounted (tabs keep screens alive).
       if (local && !fromCatalog) {
         setStep(clampWizardStep(local.step));
-        setProductId(local.productId || '');
-        setCustomProductName(local.customProductName);
-        setQuantity(local.quantity || '1');
-        setExternalOrderNumber(local.externalOrderNumber);
-        setPriority(local.priority);
-        setFabric(local.fabric);
-        setFabricDescription(local.fabricDescription);
-        setFabrics(
-          local.fabric?.trim()
+        const restored = local.lines.length ? local.lines : [emptyOrderLine({
+          productId: local.productId || '',
+          customProductName: local.customProductName,
+          quantity: local.quantity || '1',
+          dimWidth: local.dimWidth || '',
+          dimHeight: local.dimHeight || '',
+          dimDepth: local.dimDepth || '',
+          dimSeat: local.dimSeat || '',
+          customMeasurements: local.customMeasurements ?? [],
+          fabrics: local.fabric?.trim()
             ? [{ ...emptyDealerFabricRow(), type: local.fabric, notes: local.fabricDescription }]
             : [emptyDealerFabricRow()],
-        );
-        setDimensions({
-          width: local.dimWidth || '',
-          height: local.dimHeight || '',
-          depth: local.dimDepth || '',
-          seat: local.dimSeat || '',
-          custom: local.customMeasurements ?? [],
-        });
+        })];
+        if (!orderBasket.lines.some(lineHasProduct)) {
+          setLines(restored);
+          setActiveLineId(restored[0]?.id ?? null);
+        }
+        setExternalOrderNumber(local.externalOrderNumber);
+        setPriority(local.priority);
         setOrderNotes(local.orderNotes);
         setDeliveryAddress(local.deliveryAddress);
         setEndCustomerName(local.endCustomerName);
@@ -263,22 +396,12 @@ export function NewOrderScreen() {
         }
       } else if (local && fromCatalog) {
         // Keep non-product draft fields so returning dealers don't retype delivery/etc.
+        if (local.lines.length && !orderBasket.lines.some(lineHasProduct)) {
+          setLines(local.lines);
+          setActiveLineId(local.lines[0]?.id ?? null);
+        }
         setExternalOrderNumber(local.externalOrderNumber);
         setPriority(local.priority);
-        setFabric(local.fabric);
-        setFabricDescription(local.fabricDescription);
-        setFabrics(
-          local.fabric?.trim()
-            ? [{ ...emptyDealerFabricRow(), type: local.fabric, notes: local.fabricDescription }]
-            : [emptyDealerFabricRow()],
-        );
-        setDimensions({
-          width: local.dimWidth || '',
-          height: local.dimHeight || '',
-          depth: local.dimDepth || '',
-          seat: local.dimSeat || '',
-          custom: local.customMeasurements ?? [],
-        });
         setOrderNotes(local.orderNotes);
         setDeliveryAddress(local.deliveryAddress);
         setEndCustomerName(local.endCustomerName);
@@ -307,10 +430,19 @@ export function NewOrderScreen() {
     if (!hydrated || !fromCatalog || !catalogProductId) return;
     if (appliedCatalogKey.current === catalogDeepLinkKey) return;
     appliedCatalogKey.current = catalogDeepLinkKey;
-    setProductId(catalogProductId);
-    setQuantity(catalogQty);
-    setCustomProductName('');
-    setStep(2);
+    setLines((prev) => {
+      const next = applyCatalogProductToBasket(prev, {
+        productId: catalogProductId,
+        quantity: catalogQty,
+        variantId: catalogVariantId,
+        variantLabel: catalogVariantLabel,
+        variantSku: catalogVariantSku,
+      });
+      const added = next[next.length - 1];
+      if (added) setActiveLineId(added.id);
+      return next;
+    });
+    setStep(1);
     setSubmittedNumber(null);
   }, [hydrated, fromCatalog, catalogProductId, catalogQty, catalogDeepLinkKey]);
 
@@ -342,8 +474,9 @@ export function NewOrderScreen() {
   useEffect(() => {
     if (!hydrated || skipLocalSave.current || submittedNumber || draftSavedNumber) return;
     const payload: NewOrderLocalDraft = {
-      version: 3,
+      version: 4,
       step,
+      lines,
       productId,
       customProductName,
       quantity,
@@ -376,6 +509,7 @@ export function NewOrderScreen() {
   }, [
     hydrated,
     step,
+    lines,
     productId,
     customProductName,
     quantity,
@@ -500,9 +634,14 @@ export function NewOrderScreen() {
     isValidOptionalDate(requiredDeliveryDate) &&
     requestedYmd >= minRequestYmd;
   const availabilityRequest: AvailabilityRequest | null =
-    productId.trim() && isValidQuantity(quantity)
+    lines.some((line) => line.productId.trim() && isValidQuantity(line.quantity))
       ? {
-          items: [{ productId, quantity: clampOrderQuantity(quantity) }],
+          items: lines
+            .filter((line) => line.productId.trim() && isValidQuantity(line.quantity))
+            .map((line) => ({
+              productId: line.productId,
+              quantity: clampOrderQuantity(line.quantity),
+            })),
           requestedDeliveryDate: sendRequestedDate ? requestedYmd : undefined,
           from: availabilityWindow.from,
           to: availabilityWindow.to,
@@ -536,8 +675,16 @@ export function NewOrderScreen() {
   };
 
   const validateStep1 = () => {
-    if (!resolvedName) {
+    const named = lines.filter((line) =>
+      resolveModelName({ customProductName: line.customProductName, catalogName: null }) ||
+      line.productId.trim(),
+    );
+    if (!named.length && !resolvedName) {
       fail(t('mobile.newOrder.errors.modelRequired'));
+      return false;
+    }
+    if (lines.some((line) => lineHasProduct(line) && !isValidQuantity(line.quantity))) {
+      fail(t('mobile.newOrder.errors.quantityPositive'));
       return false;
     }
     if (!isValidQuantity(quantity)) {
@@ -570,11 +717,17 @@ export function NewOrderScreen() {
     return true;
   };
 
-  const validateForSubmit = () => validateStep1() && validateStep3();
+  const validateForSubmit = () => {
+    if (aiConfirmNeeded || scanReviewOpen) {
+      fail(t('mobile.newOrder.errors.scanReviewRequired'));
+      return false;
+    }
+    return validateStep1() && validateStep3();
+  };
 
   const goNext = () => {
     if (step === 1 && !validateStep1()) return;
-    if (step === 3 && !validateStep3()) return;
+    if (step === 2 && !validateStep3()) return;
     void haptics.selection();
     setStep((s) => clampWizardStep(s + 1));
   };
@@ -608,18 +761,48 @@ export function NewOrderScreen() {
       setAiState('preparing');
       setAiJobId(res.jobId);
       const preview = res.preview ?? {};
+      const items = preview.items?.length
+        ? preview.items
+        : preview.productName
+          ? [
+              {
+                productName: preview.productName,
+                quantity: preview.quantity,
+                fabric: preview.fabric,
+                material: preview.material,
+                width: preview.width,
+                height: preview.height,
+                depth: preview.depth,
+                notes: preview.notes,
+                confidence: 0.8,
+                lowConfidenceFields: [],
+              },
+            ]
+          : [];
+      const catalogHits = [
+        ...(favoriteProductsQuery.products ?? []),
+        ...(orderedQuery.data ?? []),
+      ];
+      if (items.length) {
+        setScanLines(previewItemsToScanLines(items, catalogHits));
+        setScanPhotoUri(file.uri);
+        setScanReviewOpen(true);
+        setAiConfirmNeeded(previewHasLowConfidence(items) || items.length > 0);
+      }
       const currentName = resolvedNameRef.current;
-      if (preview.productName?.trim() && !currentName) {
+      if (preview.productName?.trim() && !currentName && !items.length) {
         setCustomProductName(preview.productName.trim());
         setProductId('');
       }
-      if (preview.quantity?.trim()) {
+      if (preview.quantity?.trim() && !items.length) {
         setQuantity((v) => (v === '1' || !v.trim() ? preview.quantity!.trim() : v));
       }
-      if (preview.notes?.trim()) {
-        setOrderNotes((v) => v.trim() || clampNotes(preview.notes!.trim(), NOTES_MAX));
+      if (preview.notes?.trim() && !items.length) {
+        patchActive({
+          notes: activeLine.notes.trim() || clampNotes(preview.notes.trim(), NOTES_MAX),
+        });
       }
-      if (preview.fabric?.trim()) {
+      if (preview.fabric?.trim() && !items.length) {
         setFabric((v) => v.trim() || preview.fabric!.trim());
         setFabrics((rows) => {
           const next = rows.length ? [...rows] : [emptyDealerFabricRow()];
@@ -638,7 +821,9 @@ export function NewOrderScreen() {
       if (preview.endCustomerName?.trim()) {
         setEndCustomerName((v) => v.trim() || preview.endCustomerName!.trim());
       }
-      setAiState(previewNeedsInfo(preview) ? 'needsInfo' : 'ready');
+      setAiState(
+        previewNeedsInfo(preview) && !items.length ? 'needsInfo' : 'ready',
+      );
     } catch {
       // Preserve the upload even when intake fails.
       setAiState('failed');
@@ -759,18 +944,25 @@ export function NewOrderScreen() {
   };
 
   const buildBody = (): CreateRequestInput => {
-    const qty = clampOrderQuantity(quantity);
-    const custom = isCustomCatalogProduct(productId, resolvedName);
-    const baseNotes = composeRequestNotes({ deliveryNotes, dimensionsNotes, orderNotes });
-    const notes = custom
+    const untitled = t('mobile.newOrder.untitledModel');
+    const seatLabel = t('mobile.newOrder.dimSeat');
+    const basket = lines.filter(lineHasProduct);
+    const items = (basket.length ? basket : [activeLine]).map((line) => {
+      const custom = isCustomCatalogProduct(line.productId, line.customProductName);
+      const item = lineToRequestItem(line, untitled, seatLabel);
+      if (custom) {
+        item.notes = [t('mobile.newOrder.customOrderFactoryNote'), item.notes]
+          .filter(Boolean)
+          .join('\n\n');
+      }
+      return item;
+    });
+    const baseNotes = composeRequestNotes({ deliveryNotes, orderNotes });
+    const notes = items.some((item) => !item.productId)
       ? [t('mobile.newOrder.customOrderFactoryNote'), baseNotes].filter(Boolean).join('\n\n')
       : baseNotes;
     const external =
       resolveExternalOrderNumber(externalOrderNumber, draftSaved?.number) ?? undefined;
-    const customMeasurements = toRequestCustomMeasurements(
-      dimensions,
-      t('mobile.newOrder.dimSeat'),
-    );
     return {
       source: 'PORTAL',
       externalOrderNumber: external,
@@ -785,24 +977,7 @@ export function NewOrderScreen() {
         requiredDeliveryDate.trim() && isValidOptionalDate(requiredDeliveryDate)
           ? requiredDeliveryDate.trim()
           : undefined,
-      items: [
-        {
-          productId: productId.trim() ? productId : undefined,
-          productName: resolvedName || t('mobile.newOrder.untitledModel'),
-          quantity: qty,
-          notes,
-          fabric: (dealerFabricsPayload(fabrics)[0]?.type ?? fabric.trim()) || undefined,
-          color: dealerFabricsPayload(fabrics)[0]?.color || undefined,
-          fabrics: dealerFabricsPayload(fabrics).length
-            ? dealerFabricsPayload(fabrics)
-            : undefined,
-          description: fabricDescription.trim() || undefined,
-          width: parseDimNumber(dimensions.width),
-          height: parseDimNumber(dimensions.height),
-          depth: parseDimNumber(dimensions.depth),
-          customMeasurements: customMeasurements.length ? customMeasurements : undefined,
-        },
-      ],
+      items,
     };
   };
 
@@ -859,7 +1034,7 @@ export function NewOrderScreen() {
     if (submitLock.current || busy) return;
     if (!validateForSubmit()) {
       if (!resolvedName || !isValidQuantity(quantity)) setStep(1);
-      else setStep(3);
+      else setStep(2);
       return;
     }
 
@@ -910,16 +1085,12 @@ export function NewOrderScreen() {
     setDraftSavedNumber(null);
     setDraftSaved(null);
     setStep(1);
-    setProductId('');
-    setCustomProductName('');
-    setQuantity('1');
+    const fresh = emptyOrderLine({ quantity: '1' });
+    setLines([fresh]);
+    setActiveLineId(fresh.id);
+    setSpecSheetOpen(false);
     setExternalOrderNumber('');
     setPriority('NORMAL');
-    setFabric('');
-    setFabricDescription('');
-    setFabrics([emptyDealerFabricRow()]);
-    setFabricDescription('');
-    setDimensions(emptyDimensionFields());
     appliedDimsProduct.current = '';
     setOrderNotes('');
     setDeliveryAddress('');
@@ -944,7 +1115,7 @@ export function NewOrderScreen() {
     );
   }
 
-  if (!hydrated) {
+  if (!hydrated || !orderBasket.hydrated) {
     return (
       <KeyboardAwareScreen>
         <AppText variant="body" color="secondary">
@@ -965,6 +1136,14 @@ export function NewOrderScreen() {
     : keyboardOpen
       ? Math.max(scrollPad, theme.spacing['3xl'])
       : scrollPad;
+  const basketLines = lines.filter(lineHasProduct);
+  const reviewBasketLines = basketLines.map((line) =>
+    selectReviewBasketLine(
+      line,
+      t('mobile.newOrder.untitledModel'),
+      t('mobile.newOrder.defaultVariant'),
+    ),
+  );
 
   const onDockPrimary = () => {
     if (dockMode === 'submit') {
@@ -1005,14 +1184,13 @@ export function NewOrderScreen() {
     1: t('mobile.newOrder.step1Title'),
     2: t('mobile.newOrder.step2Title'),
     3: t('mobile.newOrder.step3Title'),
-    4: t('mobile.newOrder.step4Title'),
   };
   const stepBodies: Record<NewOrderStep, string> = {
     1: t('mobile.newOrder.step1Body'),
     2: t('mobile.newOrder.step2Body'),
     3: t('mobile.newOrder.step3Body'),
-    4: t('mobile.newOrder.step4Body'),
   };
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -1037,6 +1215,7 @@ export function NewOrderScreen() {
             >
               <AppText
                 variant="largeTitle"
+                weight={titleWeight}
                 align="center"
                 numberOfLines={1}
               >
@@ -1054,88 +1233,47 @@ export function NewOrderScreen() {
               direction={slideDir}
             >
               {step === 1 && !successVisible ? (
-                <DealerGlassCard>
-                  <DealerSectionHeader
-                    title={stepTitles[1]}
-                    subtitle={stepBodies[1]}
-                  />
-                  <View style={{ gap: theme.spacing.lg }}>
-                    <SecondaryButton
-                      label={t('mobile.newOrder.browseCatalog')}
-                      onPress={() => {
-                        void haptics.selection();
-                        router.navigate(catalogPickForOrderHref());
-                      }}
+                <View style={{ gap: theme.spacing.md }}>
+                  {basketLines.length ? (
+                    <ListItemEnter index={0}>
+                    <OrderBasketItemRail
+                      lines={basketLines}
+                      activeId={activeLine.id}
+                      onSelect={setActiveLineId}
                     />
-
-                    <View
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        gap: theme.spacing.sm,
-                      }}
-                    >
-                      <Pressable
+                    </ListItemEnter>
+                  ) : (
+                    <ListItemEnter index={0}>
+                    <DealerBoard title={stepTitles[1]} titleWeight={titleWeight}>
+                      <DealerEmptyPanel
+                        nested
+                        compact
+                        text={t('mobile.newOrder.basketEmpty')}
+                      />
+                      <SecondaryButton
+                        label={t('mobile.newOrder.basket')}
                         onPress={() => {
                           void haptics.selection();
-                          setPickSheet('favorites');
+                          navigateToBasketReview(router);
                         }}
-                        style={{
-                          flex: 1,
-                          minHeight: theme.sizes.touch.min,
-                          borderRadius: theme.radius.lg,
-                          borderWidth: StyleSheet.hairlineWidth * 2,
-                          borderColor: colors.border,
-                          backgroundColor: colors.brandSoft,
-                          paddingHorizontal: theme.spacing.md,
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: theme.spacing.xs,
-                        }}
-                      >
-                        <Ionicons name="heart" size={16} color={colors.brand} />
-                        <AppText variant="caption" weight="semibold" color="brand">
-                          {t('mobile.newOrder.pickFavorites')}
-                        </AppText>
-                      </Pressable>
-                      <Pressable
+                      />
+                      <SecondaryButton
+                        label={t('mobile.newOrder.addFromCatalog')}
                         onPress={() => {
                           void haptics.selection();
-                          setPickSheet('ordered');
+                          router.navigate(catalogPickForOrderHref());
                         }}
-                        style={{
-                          flex: 1,
-                          minHeight: theme.sizes.touch.min,
-                          borderRadius: theme.radius.lg,
-                          borderWidth: StyleSheet.hairlineWidth * 2,
-                          borderColor: colors.border,
-                          backgroundColor: colors.surface,
-                          paddingHorizontal: theme.spacing.md,
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: theme.spacing.xs,
-                        }}
-                      >
-                        <Ionicons name="time-outline" size={16} color={colors.brand} />
-                        <AppText variant="caption" weight="semibold" color="brand">
-                          {t('mobile.newOrder.pickOrdered')}
-                        </AppText>
-                      </Pressable>
-                    </View>
+                      />
+                    </DealerBoard>
+                    </ListItemEnter>
+                  )}
 
-                    <TextField
-                      label={t('mobile.newOrder.modelName')}
-                      value={customProductName}
-                      onChangeText={(v) => {
-                        setCustomProductName(v);
-                        // Manual typing → custom factory product (no catalog id).
-                        setProductId('');
-                      }}
-                      placeholder={t('mobile.newOrder.modelNamePlaceholder')}
-                      error={error && !resolvedName ? error : undefined}
-                    />
-
+                  {basketLines.length ? (
+                    <ListItemEnter index={1}>
+                    <DealerBoard title={stepTitles[1]} titleWeight={titleWeight}>
+                    <AppText variant="caption" color="muted">
+                      {stepBodies[1]}
+                    </AppText>
                     {isCustomCatalogProduct(productId, customProductName) ? (
                       <View
                         style={{
@@ -1151,7 +1289,7 @@ export function NewOrderScreen() {
                       >
                         <Ionicons name="construct-outline" size={18} color={colors.warning} />
                         <View style={{ flex: 1, gap: 2 }}>
-                          <AppText variant="caption" weight="semibold" style={{ color: colors.warning }}>
+                          <AppText variant="caption" weight={titleWeight} style={{ color: colors.warning }}>
                             {t('mobile.newOrder.customProductBadge')}
                           </AppText>
                           <AppText variant="caption" color="secondary">
@@ -1160,27 +1298,6 @@ export function NewOrderScreen() {
                         </View>
                       </View>
                     ) : null}
-
-                    {productId && resolvedName ? (
-                      <View
-                        style={{
-                          borderRadius: theme.radius.lg,
-                          borderWidth: 1,
-                          borderColor: colors.brand,
-                          backgroundColor: colors.brandSoft,
-                          padding: theme.spacing.md,
-                          gap: 4,
-                        }}
-                      >
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.newOrder.selectedFromCatalog')}
-                        </AppText>
-                        <AppText variant="body" weight="semibold">
-                          {resolvedName}
-                        </AppText>
-                      </View>
-                    ) : null}
-
                     <NewOrderQtyStepper
                       value={quantity}
                       onChange={setQuantity}
@@ -1188,64 +1305,75 @@ export function NewOrderScreen() {
                         error && !isValidQuantity(quantity) ? error : undefined
                       }
                     />
-
-                    <AppText variant="caption" color="muted">
-                      {t('mobile.newOrder.uploadsLaterHint')}
-                    </AppText>
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+                    <View style={{ gap: theme.spacing.md }}>
+                      <AppText variant="label" weight={titleWeight}>
+                        {t('mobile.newOrder.fabricSection')}
+                      </AppText>
+                      <FabricSelectionsEditor
+                        value={fabrics}
+                        onChange={(next) => {
+                          setFabrics(next);
+                        }}
+                        fabricOptions={(fabricsQuery.data?.data ?? []).map((row) => ({
+                          id: row.id,
+                          name: localizedName(locale, row) || row.code,
+                          caption: row.code,
+                        }))}
+                        colorOptions={(colorsQuery.data?.data ?? []).map((row) => ({
+                          id: row.id,
+                          name: localizedName(locale, row) || row.code,
+                          caption: row.code,
+                        }))}
+                      />
+                    </View>
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+                    <NewOrderDimensionsEditor value={dimensions} onChange={setDimensions} />
+                    <SecondaryButton
+                      label={t('mobile.newOrder.editLineSpec')}
+                      onPress={() => {
+                        void haptics.selection();
+                        setSpecSheetOpen(true);
+                      }}
+                    />
+                    <View style={{ gap: theme.spacing.xs }}>
+                      <TextField
+                        label={t('mobile.newOrder.itemNotes')}
+                        value={activeLine.notes}
+                        onChangeText={(v) => patchActive({ notes: clampNotes(v, NOTES_MAX) })}
+                        placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
+                        multiline
+                        style={{ minHeight: 100, textAlignVertical: 'top' }}
+                      />
+                      <AppText
+                        variant="caption"
+                        color="muted"
+                        style={{ textAlign: isRTL ? 'left' : 'right' }}
+                      >
+                        {activeLine.notes.length}/{NOTES_MAX}
+                      </AppText>
+                    </View>
                     {error && step === 1 ? (
                       <AppText variant="caption" color="error">
                         {error}
                       </AppText>
                     ) : null}
-                  </View>
-                </DealerGlassCard>
-              ) : null}
-
-              {step === 2 && !successVisible ? (
-                <View style={{ gap: theme.spacing.md }}>
-                  {resolvedName || productId ? (
-                    <DealerGlassCard
-                      intensity="solid"
-                      contentStyle={{ padding: theme.spacing.md, gap: theme.spacing.xs }}
-                    >
-                      <AppText variant="caption" color="muted">
-                        {isCustomCatalogProduct(productId, resolvedName)
-                          ? t('mobile.newOrder.customProductBadge')
-                          : t('mobile.newOrder.selectedFromCatalog')}
-                      </AppText>
-                      <AppText variant="body" weight="semibold">
-                        {resolvedName || t('mobile.newOrder.loading')}
-                      </AppText>
-                      <View
-                        style={{
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: theme.spacing.md,
-                          marginTop: theme.spacing.xs,
-                        }}
-                      >
-                        <AppText variant="caption" color="secondary">
-                          {t('mobile.newOrder.quantity')}: {quantity}
-                        </AppText>
-                        {estimatedTotal != null ? (
-                          <AppText variant="caption" weight="semibold" dir="ltr">
-                            {formatCurrency(estimatedTotal)}
-                          </AppText>
-                        ) : null}
-                      </View>
-                    </DealerGlassCard>
+                    </DealerBoard>
+                    </ListItemEnter>
                   ) : null}
 
-                  <DealerGlassCard
-                    contentStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}
-                  >
-                    <DealerSectionHeader
-                      title={stepTitles[2]}
-                      subtitle={stepBodies[2]}
-                      compact
-                    />
-
+                  <ListItemEnter index={2}>
+                  <DealerBoard titleWeight={titleWeight}>
                     <View style={{ gap: theme.spacing.md }}>
                       <View style={{ gap: theme.spacing.xs }}>
                         <TextField
@@ -1274,37 +1402,7 @@ export function NewOrderScreen() {
                     />
 
                     <View style={{ gap: theme.spacing.md }}>
-                      <AppText variant="label" weight="semibold">
-                        {t('mobile.newOrder.fabricSection')}
-                      </AppText>
-                      <FabricSelectionsEditor
-                        value={fabrics}
-                        onChange={(next) => {
-                          setFabrics(next);
-                          setFabric(next[0]?.type ?? '');
-                          setFabricDescription(next[0]?.notes ?? fabricDescription);
-                        }}
-                      />
-                    </View>
-
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth * 2,
-                        backgroundColor: colors.border,
-                      }}
-                    />
-
-                    <NewOrderDimensionsEditor value={dimensions} onChange={setDimensions} />
-
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth * 2,
-                        backgroundColor: colors.border,
-                      }}
-                    />
-
-                    <View style={{ gap: theme.spacing.md }}>
-                      <AppText variant="label" weight="semibold">
+                      <AppText variant="label" weight={titleWeight}>
                         {t('mobile.newOrder.notesSection')}
                       </AppText>
                       <View style={{ gap: theme.spacing.xs }}>
@@ -1334,17 +1432,17 @@ export function NewOrderScreen() {
                     />
 
                     {uploadsEditor(t('mobile.newOrder.attachmentsDetailsHint'))}
-                  </DealerGlassCard>
+                  </DealerBoard>
+                  </ListItemEnter>
                 </View>
               ) : null}
 
-              {step === 3 && !successVisible ? (
-                <DealerGlassCard contentStyle={{ gap: theme.spacing.lg }}>
-                  <DealerSectionHeader
-                    title={stepTitles[3]}
-                    subtitle={stepBodies[3]}
-                    compact
-                  />
+              {step === 2 && !successVisible ? (
+                <ListItemEnter index={0}>
+                <DealerBoard title={stepTitles[2]} titleWeight={titleWeight}>
+                  <AppText variant="caption" color="muted">
+                    {stepBodies[2]}
+                  </AppText>
                   <View style={{ gap: theme.spacing.md }}>
                     <TextField
                       label={t('mobile.newOrder.endCustomerName')}
@@ -1417,28 +1515,35 @@ export function NewOrderScreen() {
                       updating={availabilityUpdating}
                     />
 
-                    {error && step === 3 ? (
+                    {error && step === 2 ? (
                       <AppText variant="caption" color="error">
                         {error}
                       </AppText>
                     ) : null}
                   </View>
-                </DealerGlassCard>
+                </DealerBoard>
+                </ListItemEnter>
               ) : null}
 
-              {step === 4 && !successVisible ? (
+              {step === 3 && !successVisible ? (
                 <View style={{ gap: theme.spacing.lg }}>
-                  <DealerGlassCard>
-                    <DealerSectionHeader
-                      title={stepTitles[4]}
-                      subtitle={stepBodies[4]}
-                    />
+                  <ListItemEnter index={0}>
+                  <DealerBoard title={stepTitles[3]} titleWeight={titleWeight}>
+                    <AppText variant="caption" color="muted">
+                      {stepBodies[3]}
+                    </AppText>
                     {uploadsEditor(t('mobile.newOrder.attachmentsReviewHint'))}
-                  </DealerGlassCard>
-                  <DealerGlassCard contentStyle={{ paddingTop: theme.spacing.md }}>
+                  </DealerBoard>
+                  </ListItemEnter>
+                  <ListItemEnter index={1}>
+                  <DealerBoard>
                     <ReviewStep
                       summary={{
-                        modelName: resolvedName,
+                        modelName: lines
+                          .filter(lineHasProduct)
+                          .map((line) => line.customProductName || line.variantLabel || t('mobile.newOrder.untitledModel'))
+                          .join(' · ') || resolvedName,
+                        basketLines: reviewBasketLines,
                         customerName: endCustomerName.trim() || user?.name || '—',
                         customerPhone: endCustomerPhone.trim() || user?.phone || '—',
                         address: deliveryAddress,
@@ -1473,7 +1578,7 @@ export function NewOrderScreen() {
                       onSubmit={() => {
                         if (!validateForSubmit()) {
                           if (!resolvedName || !isValidQuantity(quantity)) setStep(1);
-                          else setStep(3);
+                          else setStep(2);
                           return;
                         }
                         setSubmitConfirmOpen(true);
@@ -1483,15 +1588,21 @@ export function NewOrderScreen() {
                       }
                       onCreateAnother={resetForm}
                     />
-                  </DealerGlassCard>
+                  </DealerBoard>
+                  </ListItemEnter>
                 </View>
               ) : null}
 
               {successVisible ? (
-                <DealerGlassCard>
+                <ListItemEnter index={0}>
+                <DealerBoard>
                   <ReviewStep
                     summary={{
-                      modelName: resolvedName,
+                      modelName: lines
+                        .filter(lineHasProduct)
+                        .map((line) => line.customProductName || line.variantLabel || t('mobile.newOrder.untitledModel'))
+                        .join(' · ') || resolvedName,
+                      basketLines: reviewBasketLines,
                       customerName: endCustomerName.trim() || user?.name || '—',
                       customerPhone: endCustomerPhone.trim() || user?.phone || '—',
                       address: deliveryAddress,
@@ -1535,32 +1646,12 @@ export function NewOrderScreen() {
                     }
                     onCreateAnother={resetForm}
                   />
-                </DealerGlassCard>
+                </DealerBoard>
+                </ListItemEnter>
               ) : null}
             </SlideIn>
           </FadeIn>
         </FormShake>
-
-        <ProductQuickPickSheet
-          open={pickSheet === 'favorites'}
-          onClose={() => setPickSheet(null)}
-          title={t('mobile.newOrder.pickFavoritesTitle')}
-          subtitle={t('mobile.newOrder.pickFavoritesBody')}
-          products={favoriteProductsQuery.products}
-          loading={!favorites.ready || favoriteProductsQuery.isPending}
-          emptyTitle={t('mobile.catalog.favoritesEmptyTitle')}
-          emptyBody={t('mobile.catalog.favoritesEmptyBody')}
-          onSelect={(product) => {
-            setProductId(product.id);
-            const name =
-              locale === 'ar'
-                ? product.nameAr || product.nameEn
-                : locale === 'he'
-                  ? product.nameHe || product.nameEn
-                  : product.nameEn || product.nameAr;
-            setCustomProductName(name || product.nameEn || product.nameAr || '');
-          }}
-        />
 
         <ConfirmationSheet
           open={submitConfirmOpen}
@@ -1572,27 +1663,6 @@ export function NewOrderScreen() {
           onConfirm={() => {
             setSubmitConfirmOpen(false);
             void submitOrder();
-          }}
-        />
-
-        <ProductQuickPickSheet
-          open={pickSheet === 'ordered'}
-          onClose={() => setPickSheet(null)}
-          title={t('mobile.newOrder.pickOrderedTitle')}
-          subtitle={t('mobile.newOrder.pickOrderedBody')}
-          products={orderedQuery.data ?? []}
-          loading={orderedQuery.isPending}
-          emptyTitle={t('mobile.catalog.orderedEmptyTitle')}
-          emptyBody={t('mobile.catalog.orderedEmptyBody')}
-          onSelect={(product) => {
-            setProductId(product.id);
-            const name =
-              locale === 'ar'
-                ? product.nameAr || product.nameEn
-                : locale === 'he'
-                  ? product.nameHe || product.nameEn
-                  : product.nameEn || product.nameAr;
-            setCustomProductName(name || product.nameEn || product.nameAr || '');
           }}
         />
 
@@ -1654,6 +1724,44 @@ export function NewOrderScreen() {
           }}
         />
       </KeyboardAwareScreen>
+
+        <OrderLineSpecSheet
+          open={specSheetOpen}
+          onClose={() => setSpecSheetOpen(false)}
+          line={activeLine}
+          onChange={(next) => {
+            setLines((prev) => patchBasketLine(prev, next.id, next));
+            setActiveLineId(next.id);
+          }}
+          variants={variantsQuery.data ?? []}
+          groups={specGroupsQuery.data?.data ?? []}
+          values={specValuesQuery.data?.data ?? []}
+        />
+
+        <ScanReviewScreen
+          open={scanReviewOpen}
+          lines={scanLines}
+          onChange={setScanLines}
+          onClose={() => setScanReviewOpen(false)}
+          onOpenCrop={() => setCropPreviewOpen(true)}
+          onConfirm={() => {
+            const scanned = scanLinesToBasket(scanLines);
+            setLines((prev) => {
+              if (!prev.some(lineHasProduct)) return scanned.length ? scanned : [emptyOrderLine()];
+              return [...prev.filter(lineHasProduct), ...scanned];
+            });
+            setActiveLineId(scanned[0]?.id ?? null);
+            setAiConfirmNeeded(false);
+            setScanReviewOpen(false);
+            setAiState('ready');
+          }}
+        />
+
+        <CropPreviewSheet
+          open={cropPreviewOpen}
+          uri={scanPhotoUri}
+          onClose={() => setCropPreviewOpen(false)}
+        />
 
       {keyboardOpen ? null : (
         <NewOrderFloatingDock

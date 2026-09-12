@@ -35,6 +35,7 @@ import {
 import { VAT, lineTotals, money } from '../seed/util';
 import { demoAsOf } from './clock';
 import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
+import { variantLineFields, variantLineFieldsForProductId, variantPoFields, variantPoFieldsForProductId, variantIdFields } from './variant-attach';
 import {
   loadProductInventoryOutputs,
   resolveDemoSnapshotInventory,
@@ -57,9 +58,16 @@ type ProductRef = {
   sku: string;
   nameEn: string;
   basePrice: unknown;
+  manufacturingCost?: unknown;
   width?: unknown;
   height?: unknown;
   depth?: unknown;
+  defaultVariantId?: string;
+  defaultVariantSku?: string;
+  defaultVariantLabel?: string;
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
 };
 type WorkerRef = { id: string; username?: string };
 
@@ -522,6 +530,7 @@ export async function seedUniqueFloorWorkerExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -554,6 +563,7 @@ export async function seedUniqueFloorWorkerExamples(
           create: [
             {
               productId: input.productId,
+              ...variantLineFieldsForProductId(opts.products, input.productId),
               description: input.description,
               quantity: qty,
               unitPrice,
@@ -593,6 +603,10 @@ export async function seedUniqueFloorWorkerExamples(
       },
     });
 
+    const poFields = variantPoFieldsForProductId(opts.products, input.productId);
+    const productRow = opts.products.find((p) => p.id === input.productId);
+    const plannedMaterial = Number(productRow?.manufacturingCost ?? 200) * qty;
+    const plannedLabor = qty * 4 * 25;
     const po = await prisma.productionOrder.create({
       data: {
         number: poNumber,
@@ -600,6 +614,7 @@ export async function seedUniqueFloorWorkerExamples(
         salesOrderLineId: line.id,
         customerId: input.customerId,
         productId: input.productId,
+        ...poFields,
         productDescription: input.description,
         quantity: qty,
         status: input.poStatus ?? ProductionOrderStatus.IN_PROGRESS,
@@ -612,6 +627,9 @@ export async function seedUniqueFloorWorkerExamples(
         requiredDeliveryDate: asOf,
         releasedToFactoryAt: asOf,
         releasedToFactoryById: opts.adminUserId,
+        plannedMaterialCost: money(plannedMaterial),
+        plannedLaborCost: money(plannedLabor),
+        plannedCostFrozenAt: asOf,
         currentStageCode: input.currentStageCode ?? 'INSPECTION',
         progressPercent: input.progressPercent ?? 80,
       },
@@ -729,6 +747,9 @@ export async function seedUniqueFloorWorkerExamples(
                 : undefined),
           sortOrder: n.sortOrder,
           metadata: packMeta,
+          instructionsAr: poFields.instructionsAr ?? null,
+          instructionsEn: poFields.instructionsEn ?? null,
+          instructionsHe: poFields.instructionsHe ?? null,
         },
       });
       snapNodeIdBySource.set(n.id, snapNode.id);
@@ -1212,6 +1233,7 @@ export async function seedUniqueFloorWorkerExamples(
           salesOrderId: rcOpen.soId,
           salesOrderLineId: rcOpen.lineId,
           productId: product.id,
+          ...variantIdFields(product),
           productDesc: product.nameEn,
           state: ReturnPieceState.IN_PROGRESS,
           decision: ReturnPieceDecision.SCRAP_RECOVERY,
@@ -1290,6 +1312,7 @@ export async function seedUniqueFloorWorkerExamples(
           salesOrderId: rcDone.soId,
           salesOrderLineId: rcDone.lineId,
           productId: product.id,
+          ...variantIdFields(product),
           productDesc: product.nameEn,
           state: ReturnPieceState.RECOVERED,
           decision: ReturnPieceDecision.SCRAP_RECOVERY,

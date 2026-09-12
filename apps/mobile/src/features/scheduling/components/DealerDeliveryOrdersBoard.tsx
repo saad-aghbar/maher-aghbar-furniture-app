@@ -5,10 +5,11 @@ import { AppText } from '@/components/AppText';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 export const DEALER_FLOOR_VISIBLE_ROWS = 3;
-export const DEALER_FLOOR_ROW_ESTIMATE = 168;
+export const DEALER_FLOOR_ROW_ESTIMATE = 220;
 
 type BoardProps = {
   title: string;
@@ -57,25 +58,7 @@ export function DealerBoardPill({
 }
 
 export function DealerBoardEmpty({ title, description }: { title: string; description: string }) {
-  const { theme } = useTheme();
-
-  return (
-    <View
-      accessibilityRole="summary"
-      style={{
-        paddingVertical: theme.spacing.xl,
-        paddingHorizontal: theme.spacing.md,
-        gap: theme.spacing.xs,
-      }}
-    >
-      <AppText variant="label" align="center">
-        {title}
-      </AppText>
-      <AppText variant="caption" color="muted" align="center">
-        {description}
-      </AppText>
-    </View>
-  );
+  return <DealerEmptyPanel text={description || title} icon="calendar-outline" nested compact />;
 }
 
 export function DealerDeliveryOrdersBoard({
@@ -216,8 +199,8 @@ export function DealerDeliveryOrdersBoard({
           accessibilityRole="button"
           accessibilityLabel={
             expanded
-              ? t('mobile.adminScheduling.showFewerOrders')
-              : tPlural('mobile.adminScheduling.viewAllOrders', count)
+              ? t('mobile.orders.showFewerDeliveries')
+              : tPlural('mobile.orders.viewAllDeliveries', count)
           }
           onPress={() => {
             void haptics.selection();
@@ -241,8 +224,8 @@ export function DealerDeliveryOrdersBoard({
           />
           <AppText variant="caption" color="muted" style={{ fontSize: 11 }}>
             {expanded
-              ? t('mobile.adminScheduling.showFewerOrders')
-              : tPlural('mobile.adminScheduling.viewAllOrders', count)}
+              ? t('mobile.orders.showFewerDeliveries')
+              : tPlural('mobile.orders.viewAllDeliveries', count)}
           </AppText>
         </AnimatedPressable>
       ) : null}

@@ -70,6 +70,8 @@
   "never": "Never",
   "stageSkills": "Stage skills",
   "stageSkillsHint": "Stages this worker can be assigned to on production orders.",
+  "hourlyRate": "Hourly rate",
+  "hourlyRateHint": "Rate history is kept. Past work still costs at the rate that was in effect then.",
   "noStagesYet": "No stages in the library yet. Create stages in Workflow first.",
   "segmentWorkers": "Workers",
   "employeeType": "Employee type",

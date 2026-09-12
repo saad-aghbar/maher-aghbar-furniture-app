@@ -8,6 +8,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { TextField } from '@/components/forms/TextField';
 
 export function UserFormSection({
   icon,
@@ -202,6 +203,7 @@ export function UserFormFooter({
         onPress={onConfirm}
         loading={loading}
         disabled={disabled}
+        testID="user-form-save"
         style={{
           borderRadius: theme.radius.full,
           minHeight: theme.sizes.touch.min,
@@ -221,6 +223,43 @@ export function UserFormFooter({
   );
 }
 
+export function HourlyRateField({
+  value,
+  onChange,
+  titleWeight,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  titleWeight: 'medium' | 'semibold';
+}) {
+  const { t, isRTL, locale } = useLocale();
+
+  return (
+    <UserFormSection
+      icon="cash-outline"
+      label={t('users.hourlyRate')}
+      titleWeight={titleWeight}
+      uppercase={locale !== 'ar'}
+    >
+      <TextField
+        label={t('users.hourlyRate')}
+        value={value}
+        onChangeText={onChange}
+        keyboardType="decimal-pad"
+        dir="ltr"
+        testID="user-hourly-rate"
+      />
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {t('users.hourlyRateHint')}
+      </AppText>
+    </UserFormSection>
+  );
+}
+
 export function UserActiveToggle({
   active,
   onChange,
@@ -235,6 +274,7 @@ export function UserActiveToggle({
     <AnimatedPressable
       variant="button"
       accessibilityRole="checkbox"
+      accessibilityLabel={t('users.active')}
       accessibilityState={{ checked: active }}
       onPress={() => {
         void haptics.selection();

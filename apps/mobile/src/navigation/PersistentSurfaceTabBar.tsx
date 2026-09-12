@@ -58,6 +58,7 @@ const TAB_ICONS: Partial<Record<TabName, keyof typeof Ionicons.glyphMap>> = {
   catalog: 'grid-outline',
   schedule: 'calendar-outline',
   'new-order': 'add-circle-outline',
+  basket: 'bag-handle-outline',
   notifications: 'notifications-outline',
 };
 

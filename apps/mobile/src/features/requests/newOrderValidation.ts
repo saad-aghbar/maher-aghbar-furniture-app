@@ -105,15 +105,14 @@ export function isAddressAlreadySaved(
 
 export function composeRequestNotes(input: {
   deliveryNotes: string;
-  dimensionsNotes: string;
   orderNotes: string;
+  /** Ignored — dimensions stay on the line item. */
+  dimensionsNotes?: string;
 }): string | undefined {
   const parts: string[] = [];
   const delivery = input.deliveryNotes.trim();
-  const dimensions = input.dimensionsNotes.trim();
   const order = input.orderNotes.trim();
   if (delivery) parts.push(`Delivery notes:\n${delivery}`);
-  if (dimensions) parts.push(`Dimensions:\n${dimensions}`);
   if (order) parts.push(order);
   return parts.length ? parts.join('\n\n') : undefined;
 }

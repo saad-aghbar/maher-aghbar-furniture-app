@@ -15,6 +15,6 @@ export function adminProductChromeTitle(opts: {
   const nameHe = (opts.nameHe ?? '').trim();
   const sku = opts.sku.trim();
   if (opts.locale === 'ar') return nameAr || nameEn || sku || opts.fallback;
-  if (opts.locale === 'he') return nameHe || nameEn || sku || opts.fallback;
-  return nameEn || sku || opts.fallback;
+  if (opts.locale === 'he') return nameHe || nameEn || nameAr || sku || opts.fallback;
+  return nameEn || nameAr || sku || opts.fallback;
 }

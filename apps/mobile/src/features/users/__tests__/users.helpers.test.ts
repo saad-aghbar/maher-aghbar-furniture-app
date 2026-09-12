@@ -136,3 +136,13 @@ describe('users display helpers', () => {
     expect(roleUsesDepartment('WAREHOUSE_MANAGEMENT', 'STAFF')).toBe(false);
   });
 });
+
+describe('hourly rate input', () => {
+  it('parses decimal rates and treats blank as omitted', () => {
+    const { parseHourlyRateInput, hourlyRateDisplay } = require('../hourlyRate') as typeof import('../hourlyRate');
+    expect(parseHourlyRateInput('32')).toBe(32);
+    expect(parseHourlyRateInput('  ')).toBeUndefined();
+    expect(hourlyRateDisplay(25)).toBe('25');
+    expect(hourlyRateDisplay(null)).toBe('');
+  });
+});

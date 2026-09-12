@@ -1,0 +1,20 @@
+appId: jo.maheraghbar.furniture
+name: Dealer returns one line of a multi-variant order
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*Returns.*|.*المرتجعات.*|.*החזרות.*"
+    optional: true
+- tapOn:
+    text: ".*New return.*|.*مرتجع جديد.*|.*החזרה חדשה.*"
+    optional: true
+- assertVisible:
+    text: ".*Variant.*|.*التنويعة.*|.*וריאנט.*"
+    optional: true

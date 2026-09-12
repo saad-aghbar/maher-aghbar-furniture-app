@@ -94,9 +94,21 @@ type StageRow = {
   plannedEnd?: Date | string | null;
   notes?: string | null;
   inspectionStatus?: string | null;
-  stageDefinition: StageDef;
+  stageDefinition?: StageDef | null;
   tasks?: StageTask[];
 };
+
+function fallbackStageDef(s: StageRow): StageDef {
+  const def = s.stageDefinition;
+  return {
+    code: def?.code ?? '',
+    nameEn: def?.nameEn ?? def?.code ?? '',
+    nameAr: def?.nameAr ?? def?.code ?? '',
+    nameHe: def?.nameHe ?? null,
+    sortOrder: def?.sortOrder ?? 0,
+    dependsOnCodes: def?.dependsOnCodes ?? [],
+  };
+}
 
 function employeeName(emp: { firstName: string; lastName: string }): string {
   return `${emp.firstName} ${emp.lastName}`.trim();
@@ -137,7 +149,7 @@ export function mapWorkflowStageSafe(
   s: StageRow,
   docs: StagePhotoDoc[] = [],
 ): WorkflowStageSafe {
-  const def = s.stageDefinition;
+  const def = fallbackStageDef(s);
   const photos = isStageComplete(s.status) ? photosForStage(s, docs) : [];
   return {
     code: def.code,
@@ -156,7 +168,7 @@ export function mapWorkflowStageAdmin(
   s: StageRow,
   docs: StagePhotoDoc[] = [],
 ): WorkflowStageAdmin {
-  const def = s.stageDefinition;
+  const def = fallbackStageDef(s);
   const tasks = s.tasks ?? [];
   const assigneeMap = new Map<
     string,

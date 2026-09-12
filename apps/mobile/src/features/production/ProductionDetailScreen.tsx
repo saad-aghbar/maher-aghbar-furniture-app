@@ -619,52 +619,10 @@ export function ProductionDetailScreen({
             </HeaderEnter>
 
             {host !== 'orders' &&
-            hubSection === 'overview' &&
-            detail.estimatedManufacturingCost != null ? (
-              <HeaderEnter reduce={reduce} delay={10}>
-                <DealerBoard
-                  title={
-                    detail.actualManufacturingCost != null
-                      ? t('mobile.production.manufacturingCostActualTitle')
-                      : t('mobile.production.manufacturingCostEstimated')
-                  }
-                  titleWeight={titleWeight}
-                >
-                  <View style={productionInsetStyle(theme, colors)}>
-                    {detail.actualManufacturingCost == null ? (
-                      <AppText variant="caption" color="muted">
-                        {t('mobile.production.estimatedOnly')}
-                      </AppText>
-                    ) : null}
-                    <MetaRow
-                      isRTL={isRTL}
-                      label={t('mobile.production.estimatedLabel')}
-                      value={formatCurrency(detail.estimatedManufacturingCost)}
-                    />
-                    <MetaRow
-                      isRTL={isRTL}
-                      label={t('mobile.production.actualLabel')}
-                      value={
-                        detail.actualManufacturingCost != null
-                          ? formatCurrency(detail.actualManufacturingCost)
-                          : t('mobile.production.unavailable')
-                      }
-                    />
-                    <MetaRow
-                      isRTL={isRTL}
-                      label={t('mobile.production.varianceLabel')}
-                      value={t('mobile.production.unavailable')}
-                    />
-                  </View>
-                </DealerBoard>
-              </HeaderEnter>
-            ) : null}
-
-            {host !== 'orders' &&
             canReadMfgCost &&
             query.data?.manufacturingCosting &&
             hubSection === 'overview' ? (
-              <HeaderEnter reduce={reduce} delay={20}>
+              <HeaderEnter reduce={reduce} delay={10}>
                 <DealerBoard title={t('mobile.orderDetail.mfgCostTitle')} titleWeight={titleWeight}>
                   <View style={productionInsetStyle(theme, colors)}>
                     <AppText variant="caption" color="secondary">
@@ -675,6 +633,10 @@ export function ProductionDetailScreen({
                         if (st === 'INCOMPLETE') return t('mobile.orderDetail.mfgCostStatusIncomplete');
                         return t('mobile.orderDetail.mfgCostStatusEstimatedOnly');
                       })()}
+                      {query.data.manufacturingCosting.estimatedLabor != null ||
+                      query.data.manufacturingCosting.actualLabor != null
+                        ? ` · ${t('mobile.orderDetail.mfgCostAllInHint')}`
+                        : ''}
                     </AppText>
                     <MetaRow
                       isRTL={isRTL}
@@ -694,6 +656,31 @@ export function ProductionDetailScreen({
                           : t('mobile.orderDetail.mfgCostUnavailable')
                       }
                     />
+                    {query.data.manufacturingCosting.estimatedLabor != null ||
+                    query.data.manufacturingCosting.actualLabor != null ? (
+                      <>
+                        <MetaRow
+                          isRTL={isRTL}
+                          label={t('mobile.orderDetail.mfgCostMaterials')}
+                          value={costComponentLabel(
+                            formatCurrency,
+                            t,
+                            query.data.manufacturingCosting.estimatedMaterials,
+                            query.data.manufacturingCosting.actualMaterials,
+                          )}
+                        />
+                        <MetaRow
+                          isRTL={isRTL}
+                          label={t('mobile.orderDetail.mfgCostLabor')}
+                          value={costComponentLabel(
+                            formatCurrency,
+                            t,
+                            query.data.manufacturingCosting.estimatedLabor,
+                            query.data.manufacturingCosting.actualLabor,
+                          )}
+                        />
+                      </>
+                    ) : null}
                     <MetaRow
                       isRTL={isRTL}
                       label={t('mobile.orderDetail.mfgCostVariance')}
@@ -1851,6 +1838,21 @@ export function ProductionDetailScreen({
       ) : null}
     </AppScreen>
   );
+}
+
+function costComponentLabel(
+  formatCurrency: (n: number) => string,
+  t: (k: string) => string,
+  estimated: number | null | undefined,
+  actual: number | null | undefined,
+): string {
+  const dash = t('mobile.orderDetail.mfgCostUnavailable');
+  const est = estimated != null ? formatCurrency(estimated) : dash;
+  const act = actual != null ? formatCurrency(actual) : dash;
+  if (estimated == null && actual == null) return dash;
+  if (estimated != null && actual == null) return est;
+  if (actual != null && estimated == null) return act;
+  return `${est} → ${act}`;
 }
 
 function MetaRow({

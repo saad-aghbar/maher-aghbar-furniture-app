@@ -52,6 +52,28 @@ export type RequestItem = {
   /** STANDARD | MODIFIED | CUSTOM — order-line vs catalog (Piece 1). */
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
   customMeasurements?: RequestCustomMeasurement[] | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
+  woodType?: string | null;
+  woodColor?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
+  orientation?: string | null;
+  options?: Array<{
+    specOptionValueId?: string | null;
+    groupCode?: string | null;
+    code?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+  }> | null;
+  provenance?: Array<{
+    key: string;
+    ai: string | null;
+    dealer: string | null;
+    source: 'ai' | 'dealer' | 'both' | 'missing';
+  }> | null;
 };
 
 export type RequestDocument = {
@@ -59,6 +81,7 @@ export type RequestDocument = {
   fileName: string;
   mimeType?: string | null;
   category?: string | null;
+  downloadPath?: string | null;
 };
 
 export type RequestQuotationLink = {
@@ -111,5 +134,19 @@ export type RequestDetail = {
   items?: RequestItem[];
   documents?: RequestDocument[];
   quotations?: RequestQuotationLink[];
+  aiJobs?: Array<{
+    id: string;
+    number: string;
+    status: string;
+    sourceType?: string | null;
+    provider?: string | null;
+    createdAt?: string;
+    fields?: Array<{
+      fieldName: string;
+      fieldValue?: string | null;
+      reviewedValue?: string | null;
+      confidence?: number | string | null;
+    }>;
+  }>;
   editPolicy?: RequestEditPolicy;
 };

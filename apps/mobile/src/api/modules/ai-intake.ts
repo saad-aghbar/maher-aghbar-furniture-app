@@ -75,6 +75,28 @@ export type AiApproveResult = {
   };
 };
 
+export type AiExtractPreviewItem = {
+  productName?: string;
+  quantity?: string;
+  fabric?: string;
+  fabricType?: string;
+  material?: string;
+  width?: string;
+  height?: string;
+  depth?: string;
+  notes?: string;
+  variantLabel?: string;
+  orientation?: string;
+  woodType?: string;
+  woodColor?: string;
+  foamDensity?: string;
+  finish?: string;
+  optionCodes?: string[];
+  unrecognizedOptions?: string[];
+  confidence?: number;
+  lowConfidenceFields?: string[];
+};
+
 export type AiExtractPreview = {
   productName?: string;
   quantity?: string;
@@ -88,6 +110,7 @@ export type AiExtractPreview = {
   endCustomerName?: string;
   deliveryAddress?: string;
   projectName?: string;
+  items?: AiExtractPreviewItem[];
 };
 
 export type ExtractPreviewResponse = {

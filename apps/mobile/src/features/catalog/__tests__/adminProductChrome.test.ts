@@ -28,6 +28,18 @@ describe('adminProductChromeTitle', () => {
     ).toBe('SOF-3S-STD');
   });
 
+  it('falls back to Arabic when English is blank', () => {
+    expect(
+      adminProductChromeTitle({
+        locale: 'en',
+        nameEn: '  ',
+        nameAr: 'كرينا',
+        sku: 'SOF-3S-STD',
+        fallback: 'Product',
+      }),
+    ).toBe('كرينا');
+  });
+
   it('uses the product SKU when names are blank', () => {
     expect(
       adminProductChromeTitle({

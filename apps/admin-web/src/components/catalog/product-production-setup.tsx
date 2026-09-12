@@ -244,7 +244,13 @@ function clampDraftMaterialsToBom(
   return next;
 }
 
-export function ProductProductionSetup({ productId }: { productId: string }) {
+export function ProductProductionSetup({
+  productId,
+  variantId,
+}: {
+  productId: string;
+  variantId?: string | null;
+}) {
   const t = useTranslations('production');
   const tErr = useTranslations('errors');
   const tCommon = useTranslations('common');
@@ -253,14 +259,15 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [banner, setBanner] = useState<string | null>(null);
 
+  const qs = variantId ? `?variantId=${encodeURIComponent(variantId)}` : '';
   const setupQuery = useQuery({
-    queryKey: ['product-production-setup', productId],
-    queryFn: () => apiFetch<SetupResponse>(`/api/v1/products/${productId}/production-setup`),
+    queryKey: ['product-production-setup', productId, variantId ?? null],
+    queryFn: () => apiFetch<SetupResponse>(`/api/v1/products/${productId}/production-setup${qs}`),
   });
   const previewQuery = useQuery({
-    queryKey: ['product-production-setup-preview', productId],
+    queryKey: ['product-production-setup-preview', productId, variantId ?? null],
     queryFn: () =>
-      apiFetch<PreviewResponse>(`/api/v1/products/${productId}/production-setup/preview`),
+      apiFetch<PreviewResponse>(`/api/v1/products/${productId}/production-setup/preview${qs}`),
   });
 
   useEffect(() => {
@@ -368,15 +375,15 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
             .map((row) => ({ sku: row.sku, qtyPerUnit: Number(row.qtyPerUnit) })),
         };
       });
-      return apiFetch(`/api/v1/products/${productId}/production-setup`, {
+      return apiFetch(`/api/v1/products/${productId}/production-setup${qs}`, {
         method: 'PUT',
         body: JSON.stringify({ stages }),
       });
     },
     onSuccess: async () => {
       setBanner(t('setup.saved'));
-      await qc.invalidateQueries({ queryKey: ['product-production-setup', productId] });
-      await qc.invalidateQueries({ queryKey: ['product-production-setup-preview', productId] });
+      await qc.invalidateQueries({ queryKey: ['product-production-setup', productId, variantId ?? null] });
+      await qc.invalidateQueries({ queryKey: ['product-production-setup-preview', productId, variantId ?? null] });
     },
   });
 

@@ -7,10 +7,17 @@ import {
   migrateLegacyDimensionsNotes,
   type NewOrderCustomMeasurement,
 } from './newOrderMeasurements';
+import {
+  emptyOrderLine,
+  lineFromLegacyDraft,
+  normalizeOrderLine,
+  type NewOrderLine,
+} from './newOrderLine';
 
 export type NewOrderLocalDraft = {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   step: NewOrderStep;
+  lines: NewOrderLine[];
   productId: string;
   customProductName: string;
   quantity: string;
@@ -56,13 +63,30 @@ function normalizeCustomRows(raw: unknown): NewOrderCustomMeasurement[] {
     .filter((r): r is NewOrderCustomMeasurement => Boolean(r));
 }
 
+function firstLineAliases(lines: NewOrderLine[]) {
+  const first = lines[0] ?? emptyOrderLine();
+  return {
+    productId: first.productId,
+    customProductName: first.customProductName,
+    quantity: first.quantity,
+    fabric: first.fabrics[0]?.type ?? '',
+    fabricDescription: first.fabrics[0]?.notes ?? '',
+    dimensionsNotes: first.dimensionsNotes,
+    dimWidth: first.dimWidth,
+    dimHeight: first.dimHeight,
+    dimDepth: first.dimDepth,
+    dimSeat: first.dimSeat,
+    customMeasurements: first.customMeasurements,
+  };
+}
+
 export function normalizeLocalDraft(
   parsed: Partial<NewOrderLocalDraft> & { step?: number; version?: number },
 ): NewOrderLocalDraft | null {
-  if (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3) {
+  const version = Number(parsed?.version);
+  if (![1, 2, 3, 4].includes(version)) {
     return null;
   }
-  const version = parsed.version;
   const step = migrateDraftStep(Number(parsed.step ?? 1), version);
 
   let dimWidth = String((parsed as { dimWidth?: string }).dimWidth ?? '');
@@ -93,22 +117,46 @@ export function normalizeLocalDraft(
     }
   }
 
+  const fromLines = Array.isArray(parsed.lines)
+    ? parsed.lines.map((row, i) => normalizeOrderLine(row, i)).filter((row): row is NewOrderLine => Boolean(row))
+    : [];
+  const lines =
+    fromLines.length > 0
+      ? fromLines
+      : [
+          lineFromLegacyDraft({
+            productId: String(parsed.productId ?? ''),
+            customProductName: String(parsed.customProductName ?? ''),
+            quantity: String(parsed.quantity ?? '1'),
+            fabric: String(parsed.fabric ?? ''),
+            fabricDescription: String(parsed.fabricDescription ?? ''),
+            dimWidth,
+            dimHeight,
+            dimDepth,
+            dimSeat,
+            customMeasurements,
+            dimensionsNotes,
+          }),
+        ];
+  const aliases = firstLineAliases(lines);
+
   return {
-    version: 3,
+    version: 4,
     step,
-    productId: String(parsed.productId ?? ''),
-    customProductName: String(parsed.customProductName ?? ''),
-    quantity: String(parsed.quantity ?? '1'),
+    lines,
+    productId: aliases.productId,
+    customProductName: aliases.customProductName,
+    quantity: aliases.quantity,
     externalOrderNumber: String(parsed.externalOrderNumber ?? ''),
     priority: (parsed.priority as RequestPriority) || 'NORMAL',
-    fabric: String(parsed.fabric ?? ''),
-    fabricDescription: String(parsed.fabricDescription ?? ''),
-    dimensionsNotes,
-    dimWidth,
-    dimHeight,
-    dimDepth,
-    dimSeat,
-    customMeasurements,
+    fabric: aliases.fabric,
+    fabricDescription: aliases.fabricDescription,
+    dimensionsNotes: aliases.dimensionsNotes,
+    dimWidth: aliases.dimWidth,
+    dimHeight: aliases.dimHeight,
+    dimDepth: aliases.dimDepth,
+    dimSeat: aliases.dimSeat,
+    customMeasurements: aliases.customMeasurements,
     orderNotes: String(parsed.orderNotes ?? ''),
     deliveryAddress: String(parsed.deliveryAddress ?? ''),
     endCustomerName: String(parsed.endCustomerName ?? ''),

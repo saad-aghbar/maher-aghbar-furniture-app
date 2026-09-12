@@ -5,7 +5,7 @@ export class OpenAiVisionOcrProvider implements OcrProvider {
 
   constructor(
     private readonly apiKey: string,
-    private readonly model = process.env.AI_LLM_MODEL ?? 'gpt-4o-mini',
+    private readonly model = process.env.AI_VISION_MODEL ?? process.env.AI_LLM_MODEL ?? 'gpt-4o',
   ) {}
 
   async extractText(input: Buffer, mimeType: string): Promise<OcrResult> {

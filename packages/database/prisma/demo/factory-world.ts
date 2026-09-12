@@ -21,6 +21,7 @@ import { seedPiece8FactoryFloorExamples } from './piece8-factory-floor';
 import { seedPiece9QualityPackagingExamples } from './piece9-quality-packaging';
 import { seedPiece10FinishedOutboundExamples } from './piece10-finished-outbound';
 import { seedPiece11ExceptionsReturnsExamples } from './piece11-exceptions-returns';
+import { seedNileDealerReturns } from './seed-nile-returns';
 import { seedUniqueFloorWorkerExamples } from './unique-floor-workers';
 import { seedPiece12ManagementDashboardExamples } from './piece12-management-dashboard';
 import { seedPiece14FullSystemExamples } from './piece14-full-system';
@@ -92,6 +93,7 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     warehouseUserId: people.warehouseId,
     dealers: people.dealers,
     products: catalog.products,
+    variants: catalog.variants,
     counters,
     rawWhId: stock.rawWhId,
   });
@@ -189,6 +191,9 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     workers: people.workers,
     driverId: people.driverId,
   });
+
+  console.log('Seeding Nile dealer returns desk examples…');
+  await seedNileDealerReturns(prisma);
 
   console.log('Seeding unique-floor worker test orders (inspector / packer / recovery / driver)…');
   await seedUniqueFloorWorkerExamples(prisma, {

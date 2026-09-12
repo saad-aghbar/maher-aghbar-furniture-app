@@ -36,6 +36,11 @@ export function quotationLinesFromRequestItems(
     if (item.productId && UUID_RE.test(item.productId)) {
       line.productId = item.productId;
     }
+    if (item.variantId && UUID_RE.test(item.variantId)) {
+      line.variantId = item.variantId;
+    }
+    if (item.variantSku?.trim()) line.variantSku = item.variantSku.trim();
+    if (item.variantLabel?.trim()) line.variantLabel = item.variantLabel.trim();
     if (item.material?.trim()) line.material = item.material.trim();
     const fabric = (item.fabricType ?? item.fabric)?.trim();
     if (fabric) line.fabric = fabric;

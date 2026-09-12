@@ -1,9 +1,11 @@
 import { Pressable, View } from 'react-native';
+import { useState } from 'react';
 import { AppText } from '@/components/AppText';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { NamedPickerSheet, type NamedPickRow } from './components/NamedPickerSheet';
 
 export type DealerFabricRow = {
   key: string;
@@ -13,6 +15,8 @@ export type DealerFabricRow = {
   code: string;
   quantity: string;
   notes: string;
+  fabricId?: string;
+  colorId?: string;
 };
 
 export function emptyDealerFabricRow(): DealerFabricRow {
@@ -45,11 +49,20 @@ export function dealerFabricsPayload(rows: DealerFabricRow[]) {
 type Props = {
   value: DealerFabricRow[];
   onChange: (next: DealerFabricRow[]) => void;
+  fabricOptions?: NamedPickRow[];
+  colorOptions?: NamedPickRow[];
 };
 
-export function FabricSelectionsEditor({ value, onChange }: Props) {
+export function FabricSelectionsEditor({
+  value,
+  onChange,
+  fabricOptions = [],
+  colorOptions = [],
+}: Props) {
   const { t, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const [fabricPick, setFabricPick] = useState<number | null>(null);
+  const [colorPick, setColorPick] = useState<number | null>(null);
 
   function patch(index: number, partial: Partial<DealerFabricRow>) {
     onChange(value.map((row, i) => (i === index ? { ...row, ...partial } : row)));
@@ -80,25 +93,58 @@ export function FabricSelectionsEditor({ value, onChange }: Props) {
               {t('mobile.newOrder.fabricN', { n: index + 1 })}
             </AppText>
             {value.length > 1 ? (
-              <Pressable onPress={() => onChange(value.filter((_, i) => i !== index))} hitSlop={8}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.newOrder.removeFabric')}
+                onPress={() => onChange(value.filter((_, i) => i !== index))}
+                hitSlop={8}
+              >
                 <AppText variant="caption" color="error">
                   {t('mobile.newOrder.removeFabric')}
                 </AppText>
               </Pressable>
             ) : null}
           </View>
-          <TextField
-            label={t('mobile.newOrder.fabricName')}
-            value={row.type}
-            onChangeText={(type) => patch(index, { type })}
-            placeholder={t('mobile.newOrder.fabricNamePlaceholder')}
-          />
-          <TextField
-            label={t('mobile.newOrder.fabricColor')}
-            value={row.color}
-            onChangeText={(color) => patch(index, { color })}
-            placeholder={t('mobile.newOrder.fabricColorPlaceholder')}
-          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.newOrder.fabricName')}
+            testID={`fabric-type-${row.key}`}
+            onPress={() => setFabricPick(index)}
+            style={{
+              minHeight: theme.sizes.touch.min,
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.border,
+              paddingHorizontal: theme.spacing.md,
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+            }}
+          >
+            <AppText variant="caption" color="muted">
+              {t('mobile.newOrder.fabricName')}
+            </AppText>
+            <AppText>{row.type || t('mobile.newOrder.fabricNamePlaceholder')}</AppText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.newOrder.fabricColor')}
+            testID={`fabric-color-${row.key}`}
+            onPress={() => setColorPick(index)}
+            style={{
+              minHeight: theme.sizes.touch.min,
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.border,
+              paddingHorizontal: theme.spacing.md,
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+            }}
+          >
+            <AppText variant="caption" color="muted">
+              {t('mobile.newOrder.fabricColor')}
+            </AppText>
+            <AppText>{row.color || t('mobile.newOrder.fabricColorPlaceholder')}</AppText>
+          </Pressable>
           <TextField
             label={t('mobile.newOrder.fabricCode')}
             value={row.code}
@@ -123,6 +169,8 @@ export function FabricSelectionsEditor({ value, onChange }: Props) {
         </View>
       ))}
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.newOrder.addFabric')}
         onPress={() => onChange([...value, emptyDealerFabricRow()])}
         style={{
           alignSelf: isRTL ? 'flex-end' : 'flex-start',
@@ -133,6 +181,37 @@ export function FabricSelectionsEditor({ value, onChange }: Props) {
           {t('mobile.newOrder.addFabric')}
         </AppText>
       </Pressable>
+      <NamedPickerSheet
+        open={fabricPick != null}
+        onClose={() => setFabricPick(null)}
+        title={t('mobile.newOrder.fabricName')}
+        rows={fabricOptions}
+        selectedId={fabricPick != null ? value[fabricPick]?.fabricId ?? null : null}
+        onSelect={(id) => {
+          if (fabricPick == null) return;
+          const picked = fabricOptions.find((row) => row.id === id);
+          patch(fabricPick, {
+            fabricId: id ?? undefined,
+            type: picked?.name ?? '',
+            code: picked?.caption ?? value[fabricPick]?.code ?? '',
+          });
+        }}
+      />
+      <NamedPickerSheet
+        open={colorPick != null}
+        onClose={() => setColorPick(null)}
+        title={t('mobile.newOrder.fabricColor')}
+        rows={colorOptions}
+        selectedId={colorPick != null ? value[colorPick]?.colorId ?? null : null}
+        onSelect={(id) => {
+          if (colorPick == null) return;
+          const picked = colorOptions.find((row) => row.id === id);
+          patch(colorPick, {
+            colorId: id ?? undefined,
+            color: picked?.name ?? '',
+          });
+        }}
+      />
     </View>
   );
 }

@@ -6,6 +6,9 @@ type Db = Prisma.TransactionClient;
 
 export type ReplacementSeedSnapshot = {
   productId?: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
   description?: string | null;
   specifications?: string | null;
   orderSpec?: unknown;
@@ -33,6 +36,9 @@ export type ReplacementSeedSnapshot = {
 
 export function specSnapshotFromLine(line: {
   productId?: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
   description?: string | null;
   specifications?: string | null;
   orderSpec?: unknown;
@@ -50,6 +56,9 @@ export function specSnapshotFromLine(line: {
   const setup = line.productionSetup ?? null;
   return {
     productId: line.productId ?? null,
+    variantId: line.variantId ?? null,
+    variantSku: line.variantSku ?? null,
+    variantLabel: line.variantLabel ?? null,
     description: line.description ?? null,
     specifications: line.specifications ?? null,
     orderSpec: line.orderSpec ?? null,

@@ -47,7 +47,7 @@ export class LocalFreeOcrProvider implements OcrProvider {
             opts?: { logger?: (m: unknown) => void },
           ) => Promise<{ data?: { text?: string; confidence?: number } }>;
         };
-        const result = await Tesseract.recognize(input, 'eng+ara', {
+        const result = await Tesseract.recognize(input, 'eng+ara+heb', {
           logger: () => undefined,
         });
         const text = (result.data?.text ?? '').replace(/\s+/g, ' ').trim();

@@ -51,6 +51,9 @@ describe('tabConfig', () => {
     expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain(
       'schedule',
     );
+    expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain(
+      'basket',
+    );
 
     const browseOnly: AuthUser = {
       ...base,

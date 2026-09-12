@@ -764,7 +764,9 @@ export function TaskDetailScreen({
       setSpeaking(false);
       return;
     }
-    const text = [vm?.notes, vm?.instructions].filter(Boolean).join('. ');
+    const text = [vm?.orderInstructions, vm?.notes, vm?.instructions]
+      .filter(Boolean)
+      .join('. ');
     if (!text.trim()) {
       showToast({ variant: 'warning', message: t('mobile.tasks.noInstructions') });
       return;
@@ -1394,6 +1396,11 @@ export function TaskDetailScreen({
                 </AppText>
                 <PriorityBadge priority={vm.priority} />
               </View>
+              {vm.factoryOrderNumber ? (
+                <AppText variant="caption" color="muted" dir="ltr">
+                  {vm.factoryOrderNumber}
+                </AppText>
+              ) : null}
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -1542,6 +1549,32 @@ export function TaskDetailScreen({
               finishBlocked={Boolean(recoveryBlocked)}
             />
           ) : !isQcGate ? (
+            <>
+              {vm.orderInstructions ? (
+                <FloorSection
+                  title={t('mobile.tasks.orderInstructions')}
+                  isRTL={isRTL}
+                  locale={locale}
+                  trailing={
+                    <SpeakInstructionsButton
+                      speaking={speaking}
+                      label={
+                        speaking
+                          ? t('mobile.tasks.stopSpeaking')
+                          : t('mobile.tasks.speakInstructions')
+                      }
+                      onPress={() => void onSpeakInstructions()}
+                    />
+                  }
+                >
+                  <AppText
+                    variant="body"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {vm.orderInstructions}
+                  </AppText>
+                </FloorSection>
+              ) : null}
             <FloorSection
               title={
                 vm.notes ? t('mobile.tasks.yourWork') : t('mobile.tasks.instructions')
@@ -1549,7 +1582,7 @@ export function TaskDetailScreen({
               isRTL={isRTL}
               locale={locale}
               trailing={
-                vm.notes ? undefined : (
+                vm.notes || vm.orderInstructions ? undefined : (
                   <SpeakInstructionsButton
                     speaking={speaking}
                     label={
@@ -1604,6 +1637,7 @@ export function TaskDetailScreen({
                 </AppText>
               )}
             </FloorSection>
+            </>
           ) : null}
 
           {vm.waitingOn ? (

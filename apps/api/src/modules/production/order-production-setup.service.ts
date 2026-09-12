@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   ManufacturingComplexity,
@@ -16,10 +17,14 @@ import {
 import type { AuthUser, OrderFabricSelection, OrderLineSpecSnapshot, OrderMeasurement } from '@maher/types';
 import {
   buildCatalogDiff,
+  compositionToPiecePlan,
+  joinTrilingualNotes,
   normalizeOrderFabrics,
   normalizeOrderMeasurements,
+  pickVariantScopedRows,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import { TranslationService } from '../catalog/translation.service';
 import { SequenceService } from '../../common/sequence.service';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import {
@@ -79,6 +84,7 @@ export class OrderProductionSetupService {
     private readonly workflowSnapshots: WorkflowSnapshotService,
     private readonly inventory: InventoryService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly translation?: TranslationService,
   ) {}
 
   private assertStaff(user?: AuthUser) {
@@ -161,42 +167,7 @@ export class OrderProductionSetupService {
           where: { productionRequired: true },
           orderBy: { sortOrder: 'asc' },
           include: {
-            product: {
-              select: {
-                id: true,
-                nameEn: true,
-                nameAr: true,
-                nameHe: true,
-                width: true,
-                height: true,
-                depth: true,
-                seatHeight: true,
-                bomDefaults: true,
-                imageUrl: true,
-                workflowConfiguration: { select: { workflowId: true } },
-                stageMaterialInputs: {
-                  include: {
-                    inventoryItem: {
-                      select: {
-                        id: true,
-                        sku: true,
-                        nameEn: true,
-                        nameAr: true,
-                        category: true,
-                        unit: true,
-                      },
-                    },
-                  },
-                },
-                stageInventoryOutputs: {
-                  select: {
-                    expectedPieceCount: true,
-                    pieceLabels: true,
-                    inventoryTracking: true,
-                  },
-                },
-              },
-            },
+            product: { select: this.catalogProductSelect() },
           },
         },
         documents: { select: { id: true }, take: 50 },
@@ -266,6 +237,7 @@ export class OrderProductionSetupService {
       manufacturingComplexity: ManufacturingComplexity | null;
       orderSpec: unknown;
       productId: string | null;
+      variantId?: string | null;
       product: {
         nameEn: string;
         width: unknown;
@@ -279,6 +251,9 @@ export class OrderProductionSetupService {
           qtyPerUnit: unknown;
           unit: string;
           quantityMode?: string | null;
+          variantId?: string | null;
+          workflowNodeId?: string | null;
+          stageDefinition?: { code?: string | null } | null;
           inventoryItem: {
             id: string;
             sku: string;
@@ -291,6 +266,34 @@ export class OrderProductionSetupService {
           expectedPieceCount: unknown;
           pieceLabels: unknown;
           inventoryTracking: string;
+          variantId?: string | null;
+        }>;
+        variants?: Array<{
+          id: string;
+          isDefault: boolean;
+          workflowId?: string | null;
+          factoryNotesAr?: string | null;
+          factoryNotesEn?: string | null;
+          factoryNotesHe?: string | null;
+          width?: unknown;
+          height?: unknown;
+          depth?: unknown;
+          seatHeight?: unknown;
+          composition?: unknown;
+          bomDefaults?: unknown;
+          options?: Array<{
+            specOptionValue?: {
+              inventoryItemId?: string | null;
+              inventoryItem?: {
+                id: string;
+                sku: string;
+                nameEn: string;
+                category: string;
+                unit: string;
+              } | null;
+            } | null;
+            qty?: unknown;
+          }>;
         }>;
       } | null;
     },
@@ -303,11 +306,45 @@ export class OrderProductionSetupService {
       (spec?.manufacturingComplexity as ManufacturingComplexity | undefined) ??
       (line.productId ? ManufacturingComplexity.STANDARD : ManufacturingComplexity.CUSTOM);
 
+    const variantId = line.variantId ?? spec?.variantId ?? null;
+    const variant =
+      (variantId
+        ? line.product?.variants?.find((row) => row.id === variantId)
+        : null) ??
+      line.product?.variants?.find((row) => row.isDefault) ??
+      null;
+    const materialRows = pickVariantScopedRows(
+      (line.product?.stageMaterialInputs ?? []).map((row) => ({
+        ...row,
+        variantId: row.variantId ?? null,
+      })),
+      variantId,
+    );
+    const outputRows = pickVariantScopedRows(
+      (line.product?.stageInventoryOutputs ?? []).map((row) => ({
+        ...row,
+        variantId: row.variantId ?? null,
+      })),
+      variantId,
+    );
+
     const catalogDimensions: Dims = {
-      width: this.num(line.product?.width) ?? this.num(spec?.catalogDimensions?.width),
-      height: this.num(line.product?.height) ?? this.num(spec?.catalogDimensions?.height),
-      depth: this.num(line.product?.depth) ?? this.num(spec?.catalogDimensions?.depth),
-      seatHeight: this.num(line.product?.seatHeight) ?? this.num(spec?.catalogDimensions?.seatHeight),
+      width:
+        this.num(variant?.width) ??
+        this.num(line.product?.width) ??
+        this.num(spec?.catalogDimensions?.width),
+      height:
+        this.num(variant?.height) ??
+        this.num(line.product?.height) ??
+        this.num(spec?.catalogDimensions?.height),
+      depth:
+        this.num(variant?.depth) ??
+        this.num(line.product?.depth) ??
+        this.num(spec?.catalogDimensions?.depth),
+      seatHeight:
+        this.num(variant?.seatHeight) ??
+        this.num(line.product?.seatHeight) ??
+        this.num(spec?.catalogDimensions?.seatHeight),
     };
     const orderDimensions: Dims = {
       width: this.num(spec?.requestedDimensions?.width) ?? catalogDimensions.width,
@@ -317,18 +354,32 @@ export class OrderProductionSetupService {
     };
     const requestedFabric = this.fabricLabel(spec);
     const dealerFabrics = normalizeOrderFabrics(spec?.fabrics, spec?.fabric ?? undefined);
-    const packaging = this.extractPackaging(line.product?.stageInventoryOutputs ?? []);
+    const compositionPlan = compositionToPiecePlan(
+      (spec?.composition as never) ?? (variant?.composition as never) ?? null,
+    );
+    const packaging =
+      compositionPlan.expectedPieceCount > 0
+        ? compositionPlan
+        : this.extractPackaging(outputRows);
     const measurements = normalizeOrderMeasurements(spec?.customMeasurements);
 
+    const optionSkus = this.inventoryFromVariantOptions(variant?.options);
     const materials = this.seedMaterials({
       complexity,
-      product: line.product,
+      product: line.product
+        ? {
+            bomDefaults: variant?.bomDefaults ?? line.product.bomDefaults,
+            stageMaterialInputs: materialRows,
+          }
+        : null,
       requestedFabric,
       dealerFabrics,
+      extraItems: optionSkus,
     });
 
+    const workflowId = variant?.workflowId ?? line.product?.workflowConfiguration?.workflowId ?? null;
     const needsReview = complexity === ManufacturingComplexity.MODIFIED || complexity === ManufacturingComplexity.CUSTOM;
-    const hasWorkflow = Boolean(line.product?.workflowConfiguration?.workflowId);
+    const hasWorkflow = Boolean(workflowId);
     const lineStatus = released
       ? SalesOrderLineSetupStatus.READY
       : needsReview
@@ -342,6 +393,11 @@ export class OrderProductionSetupService {
       : [];
     const mergedDocIds = [...new Set([...documentIds, ...specAttachmentIds])];
 
+    const instructionsAr = variant?.factoryNotesAr?.trim() || null;
+    const instructionsEn = variant?.factoryNotesEn?.trim() || null;
+    const instructionsHe = variant?.factoryNotesHe?.trim() || null;
+    const factoryNotes = joinTrilingualNotes(instructionsAr, instructionsEn, instructionsHe);
+
     return {
       salesOrderLine: { connect: { id: line.id } },
       status: lineStatus,
@@ -350,20 +406,59 @@ export class OrderProductionSetupService {
       catalogDimensions: catalogDimensions as Prisma.InputJsonValue,
       orderDimensions: orderDimensions as Prisma.InputJsonValue,
       measurements: (measurements ?? undefined) as Prisma.InputJsonValue | undefined,
-      workflow: line.product?.workflowConfiguration?.workflowId
-        ? { connect: { id: line.product.workflowConfiguration.workflowId } }
-        : undefined,
+      workflow: workflowId ? { connect: { id: workflowId } } : undefined,
       workflowConfirmedAt:
         complexity === ManufacturingComplexity.STANDARD && hasWorkflow ? new Date() : undefined,
       packagingExpectation: packaging as Prisma.InputJsonValue,
       referenceDocumentIds: mergedDocIds as Prisma.InputJsonValue,
       requestedFabricLabel: requestedFabric ?? undefined,
+      factoryNotes,
+      instructionsAr,
+      instructionsEn,
+      instructionsHe,
       materialRequirements: materials.length
         ? {
             create: materials,
           }
         : undefined,
     };
+  }
+
+  private inventoryFromVariantOptions(
+    options:
+      | Array<{
+          specOptionValue?: {
+            inventoryItem?: {
+              id: string;
+              sku: string;
+              nameEn: string;
+              category: string;
+              unit: string;
+            } | null;
+          } | null;
+        }>
+      | null
+      | undefined,
+  ) {
+    const items: Array<{
+      inventoryItemId: string;
+      sku: string;
+      nameEn: string;
+      category: string;
+      unit: string;
+    }> = [];
+    for (const row of options ?? []) {
+      const item = row.specOptionValue?.inventoryItem;
+      if (!item) continue;
+      items.push({
+        inventoryItemId: item.id,
+        sku: item.sku,
+        nameEn: item.nameEn,
+        category: String(item.category),
+        unit: item.unit,
+      });
+    }
+    return items;
   }
 
   private extractPackaging(
@@ -383,6 +478,13 @@ export class OrderProductionSetupService {
     complexity: ManufacturingComplexity;
     requestedFabric: string | null;
     dealerFabrics?: OrderFabricSelection[];
+    extraItems?: Array<{
+      inventoryItemId: string;
+      sku: string;
+      nameEn: string;
+      category: string;
+      unit: string;
+    }>;
     product: {
       bomDefaults: unknown;
       stageMaterialInputs: Array<{
@@ -390,6 +492,7 @@ export class OrderProductionSetupService {
         qtyPerUnit: unknown;
         unit: string;
         quantityMode?: string | null;
+        variantId?: string | null;
         workflowNodeId?: string | null;
         stageDefinition?: { code?: string | null } | null;
         inventoryItem: {
@@ -529,6 +632,33 @@ export class OrderProductionSetupService {
           sortOrder: sort++,
         });
       }
+    }
+
+    const seen = new Set(
+      rows
+        .map((row) => {
+          const connected =
+            row.inventoryItem && 'connect' in row.inventoryItem
+              ? (row.inventoryItem as { connect: { id: string } }).connect.id
+              : null;
+          return connected ?? row.sku ?? null;
+        })
+        .filter((id): id is string => Boolean(id)),
+    );
+    for (const extra of input.extraItems ?? []) {
+      if (seen.has(extra.inventoryItemId) || seen.has(extra.sku)) continue;
+      seen.add(extra.inventoryItemId);
+      rows.push({
+        inventoryItem: { connect: { id: extra.inventoryItemId } },
+        sku: extra.sku,
+        displayName: extra.nameEn,
+        category: extra.category as never,
+        unit: extra.unit || 'pcs',
+        expectedQty: new Prisma.Decimal(1),
+        source: SalesOrderMaterialRequirementSource.CATALOG,
+        needsReview,
+        sortOrder: sort++,
+      });
     }
 
     return rows;
@@ -751,6 +881,9 @@ export class OrderProductionSetupService {
             imageUrl: selectedFabric?.inventoryItem?.imageUrl ?? null,
           },
           factoryNotes: line.factoryNotes,
+          instructionsAr: line.instructionsAr ?? null,
+          instructionsEn: line.instructionsEn ?? null,
+          instructionsHe: line.instructionsHe ?? null,
           packagingExpectation: line.packagingExpectation,
           referenceDocumentIds: line.referenceDocumentIds,
           attachments: attachmentsByLine.get(line.id) ?? [],
@@ -1396,9 +1529,47 @@ export class OrderProductionSetupService {
       }
     }
 
+    const hasTrilingual =
+      dto.instructionsAr !== undefined ||
+      dto.instructionsEn !== undefined ||
+      dto.instructionsHe !== undefined;
+    const instructionsAr = hasTrilingual
+      ? (dto.instructionsAr !== undefined
+          ? dto.instructionsAr?.trim() || null
+          : line.instructionsAr ?? null)
+      : undefined;
+    const instructionsEn = hasTrilingual
+      ? (dto.instructionsEn !== undefined
+          ? dto.instructionsEn?.trim() || null
+          : line.instructionsEn ?? null)
+      : undefined;
+    const instructionsHe = hasTrilingual
+      ? (dto.instructionsHe !== undefined
+          ? dto.instructionsHe?.trim() || null
+          : line.instructionsHe ?? null)
+      : undefined;
+    const filledEn =
+      hasTrilingual && instructionsAr !== undefined
+        ? (await this.translation?.fillEnglishProse(instructionsAr, instructionsEn)) ||
+          instructionsEn ||
+          null
+        : instructionsEn;
+    const factoryNotes = hasTrilingual
+      ? joinTrilingualNotes(instructionsAr, filledEn, instructionsHe)
+      : dto.factoryNotes !== undefined
+        ? dto.factoryNotes
+        : undefined;
+
     const data: Prisma.SalesOrderLineSetupUpdateInput = {
       ...(dto.manufacturingName !== undefined ? { manufacturingName: dto.manufacturingName } : {}),
-      ...(dto.factoryNotes !== undefined ? { factoryNotes: dto.factoryNotes } : {}),
+      ...(factoryNotes !== undefined ? { factoryNotes } : {}),
+      ...(hasTrilingual
+        ? {
+            instructionsAr,
+            instructionsEn: filledEn,
+            instructionsHe,
+          }
+        : {}),
       ...(dto.orderDimensions !== undefined
         ? { orderDimensions: dto.orderDimensions as Prisma.InputJsonValue }
         : {}),
@@ -1713,6 +1884,7 @@ export class OrderProductionSetupService {
         manufacturingComplexity: soLine.manufacturingComplexity,
         orderSpec: soLine.orderSpec,
         productId: soLine.productId,
+        variantId: soLine.variantId,
         product: soLine.product as never,
       },
       Array.isArray(line.referenceDocumentIds)
@@ -1722,9 +1894,15 @@ export class OrderProductionSetupService {
     );
 
     const previousComplexity = line.manufacturingComplexity;
-    const catalogWorkflowId = soLine.product.workflowConfiguration?.workflowId ?? null;
+    const catalogWorkflowId =
+      soLine.product.variants?.find((row) => row.id === soLine.variantId)?.workflowId ??
+      soLine.product.workflowConfiguration?.workflowId ??
+      null;
     const quantityModeByItemId = this.quantityModeByInventoryItem(
-      soLine.product.stageMaterialInputs,
+      pickVariantScopedRows(
+        soLine.product.stageMaterialInputs.map((row) => ({ ...row, variantId: row.variantId ?? null })),
+        soLine.variantId ?? null,
+      ),
     );
 
     await this.prisma.$transaction(async (tx) => {
@@ -1747,6 +1925,10 @@ export class OrderProductionSetupService {
           workflowConfirmedAt: seeded.workflowConfirmedAt ?? null,
           packagingExpectation: seeded.packagingExpectation,
           requestedFabricLabel: line.requestedFabricLabel ?? seeded.requestedFabricLabel,
+          factoryNotes: seeded.factoryNotes ?? line.factoryNotes,
+          instructionsAr: seeded.instructionsAr ?? line.instructionsAr ?? null,
+          instructionsEn: seeded.instructionsEn ?? line.instructionsEn ?? null,
+          instructionsHe: seeded.instructionsHe ?? line.instructionsHe ?? null,
           measurements: keepOrderSpec
             ? ((line.measurements as Prisma.InputJsonValue) ?? seeded.measurements ?? Prisma.JsonNull)
             : seeded.measurements ?? Prisma.JsonNull,
@@ -1814,6 +1996,7 @@ export class OrderProductionSetupService {
       depth: true,
       seatHeight: true,
       bomDefaults: true,
+      imageUrl: true,
       workflowConfiguration: {
         select: {
           workflowId: true,
@@ -1861,6 +2044,36 @@ export class OrderProductionSetupService {
           expectedPieceCount: true,
           pieceLabels: true,
           inventoryTracking: true,
+          variantId: true,
+        },
+      },
+      variants: {
+        where: { archivedAt: null },
+        select: {
+          id: true,
+          isDefault: true,
+          workflowId: true,
+          width: true,
+          height: true,
+          depth: true,
+          seatHeight: true,
+          composition: true,
+          bomDefaults: true,
+          factoryNotesAr: true,
+          factoryNotesEn: true,
+          factoryNotesHe: true,
+          options: {
+            include: {
+              specOptionValue: {
+                include: {
+                  group: { select: { code: true } },
+                  inventoryItem: {
+                    select: { id: true, sku: true, nameEn: true, category: true, unit: true },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     } satisfies Prisma.ProductSelect;
@@ -2059,22 +2272,40 @@ export class OrderProductionSetupService {
     const version = wf?.activeVersion ?? null;
     const published = String(version?.status ?? '').toUpperCase() === 'PUBLISHED';
     const nodeCount = version?.nodes?.length ?? 0;
+    const variantId = soLine?.variantId ?? spec?.variantId ?? null;
+    const variant =
+      (variantId ? product.variants?.find((row) => row.id === variantId) : null) ??
+      product.variants?.find((row) => row.isDefault) ??
+      null;
+    const scopedMaterials = pickVariantScopedRows(
+      product.stageMaterialInputs.map((row) => ({ ...row, variantId: row.variantId ?? null })),
+      variantId,
+    );
+    const scopedOutputs = pickVariantScopedRows(
+      product.stageInventoryOutputs.map((row) => ({ ...row, variantId: row.variantId ?? null })),
+      variantId,
+    );
     const usable = hasUsableCatalogProductionDefinition({
-      workflowId: product.workflowConfiguration?.workflowId ?? null,
+      workflowId: variant?.workflowId ?? product.workflowConfiguration?.workflowId ?? null,
       published,
       nodeCount,
-      stageMaterialInputCount: product.stageMaterialInputs.length,
-      bomMaterialCount: bomMaterialCount(product.bomDefaults),
-      stageInventoryOutputCount: product.stageInventoryOutputs.length,
+      stageMaterialInputCount: scopedMaterials.length,
+      bomMaterialCount: bomMaterialCount(variant?.bomDefaults ?? product.bomDefaults),
+      stageInventoryOutputCount: scopedOutputs.length,
     });
 
+    const optionSkus = this.inventoryFromVariantOptions(variant?.options);
     const seededMaterials = this.seedMaterials({
       complexity: complexity ?? ManufacturingComplexity.STANDARD,
-      product: product as never,
+      product: {
+        bomDefaults: variant?.bomDefaults ?? product.bomDefaults,
+        stageMaterialInputs: scopedMaterials,
+      } as never,
       requestedFabric,
       dealerFabrics,
+      extraItems: optionSkus,
     });
-    const modeByItem = this.quantityModeByInventoryItem(product.stageMaterialInputs);
+    const modeByItem = this.quantityModeByInventoryItem(scopedMaterials);
     const materials = seededMaterials.map((m) => {
       const itemId =
         m.inventoryItem && 'connect' in m.inventoryItem
@@ -2088,7 +2319,8 @@ export class OrderProductionSetupService {
     });
 
     const catalogWorkflow = this.workflowIdentity(wf, version?.versionNumber ?? null);
-    const catalogWorkflowId = product.workflowConfiguration?.workflowId ?? null;
+    const catalogWorkflowId =
+      variant?.workflowId ?? product.workflowConfiguration?.workflowId ?? null;
     const workflowWouldChange = catalogSeedRequiresWorkflowConfirm({
       hasProductionOrder: pos.length > 0,
       currentWorkflowId,
@@ -2455,6 +2687,9 @@ export class OrderProductionSetupService {
             salesOrderLineId: line.id,
             customerId: order.customerId,
             productId: line.productId ?? undefined,
+            variantId: line.variantId ?? undefined,
+            variantSku: line.variantSku ?? undefined,
+            variantLabel: line.variantLabel ?? undefined,
             productDescription: lineSetup.manufacturingName || line.description,
             quantity: line.quantity,
             specifications: line.specifications ?? undefined,
@@ -2462,6 +2697,9 @@ export class OrderProductionSetupService {
             status: 'PLANNED',
             createdById: user.id,
             notes: lineSetup.factoryNotes ?? undefined,
+            instructionsAr: lineSetup.instructionsAr ?? undefined,
+            instructionsEn: lineSetup.instructionsEn ?? undefined,
+            instructionsHe: lineSetup.instructionsHe ?? undefined,
           },
         });
 
@@ -2480,6 +2718,7 @@ export class OrderProductionSetupService {
           {
             productionOrderId: productionOrder.id,
             productId: line.productId,
+            variantId: line.variantId ?? undefined,
             productDescription: lineSetup.manufacturingName || line.description,
             quantity: Number(line.quantity),
             specifications: line.specifications,

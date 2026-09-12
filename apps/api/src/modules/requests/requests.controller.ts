@@ -79,6 +79,16 @@ export class RequestsController {
   }
 
   @RequirePermissions('request.update')
+  @Post(':id/verify-spec')
+  verifySpec(
+    @Param('id') id: string,
+    @Body() body: { itemId?: string; action: 'CONFIRM' | 'CORRECT'; message?: string; fields?: Record<string, string> },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requests.verifySpec(id, user, body);
+  }
+
+  @RequirePermissions('request.update')
   @Post(':id/close')
   close(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.requests.close(id, user);

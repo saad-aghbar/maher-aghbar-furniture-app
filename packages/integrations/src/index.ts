@@ -16,12 +16,15 @@ export type {
   ExtractionResult,
   ExtractedField,
   ExtractedLineItem,
+  SpecExtractionContext,
+  SpecLibraryValue,
   SupportedLocale,
   TranslateProvider,
 } from './ai/types';
 export { MockTranslateProvider, MockExtractionProvider } from './ai/mock-ai.provider';
 export { OpenAiTranslateProvider, OpenAiExtractionProvider } from './ai/openai-ai.provider';
 export { createAiProviders } from './ai/create-ai.provider';
+export { mergeExtractionConsensus, constrainItemToLibrary, LOW_CONFIDENCE_THRESHOLD } from './ai/consensus';
 
 export type { EmailMessage, EmailProvider } from './email/types';
 export { ConsoleEmailProvider } from './email/console-email.provider';

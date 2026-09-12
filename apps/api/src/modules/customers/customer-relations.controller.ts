@@ -161,6 +161,10 @@ class DealerPriceDto {
   @IsUUID()
   productId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
   @Type(() => Number)
   @IsNumber()
   price!: number;
@@ -543,33 +547,40 @@ export class CustomerRelationsController {
     if (!product) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
     }
-    const row = await this.prisma.dealerPrice.upsert({
-      where: { customerId_productId: { customerId, productId: dto.productId } },
-      create: {
-        customerId,
-        productId: dto.productId,
-        price: dto.price,
-        currency: dto.currency ?? 'ILS',
-      },
-      update: {
-        price: dto.price,
-        currency: dto.currency ?? 'ILS',
-      },
-      include: {
-        product: {
-          select: {
-            id: true,
-            sku: true,
-            nameEn: true,
-            nameAr: true,
-            nameHe: true,
-            basePrice: true,
-            manufacturingCost: true,
-            imageUrl: true,
-          },
+    const variantId = dto.variantId ?? null;
+    const existing = await this.prisma.dealerPrice.findFirst({
+      where: { customerId, productId: dto.productId, variantId },
+    });
+    const include = {
+      product: {
+        select: {
+          id: true,
+          sku: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+          basePrice: true,
+          manufacturingCost: true,
+          imageUrl: true,
         },
       },
-    });
+    };
+    const row = existing
+      ? await this.prisma.dealerPrice.update({
+          where: { id: existing.id },
+          data: { price: dto.price, currency: dto.currency ?? existing.currency },
+          include,
+        })
+      : await this.prisma.dealerPrice.create({
+          data: {
+            customerId,
+            productId: dto.productId,
+            variantId,
+            price: dto.price,
+            currency: dto.currency ?? 'ILS',
+          },
+          include,
+        });
     await this.prisma.auditEvent.create({
       data: {
         userId: user.id,

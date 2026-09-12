@@ -193,7 +193,7 @@ export async function seedDemoStock(
     { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 11, 10), lines: [{ sku: 'MAT-CHE-GRY', qty: 40, receive: 16 }], pay: 'none', note: 'Chenille partial' },
     { supplier: 'SUP-HW', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 12, 10), lines: [{ sku: 'MAT-HW-KIT', qty: 30, receive: 12 }], pay: 'none', note: 'Hardware partial' },
     { supplier: 'SUP-PACK', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 13, 10), lines: [{ sku: 'MAT-STRAP', qty: 20, receive: 8 }], pay: 'none', note: 'Strap partial' },
-    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 8, 10), lines: [{ sku: 'MAT-ITAL-VEL', qty: 24 }], pay: 'none', note: 'Italian velvet inbound — Cedar sectional' },
+    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 28, 10), lines: [{ sku: 'MAT-ITAL-VEL', qty: 24 }], pay: 'none', note: 'Italian velvet inbound — Cedar recliner' },
     { supplier: 'SUP-FINISH', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 14, 10), lines: [{ sku: 'MAT-WHT-PAINT', qty: 16 }], pay: 'none', note: 'White enamel inbound' },
     { supplier: 'SUP-FOAM', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 15, 10), lines: [{ sku: 'MAT-DACRON', qty: 40 }], pay: 'none', note: 'Dacron inbound' },
     { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.APPROVED, day: ammanLocal(2026, 8, 15, 15), lines: [{ sku: 'MAT-TEAK', qty: 12 }], pay: 'none', note: 'Teak approved not sent' },

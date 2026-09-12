@@ -130,9 +130,9 @@ export type ProductionDetailModel = ProductionCardModel & {
     category: string;
     reason: string;
   }>;
-  /** Catalog estimate only — null when the backend did not send a cost. Never fake 0. */
+  /** Usage-based manufacturing cost (all-in). Never catalog product cost. Never fake 0. */
   estimatedManufacturingCost: number | null;
-  /** Actual manufacturing cost when the backend provides one. */
+  /** Actual manufacturing cost from the costing payload. */
   actualManufacturingCost: number | null;
   /** Admin production UI never renders a Production Stages section */
   showStages: false;
@@ -385,8 +385,8 @@ export function selectProductionDetail(
     requiredDeliveryDate: order.requiredDeliveryDate ?? null,
     tasks,
     openBlockers,
-    estimatedManufacturingCost: toFiniteCost(order.product?.manufacturingCost),
-    actualManufacturingCost: null,
+    estimatedManufacturingCost: toFiniteCost(order.manufacturingCosting?.estimatedTotal),
+    actualManufacturingCost: toFiniteCost(order.manufacturingCosting?.actualTotal),
     showStages: false,
     planSetupReady: Boolean(order.product?.id),
     assignedWorkerCount: tasks.filter((task) => Boolean(task.assigneeId || task.assigneeName))

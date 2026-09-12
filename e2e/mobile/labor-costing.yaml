@@ -1,0 +1,26 @@
+appId: jo.maheraghbar.furniture
+name: Admin Cost & Performance — labor slot filled
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*More.*|.*المزيد.*|.*עוד.*"
+    optional: true
+- tapOn:
+    text: ".*Cost & Performance.*|.*التكلفة والأداء.*|.*עלות וביצוע.*"
+    optional: true
+- assertVisible:
+    text: ".*Labor.*|.*العمالة.*|.*עבודה.*|.*Not configured.*|.*غير مُعدّ.*|.*לא הוגדר.*"
+    optional: true
+- tapOn:
+    text: ".*Orders.*|.*طلبات.*|.*הזמנות.*"
+    optional: true
+- tapOn:
+    text: "SO-.*"
+    optional: true
+- assertVisible:
+    text: ".*Labor.*|.*العمالة.*|.*עבודה.*"
+    optional: true

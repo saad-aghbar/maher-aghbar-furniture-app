@@ -231,21 +231,41 @@ describe('selectProduction', () => {
     expect(vm.tasks[0]?.plannedCompletion).toBe('2026-08-16T14:00:00.000Z');
   });
 
-  it('reads catalog estimate and never fakes actual or zero', () => {
+  it('reads manufacturing-costing payload and never uses catalog product cost', () => {
     const withCost = selectProductionDetail(
+      {
+        ...detail,
+        product: { ...detail.product!, manufacturingCost: '380.50' },
+        manufacturingCosting: {
+          status: 'IN_PROGRESS',
+          estimatedTotal: 120,
+          actualTotal: 140,
+          estimatedMaterials: 100,
+          actualMaterials: 100,
+          estimatedLabor: 20,
+          actualLabor: 40,
+        },
+      },
+      'en',
+    );
+    expect(withCost.estimatedManufacturingCost).toBe(120);
+    expect(withCost.actualManufacturingCost).toBe(140);
+
+    const catalogOnly = selectProductionDetail(
       {
         ...detail,
         product: { ...detail.product!, manufacturingCost: '380.50' },
       },
       'en',
     );
-    expect(withCost.estimatedManufacturingCost).toBe(380.5);
-    expect(withCost.actualManufacturingCost).toBeNull();
+    expect(catalogOnly.estimatedManufacturingCost).toBeNull();
+    expect(catalogOnly.actualManufacturingCost).toBeNull();
 
     const zero = selectProductionDetail(
       {
         ...detail,
         product: { ...detail.product!, manufacturingCost: 0 },
+        manufacturingCosting: { estimatedTotal: 0, actualTotal: 0 },
       },
       'en',
     );

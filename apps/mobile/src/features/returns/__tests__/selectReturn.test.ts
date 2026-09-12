@@ -4,13 +4,44 @@ import {
 } from '../returnFilters';
 import { dealerPieceJourneyKey, defaultReturnWorkflowId } from '../returnPiece';
 import {
+  dealerReturnDesk,
+  dealerReturnRailTone,
+  filterDealerReturnCards,
   mapReturnLifecyclePhase,
   returnMatchesStatusChip,
   returnReasonLabelKey,
   returnWorkOrderHref,
+  selectDealerReturnHub,
   selectReturnCard,
 } from '../selectReturn';
 import type { ReturnRequest } from '../api';
+
+const sampleReturn: ReturnRequest = {
+  id: 'r1',
+  number: 'RET-11004',
+  productDesc: 'Outdoor Sofa Set',
+  quantity: 1,
+  reason: 'MANUFACTURING_DEFECT',
+  description: 'Edge scuff',
+  approvalStatus: 'APPROVED',
+  physicalStatus: 'WAITING_RETURN',
+  needInfoNote: null,
+  reasonPhotoUrl: '/uploads/r.jpg',
+  issuePhotoUrl: null,
+  productImageUrl: null,
+  createdAt: '2026-09-04T10:00:00.000Z',
+  customer: {
+    id: 'c1',
+    name: 'Nile',
+    nameEn: 'Nile Interiors',
+    nameAr: 'نايل',
+  },
+  salesOrder: {
+    id: 'so1',
+    number: 'SO-01072',
+    externalOrderNumber: 'EXT-4390',
+  },
+};
 
 describe('returnFilters', () => {
   it('filters dealers by query', () => {
@@ -73,43 +104,23 @@ describe('returnMatchesStatusChip', () => {
       ),
     ).toBe(true);
     expect(
+      returnMatchesStatusChip(
+        { approvalStatus: 'APPROVED', physicalStatus: 'RESOLVED', inventoryFate: 'REWORK' },
+        'APPROVED',
+      ),
+    ).toBe(false);
+    expect(
       returnMatchesStatusChip({ approvalStatus: 'REJECTED' }, 'REJECTED'),
     ).toBe(true);
   });
 });
 
 describe('selectReturnCard', () => {
-  const row: ReturnRequest = {
-    id: 'r1',
-    number: 'RET-11004',
-    productDesc: 'Outdoor Sofa Set',
-    quantity: 1,
-    reason: 'MANUFACTURING_DEFECT',
-    description: 'Edge scuff',
-    approvalStatus: 'APPROVED',
-    physicalStatus: 'WAITING_RETURN',
-    needInfoNote: null,
-    reasonPhotoUrl: '/uploads/r.jpg',
-    issuePhotoUrl: null,
-    productImageUrl: null,
-    customer: {
-      id: 'c1',
-      name: 'Nile',
-      nameEn: 'Nile Interiors',
-      nameAr: 'نايل',
-    },
-    salesOrder: {
-      id: 'so1',
-      number: 'SO-01072',
-      externalOrderNumber: 'EXT-4390',
-    },
-  };
-
   it('maps card fields and reason key', () => {
     expect(returnReasonLabelKey('MANUFACTURING_DEFECT')).toBe(
       'catalog.returnReason.MANUFACTURING_DEFECT',
     );
-    const card = selectReturnCard(row, 'en');
+    const card = selectReturnCard(sampleReturn, 'en');
     expect(card.number).toBe('RET-11004');
     expect(card.dealerName).toBe('Nile Interiors');
     expect(card.salesOrderNumber).toBe('SO-01072');
@@ -119,12 +130,13 @@ describe('selectReturnCard', () => {
     expect(card.lifecyclePhase).toBe('WAITING_RETURN');
     expect(card.lifecycleLabelKey).toBe('mobile.returns.lifecycle.WAITING_RETURN');
     expect(card.reasonLabelKey).toContain('MANUFACTURING_DEFECT');
+    expect(card.createdAt).toBe('2026-09-04T10:00:00.000Z');
   });
 
   it('exposes needInfoNote when NEED_INFO', () => {
     const card = selectReturnCard(
       {
-        ...row,
+        ...sampleReturn,
         approvalStatus: 'NEED_INFO',
         physicalStatus: 'NONE',
         needInfoNote: 'Please add damage photos',
@@ -138,13 +150,13 @@ describe('selectReturnCard', () => {
   });
 
   it('uses Arabic dealer name', () => {
-    expect(selectReturnCard(row, 'ar').dealerName).toBe('نايل');
+    expect(selectReturnCard(sampleReturn, 'ar').dealerName).toBe('نايل');
   });
 
   it('maps multi-photo galleries and falls back to singular urls', () => {
     const multi = selectReturnCard(
       {
-        ...row,
+        ...sampleReturn,
         reasonPhotoUrls: ['/a.jpg', '/b.jpg'],
         issuePhotoUrls: ['/c.jpg'],
       },
@@ -154,9 +166,51 @@ describe('selectReturnCard', () => {
     expect(multi.issuePhotoUrls).toEqual(['/c.jpg']);
     expect(multi.reasonPhotoUrl).toBe('/a.jpg');
 
-    const legacy = selectReturnCard(row, 'en');
+    const legacy = selectReturnCard(sampleReturn, 'en');
     expect(legacy.reasonPhotoUrls).toEqual(['/uploads/r.jpg']);
     expect(legacy.issuePhotoUrls).toEqual([]);
+  });
+});
+
+describe('dealer return desk', () => {
+  it('buckets phases and tones the rail', () => {
+    expect(dealerReturnDesk('REPORTED')).toBe('open');
+    expect(dealerReturnDesk('UNDER_REVIEW')).toBe('open');
+    expect(dealerReturnDesk('WAITING_RETURN')).toBe('progress');
+    expect(dealerReturnDesk('RESOLVED')).toBe('resolved');
+    expect(dealerReturnRailTone('REPORTED')).toBe('warning');
+    expect(dealerReturnRailTone('RESOLVED', 'REJECTED')).toBe('error');
+    expect(dealerReturnRailTone('RESOLVED', 'APPROVED')).toBe('success');
+  });
+
+  it('counts hub buckets and filters by date', () => {
+    const hub = selectDealerReturnHub([
+      { approvalStatus: 'PENDING' },
+      { approvalStatus: 'NEED_INFO' },
+      { approvalStatus: 'APPROVED', physicalStatus: 'WAITING_RETURN' },
+      { approvalStatus: 'REJECTED' },
+    ]);
+    expect(hub.open).toBe(2);
+    expect(selectReturnCard({ ...sampleReturn, variantLabel: 'Ukrainian 250' }, 'en').variantLabel).toBe(
+      'Ukrainian 250',
+    );
+    expect(hub.inProgress).toBe(1);
+    expect(hub.resolved).toBe(1);
+
+    const cards = [
+      selectReturnCard(
+        { ...sampleReturn, id: 'a', number: 'RT-1', createdAt: '2026-07-01' },
+        'en',
+      ),
+      selectReturnCard(
+        { ...sampleReturn, id: 'b', number: 'RT-9', createdAt: '2026-09-04' },
+        'en',
+      ),
+    ];
+    expect(
+      filterDealerReturnCards(cards, { dateFrom: '2026-09-01' }).map((c) => c.id),
+    ).toEqual(['b']);
+    expect(filterDealerReturnCards(cards, { q: 'rt-9' }).map((c) => c.id)).toEqual(['b']);
   });
 });
 

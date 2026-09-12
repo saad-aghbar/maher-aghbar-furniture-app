@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@maher/database';
-import { isReturnWorkflowScope } from '@maher/types';
+import { isReturnWorkflowScope, pickVariantScopedRows } from '@maher/types';
 import { PrismaService } from '../../../common/prisma.service';
 import { SequenceService } from '../../../common/sequence.service';
 import { buildStageTaskInstructions } from '../../../common/helpers/stage-task-instructions';
@@ -27,9 +27,20 @@ export class WorkflowSnapshotService {
    * Resolve published workflow version for a product that has an explicit configuration.
    * Returns null when the product has no workflow (custom / unconfigured) so admin can assign later.
    */
-  async resolveVersionIdForProduct(productId: string | null | undefined, tx?: Tx) {
+  async resolveVersionIdForProduct(
+    productId: string | null | undefined,
+    tx?: Tx,
+    variantId?: string | null,
+  ) {
     const db = this.db(tx);
     if (!productId) return null;
+    if (variantId) {
+      const variant = await db.productVariant.findUnique({
+        where: { id: variantId },
+        select: { workflowId: true, workflow: { select: { activeVersionId: true } } },
+      });
+      if (variant?.workflow?.activeVersionId) return variant.workflow.activeVersionId;
+    }
     const config = await db.productWorkflowConfiguration.findUnique({
       where: { productId },
       include: { workflow: true },
@@ -58,6 +69,7 @@ export class WorkflowSnapshotService {
     input: {
       productionOrderId: string;
       productId?: string | null;
+      variantId?: string | null;
       productDescription: string;
       quantity: number;
       specifications?: string | null;
@@ -89,7 +101,7 @@ export class WorkflowSnapshotService {
 
     const versionId = input.workflowId
       ? await this.resolveVersionIdOrThrow(input.workflowId, tx)
-      : await this.resolveVersionIdForProduct(input.productId, tx);
+      : await this.resolveVersionIdForProduct(input.productId, tx, input.variantId);
 
     if (!versionId) return null;
 
@@ -106,6 +118,7 @@ export class WorkflowSnapshotService {
       input.productId,
       input.orderOverrides,
       tx,
+      input.variantId,
     );
 
     return this.persistCompiledSnapshot(
@@ -338,24 +351,47 @@ export class WorkflowSnapshotService {
       where: { id: meta.productionOrderId },
       select: {
         productId: true,
+        variantId: true,
+        instructionsAr: true,
+        instructionsEn: true,
+        instructionsHe: true,
+        notes: true,
         product: { select: { nameEn: true, nameAr: true, nameHe: true } },
+        salesOrderLine: { select: { variantId: true } },
       },
     });
+    const variantId = po?.variantId ?? po?.salesOrderLine?.variantId ?? null;
     const productOutputs = po?.productId
-      ? await tx.productStageInventoryOutput.findMany({ where: { productId: po.productId } })
+      ? pickVariantScopedRows(
+          await tx.productStageInventoryOutput.findMany({ where: { productId: po.productId } }),
+          variantId,
+        )
       : [];
     const productInputs = po?.productId
-      ? await tx.productStageInventoryInput.findMany({
-          where: { productId: po.productId },
-          include: { output: true },
-        })
+      ? pickVariantScopedRows(
+          await tx.productStageInventoryInput.findMany({
+            where: { productId: po.productId },
+            include: { output: true },
+          }),
+          variantId,
+        )
       : [];
     const productMaterialInputs = po?.productId
-      ? await tx.productStageMaterialInput.findMany({
-          where: { productId: po.productId },
-          include: { inventoryItem: { select: { sku: true, unit: true } } },
-        })
+      ? pickVariantScopedRows(
+          await tx.productStageMaterialInput.findMany({
+            where: { productId: po.productId },
+            include: { inventoryItem: { select: { sku: true, unit: true } } },
+          }),
+          variantId,
+        )
       : [];
+    const instructionsAr =
+      po?.instructionsAr?.trim() ||
+      (!po?.instructionsEn?.trim() && !po?.instructionsHe?.trim()
+        ? po?.notes?.trim() || null
+        : null);
+    const instructionsEn = po?.instructionsEn?.trim() || null;
+    const instructionsHe = po?.instructionsHe?.trim() || null;
     const overrideRows =
       Array.isArray(meta.materialOverrides) && meta.materialOverrides.length > 0
         ? meta.materialOverrides
@@ -482,6 +518,9 @@ export class WorkflowSnapshotService {
           consumeInventoryItemIds:
             consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
           defaultWarehouseId: resolved.warehouseId ?? undefined,
+          instructionsAr: instructionsAr ?? undefined,
+          instructionsEn: instructionsEn ?? undefined,
+          instructionsHe: instructionsHe ?? undefined,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,

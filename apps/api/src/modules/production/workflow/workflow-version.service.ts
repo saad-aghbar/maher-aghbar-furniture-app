@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../../common/prisma.service';
-import { isProtectedStageCode, isReturnWorkflowScope, workflowGraphChainRequirements } from '@maher/types';
+import { isProtectedStageCode, isReturnWorkflowScope, pickVariantScopedRows, workflowGraphChainRequirements } from '@maher/types';
 import {
   compileWorkflow,
   validateWorkflowGraph,
@@ -1153,6 +1153,7 @@ export class WorkflowVersionService {
     productId: string | null | undefined,
     orderOverrides?: CompilerOrderOverride[],
     tx?: Tx,
+    variantId?: string | null,
   ) {
     const { nodes, edges } = await this.loadCompilerInput(versionId, tx);
     let productOverrides: CompilerProductOverride[] = [];
@@ -1163,8 +1164,12 @@ export class WorkflowVersionService {
         where: { productId },
         include: { stageOverrides: true },
       });
+      const scopedOverrides = pickVariantScopedRows(
+        (config?.stageOverrides ?? []).map((o) => ({ ...o, variantId: o.variantId ?? null })),
+        variantId ?? null,
+      );
       productOverrides =
-        config?.stageOverrides.map((o) => ({
+        scopedOverrides.map((o) => ({
           workflowNodeId: o.workflowNodeId,
           stageDefinitionId: o.stageDefinitionId,
           applicability: o.applicability,
@@ -1175,7 +1180,11 @@ export class WorkflowVersionService {
       const estimates = await this.db(tx).productStageEstimate.findMany({
         where: { productId },
       });
-      for (const e of estimates) {
+      const scopedEstimates = pickVariantScopedRows(
+        estimates.map((e) => ({ ...e, variantId: e.variantId ?? null })),
+        variantId ?? null,
+      );
+      for (const e of scopedEstimates) {
         const minutes =
           e.fixedMinutes ??
           (e.setupMinutes ?? 0) + (e.minutesPerUnit ?? 0);
@@ -1208,8 +1217,15 @@ export class WorkflowVersionService {
     productId: string | null | undefined,
     orderOverrides?: CompilerOrderOverride[],
     tx?: Tx,
+    variantId?: string | null,
   ) {
-    const compiled = await this.compileForProductReport(versionId, productId, orderOverrides, tx);
+    const compiled = await this.compileForProductReport(
+      versionId,
+      productId,
+      orderOverrides,
+      tx,
+      variantId,
+    );
     if (compiled.issues.length) {
       throw new BadRequestException({
         code: compiled.issues[0]?.code ?? 'WORKFLOW_INVALID_STAGE',

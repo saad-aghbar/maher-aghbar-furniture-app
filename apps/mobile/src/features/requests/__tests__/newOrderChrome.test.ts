@@ -16,13 +16,13 @@ import {
 
 describe('stageProgress', () => {
   it('maps steps to rising fractions', () => {
-    expect(stageProgress(1)).toBe(0.25);
-    expect(stageProgress(2)).toBe(0.5);
-    expect(stageProgress(4)).toBe(1);
+    expect(stageProgress(1)).toBeCloseTo(1 / 3);
+    expect(stageProgress(2)).toBeCloseTo(2 / 3);
+    expect(stageProgress(3)).toBe(1);
   });
 
   it('clamps out-of-range steps', () => {
-    expect(stageProgress(0)).toBe(0.25);
+    expect(stageProgress(0)).toBeCloseTo(1 / 3);
     expect(stageProgress(99)).toBe(1);
   });
 });
@@ -30,8 +30,8 @@ describe('stageProgress', () => {
 describe('nextStageIndex', () => {
   it('cues the next incomplete stage', () => {
     expect(nextStageIndex(1)).toBe(1);
-    expect(nextStageIndex(3)).toBe(3);
-    expect(nextStageIndex(4)).toBeNull();
+    expect(nextStageIndex(2)).toBe(2);
+    expect(nextStageIndex(3)).toBeNull();
   });
 });
 
@@ -44,21 +44,21 @@ describe('stageNodeState', () => {
 });
 
 describe('isFinalWizardStep', () => {
-  it('detects step 4', () => {
-    expect(isFinalWizardStep(4)).toBe(true);
-    expect(isFinalWizardStep(3)).toBe(false);
-    expect(NEW_ORDER_STAGE_COUNT).toBe(4);
+  it('detects step 3', () => {
+    expect(isFinalWizardStep(3)).toBe(true);
+    expect(isFinalWizardStep(2)).toBe(false);
+    expect(NEW_ORDER_STAGE_COUNT).toBe(3);
   });
 });
 
 describe('newOrderDockMode', () => {
   it('hides after submit', () => {
-    expect(newOrderDockMode({ step: 4, submitted: true })).toBe('hidden');
+    expect(newOrderDockMode({ step: 3, submitted: true })).toBe('hidden');
   });
 
   it('uses continue then submit', () => {
     expect(newOrderDockMode({ step: 1, submitted: false })).toBe('continue');
-    expect(newOrderDockMode({ step: 4, submitted: false })).toBe('submit');
+    expect(newOrderDockMode({ step: 3, submitted: false })).toBe('submit');
   });
 
   it('maps primary label keys', () => {

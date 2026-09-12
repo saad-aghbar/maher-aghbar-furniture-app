@@ -134,7 +134,7 @@ function poRow(overrides: Record<string, unknown> = {}) {
     committedDeliveryDate: null,
     product: {
       bomDefaults: { materials: [{ sku: 'UAT-WOOD', qty: 10, category: 'WOOD' }] },
-      productionProfile: { bufferPercent: 10 },
+      productionProfiles: [{ bufferPercent: 10 }],
       stageEstimates: [
         {
           stageDefinitionId: 'stg-carp',
@@ -288,7 +288,7 @@ describe('material generate wiring', () => {
       poRow({
         product: {
           bomDefaults: { materials: [{ sku: 'UAT-WOOD', qty: 4, category: 'WOOD' }] },
-          productionProfile: { bufferPercent: 10 },
+          productionProfiles: [{ bufferPercent: 10 }],
           stageEstimates: [
             {
               stageDefinitionId: 'stg-carp',
@@ -365,7 +365,7 @@ describe('material generate wiring', () => {
         salesOrder: { customerId: 'c1', id: 'so-wait', status: 'WAITING_FOR_MATERIALS' },
         product: {
           bomDefaults: { materials: [{ sku: 'UAT-WOOD', qty: 4, category: 'WOOD' }] },
-          productionProfile: { bufferPercent: 10 },
+          productionProfiles: [{ bufferPercent: 10 }],
           stageEstimates: [
             {
               stageDefinitionId: 'stg-carp',

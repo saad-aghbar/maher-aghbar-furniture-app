@@ -1,0 +1,20 @@
+appId: jo.maheraghbar.furniture
+name: Admin promotes a completed custom order into a catalog product
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+    optional: true
+- tapOn:
+    text: ".*Orders.*|.*الطلبات.*|.*הזמנות.*"
+    optional: true
+- tapOn:
+    text: ".*Save as catalog product.*|.*حفظ كمنتج.*|.*שמירה כמוצר.*"
+    optional: true
+- assertVisible:
+    text: ".*Saved to catalog.*|.*حُفظ في الكتالوج.*|.*נשמר לקטלוג.*"
+    optional: true

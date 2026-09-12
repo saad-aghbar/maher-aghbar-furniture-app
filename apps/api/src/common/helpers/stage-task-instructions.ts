@@ -15,6 +15,7 @@ export function buildStageTaskInstructions(opts: {
   const specs = opts.specifications?.trim();
   const specsBlock = specs ? `\nSpecs: ${specs}` : '';
 
+  const generated = (() => {
   switch (opts.stageCode) {
     case 'MATERIAL_PREP':
       return [
@@ -95,4 +96,6 @@ export function buildStageTaskInstructions(opts: {
         'Update task progress and attach required photos before complete.',
       ].join('\n');
   }
+  })();
+  return generated;
 }

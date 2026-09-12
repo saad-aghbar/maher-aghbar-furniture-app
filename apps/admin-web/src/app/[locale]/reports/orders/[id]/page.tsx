@@ -29,6 +29,7 @@ type Dossier = {
     grossMargin: number | null;
     marginPct: number | null;
     coverage: string;
+    labor?: number | null;
     quantity: number;
     averageCostPerUnit: number | null;
     perPieceTracked: boolean;
@@ -46,8 +47,18 @@ type Dossier = {
     workerEffortMinutes: number;
     wallClockMinutes: number | null;
     reworkEffortMinutes: number;
-    labor: { enabled: boolean; total: number | null; note: string | null };
-    byStage: Array<{ stageCode: string; workerEffortMinutes: number; reworkEffortMinutes: number }>;
+    labor: {
+      enabled: boolean;
+      total: number | null;
+      note: string | null;
+      byWorker?: Array<{ userId: string; minutes: number; actual: number | null }>;
+    };
+    byStage: Array<{
+      stageCode: string;
+      workerEffortMinutes?: number;
+      reworkEffortMinutes?: number;
+      minutes?: number;
+    }>;
   };
   waste: { scrapCost: number | null; alreadyIncludedInActual: boolean };
   rework: { materialCost: number | null; effortMinutes: number };
@@ -58,7 +69,21 @@ type Dossier = {
     recoveredValue: number | null;
     disposedValue: number | null;
   };
-  provenance: { source: string; formula: string; issueCount: number; costedIssueCount: number };
+  provenance: {
+    source: string;
+    formula: string;
+    issueCount: number;
+    costedIssueCount: number;
+    transactions?: Array<{
+      id: string;
+      number: string;
+      type: string;
+      sku: string;
+      quantity: number;
+      unitCost: number | null;
+    }>;
+  };
+  returns?: Array<{ id: string; number: string; lifecycleState: string }>;
 };
 
 function money(locale: string, value: number | null) {
@@ -86,8 +111,8 @@ export default function OrderCostDossierPage() {
         description={ta('reportsSubtitle')}
         tone="soft"
         actions={
-          <Link href="/reports" className="text-sm underline">
-            {ta('lensOrders')}
+          <Link href={`/sales-orders/${params.id}`} className="text-sm underline">
+            {d.number}
           </Link>
         }
       />
@@ -95,6 +120,7 @@ export default function OrderCostDossierPage() {
       <Card className="grid gap-3 p-4 sm:grid-cols-4">
         <Metric label={ta('saleValue')} value={money(locale, d.summary.saleValue)} />
         <Metric label={ta('actualCost')} value={money(locale, d.summary.actualProductionCost)} />
+        <Metric label={ta('laborCost')} value={money(locale, d.summary.labor ?? d.time.labor.total)} />
         <Metric
           label={ta('grossMargin')}
           value={`${money(locale, d.summary.grossMargin)}${d.summary.marginPct != null ? ` (${d.summary.marginPct}%)` : ''}`}
@@ -174,10 +200,52 @@ export default function OrderCostDossierPage() {
           {ta('reworkTime')}: {(d.time.reworkEffortMinutes / 60).toFixed(1)} h
         </p>
         {d.time.labor.enabled ? (
-          <p>{ta('actualCost')}: {money(locale, d.time.labor.total)}</p>
+          <p>{ta('laborCost')}: {money(locale, d.time.labor.total)}</p>
         ) : (
           <p className="text-sm text-muted-foreground">{ta('laborHidden')}</p>
         )}
+        {(d.time.labor.byWorker ?? []).length ? (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('laborByWorker')}</TableHeaderCell>
+                <TableHeaderCell>{ta('factoryTime')}</TableHeaderCell>
+                <TableHeaderCell>{ta('laborCost')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {d.time.labor.byWorker!.map((row) => (
+                <TableRow key={row.userId}>
+                  <TableCell>
+                    <Link href={`/employees?edit=${row.userId}`}>{row.userId}</Link>
+                  </TableCell>
+                  <TableNumericCell>{(row.minutes / 60).toFixed(1)} h</TableNumericCell>
+                  <TableNumericCell>{money(locale, row.actual)}</TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : null}
+        {(d.time.byStage ?? []).length ? (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('currentStage')}</TableHeaderCell>
+                <TableHeaderCell>{ta('factoryTime')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {d.time.byStage.map((stage) => (
+                <TableRow key={stage.stageCode}>
+                  <TableCell>{stage.stageCode}</TableCell>
+                  <TableNumericCell>
+                    {((stage.workerEffortMinutes ?? (stage as { minutes?: number }).minutes ?? 0) / 60).toFixed(1)} h
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : null}
       </Card>
 
       <Card className="p-4">
@@ -200,7 +268,44 @@ export default function OrderCostDossierPage() {
         <p className="text-sm text-muted-foreground">
           {d.provenance.formula} · {d.provenance.costedIssueCount}/{d.provenance.issueCount}
         </p>
+        {(d.provenance.transactions ?? []).length ? (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('sku')}</TableHeaderCell>
+                <TableHeaderCell>{ta('count')}</TableHeaderCell>
+                <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(d.provenance.transactions ?? []).map((tx) => (
+                <TableRow key={tx.id}>
+                  <TableCell>
+                    <span className="underline">{tx.sku}</span>
+                  </TableCell>
+                  <TableNumericCell>{tx.quantity}</TableNumericCell>
+                  <TableNumericCell>{money(locale, tx.unitCost)}</TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : null}
       </Card>
+
+      {(d.returns ?? []).length ? (
+        <Card className="p-4">
+          <h2 className="mb-2 font-semibold">{ta('lensReturns')}</h2>
+          <ul className="space-y-1 text-sm">
+            {d.returns!.map((row) => (
+              <li key={row.id}>
+                <Link href={`/reports/returns/${row.id}`} className="underline">
+                  {row.number}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
     </div>
   );
 }

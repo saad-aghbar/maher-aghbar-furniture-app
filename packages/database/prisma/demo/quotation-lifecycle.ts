@@ -10,6 +10,7 @@ import { addDays, demoAsOf } from './clock';
 import type { DealerRef } from './people';
 import type { ProductRef } from './catalog';
 import { nextDoc, type SeqBag } from './seq';
+import { variantLineFields } from './variant-attach';
 
 type LifecycleKind =
   | 'DRAFT'
@@ -89,6 +90,7 @@ export async function seedDemoQuotationLifecycle(
           create: [
             {
               productId: product.id,
+              ...variantLineFields(product),
               productName: product.nameEn,
               quantity: money(qty),
               sortOrder: 0,
@@ -101,6 +103,7 @@ export async function seedDemoQuotationLifecycle(
     const quoteNumber = await nextDoc(prisma, 'quotation', opts.counters);
     const lineCreate = {
       productId: product.id,
+      ...variantLineFields(product),
       description: product.nameEn,
       quantity: money(qty),
       unitPrice: money(unit),
@@ -186,6 +189,7 @@ export async function seedDemoQuotationLifecycle(
             create: [
               {
                 productId: product.id,
+                ...variantLineFields(product),
                 description: product.nameEn,
                 quantity: money(qty),
                 unitPrice: money(unit),

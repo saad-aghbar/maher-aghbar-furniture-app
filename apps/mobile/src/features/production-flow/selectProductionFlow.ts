@@ -348,10 +348,8 @@ export function enforceDealerStageStrip(stage: ProductionFlowStage): ProductionF
 function pickStagesFromSalesOrder(order: SalesOrderDetail): LooseStage[] {
   const pos = order.productionOrders ?? [];
   if (!pos.length) return [];
-  const best = pos.reduce((a, b) =>
-    Number(b.progressPercent ?? 0) > Number(a.progressPercent ?? 0) ? b : a,
-  );
-  return (best.stages ?? []) as LooseStage[];
+  // Legacy fallback only. Navigation lists items at /orders/[id]/flow.
+  return (pos[0]?.stages ?? []) as LooseStage[];
 }
 
 export function selectProductionFlowFromSalesOrder(

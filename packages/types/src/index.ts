@@ -225,10 +225,13 @@ export {
   tallyOrderTypeCounts,
   manufacturingComplexityDisplayKey,
   buildOrderLineSpecSnapshot,
+  optionValueDiffers,
   normalizeOrderMeasurements,
   buildCatalogDiff,
   type ManufacturingComplexityCode,
   type CatalogDimRef,
+  type CatalogStandardOptions,
+  type OrderSpecOption,
   type OrderLineClassifyInput,
   type OrderLineSpecSnapshot,
   type OrderMeasurement,
@@ -237,6 +240,29 @@ export {
   type OrderTypeSlug,
   type OrderTypeCounts,
 } from './manufacturing-complexity';
+
+export {
+  resolveEffectiveVariant,
+  resolveVariantStageConfig,
+  productAsDefaultVariant,
+  measurementsFromProduct,
+  compositionToPiecePlan,
+  renderVariantSpecLine,
+  persistMeasurementsRoundTrip,
+  pickVariantScopedRows,
+  standardOptionsFromEffective,
+  catalogDimRefFromEffective,
+  type VariantMeasurement,
+  type VariantCompositionRow,
+  type VariantIncludedItem,
+  type VariantOptionRef,
+  type ProductLike,
+  type ProductVariantLike,
+  type EffectiveVariant,
+  type StageConfigBundle,
+} from './product-variant';
+
+export { joinTrilingualNotes, pickLocalizedInstruction } from './item-instructions';
 
 export {
   normalizeOrderFabrics,

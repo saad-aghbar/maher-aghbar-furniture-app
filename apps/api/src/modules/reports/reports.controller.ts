@@ -24,6 +24,10 @@ class PeriodReportQueryDto {
 }
 
 class CostOrdersQueryDto extends PeriodReportQueryDto {
+  @IsOptional() @IsUUID() productId?: string;
+  @IsOptional() @IsUUID() variantId?: string;
+  @IsOptional() @IsUUID() optionValueId?: string;
+  @IsOptional() @IsString() status?: string;
   @IsOptional() @Type(() => Number) page?: number;
   @IsOptional() @Type(() => Number) pageSize?: number;
 }
@@ -288,8 +292,8 @@ export class ReportsController {
 
   @Get('cost/products')
   @RequirePermissions('inventory.cost.read')
-  costProducts(@CurrentUser() user: AuthUser) {
-    return this.costPerformance.productAnalytics(user);
+  costProducts(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.productAnalytics(user, query);
   }
 
   @Get('cost/coverage')
@@ -308,6 +312,12 @@ export class ReportsController {
   @RequirePermissions('inventory.cost.read')
   laborRates(@CurrentUser() user: AuthUser) {
     return this.costPerformance.listLaborRates(user);
+  }
+
+  @Get('cost/labor')
+  @RequirePermissions('inventory.cost.read')
+  laborActuals(@Query() query: PeriodReportQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.listLaborActuals({ ...query, user });
   }
 
   @Post('cost/labor-rates')

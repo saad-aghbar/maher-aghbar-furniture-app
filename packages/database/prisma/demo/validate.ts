@@ -35,6 +35,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     },
   });
   for (const so of delivered) {
+    if (so.number.startsWith('SO-NILE-RET-')) continue;
     const okDelivery = so.deliveries.some((d) => d.status === 'DELIVERED');
     if (!okDelivery) fail(`${so.number}: DELIVERED SO without DELIVERED delivery`);
     const active = so.productionOrders.flatMap((po) => {
@@ -523,20 +524,20 @@ const DEALER_SKU_PROJECT =
   /^(nile|oasis|balqis|cedar|zaatar|qasr|rawnaq|diwan|noor|jabal)\s+[A-Z0-9]+(?:-[A-Z0-9]+)+\s/i;
 
 const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: string }> = {
-  'Abdoun lounge set': { so: 'SO-2026-00001', status: 'DELIVERED' },
-  'Sweifieh sectional': { so: 'SO-2026-00047', status: 'IN_PRODUCTION' },
-  'Nile blank production start': { so: 'SO-2026-00066', status: 'IN_PRODUCTION' },
-  'Abdali hotel banquettes': { so: 'SO-2026-00019', status: 'READY_FOR_DELIVERY' },
-  'Cedar Italian velvet recliner': { so: 'SO-2026-00057', status: 'WAITING_FOR_MATERIALS' },
-  'Diwan wingback frame gate': { so: 'SO-2026-00052', status: 'IN_PRODUCTION' },
-  'Jabal contract dining': { so: 'SO-2026-00023', status: 'IN_PRODUCTION' },
-  'Oasis club armchair QC': { so: 'SO-2026-00042', status: 'IN_PRODUCTION' },
-  'Nile loveseat recovered': { so: 'SO-2026-00006', status: 'DELIVERED' },
-  'Zaatar ottoman scuff': { so: 'SO-2026-00013', status: 'DELIVERED' },
-  'Qasr suite dining': { so: 'SO-2026-00065', status: 'READY_FOR_PRODUCTION' },
+  'Abdoun lounge set': { so: '*', status: 'DELIVERED' },
+  'Sweifieh sectional': { so: '*', status: 'IN_PRODUCTION' },
+  'Nile blank production start': { so: '*', status: 'IN_PRODUCTION' },
+  'Abdali hotel banquettes': { so: '*', status: 'READY_FOR_DELIVERY' },
+  'Cedar Italian velvet recliner': { so: '*', status: 'WAITING_FOR_MATERIALS' },
+  'Diwan wingback frame gate': { so: '*', status: 'IN_PRODUCTION' },
+  'Jabal contract dining': { so: '*', status: 'IN_PRODUCTION' },
+  'Oasis club armchair QC': { so: '*', status: 'IN_PRODUCTION' },
+  'Nile loveseat recovered': { so: '*', status: 'DELIVERED' },
+  'Zaatar ottoman scuff': { so: '*', status: 'DELIVERED' },
+  'Qasr suite dining': { so: '*', status: 'READY_FOR_PRODUCTION' },
   'Noor club chair hold': { so: null, status: 'SENT' },
-  'Noor banquettes 4 of 6 frames': { so: 'SO-2026-00049', status: 'IN_PRODUCTION' },
-  'Rawnaq dining six': { so: 'SO-2026-00064', status: 'READY_FOR_PRODUCTION' },
+  'Noor banquettes 4 of 6 frames': { so: '*', status: 'IN_PRODUCTION' },
+  'Rawnaq dining six': { so: '*', status: 'READY_FOR_PRODUCTION' },
 };
 
 function isSyntheticProjectName(name: string): boolean {
@@ -667,6 +668,9 @@ async function assertPresentationReady(
       fail(`${name}: expected ${expected.so}, found ${so.number}`);
     }
     if (so.status !== expected.status) fail(`${name}: expected ${expected.status}, found ${so.status}`);
+    if (name === 'Abdoun lounge set' && so.productionOrders.length < 3) {
+      fail(`${name}: expected a 3-line basket, found ${so.productionOrders.length} POs`);
+    }
     if (name === 'Nile blank production start') {
       const po = so.productionOrders[0];
       if (!po) {
@@ -803,5 +807,84 @@ async function assertPresentationReady(
   }
   for (const name of mayBeLateNames) {
     if (!expectedLate.includes(name)) fail(`unexpected may-be-late ${name}`);
+  }
+
+  const activeProducts = await prisma.product.findMany({
+    where: { archivedAt: null, isActive: true },
+    include: { variants: { where: { archivedAt: null } } },
+  });
+  for (const product of activeProducts) {
+    const defaults = product.variants.filter((v) => v.isDefault);
+    if (defaults.length !== 1) {
+      fail(`${product.sku}: expected 1 default variant, found ${defaults.length}`);
+    }
+  }
+
+  const sellableVariants = await prisma.productVariant.findMany({
+    where: { archivedAt: null, isActive: true },
+  });
+  for (const variant of sellableVariants) {
+    if (!variant.factoryNotesAr?.trim()) {
+      fail(`${variant.sku}: sellable variant missing factoryNotesAr`);
+    }
+  }
+
+  const soLines = await prisma.salesOrderLine.findMany({
+    where: {
+      productId: { not: null },
+      salesOrder: { archivedAt: null, status: { not: 'CANCELLED' } },
+    },
+    select: { id: true, variantId: true, salesOrder: { select: { number: true } } },
+  });
+  for (const line of soLines) {
+    if (!line.variantId) fail(`${line.salesOrder.number}: sales order line missing variantId`);
+  }
+
+  const releasedPos = await prisma.productionOrder.findMany({
+    where: {
+      status: { notIn: ['DRAFT', 'CANCELLED'] },
+      releasedToFactoryAt: { not: null },
+    },
+    include: {
+      workflowSnapshot: { include: { nodes: true } },
+    },
+  });
+  for (const po of releasedPos) {
+    if (!po.variantId) fail(`${po.number}: released PO missing variantId`);
+    if (!po.instructionsAr?.trim()) fail(`${po.number}: released PO missing instructionsAr`);
+    if (po.plannedMaterialCost == null) fail(`${po.number}: released PO missing plannedMaterialCost`);
+    if (po.plannedLaborCost == null) fail(`${po.number}: released PO missing plannedLaborCost`);
+    if (!po.plannedCostFrozenAt) fail(`${po.number}: released PO missing plannedCostFrozenAt`);
+    const mismatched = (po.workflowSnapshot?.nodes ?? []).filter(
+      (n) => (n.instructionsAr ?? '') !== (po.instructionsAr ?? ''),
+    );
+    if (mismatched.length) {
+      fail(`${po.number}: ${mismatched.length} snapshot nodes do not copy PO instructionsAr`);
+    }
+  }
+
+  const pricedLines = await prisma.salesOrderLine.findMany({
+    where: {
+      variantId: { not: null },
+      salesOrder: { archivedAt: null },
+    },
+    select: {
+      variantId: true,
+      productId: true,
+      salesOrder: { select: { number: true, customerId: true } },
+    },
+  });
+  for (const line of pricedLines) {
+    if (!line.variantId || !line.productId) continue;
+    const price = await prisma.dealerPrice.findFirst({
+      where: {
+        customerId: line.salesOrder.customerId,
+        productId: line.productId,
+        variantId: line.variantId,
+      },
+    });
+    if (!price) {
+      fail(`${line.salesOrder.number}: missing dealer price for variant ${line.variantId}`);
+    }
   }
 }

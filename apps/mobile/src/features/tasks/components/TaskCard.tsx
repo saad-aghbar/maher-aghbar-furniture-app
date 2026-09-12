@@ -24,6 +24,7 @@ export function TaskCard({
         department: task.requiredWork,
         productTitle: task.productTitle || task.title,
         orderNumber: task.orderNumber,
+        factoryOrderNumber: task.factoryOrderNumber,
         imageUrl: task.imageUrl,
         priority: task.priority,
         deadline: task.deadline,

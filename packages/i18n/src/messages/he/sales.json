@@ -56,6 +56,8 @@
   "mfgCostStatusInProgress": "עלות עד כה",
   "mfgCostStatusIncomplete": "הערכה חלקית",
   "mfgCostStatusEstimatedOnly": "משוער בלבד",
+  "mfgCostLabor": "עבודה",
+  "mfgCostAllInHint": "חומרים + עבודה",
   "autoCalculated": "מחושב אוטומטית",
   "fromInventoryCosts": "אוטומטי ממחירי חומרי מלאי",
   "profit": "רווח",

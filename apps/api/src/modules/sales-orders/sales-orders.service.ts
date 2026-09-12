@@ -175,6 +175,18 @@ function maxProgress(
   return Math.max(...productionOrders.map((po) => Number(po.progressPercent ?? 0)));
 }
 
+function trimLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function asQuantity(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 type PoWithStage = {
   progressPercent?: number | null;
   currentStageCode?: string | null;
@@ -1244,6 +1256,19 @@ export class SalesOrdersService {
               orderBy: { createdAt: 'desc' },
               take: 40,
             },
+            workflowSnapshot: {
+              select: {
+                sourceWorkflow: {
+                  select: {
+                    id: true,
+                    code: true,
+                    nameEn: true,
+                    nameAr: true,
+                    nameHe: true,
+                  },
+                },
+              },
+            },
           },
         },
         invoices: {
@@ -1320,6 +1345,7 @@ export class SalesOrdersService {
     }
 
     const isDealer = Boolean(user?.customerId);
+    const lineById = new Map((order.lines ?? []).map((l) => [l.id, l] as const));
     const productionOrders = order.productionOrders.map((po) => {
       const photos = (po.documents ?? []).map((doc) => ({
         id: doc.id,
@@ -1328,9 +1354,11 @@ export class SalesOrdersService {
         category: doc.category,
         createdAt: doc.createdAt,
       }));
-      const stages = po.stages.map((s) =>
-        isDealer ? mapWorkflowStageSafe(s, photos) : mapWorkflowStageAdmin(s, photos),
-      );
+      const stages = po.stages
+        .filter((s) => s.stageDefinition)
+        .map((s) =>
+          isDealer ? mapWorkflowStageSafe(s, photos) : mapWorkflowStageAdmin(s, photos),
+        );
       const readiness = isDealer
         ? undefined
         : assessProductionReadiness({
@@ -1338,6 +1366,16 @@ export class SalesOrdersService {
             currentStageCode: po.currentStageCode,
             tasks: (po.tasks ?? []) as ExecutableTaskInput[],
           });
+      const line = po.salesOrderLineId ? lineById.get(po.salesOrderLineId) : undefined;
+      const workflow = po.workflowSnapshot?.sourceWorkflow
+        ? {
+            id: po.workflowSnapshot.sourceWorkflow.id,
+            code: po.workflowSnapshot.sourceWorkflow.code,
+            nameEn: po.workflowSnapshot.sourceWorkflow.nameEn,
+            nameAr: po.workflowSnapshot.sourceWorkflow.nameAr,
+            nameHe: po.workflowSnapshot.sourceWorkflow.nameHe ?? null,
+          }
+        : null;
       const mapped = {
         id: po.id,
         number: po.number,
@@ -1346,6 +1384,12 @@ export class SalesOrdersService {
         progressPercent: po.progressPercent,
         releasedToFactoryAt: po.releasedToFactoryAt ?? null,
         actualStartDate: po.actualStartDate ?? null,
+        salesOrderLineId: po.salesOrderLineId ?? null,
+        variantLabel:
+          trimLabel(po.variantLabel) ??
+          trimLabel((line as { variantLabel?: string | null } | undefined)?.variantLabel),
+        quantity: asQuantity(po.quantity) ?? asQuantity(line?.quantity),
+        workflow,
         stages,
         // PO-level flat photo list stays admin-only; dealers get stage.photos instead.
         photos: isDealer ? [] : photos,
@@ -1677,6 +1721,7 @@ export class SalesOrdersService {
       unitPrice: unknown;
       lineTotal: unknown;
       manufacturingComplexity: string | null;
+      productId: string | null;
       commercialPriceStatus: string;
       commercialPriceSource: string | null;
       commercialPriceNote: string | null;
@@ -1696,6 +1741,7 @@ export class SalesOrdersService {
         unitPrice: moneyN(l.unitPrice as number | string),
         lineTotal: moneyN(l.lineTotal as number | string),
         manufacturingComplexity: l.manufacturingComplexity,
+        productId: l.productId ?? null,
         commercialPriceStatus: l.commercialPriceStatus,
         commercialPriceSource: l.commercialPriceSource,
         commercialPriceNote: l.commercialPriceNote,

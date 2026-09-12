@@ -5,10 +5,15 @@ const ADMIN = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
 
 test.describe('Maher ERP lifecycle smoke', () => {
   test('admin login page loads', async ({ page }) => {
-    const res = await page.goto(`${ADMIN}/en/login`, { waitUntil: 'domcontentloaded' });
-    // Dev server may briefly 500 while compiling; still require Sign in when HTML renders.
-    if (res && res.status() >= 500) {
-      test.skip(true, `Admin web returned ${res.status()} at ${ADMIN}/en/login — restart admin-web`);
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const res = await page.goto(`${ADMIN}/en/login`, { waitUntil: 'domcontentloaded' });
+      lastStatus = res?.status() ?? 0;
+      if (lastStatus && lastStatus < 500) break;
+      await page.waitForTimeout(1500);
+    }
+    if (lastStatus >= 500 || lastStatus === 0) {
+      test.skip(true, `Admin web returned ${lastStatus} at ${ADMIN}/en/login — restart admin-web`);
       return;
     }
     await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();

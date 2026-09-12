@@ -5,6 +5,7 @@ import {
   Prisma,
 } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { pickVariantScopedRows } from '@maher/types';
 import { skuPrefixForItemClass } from '../../common/helpers/inventory-lifecycle.util';
 import { nextSkuFromExisting } from '../../common/helpers/inventory-category.util';
 import {
@@ -60,6 +61,8 @@ export type ProductionSetupStagePut = {
     unit?: string;
     required?: boolean;
   }>;
+  minutesPerUnit?: number | null;
+  setupMinutes?: number | null;
 };
 
 @Injectable()
@@ -69,28 +72,38 @@ export class ProductionSetupService {
     private readonly versions: WorkflowVersionService,
   ) {}
 
-  async getSetup(productId: string) {
+  async getSetup(productId: string, variantId?: string | null) {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, archivedAt: null },
     });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    const variantScope = variantId ?? null;
+    let variant: { workflowId: string | null; bomDefaults: unknown } | null = null;
+    if (variantId) {
+      variant = await this.prisma.productVariant.findFirst({
+        where: { id: variantId, productId },
+        select: { workflowId: true, bomDefaults: true },
+      });
+      if (!variant) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Variant not found.' });
+    }
+    const variantWorkflowId = variant?.workflowId ?? null;
 
-    const [config, outputs, inputs, materialInputs, warehouses, materials, inventoryItems] =
+    const [config, outputs, inputs, materialInputs, warehouses, materials, inventoryItems, estimateRows] =
       await Promise.all([
       this.prisma.productWorkflowConfiguration.findUnique({
         where: { productId },
         include: {
           workflow: { include: { activeVersion: true } },
-          stageOverrides: true,
+          stageOverrides: { where: { variantId: variantScope } },
         },
       }),
       this.prisma.productStageInventoryOutput.findMany({
-        where: { productId },
+        where: { productId, variantId: variantScope },
         include: { inventoryItem: true, defaultWarehouse: true },
       }),
-      this.prisma.productStageInventoryInput.findMany({ where: { productId } }),
+      this.prisma.productStageInventoryInput.findMany({ where: { productId, variantId: variantScope } }),
       this.prisma.productStageMaterialInput.findMany({
-        where: { productId },
+        where: { productId, variantId: variantScope },
         include: {
           inventoryItem: {
             select: {
@@ -129,6 +142,9 @@ export class ProductionSetupService {
           unit: true,
         },
       }),
+      this.prisma.productStageEstimate.findMany({
+        where: { productId, OR: [{ variantId: variantScope }, { variantId: null }] },
+      }),
     ]);
 
     const knownSkus = new Set([
@@ -136,7 +152,7 @@ export class ProductionSetupService {
       ...inventoryItems.map((i) => i.sku),
     ]);
     const itemBySku = new Map(inventoryItems.map((i) => [i.sku, i]));
-    const bom = (product.bomDefaults ?? null) as BomDefaults | null;
+    const bom = ((variant?.bomDefaults ?? product.bomDefaults) ?? null) as BomDefaults | null;
     const bomLines = (bom?.materials ?? []).map((line) => {
       const item = line.sku ? itemBySku.get(line.sku) : undefined;
       return {
@@ -151,7 +167,14 @@ export class ProductionSetupService {
       };
     });
 
-    const workflow = config?.workflow ?? null;
+    let workflow = config?.workflow ?? null;
+    if (variantWorkflowId && variantWorkflowId !== workflow?.id) {
+      const variantWorkflow = await this.prisma.productionWorkflow.findFirst({
+        where: { id: variantWorkflowId, archivedAt: null },
+        include: { activeVersion: true },
+      });
+      if (variantWorkflow) workflow = variantWorkflow;
+    }
     const versionId = workflow?.activeVersionId ?? workflow?.activeVersion?.id ?? null;
     const compiled = versionId
       ? await this.versions.compileForProductReport(versionId, productId)
@@ -177,6 +200,11 @@ export class ProductionSetupService {
       list.push(row);
       materialsByNode.set(key, list);
     }
+    const estimates = pickVariantScopedRows(
+      estimateRows.map((row) => ({ ...row, variantId: row.variantId ?? null })),
+      variantScope,
+    );
+    const estimateByStage = new Map(estimates.map((row) => [row.stageDefinitionId, row]));
 
     const includedNodes = compiled?.included ?? [];
     const workflowNodeIdByKey = new Map(
@@ -250,6 +278,8 @@ export class ProductionSetupService {
         sortOrder: node.sortOrder,
         displayX: node.displayX,
         displayY: node.displayY,
+        minutesPerUnit: estimateByStage.get(node.stageDefinitionId)?.minutesPerUnit ?? node.estimatedMinutes ?? 0,
+        setupMinutes: estimateByStage.get(node.stageDefinitionId)?.setupMinutes ?? 0,
         behavior,
         consumesRawMaterials: resolved.consumesRawMaterials,
         consumesSemiFinished: resolved.consumesSemiFinished,
@@ -539,8 +569,8 @@ export class ProductionSetupService {
     };
   }
 
-  async preview(productId: string) {
-    const setup = await this.getSetup(productId);
+  async preview(productId: string, variantId?: string | null) {
+    const setup = await this.getSetup(productId, variantId);
     const steps = setup.stages.map((stage) => {
       const consumeOutputs = setup.outputs.filter((o) => stage.consumeOutputIds.includes(o.id));
       return {
@@ -572,11 +602,21 @@ export class ProductionSetupService {
   async putSetup(
     productId: string,
     dto: { workflowId?: string | null; stages?: ProductionSetupStagePut[] },
+    variantId?: string | null,
   ) {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, archivedAt: null },
     });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    const variantScope = variantId ?? null;
+    let variantRow: { bomDefaults: unknown } | null = null;
+    if (variantId) {
+      const variant = await this.prisma.productVariant.findFirst({
+        where: { id: variantId, productId },
+      });
+      if (!variant) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Variant not found.' });
+      variantRow = variant;
+    }
 
     if (dto.workflowId) {
       const workflow = await this.prisma.productionWorkflow.findFirst({
@@ -588,11 +628,18 @@ export class ProductionSetupService {
           message: 'Assign a published workflow.',
         });
       }
-      await this.prisma.productWorkflowConfiguration.upsert({
-        where: { productId },
-        create: { productId, workflowId: dto.workflowId },
-        update: { workflowId: dto.workflowId },
-      });
+      if (variantId) {
+        await this.prisma.productVariant.update({
+          where: { id: variantId },
+          data: { workflowId: dto.workflowId },
+        });
+      } else {
+        await this.prisma.productWorkflowConfiguration.upsert({
+          where: { productId },
+          create: { productId, workflowId: dto.workflowId },
+          update: { workflowId: dto.workflowId },
+        });
+      }
     }
 
     const stages = dto.stages ?? [];
@@ -686,12 +733,12 @@ export class ProductionSetupService {
           !flags.consumesRawMaterials &&
           !flags.consumesSemiFinished;
         const existing = await tx.productStageInventoryOutput.findFirst({
-          where: { productId, workflowNodeId: stage.workflowNodeId },
+          where: { productId, workflowNodeId: stage.workflowNodeId, variantId: variantScope },
         });
         if (idle) {
           if (existing) {
             await tx.productStageInventoryInput.deleteMany({
-              where: { productId, workflowNodeId: stage.workflowNodeId },
+              where: { productId, workflowNodeId: stage.workflowNodeId, variantId: variantScope },
             });
             await tx.productStageInventoryOutput.delete({ where: { id: existing.id } });
           }
@@ -751,6 +798,7 @@ export class ProductionSetupService {
 
         const data = {
           productId,
+          variantId: variantScope,
           workflowNodeId: stage.workflowNodeId,
           stageDefinitionId: stage.stageDefinitionId,
           itemClass:
@@ -785,7 +833,9 @@ export class ProductionSetupService {
         savedByNode.set(stage.workflowNodeId, saved.id);
       }
 
-      const allOutputs = await tx.productStageInventoryOutput.findMany({ where: { productId } });
+      const allOutputs = await tx.productStageInventoryOutput.findMany({
+        where: { productId, variantId: variantScope },
+      });
       const outputById = new Map(allOutputs.map((o) => [o.id, o]));
       const outputByNode = new Map(
         allOutputs
@@ -797,7 +847,7 @@ export class ProductionSetupService {
       for (const stage of stages) {
         if (!savedByNode.has(stage.workflowNodeId)) continue;
         await tx.productStageInventoryInput.deleteMany({
-          where: { productId, workflowNodeId: stage.workflowNodeId },
+          where: { productId, workflowNodeId: stage.workflowNodeId, variantId: variantScope },
         });
         const fromIds = stage.consumeOutputIds ?? [];
         const fromNodes = stage.consumeWorkflowNodeIds ?? [];
@@ -819,6 +869,7 @@ export class ProductionSetupService {
           await tx.productStageInventoryInput.create({
             data: {
               productId,
+              variantId: variantScope,
               workflowNodeId: stage.workflowNodeId,
               stageDefinitionId: stage.stageDefinitionId,
               outputId,
@@ -832,6 +883,7 @@ export class ProductionSetupService {
         const stale = await tx.productStageInventoryOutput.findMany({
           where: {
             productId,
+            variantId: variantScope,
             workflowNodeId: { notIn: stages.map((s) => s.workflowNodeId) },
           },
         });
@@ -846,7 +898,9 @@ export class ProductionSetupService {
       }
 
       if (dto.stages) {
-        await tx.productStageMaterialInput.deleteMany({ where: { productId } });
+        await tx.productStageMaterialInput.deleteMany({
+          where: { productId, variantId: variantScope },
+        });
         const wantedSkus = [
           ...new Set(
             stages.flatMap((stage) =>
@@ -881,7 +935,7 @@ export class ProductionSetupService {
         const itemById = new Map(items.map((i) => [i.id, i]));
         const seen = new Set<string>();
         const stageIds = new Set(stages.map((s) => s.workflowNodeId));
-        const bom = (product.bomDefaults ?? null) as BomDefaults | null;
+        const bom = ((variantRow?.bomDefaults ?? product.bomDefaults) ?? null) as BomDefaults | null;
         const bomQtyBySku = new Map<string, number>();
         for (const line of bom?.materials ?? []) {
           const sku = String(line.sku ?? '').trim();
@@ -926,6 +980,7 @@ export class ProductionSetupService {
             await tx.productStageMaterialInput.create({
               data: {
                 productId,
+                variantId: variantScope,
                 workflowNodeId: stage.workflowNodeId,
                 stageDefinitionId: stage.stageDefinitionId,
                 inventoryItemId: item.id,
@@ -948,7 +1003,43 @@ export class ProductionSetupService {
       }
     });
 
-    return this.getSetup(productId);
+    if (stages.length) {
+      for (const stage of stages) {
+        if (stage.minutesPerUnit == null && stage.setupMinutes == null) continue;
+        const existing = await this.prisma.productStageEstimate.findFirst({
+          where: {
+            productId,
+            stageDefinitionId: stage.stageDefinitionId,
+            variantId: variantScope,
+          },
+        });
+        const data = {
+          setupMinutes: Math.max(0, Math.round(stage.setupMinutes ?? existing?.setupMinutes ?? 0)),
+          minutesPerUnit: Math.max(
+            0,
+            Math.round(stage.minutesPerUnit ?? existing?.minutesPerUnit ?? 0),
+          ),
+          quantityScalingMode: 'LINEAR' as const,
+        };
+        if (existing) {
+          await this.prisma.productStageEstimate.update({
+            where: { id: existing.id },
+            data,
+          });
+        } else {
+          await this.prisma.productStageEstimate.create({
+            data: {
+              productId,
+              variantId: variantScope,
+              stageDefinitionId: stage.stageDefinitionId,
+              ...data,
+            },
+          });
+        }
+      }
+    }
+
+    return this.getSetup(productId, variantId);
   }
 
   private async ensureOutputItem(

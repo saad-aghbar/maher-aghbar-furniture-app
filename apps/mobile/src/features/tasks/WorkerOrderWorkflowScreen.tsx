@@ -156,6 +156,11 @@ export function WorkerOrderWorkflowScreen({ productionOrderId }: Props) {
                 <AppText variant="caption" color="secondary" dir="ltr">
                   {order.number}
                 </AppText>
+                {order.factoryOrderNumber ? (
+                  <AppText variant="caption" color="muted" dir="ltr">
+                    {order.factoryOrderNumber}
+                  </AppText>
+                ) : null}
                 {order.quantity ? (
                   <AppText variant="caption" color="secondary" dir="ltr">
                     {t('mobile.tasks.qtyLabel', { n: order.quantity })}

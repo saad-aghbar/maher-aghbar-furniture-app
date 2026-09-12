@@ -2,6 +2,7 @@ import { isPrereqLockedForWorker } from '../production/worker-task-visibility';
 import {
   buildWorkerOrderLane,
   classifyWorkerTaskLock,
+  groupMyOrdersBySalesOrder,
   joinWaitOnNames,
   orderMatchesSegment,
   remainingTasksForSegment,
@@ -489,7 +490,55 @@ describe('workerOrderMatchesSearch', () => {
     expect(workerOrderMatchesSearch(order, 'EXT-441')).toBe(true);
   });
 
+  it('matches variant label and sku', () => {
+    expect(
+      workerOrderMatchesSearch(
+        { ...order, variantLabel: 'Ukrainian', variantSku: 'DIN-UKR' },
+        'ukrainian',
+      ),
+    ).toBe(true);
+    expect(
+      workerOrderMatchesSearch({ ...order, variantSku: 'DIN-UKR' }, 'dinukr'),
+    ).toBe(true);
+  });
+
   it('rejects unrelated needles', () => {
     expect(workerOrderMatchesSearch(order, 'wardrobe')).toBe(false);
+  });
+});
+
+describe('groupMyOrdersBySalesOrder', () => {
+  const item = (id: string, salesOrderId: string | null, extra: Record<string, unknown> = {}) => ({
+    id,
+    salesOrderId,
+    salesOrderNumber: salesOrderId ? 'ORD-9' : null,
+    priority: 'NORMAL',
+    myTaskCount: 1,
+    actionableCount: 1,
+    blockedCount: 0,
+    ...extra,
+  });
+
+  it('groups three items on the same sales order into one card', () => {
+    const groups = groupMyOrdersBySalesOrder([
+      item('po-1', 'so-1', { variantLabel: 'Standard' }),
+      item('po-2', 'so-1', { variantLabel: 'Ukrainian', priority: 'HIGH' }),
+      item('po-3', 'so-1', { variantLabel: 'Classic' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.salesOrderId).toBe('so-1');
+    expect(groups[0]?.items.map((row) => row.id)).toEqual(['po-1', 'po-2', 'po-3']);
+    expect(groups[0]?.myTaskCount).toBe(3);
+    expect(groups[0]?.priority).toBe('HIGH');
+  });
+
+  it('does not merge orphan production orders', () => {
+    const groups = groupMyOrdersBySalesOrder([
+      item('po-1', 'so-1'),
+      item('po-ret', null),
+      item('po-ret-2', null),
+    ]);
+    expect(groups).toHaveLength(3);
+    expect(groups.map((g) => g.salesOrderId)).toEqual(['so-1', null, null]);
   });
 });

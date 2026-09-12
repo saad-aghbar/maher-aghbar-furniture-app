@@ -84,17 +84,22 @@ describe('newOrderValidation', () => {
     expect(isAddressAlreadySaved('Other place', rows)).toBe(false);
   });
 
-  it('composes request notes sections', () => {
+  it('composes request notes from delivery and order only', () => {
     expect(
       composeRequestNotes({
         deliveryNotes: 'Gate 2',
         dimensionsNotes: 'W 200',
         orderNotes: 'Rush',
       }),
-    ).toContain('Delivery notes:');
-    expect(composeRequestNotes({ deliveryNotes: '', dimensionsNotes: '', orderNotes: '' })).toBe(
-      undefined,
-    );
+    ).toBe('Delivery notes:\nGate 2\n\nRush');
+    expect(
+      composeRequestNotes({
+        deliveryNotes: 'Gate 2',
+        dimensionsNotes: 'W 200',
+        orderNotes: 'Rush',
+      }),
+    ).not.toContain('Dimensions');
+    expect(composeRequestNotes({ deliveryNotes: '', orderNotes: '' })).toBe(undefined);
   });
 
   it('supports product-step validation pairing (model + quantity)', () => {

@@ -6,11 +6,8 @@ import {
   Button,
   Card,
   EmptyState,
-  Input,
   MetricCard,
   MotionSection,
-  PageHero,
-  Select,
   Skeleton,
   StatusBadge,
   Table,
@@ -24,15 +21,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { localizedName } from '@maher/i18n';
-import { usePathname, useRouter } from '@/i18n/navigation';
-import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { OrdersLens } from '@/components/cost-performance/orders-lens';
-import {
-  MaterialsCoverageLens,
-  ProductAnalyticsLens,
-  ReturnsLens,
-} from '@/components/cost-performance/returns-materials-lens';
+import { useReportsFilterQs } from '@/components/cost-performance/reports-chrome';
 
 interface DashboardReport {
   newOrders?: number;
@@ -200,83 +189,12 @@ interface PurchasingReport {
   }>;
 }
 
-interface DealerOption {
-  id: string;
-  name?: string | null;
-  nameEn?: string | null;
-  nameAr?: string | null;
-}
-
-interface ProductOption {
-  id: string;
-  sku?: string | null;
-  nameEn?: string | null;
-  nameAr?: string | null;
-}
-
-interface UserOption {
-  id: string;
-  firstName?: string | null;
-  lastName?: string | null;
-  email?: string | null;
-}
-
 function isForbidden(error: unknown) {
   return error instanceof ApiClientError && error.status === 403;
 }
 
 function money(value: string | number | undefined | null) {
   return Number(value ?? 0).toFixed(2);
-}
-
-function buildQuery(params: Record<string, string>) {
-  const qs = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value.trim()) qs.set(key, value.trim());
-  }
-  const s = qs.toString();
-  return s ? `?${s}` : '';
-}
-
-/** UTC calendar day YYYY-MM-DD (matches API dateRange gte/lte Z bounds). */
-function utcYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function utcTodayBounds(): { from: string; to: string } {
-  const now = new Date();
-  const ymd = utcYmd(now);
-  return { from: ymd, to: ymd };
-}
-
-/** ISO week Monday–Sunday in UTC. */
-function utcThisWeekBounds(): { from: string; to: string } {
-  const now = new Date();
-  const day = now.getUTCDay(); // 0 Sun
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset));
-  const sunday = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 6));
-  return { from: utcYmd(monday), to: utcYmd(sunday) };
-}
-
-function utcThisMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
-  return { from: utcYmd(from), to: utcYmd(to) };
-}
-
-type DatePreset = 'today' | 'week' | 'month' | 'custom';
-
-function detectPreset(from: string, to: string): DatePreset {
-  if (!from && !to) return 'custom';
-  const today = utcTodayBounds();
-  if (from === today.from && to === today.to) return 'today';
-  const week = utcThisWeekBounds();
-  if (from === week.from && to === week.to) return 'week';
-  const month = utcThisMonthBounds();
-  if (from === month.from && to === month.to) return 'month';
-  return 'custom';
 }
 
 async function downloadCsv(path: string, filename: string) {
@@ -306,108 +224,8 @@ export default function ReportsPage() {
   const ta = useTranslations('accounting');
   const tCommon = useTranslations('common');
   const locale = useLocale();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const [dateFrom, setDateFrom] = useState(() => searchParams.get('from') ?? '');
-  const [dateTo, setDateTo] = useState(() => searchParams.get('to') ?? '');
-  const [customerId, setCustomerId] = useState(() => searchParams.get('customerId') ?? '');
-  const [productId, setProductId] = useState(() => searchParams.get('productId') ?? '');
-  const [salesRepId, setSalesRepId] = useState(() => searchParams.get('salesRepId') ?? '');
-  const [preset, setPreset] = useState<DatePreset>(() =>
-    detectPreset(searchParams.get('from') ?? '', searchParams.get('to') ?? ''),
-  );
-
-  const syncUrl = useCallback(
-    (next: { from?: string; to?: string; customerId?: string; productId?: string; salesRepId?: string }) => {
-      const qs = new URLSearchParams(searchParams.toString());
-      const apply = (key: string, value: string | undefined) => {
-        if (value === undefined) return;
-        if (value.trim()) qs.set(key, value.trim());
-        else qs.delete(key);
-      };
-      apply('from', next.from);
-      apply('to', next.to);
-      apply('customerId', next.customerId);
-      apply('productId', next.productId);
-      apply('salesRepId', next.salesRepId);
-      const s = qs.toString();
-      router.replace(s ? `${pathname}?${s}` : pathname);
-    },
-    [pathname, router, searchParams],
-  );
-
-  useEffect(() => {
-    const from = searchParams.get('from') ?? '';
-    const to = searchParams.get('to') ?? '';
-    setDateFrom(from);
-    setDateTo(to);
-    setCustomerId(searchParams.get('customerId') ?? '');
-    setProductId(searchParams.get('productId') ?? '');
-    setSalesRepId(searchParams.get('salesRepId') ?? '');
-    setPreset(detectPreset(from, to));
-  }, [searchParams]);
-
-  function applyPreset(next: DatePreset) {
-    setPreset(next);
-    if (next === 'custom') return;
-    const bounds =
-      next === 'today' ? utcTodayBounds() : next === 'week' ? utcThisWeekBounds() : utcThisMonthBounds();
-    setDateFrom(bounds.from);
-    setDateTo(bounds.to);
-    syncUrl({
-      from: bounds.from,
-      to: bounds.to,
-      customerId,
-      productId,
-      salesRepId,
-    });
-  }
-
-  function onFromChange(value: string) {
-    setDateFrom(value);
-    setPreset('custom');
-    syncUrl({ from: value, to: dateTo, customerId, productId, salesRepId });
-  }
-
-  function onToChange(value: string) {
-    setDateTo(value);
-    setPreset('custom');
-    syncUrl({ from: dateFrom, to: value, customerId, productId, salesRepId });
-  }
-
-  const filterQs = useMemo(
-    () =>
-      buildQuery({
-        from: dateFrom,
-        to: dateTo,
-        customerId,
-        productId,
-        salesRepId,
-      }),
-    [dateFrom, dateTo, customerId, productId, salesRepId],
-  );
-  const periodQs = useMemo(
-    () => buildQuery({ from: dateFrom, to: dateTo, customerId }),
-    [dateFrom, dateTo, customerId],
-  );
-
-  const dealersQuery = useQuery({
-    queryKey: ['reports-dealers'],
-    queryFn: () =>
-      apiFetch<{ data: DealerOption[] }>('/api/v1/customers?page=1&pageSize=100').then((r) => r.data),
-  });
-  const productsQuery = useQuery({
-    queryKey: ['reports-products'],
-    queryFn: () =>
-      apiFetch<{ data: ProductOption[] }>('/api/v1/products?page=1&pageSize=100').then((r) => r.data),
-  });
-  const usersQuery = useQuery({
-    queryKey: ['reports-users'],
-    queryFn: () =>
-      apiFetch<{ data: UserOption[] }>('/api/v1/users?page=1&pageSize=100').then((r) => r.data),
-  });
+  const filterQs = useReportsFilterQs();
+  const periodQs = filterQs;
 
   const dashboard = useReportQuery<DashboardReport>('dashboard', '/api/v1/reports/dashboard');
   const sales = useReportQuery<SalesReport>('sales', `/api/v1/reports/sales${filterQs}`);
@@ -490,6 +308,20 @@ export default function ReportsPage() {
   const inventory = useReportQuery<InventoryReport>('inventory', '/api/v1/reports/inventory');
   const financial = useReportQuery<FinancialReport>('financial', '/api/v1/reports/financial');
   const purchasing = useReportQuery<PurchasingReport>('purchasing', '/api/v1/reports/purchasing');
+  laborRates: useReportQuery<
+    Array<{
+      id: string;
+      userId?: string | null;
+      hourlyRate: string | number;
+      effectiveTo?: string | null;
+      user?: { id: string; firstName: string; lastName: string } | null;
+    }>
+  >('labor-rates', '/api/v1/reports/cost/labor-rates');
+  const laborActuals = useReportQuery<{
+    labor: { actual: number | null; estimated: number | null } | null;
+    byWorker: Array<{ userId: string; name: string; minutes: number; actual: number | null }>;
+    byStage: Array<{ stageDefinitionId: string; stageCode: string | null; actual: number | null; minutes: number }>;
+  }>('labor-actuals', `/api/v1/reports/cost/labor${periodQs}`);
 
   const anyLoading =
     dashboard.isLoading ||
@@ -531,196 +363,137 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero
-        title={ta('reportsTitle')}
-        description={`${ta('reportsSubtitle')} ${ta('exportGapsNote')}`}
-        tone="soft"
-        actions={
-          <div className="flex flex-col items-stretch gap-3 sm:items-end">
-            <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ['today', ta('presetToday')],
-                  ['week', ta('presetThisWeek')],
-                  ['month', ta('presetThisMonth')],
-                  ['custom', ta('presetCustom')],
-                ] as const
-              ).map(([key, label]) => (
-                <Button
-                  key={key}
-                  size="sm"
-                  variant={preset === key ? 'primary' : 'subtle'}
-                  onClick={() => applyPreset(key)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <Input
-                type="date"
-                label={ta('dateFrom')}
-                value={dateFrom}
-                onChange={(e) => onFromChange(e.target.value)}
-                className="w-40"
-              />
-              <Input
-                type="date"
-                label={ta('dateTo')}
-                value={dateTo}
-                onChange={(e) => onToChange(e.target.value)}
-                className="w-40"
-              />
-              <Select
-                label={ta('filterCustomer')}
-                value={customerId}
-                onChange={(e) => {
-                  setCustomerId(e.target.value);
-                  syncUrl({
-                    from: dateFrom,
-                    to: dateTo,
-                    customerId: e.target.value,
-                    productId,
-                    salesRepId,
-                  });
-                }}
-                className="min-w-[10rem]"
-                options={[
-                  { value: '', label: ta('allCustomers') },
-                  ...(dealersQuery.data ?? []).map((c) => ({
-                    value: c.id,
-                    label: localizedName(locale, c) || c.name || c.id,
-                  })),
-                ]}
-              />
-              <Select
-                label={ta('filterProduct')}
-                value={productId}
-                onChange={(e) => {
-                  setProductId(e.target.value);
-                  syncUrl({
-                    from: dateFrom,
-                    to: dateTo,
-                    customerId,
-                    productId: e.target.value,
-                    salesRepId,
-                  });
-                }}
-                className="min-w-[10rem]"
-                options={[
-                  { value: '', label: ta('allProducts') },
-                  ...(productsQuery.data ?? []).map((p) => ({
-                    value: p.id,
-                    label: localizedName(locale, p),
-                  })),
-                ]}
-              />
-              <Select
-                label={ta('filterSalesRep')}
-                value={salesRepId}
-                onChange={(e) => {
-                  setSalesRepId(e.target.value);
-                  syncUrl({
-                    from: dateFrom,
-                    to: dateTo,
-                    customerId,
-                    productId,
-                    salesRepId: e.target.value,
-                  });
-                }}
-                className="min-w-[10rem]"
-                options={[
-                  { value: '', label: ta('allSalesReps') },
-                  ...(usersQuery.data ?? []).map((u) => ({
-                    value: u.id,
-                    label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || u.id,
-                  })),
-                ]}
-              />
-              {showSales ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv(`/api/v1/reports/export/sales.csv${filterQs}`, 'sales-report.csv')
-                  }
-                >
-                  {ta('exportSalesCsv')}
-                </Button>
-              ) : null}
-              {showOrderProfit ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv(
-                      `/api/v1/reports/export/order-profit.csv${periodQs}`,
-                      'order-profit.csv',
-                    )
-                  }
-                >
-                  {ta('exportProfitCsv')}
-                </Button>
-              ) : null}
-              {showApLedger ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv(`/api/v1/reports/export/ap-ledger.csv${periodQs}`, 'ap-ledger.csv')
-                  }
-                >
-                  {ta('exportApCsv')}
-                </Button>
-              ) : null}
-              {showPeriodPl ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv(`/api/v1/reports/export/period-pl.csv${periodQs}`, 'period-pl.csv')
-                  }
-                >
-                  {ta('exportPeriodPlCsv')}
-                </Button>
-              ) : null}
-              {showCashFlow ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv(`/api/v1/reports/export/cash-flow.csv${periodQs}`, 'cash-flow.csv')
-                  }
-                >
-                  {ta('exportCashFlowCsv')}
-                </Button>
-              ) : null}
-              {showFinancial ? (
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() =>
-                    void downloadCsv('/api/v1/reports/export/financial.csv', 'financial-aging.csv')
-                  }
-                >
-                  {ta('exportFinancialCsv')}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        }
-      />
-
-      <OrdersLens periodQs={periodQs} />
-      <ReturnsLens />
-      <MaterialsCoverageLens />
-      <ProductAnalyticsLens />
-
+      <div className="flex flex-wrap gap-2">
+        {showSales ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void downloadCsv(`/api/v1/reports/export/sales.csv${filterQs}`, 'sales-report.csv')}
+          >
+            {ta('exportSalesCsv')}
+          </Button>
+        ) : null}
+        {showOrderProfit ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() =>
+              void downloadCsv(`/api/v1/reports/export/order-profit.csv${periodQs}`, 'order-profit.csv')
+            }
+          >
+            {ta('exportProfitCsv')}
+          </Button>
+        ) : null}
+        {showApLedger ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void downloadCsv(`/api/v1/reports/export/ap-ledger.csv${periodQs}`, 'ap-ledger.csv')}
+          >
+            {ta('exportApCsv')}
+          </Button>
+        ) : null}
+        {showPeriodPl ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void downloadCsv(`/api/v1/reports/export/period-pl.csv${periodQs}`, 'period-pl.csv')}
+          >
+            {ta('exportPeriodPlCsv')}
+          </Button>
+        ) : null}
+        {showCashFlow ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void downloadCsv(`/api/v1/reports/export/cash-flow.csv${periodQs}`, 'cash-flow.csv')}
+          >
+            {ta('exportCashFlowCsv')}
+          </Button>
+        ) : null}
+        {showFinancial ? (
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void downloadCsv('/api/v1/reports/export/financial.csv', 'financial-aging.csv')}
+          >
+            {ta('exportFinancialCsv')}
+          </Button>
+        ) : null}
+      </div>
       <p className="text-sm text-text-secondary">{ta('csvExportHint')}</p>
-
-      {dateFrom || dateTo || customerId || productId || salesRepId ? (
-        <p className="text-sm text-text-secondary">{ta('dateRangeHint')}</p>
-      ) : null}
+      <MotionSection enter="rise" className="space-y-3">
+        <h2 className="text-lg font-semibold">{ta('workerRates')}</h2>
+        <p className="text-sm text-text-secondary">{ta('laborSlotHint')}</p>
+        {(laborRates.data ?? []).filter((row) => row.userId && !row.effectiveTo).length ? (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('workerRates')}</TableHeaderCell>
+                <TableHeaderCell>{ta('laborCost')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(laborRates.data ?? [])
+                .filter((row) => row.userId && !row.effectiveTo)
+                .map((row) => {
+                  const name = row.user
+                    ? `${row.user.firstName} ${row.user.lastName}`.trim()
+                    : row.userId;
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        {row.userId ? (
+                          <Link href={`/employees?edit=${row.userId}`}>{name}</Link>
+                        ) : (
+                          name
+                        )}
+                      </TableCell>
+                      <TableNumericCell>
+                        <span dir="ltr">{money(Number(row.hourlyRate))}</span>
+                      </TableNumericCell>
+                    </TableRow>
+                  );
+                })}
+            </TableBody>
+          </Table>
+        ) : (
+          <EmptyState title={ta('noWorkerRates')} />
+        )}
+      </MotionSection>
+      <MotionSection enter="rise" className="space-y-3">
+        <h2 className="text-lg font-semibold">{ta('laborByWorker')}</h2>
+        {(laborActuals.data?.byWorker ?? []).length ? (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('laborByWorker')}</TableHeaderCell>
+                <TableHeaderCell>{ta('factoryTime')}</TableHeaderCell>
+                <TableHeaderCell>{ta('laborCost')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(laborActuals.data?.byWorker ?? []).map((row) => (
+                <TableRow key={row.userId}>
+                  <TableCell>
+                    <Link href={`/employees?edit=${row.userId}`}>{row.name}</Link>
+                  </TableCell>
+                  <TableNumericCell>
+                    <span dir="ltr">{(row.minutes / 60).toFixed(1)} h</span>
+                  </TableNumericCell>
+                  <TableNumericCell>
+                    <span dir="ltr">
+                      {row.actual == null ? ta('notConfiguredYet') : money(row.actual)}
+                    </span>
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <EmptyState title={ta('noLaborActuals')} />
+        )}
+      </MotionSection>
 
       {showDashboard ? (
         <MotionSection enter="rise" className="space-y-4">
@@ -825,7 +598,16 @@ export default function ReportsPage() {
                     {(sales.data.topProducts ?? []).map((p) => (
                       <TableRow key={p.productId ?? p.name ?? 'unknown'}>
                         <TableCell>
-                          {p.name}
+                          {p.productId ? (
+                            <Link
+                              href={`/reports/orders${filterQs}${filterQs ? '&' : '?'}productId=${p.productId}`}
+                              className="underline"
+                            >
+                              {p.name ?? p.sku ?? p.productId}
+                            </Link>
+                          ) : (
+                            p.name ?? p.sku ?? '—'
+                          )}
                         </TableCell>
                         <TableNumericCell>{p.lineCount}</TableNumericCell>
                         <TableNumericCell>{money(p.total)}</TableNumericCell>

@@ -10,6 +10,7 @@ import {
   selectDealerCalendarDayMeta,
   selectDealerDateFields,
   selectDeliveryTimeline,
+  selectScheduleStub,
 } from '../selectDealerDeliveries';
 import type { DealerDeliveryDto } from '@/api/modules/scheduling';
 
@@ -228,7 +229,8 @@ describe('selectDealerDeliveries', () => {
     expect(filterFromSummaryKey('awaiting')).toBe('attention');
     expect(filterFromSummaryKey('delayed')).toBe('attention');
     expect(deliveryCardTone('MAY_BE_DELAYED')).toBe('warning');
-    expect(deliveryCardTone('READY_FOR_DELIVERY')).toBe('info');
+    expect(deliveryCardTone('READY_FOR_DELIVERY')).toBe('brand');
+    expect(deliveryCardTone('OUT_FOR_DELIVERY')).toBe('brand');
     expect(deliveryCardTone('DELIVERED')).toBe('success');
     expect(deliveryCardTone('CONFIRMED_ON_TRACK')).toBe('brand');
   });
@@ -248,5 +250,22 @@ describe('selectDealerDeliveries', () => {
       'out',
       'delivered',
     ]);
+  });
+
+  it('picks a ticket stub kind from customer-safe status', () => {
+    expect(
+      selectScheduleStub(
+        row({ customerStatus: 'AWAITING_CONFIRMATION', committedDeliveryDate: null }),
+      ).kind,
+    ).toBe('review');
+    expect(selectScheduleStub(row({ customerStatus: 'CONFIRMED_ON_TRACK' })).kind).toBe(
+      'confirmed',
+    );
+    expect(selectScheduleStub(row({ customerStatus: 'MAY_BE_DELAYED' })).kind).toBe('delayed');
+    expect(
+      selectScheduleStub(
+        row({ customerStatus: 'DELIVERED', actualDeliveryDate: '2026-08-20', calendarDate: '2026-08-20' }),
+      ),
+    ).toEqual({ ymd: '2026-08-20', kind: 'delivered' });
   });
 });

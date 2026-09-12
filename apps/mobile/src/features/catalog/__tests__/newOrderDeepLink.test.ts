@@ -1,10 +1,14 @@
 import {
   catalogNewOrderParams,
   isCatalogOrderDeepLink,
+  navigateToBasketReview,
+  navigateToCreateOrder,
   navigateToNewOrderWithProduct,
   newOrderHrefForProduct,
   parseDeepLinkProductId,
   parseDeepLinkQty,
+  parseDeepLinkText,
+  parseDeepLinkVariantId,
 } from '../newOrderDeepLink';
 import { catalogDimensionsNote } from '../catalogDimensionsNote';
 
@@ -29,11 +33,49 @@ describe('newOrderHrefForProduct', () => {
 });
 
 describe('catalogNewOrderParams', () => {
-  it('returns stable pathname params without query encoding', () => {
-    expect(catalogNewOrderParams('prod-abc', 3)).toEqual({
+  it('carries variant label and sku', () => {
+    expect(
+      catalogNewOrderParams('prod-abc', 1, 'v-ukr', {
+        variantLabel: 'Ukrainian',
+        variantSku: 'SOF-UKR',
+      }),
+    ).toEqual({
       productId: 'prod-abc',
-      qty: '3',
+      qty: '1',
       fromCatalog: '1',
+      variantId: 'v-ukr',
+      variantLabel: 'Ukrainian',
+      variantSku: 'SOF-UKR',
+    });
+  });
+});
+
+describe('navigateToBasketReview', () => {
+  it('opens the dedicated basket tab', () => {
+    const router = {
+      canDismiss: jest.fn(() => false),
+      dismissAll: jest.fn(),
+      navigate: jest.fn(),
+      replace: jest.fn(),
+    };
+    navigateToBasketReview(router);
+    expect(router.navigate).toHaveBeenCalledWith({
+      pathname: '/(app)/(customer)/(tabs)/basket',
+    });
+  });
+});
+
+describe('navigateToCreateOrder', () => {
+  it('opens New Order from the basket confirm CTA', () => {
+    const router = {
+      canDismiss: jest.fn(() => false),
+      dismissAll: jest.fn(),
+      navigate: jest.fn(),
+      replace: jest.fn(),
+    };
+    navigateToCreateOrder(router);
+    expect(router.navigate).toHaveBeenCalledWith({
+      pathname: '/(app)/(customer)/(tabs)/new-order',
     });
   });
 });
@@ -84,11 +126,27 @@ describe('parseDeepLinkQty', () => {
   });
 });
 
+describe('parseDeepLinkVariantId', () => {
+  it('trims and unwraps arrays', () => {
+    expect(parseDeepLinkVariantId(' v-250 ')).toBe('v-250');
+    expect(parseDeepLinkVariantId(['v-std'])).toBe('v-std');
+    expect(parseDeepLinkVariantId(undefined)).toBe('');
+  });
+});
+
 describe('parseDeepLinkProductId', () => {
   it('trims and unwraps arrays', () => {
     expect(parseDeepLinkProductId(' abc ')).toBe('abc');
     expect(parseDeepLinkProductId(['x'])).toBe('x');
     expect(parseDeepLinkProductId(undefined)).toBe('');
+  });
+});
+
+describe('parseDeepLinkText', () => {
+  it('trims and unwraps arrays', () => {
+    expect(parseDeepLinkText(' Ukrainian ')).toBe('Ukrainian');
+    expect(parseDeepLinkText(['SOF-UKR'])).toBe('SOF-UKR');
+    expect(parseDeepLinkText(undefined)).toBe('');
   });
 });
 

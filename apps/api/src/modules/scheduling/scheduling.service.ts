@@ -851,13 +851,16 @@ export class SchedulingService implements OnModuleInit {
 
   // ── Product scheduling config ──────────────────────────────────────────
 
-  async getProductionProfile(productId: string) {
+  async getProductionProfile(productId: string, variantId?: string | null) {
     const product = await this.prisma.product.findFirst({ where: { id: productId, archivedAt: null } });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
-    const profile = await this.prisma.productProductionProfile.findUnique({ where: { productId } });
+    const profile = await this.prisma.productProductionProfile.findFirst({
+      where: { productId, variantId: variantId ?? null },
+    });
     return (
       profile ?? {
         productId,
+        variantId: variantId ?? null,
         totalStandardMinutes: null,
         setupMinutes: 0,
         complexityFactor: 1,
@@ -869,27 +872,40 @@ export class SchedulingService implements OnModuleInit {
     );
   }
 
-  async upsertProductionProfile(productId: string, dto: ProductionProfileDto, userId: string) {
+  async upsertProductionProfile(
+    productId: string,
+    dto: ProductionProfileDto,
+    userId: string,
+    variantId?: string | null,
+  ) {
     const product = await this.prisma.product.findFirst({ where: { id: productId, archivedAt: null } });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
-    const row = await this.prisma.productProductionProfile.upsert({
-      where: { productId },
-      create: { productId, ...dto },
-      update: { ...dto },
+    const existing = await this.prisma.productProductionProfile.findFirst({
+      where: { productId, variantId: variantId ?? null },
     });
+    const row = existing
+      ? await this.prisma.productProductionProfile.update({ where: { id: existing.id }, data: { ...dto } })
+      : await this.prisma.productProductionProfile.create({
+          data: { productId, variantId: variantId ?? null, ...dto },
+        });
     await this.audit(userId, 'scheduling.production-profile.upsert', 'ProductProductionProfile', productId, row);
     return row;
   }
 
-  async listStageEstimates(productId: string) {
+  async listStageEstimates(productId: string, variantId?: string | null) {
     return this.prisma.productStageEstimate.findMany({
-      where: { productId },
+      where: { productId, variantId: variantId ?? null },
       include: { stageDefinition: true, overrideDepartment: true },
       orderBy: { stageDefinition: { sortOrder: 'asc' } },
     });
   }
 
-  async upsertStageEstimates(productId: string, items: ProductStageEstimateInputDto[], userId: string) {
+  async upsertStageEstimates(
+    productId: string,
+    items: ProductStageEstimateInputDto[],
+    userId: string,
+    variantId?: string | null,
+  ) {
     const product = await this.prisma.product.findFirst({ where: { id: productId, archivedAt: null } });
     if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
 
@@ -915,38 +931,36 @@ export class SchedulingService implements OnModuleInit {
         batchMinutes: row.batchMinutes,
         maxParallelUnits: row.maxParallelUnits,
       });
-      await this.prisma.productStageEstimate.upsert({
-        where: { productId_stageDefinitionId: { productId, stageDefinitionId: row.stageDefinitionId } },
-        create: {
+      const existing = await this.prisma.productStageEstimate.findFirst({
+        where: {
           productId,
           stageDefinitionId: row.stageDefinitionId,
-          setupMinutes: coerced.setupMinutes,
-          minutesPerUnit: coerced.minutesPerUnit,
-          fixedMinutes: coerced.fixedMinutes,
-          quantityScalingMode: coerced.quantityScalingMode as never,
-          batchSize: coerced.batchSize,
-          batchMinutes: coerced.batchMinutes,
-          maxParallelUnits: coerced.maxParallelUnits,
-          workerCountRequired: row.workerCountRequired ?? 1,
-          overrideDepartmentId: row.overrideDepartmentId,
-          isRequired: row.isRequired ?? true,
-        },
-        update: {
-          setupMinutes: coerced.setupMinutes,
-          minutesPerUnit: coerced.minutesPerUnit,
-          fixedMinutes: coerced.fixedMinutes,
-          quantityScalingMode: coerced.quantityScalingMode as never,
-          batchSize: coerced.batchSize,
-          batchMinutes: coerced.batchMinutes,
-          maxParallelUnits: coerced.maxParallelUnits,
-          workerCountRequired: row.workerCountRequired ?? 1,
-          overrideDepartmentId: row.overrideDepartmentId,
-          isRequired: row.isRequired ?? true,
+          variantId: variantId ?? null,
         },
       });
+      const payload = {
+        productId,
+        variantId: variantId ?? null,
+        stageDefinitionId: row.stageDefinitionId,
+        setupMinutes: coerced.setupMinutes,
+        minutesPerUnit: coerced.minutesPerUnit,
+        fixedMinutes: coerced.fixedMinutes,
+        quantityScalingMode: coerced.quantityScalingMode as never,
+        batchSize: coerced.batchSize,
+        batchMinutes: coerced.batchMinutes,
+        maxParallelUnits: coerced.maxParallelUnits,
+        workerCountRequired: row.workerCountRequired ?? 1,
+        overrideDepartmentId: row.overrideDepartmentId,
+        isRequired: row.isRequired ?? true,
+      };
+      if (existing) {
+        await this.prisma.productStageEstimate.update({ where: { id: existing.id }, data: payload });
+      } else {
+        await this.prisma.productStageEstimate.create({ data: payload });
+      }
     }
     await this.audit(userId, 'scheduling.stage-estimates.upsert', 'ProductStageEstimate', productId, items);
-    return this.listStageEstimates(productId);
+    return this.listStageEstimates(productId, variantId);
   }
 
   // ── Dealer-safe availability ────────────────────────────────────────────
@@ -965,7 +979,7 @@ export class SchedulingService implements OnModuleInit {
     const products = await this.prisma.product.findMany({
       where: { id: { in: dto.items.map((i) => i.productId) } },
       include: {
-        productionProfile: true,
+        productionProfiles: { where: { variantId: null } },
         stageEstimates: { include: { stageDefinition: true, overrideDepartment: true } },
       },
     });
@@ -1592,7 +1606,7 @@ export class SchedulingService implements OnModuleInit {
       include: {
         product: {
           include: {
-            productionProfile: true,
+            productionProfiles: { where: { variantId: null } },
             stageEstimates: { include: { stageDefinition: true, overrideDepartment: true } },
           },
         },
@@ -1642,7 +1656,7 @@ export class SchedulingService implements OnModuleInit {
       include: {
         product: {
           include: {
-            productionProfile: true;
+            productionProfiles: { where: { variantId: null } };
             stageEstimates: { include: { stageDefinition: true; overrideDepartment: true } };
           };
         };
@@ -1689,7 +1703,7 @@ export class SchedulingService implements OnModuleInit {
     const stageEstimateByDefId = new Map(
       (po.product?.stageEstimates ?? []).map((e) => [e.stageDefinitionId, e]),
     );
-    const hasProfile = Boolean(po.product?.productionProfile);
+    const hasProfile = Boolean(po.product?.productionProfiles?.[0]);
     const hasEstimates = (po.product?.stageEstimates.length ?? 0) > 0;
     const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findUnique({
       where: { productionOrderId: po.id },
@@ -1898,7 +1912,7 @@ export class SchedulingService implements OnModuleInit {
     const totalMinutes = plannedStages
       .filter((s) => !s.isMilestone)
       .reduce((sum, s) => sum + s.estimatedMinutes, 0);
-    const bufferPercent = po.product?.productionProfile?.bufferPercent ?? 10;
+    const bufferPercent = po.product?.productionProfiles?.[0]?.bufferPercent ?? 10;
 
     const [workers, occupancyRaw, { calendar, row: calendarRow }] = await Promise.all([
       this.loadWorkers(),
@@ -5423,7 +5437,7 @@ export class SchedulingService implements OnModuleInit {
           product: {
             select: {
               bomDefaults: true,
-              productionProfile: { select: { id: true } },
+              productionProfiles: { where: { variantId: null }, select: { id: true } },
               stageEstimates: { select: { id: true, stageDefinitionId: true } },
             },
           },
@@ -5520,7 +5534,7 @@ export class SchedulingService implements OnModuleInit {
 
       const missingEstimate =
         !hasActiveSchedule &&
-        !po.product?.productionProfile &&
+        !po.product?.productionProfiles?.[0] &&
         (po.product?.stageEstimates.length ?? 0) === 0;
 
       const unschedulable = classifiedRow?.schedule?.unschedulableReason ?? null;
@@ -6179,25 +6193,35 @@ export class SchedulingService implements OnModuleInit {
     await this.prisma.$transaction(async (tx) => {
       for (const se of stageEstimates) {
         if (!se.stageDefinitionId) continue;
-        await tx.productStageEstimate.upsert({
+        const existing = await tx.productStageEstimate.findFirst({
           where: {
-            productId_stageDefinitionId: { productId: proposal.productId!, stageDefinitionId: se.stageDefinitionId },
-          },
-          create: {
             productId: proposal.productId!,
             stageDefinitionId: se.stageDefinitionId,
-            setupMinutes: se.setupMinutes ?? 0,
-            minutesPerUnit: se.minutesPerUnit ?? 0,
-            fixedMinutes: se.fixedMinutes ?? 0,
-            quantityScalingMode: se.quantityScalingMode ?? 'SETUP_PLUS_LINEAR',
-          },
-          update: {
-            setupMinutes: se.setupMinutes ?? 0,
-            minutesPerUnit: se.minutesPerUnit ?? 0,
-            fixedMinutes: se.fixedMinutes ?? 0,
-            quantityScalingMode: se.quantityScalingMode ?? 'SETUP_PLUS_LINEAR',
+            variantId: null,
           },
         });
+        const payload = {
+          productId: proposal.productId!,
+          variantId: null as string | null,
+          stageDefinitionId: se.stageDefinitionId,
+          setupMinutes: se.setupMinutes ?? 0,
+          minutesPerUnit: se.minutesPerUnit ?? 0,
+          fixedMinutes: se.fixedMinutes ?? 0,
+          quantityScalingMode: se.quantityScalingMode ?? 'SETUP_PLUS_LINEAR',
+        };
+        if (existing) {
+          await tx.productStageEstimate.update({
+            where: { id: existing.id },
+            data: {
+              setupMinutes: payload.setupMinutes,
+              minutesPerUnit: payload.minutesPerUnit,
+              fixedMinutes: payload.fixedMinutes,
+              quantityScalingMode: payload.quantityScalingMode,
+            },
+          });
+        } else {
+          await tx.productStageEstimate.create({ data: payload });
+        }
       }
       await tx.schedulingEstimateProposal.update({
         where: { id: proposalId },

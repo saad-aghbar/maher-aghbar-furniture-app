@@ -59,6 +59,8 @@ export type ReturnRequest = {
   lifecycleState?: ReturnLifecycleState | string | null;
   salesOrderLineId?: string | null;
   productId?: string | null;
+  variantId?: string | null;
+  variantLabel?: string | null;
   responsibility?: ReturnResponsibility | string | null;
   chargeAmount?: number | string | null;
   factoryShareAmount?: number | string | null;

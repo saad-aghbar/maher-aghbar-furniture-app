@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 import type { PaginatedResponse } from '@maher/types';
 import type { BrowseCategory } from './catalog';
@@ -80,6 +80,7 @@ export type ProductDealerPrice = {
   id: string;
   customerId: string;
   productId: string;
+  variantId?: string | null;
   price: number | string;
   currency: string;
   customer?: {
@@ -148,7 +149,7 @@ export async function patchAdminProduct(
 
 export type AdminProductCreate = {
   sku?: string;
-  nameEn: string;
+  nameEn?: string;
   nameAr: string;
   nameHe?: string;
   description?: string;
@@ -200,28 +201,237 @@ export async function createProductCategory(
   return apiPost<BrowseCategory>('/product-categories', body);
 }
 
-export async function listProductDealerPrices(productId: string): Promise<ProductDealerPrice[]> {
+export async function listProductDealerPrices(
+  productId: string,
+  variantId?: string | null,
+): Promise<ProductDealerPrice[]> {
+  const qs = variantId ? `?variantId=${encodeURIComponent(variantId)}` : '';
   return apiGet<ProductDealerPrice[]>(
-    `/products/${encodeURIComponent(productId)}/dealer-prices`,
+    `/products/${encodeURIComponent(productId)}/dealer-prices${qs}`,
   );
 }
 
 export async function upsertDealerPrice(input: {
   customerId: string;
   productId: string;
+  variantId?: string | null;
   price: number;
   currency?: string;
 }): Promise<unknown> {
   return apiPost(`/customers/${encodeURIComponent(input.customerId)}/dealer-prices`, {
     productId: input.productId,
+    ...(input.variantId ? { variantId: input.variantId } : {}),
     price: input.price,
     currency: input.currency ?? 'ILS',
   });
 }
 
+export type TranslatedCatalogName = {
+  nameAr: string;
+  nameEn: string;
+  nameHe: string;
+};
+
+export async function translateCatalogName(
+  text: string,
+  kind: 'name' | 'prose' = 'name',
+): Promise<TranslatedCatalogName> {
+  return apiPost<TranslatedCatalogName>('/catalog/translate-name', { text, kind });
+}
+
 export async function deleteDealerPrice(customerId: string, priceId: string): Promise<unknown> {
   return apiDelete(
     `/customers/${encodeURIComponent(customerId)}/dealer-prices/${encodeURIComponent(priceId)}`,
+  );
+}
+
+export type AdminVariantOption = {
+  specOptionValueId: string;
+  qty?: number | string | null;
+  note?: string | null;
+  specOptionValue?: {
+    id: string;
+    groupId: string;
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    group?: { id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null };
+  };
+};
+
+export type AdminProductVariant = {
+  id: string;
+  productId: string;
+  sku: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nameHe?: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  basePrice?: number | string | null;
+  manufacturingCost?: number | string | null;
+  bomDefaults?: unknown;
+  imageUrl?: string | null;
+  galleryUrls?: string[];
+  workflowId?: string | null;
+  width?: number | string | null;
+  height?: number | string | null;
+  depth?: number | string | null;
+  seatHeight?: number | string | null;
+  measurements?: Array<{
+    key: string;
+    labelAr?: string | null;
+    labelEn?: string | null;
+    labelHe?: string | null;
+    value: number | string | null;
+    unit: string;
+  }> | null;
+  composition?: Array<{
+    labelAr?: string | null;
+    labelEn?: string | null;
+    labelHe?: string | null;
+    qty: number;
+  }> | null;
+  includedItems?: Array<{
+    nameAr?: string | null;
+    nameEn?: string | null;
+    nameHe?: string | null;
+    specOptionValueId?: string | null;
+    width?: number | null;
+    height?: number | null;
+    qty: number;
+    unit?: string | null;
+    inventoryItemId?: string | null;
+    note?: string | null;
+  }> | null;
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
+  adminNotes?: string | null;
+  options?: AdminVariantOption[];
+};
+
+export type AdminProductVariantWrite = {
+  sku?: string;
+  code?: string;
+  nameAr?: string;
+  nameEn?: string;
+  nameHe?: string | null;
+  isDefault?: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+  basePrice?: number | null;
+  bomDefaults?: unknown;
+  workflowId?: string | null;
+  width?: number | null;
+  height?: number | null;
+  depth?: number | null;
+  seatHeight?: number | null;
+  measurements?: AdminProductVariant['measurements'];
+  factoryNotesAr?: string | null;
+  factoryNotesEn?: string | null;
+  factoryNotesHe?: string | null;
+  adminNotes?: string | null;
+  options?: Array<{ specOptionValueId: string; qty?: number | null; note?: string | null }>;
+};
+
+export async function listProductVariants(
+  productId: string,
+  includeInactive = true,
+): Promise<AdminProductVariant[]> {
+  const qs = includeInactive ? '?includeInactive=true' : '';
+  return apiGet<AdminProductVariant[]>(
+    `/products/${encodeURIComponent(productId)}/variants${qs}`,
+  );
+}
+
+export async function getProductVariant(
+  productId: string,
+  variantId: string,
+): Promise<AdminProductVariant> {
+  return apiGet<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
+  );
+}
+
+export async function createProductVariant(
+  productId: string,
+  body: AdminProductVariantWrite,
+): Promise<AdminProductVariant> {
+  return apiPost<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants`,
+    body,
+  );
+}
+
+export async function patchProductVariant(
+  productId: string,
+  variantId: string,
+  body: AdminProductVariantWrite,
+): Promise<AdminProductVariant> {
+  return apiPatch<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
+    body,
+  );
+}
+
+export async function duplicateProductVariant(
+  productId: string,
+  variantId: string,
+): Promise<AdminProductVariant> {
+  return apiPost<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/duplicate`,
+    {},
+  );
+}
+
+export async function deactivateProductVariant(productId: string, variantId: string) {
+  return apiPost<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/deactivate`,
+    {},
+  );
+}
+
+export async function activateProductVariant(productId: string, variantId: string) {
+  return apiPost<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/activate`,
+    {},
+  );
+}
+
+export async function copyVariantFromStandard(productId: string, variantId: string) {
+  return apiPost<AdminProductVariant>(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/copy-from-standard`,
+    {},
+  );
+}
+
+export type VariantCostBreakdown = {
+  materials: { total: number; breakdown: Record<string, number> };
+  labor: { minutes: number; hours: number; cost: number };
+  manufacturingCost: number;
+};
+
+export async function getVariantCost(
+  productId: string,
+  variantId: string,
+): Promise<VariantCostBreakdown> {
+  return apiGet(
+    `/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/cost`,
+  );
+}
+
+export async function promoteProductFromOrderLine(lineId: string) {
+  return apiPost(`/products/from-order-line/${encodeURIComponent(lineId)}`, {});
+}
+
+export async function promoteVariantFromOrderLine(productId: string, lineId: string) {
+  return apiPost(
+    `/products/${encodeURIComponent(productId)}/variants/from-order-line/${encodeURIComponent(lineId)}`,
+    {},
   );
 }
 

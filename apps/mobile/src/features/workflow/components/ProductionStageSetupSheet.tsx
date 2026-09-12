@@ -365,6 +365,8 @@ export function ProductionStageSetupSheet({
   const [materialInputs, setMaterialInputs] = useState<Array<{ sku: string; qtyPerUnit: number }>>(
     [],
   );
+  const [minutesPerUnit, setMinutesPerUnit] = useState('0');
+  const [setupMinutes, setSetupMinutes] = useState('0');
 
   const setupMode = terminalSetupMode(stage?.stageCode);
   const isPackaging = setupMode === 'packaging';
@@ -456,6 +458,8 @@ export function ProductionStageSetupSheet({
         })
         .filter((row) => row.qtyPerUnit > 0),
     );
+    setMinutesPerUnit(String(stage.minutesPerUnit ?? 0));
+    setSetupMinutes(String(stage.setupMinutes ?? 0));
     // Re-init only when opening / switching stage — not when sibling array identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [open, stage?.workflowNodeId]);
@@ -837,6 +841,39 @@ export function ProductionStageSetupSheet({
           </View>
         </View>
         ) : null}
+
+
+        {/* STAGE TIME */}
+        <View
+          style={{
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surface,
+            overflow: 'hidden',
+            ...orderBoardShadow(colorScheme),
+          }}
+        >
+          <BoardSectionHeader
+            icon="time-outline"
+            title={t('catalog.stageTime')}
+            hint={t('catalog.stageTimeHint')}
+          />
+          <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
+            <TextField
+              label={t('catalog.minutesPerUnit')}
+              value={minutesPerUnit}
+              onChangeText={setMinutesPerUnit}
+              keyboardType="decimal-pad"
+            />
+            <TextField
+              label={t('catalog.setupMinutes')}
+              value={setupMinutes}
+              onChangeText={setSetupMinutes}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        </View>
 
         {/* TAKES IN — Delivery: packages from Packaging; else SEMI / WIP */}
         <View
@@ -1655,6 +1692,8 @@ export function ProductionStageSetupSheet({
                   : [];
               onSave({
                 ...stage,
+                minutesPerUnit: Math.max(0, Number(minutesPerUnit) || 0),
+                setupMinutes: Math.max(0, Number(setupMinutes) || 0),
                 behavior: nextBehavior,
                 consumesRawMaterials: nextConsumeRaw || nextBehavior === 'USES_MATERIALS',
                 consumesSemiFinished: effectiveSemi,

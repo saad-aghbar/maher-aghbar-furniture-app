@@ -3,6 +3,7 @@ import type {
   ExtractionResult,
   ExtractedField,
   ExtractedLineItem,
+  SpecExtractionContext,
   SupportedLocale,
   TranslateProvider,
 } from './types';
@@ -117,6 +118,48 @@ export class MockExtractionProvider implements ExtractionProvider {
       detectedLanguage: detectLanguage(originalText),
       fields,
       items: [lineItemFromFields(fields)],
+      provider: this.name,
+    };
+  }
+
+  async extractSpecFromImage(
+    _buffer: Buffer,
+    _mime: string,
+    ctx?: SpecExtractionContext,
+  ): Promise<ExtractionResult> {
+    const items = [
+      {
+        productName: ctx?.products?.[0]?.nameAr || 'كرينا',
+        quantity: '1',
+        width: '250',
+        height: '90',
+        depth: '95',
+        foamDensity: 'D35',
+        orientation: 'LEFT',
+        confidence: 0.92,
+        lowConfidenceFields: [] as string[],
+      },
+      {
+        productName: ctx?.products?.[1]?.nameAr || 'ميلانو',
+        quantity: '2',
+        width: '160',
+        height: '85',
+        depth: '90',
+        foamDensity: 'D40',
+        confidence: 0.42,
+        lowConfidenceFields: ['width'],
+      },
+    ];
+    const first = items[0]!;
+    return {
+      originalText: 'handwritten-sheet',
+      translatedText: items.map((row) => row.productName).join(' + '),
+      detectedLanguage: ctx?.locale ?? 'ar',
+      fields: [
+        { fieldName: 'product', fieldValue: first.productName, confidence: 0.92 },
+        { fieldName: 'quantity', fieldValue: '1', confidence: 0.9 },
+      ],
+      items,
       provider: this.name,
     };
   }

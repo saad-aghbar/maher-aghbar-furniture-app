@@ -1,9 +1,10 @@
 import { Image, View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerFormError, DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
 import { useLocale } from '@/i18n';
+import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { resolveOrderMediaUri } from './OrderCardMedia';
 
@@ -22,6 +23,7 @@ type Props = {
 
 export function ConfirmReceiptSheet({
   open,
+  onClose,
   orderNumber,
   productTitle,
   quantity,
@@ -29,124 +31,91 @@ export function ConfirmReceiptSheet({
   loading,
   error,
   canConfirm = true,
-  onClose,
   onConfirm,
 }: Props) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
   const uri = resolveOrderMediaUri(imageUrl);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <BottomSheet
       open={open}
       onClose={loading ? () => undefined : onClose}
       title={t('lifecycle.confirmReceiptTitle')}
+      fitContent
+      maxHeight={560}
     >
-      <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.lg }}>
-        <AppText variant="body" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+      <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}>
+        <AppText variant="body" color="secondary" style={{ textAlign: isRTL ? 'right' : 'left' }}>
           {t('lifecycle.confirmReceiptBody')}
         </AppText>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.md,
-            borderRadius: theme.radius.lg,
-            borderWidth: 1,
-            borderColor: colors.border,
-            padding: theme.spacing.md,
-            backgroundColor: colors.surfaceSecondary,
-          }}
-        >
+        <DealerBoard title={orderNumber} titleWeight={titleWeight}>
           <View
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: theme.radius.md,
-              overflow: 'hidden',
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              gap: theme.spacing.md,
               alignItems: 'center',
-              justifyContent: 'center',
             }}
           >
-            {uri ? (
-              <Image
-                source={{ uri }}
-                style={{ width: 64, height: 64 }}
-                resizeMode="cover"
-                accessibilityIgnoresInvertColors
-              />
-            ) : (
-              <AppText variant="caption" color="muted">
-                —
-              </AppText>
-            )}
-          </View>
-          <View style={{ flex: 1, gap: theme.spacing.xs }}>
-            <AppText
-              variant="caption"
-              color="muted"
-              style={{ textAlign: isRTL ? 'right' : 'left' }}
-              dir="ltr"
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: theme.radius.md,
+                overflow: 'hidden',
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              {orderNumber}
-            </AppText>
-            <AppText
-              variant="body"
-              weight="semibold"
-              style={{ textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {productTitle}
-            </AppText>
-            {quantity != null ? (
+              {uri ? (
+                <Image
+                  source={{ uri }}
+                  style={{ width: 72, height: 72 }}
+                  resizeMode="cover"
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                <AppText variant="caption" color="muted">
+                  —
+                </AppText>
+              )}
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
               <AppText
-                variant="caption"
-                color="muted"
+                weight={titleWeight}
+                numberOfLines={2}
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                ×{quantity}
+                {productTitle}
               </AppText>
-            ) : null}
+              {quantity != null ? (
+                <AppText
+                  variant="caption"
+                  color="muted"
+                  dir="ltr"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {t('mobile.orders.qty')} · {String(quantity)}
+                </AppText>
+              ) : null}
+            </View>
           </View>
-        </View>
-        {error ? (
-          <View
-            style={{
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: colors.error,
-              padding: theme.spacing.md,
-            }}
-          >
-            <AppText
-              variant="caption"
-              style={{ color: colors.error, textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {error}
-            </AppText>
-          </View>
-        ) : null}
-        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <SecondaryButton
-              label={t('lifecycle.confirmReceiptCancel')}
-              onPress={onClose}
-              disabled={loading}
-              style={{ borderRadius: theme.radius.xl }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <PrimaryButton
-              label={t('lifecycle.confirmReceived')}
-              onPress={onConfirm}
-              loading={loading}
-              disabled={!canConfirm || Boolean(loading)}
-              accessibilityLabel={`${t('lifecycle.confirmReceived')} ${orderNumber}`}
-              style={{ borderRadius: theme.radius.xl }}
-            />
-          </View>
-        </View>
+        </DealerBoard>
+        {error ? <DealerFormError message={error} /> : null}
+        <DealerFormFooter
+          confirmLabel={t('lifecycle.confirmReceived')}
+          onConfirm={() => {
+            void haptics.confirmMedium();
+            onConfirm();
+          }}
+          onCancel={onClose}
+          loading={loading}
+          disabled={loading || !canConfirm}
+        />
       </View>
     </BottomSheet>
   );

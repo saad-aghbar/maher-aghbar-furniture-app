@@ -3,7 +3,16 @@ import { parseYmd, todayYmd, toYmd } from '@/components/calendar/calendarMath';
 import { dateRangeParts, formatCurrency, formatNumber } from '@/i18n/format';
 
 export type ReportsPeriod = 'today' | 'week' | 'month';
-export type ReportsCategory = 'orders' | 'dashboard' | 'sales' | 'production' | 'financial';
+export type ReportsCategory =
+  | 'money'
+  | 'orders'
+  | 'products'
+  | 'returns'
+  | 'coverage'
+  | 'dashboard'
+  | 'sales'
+  | 'production'
+  | 'financial';
 
 export type ReportsDateRange = { from: string; to: string };
 
@@ -168,4 +177,77 @@ export function selectStatusRows(
     count: statusCount(row),
     total: row.total == null ? undefined : asNumber(row.total),
   }));
+}
+
+export type MoneyDeskTotals = {
+  revenue: number | null;
+  material: number | null;
+  labor: number | null;
+  margin: number | null;
+  marginPct: number | null;
+  planned: number | null;
+  variance: number | null;
+  orderCount: number;
+};
+
+export function selectMoneyDesk(
+  rows: Array<{
+    saleValue?: number | null;
+    actualCost?: number | null;
+    plannedCost?: number | null;
+    labor?: number | null;
+    grossMargin?: number | null;
+  }> | null | undefined,
+): MoneyDeskTotals {
+  if (!rows?.length) {
+    return {
+      revenue: null,
+      material: null,
+      labor: null,
+      margin: null,
+      marginPct: null,
+      planned: null,
+      variance: null,
+      orderCount: 0,
+    };
+  }
+  let revenue = 0;
+  let material = 0;
+  let planned = 0;
+  let labor = 0;
+  let hasRevenue = false;
+  let hasMaterial = false;
+  let hasPlanned = false;
+  let hasLabor = false;
+  for (const row of rows) {
+    if (row.saleValue != null) {
+      revenue += row.saleValue;
+      hasRevenue = true;
+    }
+    if (row.actualCost != null) {
+      material += row.actualCost;
+      hasMaterial = true;
+    }
+    if (row.plannedCost != null) {
+      planned += row.plannedCost;
+      hasPlanned = true;
+    }
+    if (row.labor != null) {
+      labor += row.labor;
+      hasLabor = true;
+    }
+  }
+  const laborValue = hasLabor ? labor : null;
+  const margin =
+    hasRevenue && hasMaterial ? revenue - material - (laborValue ?? 0) : null;
+  return {
+    revenue: hasRevenue ? revenue : null,
+    material: hasMaterial ? material : null,
+    labor: laborValue,
+    margin,
+    marginPct: hasRevenue && revenue > 0 && margin != null ? (margin / revenue) * 100 : null,
+    planned: hasPlanned ? planned : null,
+    variance: hasPlanned && hasMaterial ? material - planned : null,
+    orderCount: rows.length,
+  };
 }

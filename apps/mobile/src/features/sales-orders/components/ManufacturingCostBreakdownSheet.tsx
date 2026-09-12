@@ -126,7 +126,10 @@ export function ManufacturingCostBreakdownSheet({
                 color="muted"
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                {t('mobile.orderDetail.mfgCostActual')}
+                {data.labor &&
+                (data.labor.estimated != null || data.labor.actual != null)
+                  ? t('mobile.orderDetail.mfgCostAllInHint')
+                  : t('mobile.orderDetail.mfgCostActual')}
               </AppText>
               <AppText
                 variant="heading"
@@ -159,6 +162,29 @@ export function ManufacturingCostBreakdownSheet({
                   }
                   titleWeight={titleWeight}
                 />
+                <MoneyRow
+                  label={t('mobile.orderDetail.mfgCostMaterials')}
+                  value={componentPair(
+                    formatCurrency,
+                    t,
+                    data.estimated.materials,
+                    data.actual.materials,
+                  )}
+                  titleWeight={titleWeight}
+                />
+                {data.labor &&
+                (data.labor.estimated != null || data.labor.actual != null) ? (
+                  <MoneyRow
+                    label={t('mobile.orderDetail.mfgCostLabor')}
+                    value={componentPair(
+                      formatCurrency,
+                      t,
+                      data.estimated.labor ?? data.labor.estimated,
+                      data.actual.labor ?? data.labor.actual,
+                    )}
+                    titleWeight={titleWeight}
+                  />
+                ) : null}
                 <MoneyRow
                   label={t('mobile.orderDetail.mfgCostVariance')}
                   value={
@@ -195,6 +221,34 @@ export function ManufacturingCostBreakdownSheet({
                 ) : null}
               </InsetLedger>
             </OrderBoardCard>
+
+            {(data.labor?.byStage.length ?? 0) > 0 ? (
+              <OrderBoardCard
+                header={
+                  <OrderSectionHeader
+                    icon="people-outline"
+                    label={t('mobile.orderDetail.mfgCostLabor')}
+                  />
+                }
+              >
+                <InsetLedger>
+                  {data.labor!.byStage.map((row, index, all) => (
+                    <MoneyRow
+                      key={`stage-${row.stageDefinitionId}`}
+                      label={row.stageCode ?? row.stageDefinitionId}
+                      value={componentPair(
+                        formatCurrency,
+                        t,
+                        row.estimated,
+                        row.actual,
+                      )}
+                      titleWeight={titleWeight}
+                      last={index === all.length - 1}
+                    />
+                  ))}
+                </InsetLedger>
+              </OrderBoardCard>
+            ) : null}
 
             {(data.incompleteSkus?.length ?? 0) > 0 ? (
               <OrderBoardCard
@@ -607,4 +661,19 @@ function categoryLabel(t: (k: string) => string, cat: string): string {
     default:
       return cat;
   }
+}
+
+function componentPair(
+  formatCurrency: (n: number) => string,
+  t: (k: string) => string,
+  estimated: number | null | undefined,
+  actual: number | null | undefined,
+): string {
+  const dash = t('mobile.orderDetail.mfgCostUnavailable');
+  const est = estimated != null ? formatCurrency(estimated) : dash;
+  const act = actual != null ? formatCurrency(actual) : dash;
+  if (estimated == null && actual == null) return dash;
+  if (estimated != null && actual == null) return est;
+  if (actual != null && estimated == null) return act;
+  return `${est} → ${act}`;
 }

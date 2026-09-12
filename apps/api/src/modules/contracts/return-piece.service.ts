@@ -211,6 +211,7 @@ export class ReturnPieceService {
               salesOrderId: row.salesOrderId,
               salesOrderLineId: item.salesOrderLineId ?? row.salesOrderLineId,
               productId: item.productId ?? snapshot?.productId ?? row.productId,
+              variantId: snapshot?.variantId ?? row.variantId,
               productDesc: item.productDesc || snapshot?.description || row.productDesc,
               specSnapshot: snapshot ? (snapshot as Prisma.InputJsonValue) : undefined,
               state: ReturnPieceState.AWAITING_RECEIPT,

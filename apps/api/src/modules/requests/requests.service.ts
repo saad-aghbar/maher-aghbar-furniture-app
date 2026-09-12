@@ -26,7 +26,8 @@ import {
   preserveFabricOnItems,
   type DealerEditPolicy,
 } from './dealer-edit-policy';
-import { loadCatalogMap, mapRequestItemCreate } from './request-line-classify';
+import { loadCatalogMap, catalogForItem, mapRequestItemCreate } from './request-line-classify';
+import { specProvenance } from './spec-provenance';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
@@ -360,6 +361,11 @@ export class RequestsService {
           },
           orderBy: { createdAt: 'asc' },
         },
+        aiJobs: {
+          include: { fields: true },
+          orderBy: { createdAt: 'desc' },
+          take: 8,
+        },
       },
     });
     if (!request) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Request not found.' });
@@ -374,13 +380,36 @@ export class RequestsService {
       productName: primaryName,
     });
     const imageUrl =
-      catalogImage ?? this.documentImageUrl(firstImageDocument(request.documents));
+      catalogImage ?? this.documentImageUrl(firstImageDocument(request.documents ?? []));
     const editPolicy = await this.buildEditPolicy(request, user);
-    // Never expose storage keys to clients
-    const documents = request.documents.map(({ storageKey: _storageKey, ...doc }) => doc);
+    const latestJob = request.aiJobs?.[0];
+    const documents = (request.documents ?? []).map(({ storageKey, ...doc }) => ({
+      ...doc,
+      downloadPath: storageKey
+        ? `/api/v1/uploads/download?token=${this.storage.createAccessToken(storageKey, 3600)}`
+        : null,
+    }));
+    const items = (request.items ?? []).map((item, index) => ({
+      ...item,
+      provenance: specProvenance({
+        item,
+        jobFields: latestJob?.fields,
+        itemIndex: index,
+      }),
+    }));
     return {
       ...request,
+      items,
       documents,
+      aiJobs: (request.aiJobs ?? []).map((job) => ({
+        id: job.id,
+        number: job.number,
+        status: job.status,
+        sourceType: job.sourceType,
+        provider: job.provider,
+        createdAt: job.createdAt,
+        fields: job.fields,
+      })),
       title: primaryName || request.number,
       imageUrl,
       editPolicy,
@@ -558,11 +587,7 @@ export class RequestsService {
           : undefined,
         items: {
           create: dto.items.map((item, index) =>
-            mapRequestItemCreate(
-              item,
-              index,
-              item.productId ? catalogMap.get(item.productId) : null,
-            ),
+            mapRequestItemCreate(item, index, catalogForItem(catalogMap, item)),
           ),
         },
       },
@@ -669,11 +694,7 @@ export class RequestsService {
             ? {
                 items: {
                   create: items.map((item, index) =>
-                    mapRequestItemCreate(
-                      item,
-                      index,
-                      item.productId ? catalogMap.get(item.productId) : null,
-                    ),
+                    mapRequestItemCreate(item, index, catalogForItem(catalogMap, item)),
                   ),
                 },
               }
@@ -880,6 +901,52 @@ export class RequestsService {
       ...updated,
       presentationKey: mapOrderPresentation({ requestStatus: updated.status }),
     };
+  }
+
+  async verifySpec(
+    id: string,
+    user: AuthUser,
+    body: {
+      itemId?: string;
+      action: 'CONFIRM' | 'CORRECT';
+      message?: string;
+      fields?: Record<string, string>;
+    },
+  ) {
+    this.assertStaffReview(user);
+    const existing = await this.getById(id, user);
+    if (body.action === 'CORRECT' && body.itemId && body.fields) {
+      const num = (key: string) => {
+        const raw = body.fields?.[key];
+        if (raw == null || raw === '') return undefined;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      await this.prisma.requestItem.update({
+        where: { id: body.itemId },
+        data: {
+          ...(body.fields.productName != null ? { productName: body.fields.productName } : {}),
+          ...(num('width') != null ? { width: num('width') } : {}),
+          ...(num('height') != null ? { height: num('height') } : {}),
+          ...(num('depth') != null ? { depth: num('depth') } : {}),
+          ...(body.fields.foamDensity != null ? { foamDensity: body.fields.foamDensity } : {}),
+          ...(body.fields.woodType != null ? { woodType: body.fields.woodType } : {}),
+          ...(body.fields.finish != null ? { finish: body.fields.finish } : {}),
+          ...(body.fields.orientation != null ? { orientation: body.fields.orientation } : {}),
+        },
+      });
+    }
+    const history = appendReviewHistory(existing.reviewHistory, {
+      at: new Date().toISOString(),
+      by: user.id,
+      action: body.action === 'CORRECT' ? 'SPEC_CORRECTED' : 'SPEC_CONFIRMED',
+      message: body.message ?? body.itemId ?? null,
+    });
+    await this.prisma.requestForQuotation.update({
+      where: { id },
+      data: { reviewHistory: history as unknown as Prisma.InputJsonValue },
+    });
+    return this.getById(id, user);
   }
 
   async close(id: string, user?: AuthUser) {

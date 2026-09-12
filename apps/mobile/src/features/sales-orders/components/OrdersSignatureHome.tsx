@@ -8,7 +8,7 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import Animated, { LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { mapConfirmReceiptErrorCode } from '@maher/types';
@@ -19,12 +19,15 @@ import { queryKeys } from '@/api/queryKeys';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useToast } from '@/components/feedback/Toast';
+import { DealerEmptyState, DealerSearchBar } from '@/features/dealer-ui';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter, useReducedMotion } from '@/motion';
 import { durations, withMotionDuration } from '@/motion/presets';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
+  adminOrderFlowHref,
   dealerOrderFlowHref,
 } from '@/features/production-flow/flowRoutes';
 import { DealerQuotationsEntry } from '@/features/quotations/DealerQuotationsEntry';
@@ -33,8 +36,15 @@ import {
   type FloorBoardSectionKey,
 } from '../groupOrdersByDay';
 import {
+  countDealerOrderStamps,
+  matchesDealerOrderTile,
+  matchesDealerOrdersRail,
+  railStopsForTile,
+  type DealerOrderTileKey,
+  type DealerOrdersRailKey,
+} from '../selectDealerOrders';
+import {
   countOrderStages,
-  matchesStatusChip,
   type OrdersStageFocus,
 } from '../stageCounts';
 import {
@@ -55,14 +65,14 @@ import {
   type AdminOrdersDeskMode,
 } from './AdminOrdersDeskSwitch';
 import { ConfirmReceiptSheet } from './ConfirmReceiptSheet';
+import { DealerOrdersHubBoard } from './DealerOrdersHubBoard';
+import { DealerOrdersRail } from './DealerOrdersRail';
 import { OrdersCompositionChrome } from './OrdersCompositionChrome';
 import { OrdersDaySectionHeader } from './OrdersDaySectionHeader';
 import { OrdersDealerBar } from './OrdersDealerBar';
-import {
-  DEALER_LIFECYCLE_CHIPS,
-  OrdersFilterChips,
-  type StatusChipKey,
-} from './OrdersFilterChips';
+import { OrdersFilterButton } from './OrdersFilterButton';
+import { orderBoardShadow } from './orderFloorStyle';
+import { type StatusChipKey } from './OrdersFilterChips';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersProgressCard, type OrdersProgressCardModel } from './OrdersProgressCard';
 import {
@@ -98,7 +108,7 @@ type Props = {
   onDeskModeChange?: (next: AdminOrdersDeskMode) => void;
   ordersCount?: number;
   requestsCount?: number;
-  /** Dealer status touch bar under On the line. */
+  /** Classic / admin header chip — dealer signature uses DealerOrdersRail locally. */
   statusChip?: StatusChipKey;
   onStatusChipChange?: (next: StatusChipKey) => void;
   /** Admin lifecycle focus (commercial desk) — server-scoped list via journeyBucket. */
@@ -229,6 +239,7 @@ function stageCountable(o: OrdersProgressCardModel) {
     status: o.status,
     deliveryDate: o.deliveryDate,
     deliveryStatus: 'deliveryStatus' in o ? o.deliveryStatus : null,
+    kind: o.kind,
   };
 }
 
@@ -264,7 +275,6 @@ export function OrdersSignatureHome({
   ordersCount,
   requestsCount,
   statusChip = 'all',
-  onStatusChipChange,
   adminLifecycleFocus = 'all',
   onAdminLifecycleFocusChange,
   journeyCounts = null,
@@ -285,13 +295,15 @@ export function OrdersSignatureHome({
   onPrimaryCta,
   banner,
 }: Props) {
-  const { t } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [expanded, setExpanded] = useState<ExpandedMap>(DEFAULT_EXPANDED);
+  const [selectedTile, setSelectedTile] = useState<DealerOrderTileKey | null>(null);
+  const [dealerRail, setDealerRail] = useState<DealerOrdersRailKey>('all');
   const [confirmTarget, setConfirmTarget] = useState<OrdersProgressCardModel | null>(null);
   const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -366,15 +378,24 @@ export function OrdersSignatureHome({
     };
   }, [deskMode, isAdmin, journeyCounts]);
 
-  /** Spine counts follow admin stream; dealer focus rail counts the searchable stream. */
+  /** Spine counts follow admin stream. */
   const counts = useMemo(
     () => countOrderStages(allStream.map(stageCountable)),
     [allStream],
   );
+  const dealerStampCounts = useMemo(
+    () => countDealerOrderStamps(allStream.map(stageCountable)),
+    [allStream],
+  );
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const dealerSections: BoardSection[] = useMemo(() => {
     if (!isDealer) return [];
-    const focused = allStream.filter((o) => matchesStatusChip(o, statusChip));
+    let focused = allStream;
+    if (selectedTile) {
+      focused = focused.filter((o) => matchesDealerOrderTile(stageCountable(o), selectedTile));
+    }
+    focused = focused.filter((o) => matchesDealerOrdersRail(stageCountable(o), dealerRail));
     return groupOrdersFloorBoard(focused).map((g) => {
       const sorted = [...g.items].sort(sortForFloor);
       const open = expanded[g.key];
@@ -387,7 +408,7 @@ export function OrdersSignatureHome({
         dayKey: g.key,
       };
     });
-  }, [allStream, expanded, isDealer, statusChip, t]);
+  }, [allStream, dealerRail, expanded, isDealer, selectedTile, t]);
 
   const adminSections: BoardSection[] = useMemo(() => {
     if (!isAdmin || deskMode !== 'orders') return [];
@@ -470,6 +491,7 @@ export function OrdersSignatureHome({
   };
   /** Row layout anim fights the keyboard while typing — keep list stable during search. */
   const searchActive = searchInput.trim().length > 0;
+  const dealerFiltersActive = Boolean(selectedTile) || dealerRail !== 'all' || searchActive;
 
   const toggleSection = (key: FloorBoardSectionKey) => {
     void haptics.selection();
@@ -483,30 +505,106 @@ export function OrdersSignatureHome({
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const header = (
+  const dealerRailStops = railStopsForTile(selectedTile);
+  const showDealerRail = dealerRailStops.length > 0;
+
+  const selectDealerTile = (key: DealerOrderTileKey | null) => {
+    setSelectedTile(key);
+    setDealerRail('all');
+  };
+
+  const railMotion = reduce
+    ? undefined
+    : FadeIn.duration(withMotionDuration(durations.chip, reduce));
+  const railExit = reduce
+    ? undefined
+    : FadeOut.duration(withMotionDuration(durations.chip, reduce));
+  const chromeLayout = reduce
+    ? undefined
+    : LinearTransition.duration(withMotionDuration(durations.chip, reduce));
+
+  const dealerHeader = (
     <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}>
       {banner}
-      {isDealer ? <DealerQuotationsEntry /> : null}
+      <AppText variant="largeTitle" weight={titleWeight} align="center" numberOfLines={1}>
+        {t('mobile.orders.title')}
+      </AppText>
+      <DealerOrdersHubBoard
+        counts={dealerStampCounts}
+        selectedTile={selectedTile}
+        onSelectTile={selectDealerTile}
+      />
+      <DealerQuotationsEntry />
+      <Animated.View
+        layout={chromeLayout}
+        style={{
+          borderRadius: theme.radius.xl,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          backgroundColor: colors.surface,
+          overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
+        }}
+      >
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+            width: 3,
+            backgroundColor: colors.brand,
+            opacity: 0.55,
+          }}
+        />
+        <View
+          style={{
+            padding: theme.spacing.md,
+            gap: theme.spacing.md,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.md + 4 }
+              : { paddingLeft: theme.spacing.md + 4 }),
+          }}
+        >
+          <DealerSearchBar
+            value={searchInput}
+            onChangeText={setSearchInput}
+            placeholder={t('mobile.orders.searchPlaceholder')}
+          />
+          <OrdersFilterButton onPress={onOpenFilters} activeCount={filterActiveCount} />
+          {showDealerRail ? (
+            <Animated.View
+              key={selectedTile}
+              entering={railMotion}
+              exiting={railExit}
+            >
+              <DealerOrdersRail
+                segments={dealerRailStops}
+                value={dealerRail}
+                onChange={setDealerRail}
+              />
+            </Animated.View>
+          ) : null}
+        </View>
+      </Animated.View>
+    </View>
+  );
+
+  const header = isDealer ? (
+    dealerHeader
+  ) : (
+    <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}>
+      {banner}
       <OrdersCompositionChrome
         title={t('mobile.orders.title')}
-        eyebrow={isDealer ? t('mobile.dealerAccount.ordersEyebrow') : undefined}
-        subtitle={isDealer ? t('mobile.dealerAccount.ordersSubtitle') : undefined}
         searchInput={searchInput}
         setSearchInput={setSearchInput}
         onOpenFilters={onOpenFilters}
         filterActiveCount={filterActiveCount}
-        dealerSearch={isDealer}
       >
         <View style={{ gap: theme.spacing.md }}>
-          {isDealer && onStatusChipChange ? (
-            <View style={{ gap: theme.spacing.xs }}>
-              <OrdersFilterChips
-                value={statusChip}
-                onChange={onStatusChipChange}
-                chips={DEALER_LIFECYCLE_CHIPS}
-              />
-            </View>
-          ) : isAdmin && onDeskModeChange ? (
+          {onDeskModeChange ? (
             <>
               <AdminOrdersDeskSwitch
                 value={deskMode}
@@ -563,7 +661,7 @@ export function OrdersSignatureHome({
                 stageFocus={stageFocus}
                 onStageFocusChange={onStageFocusChange}
               />
-              {variant === 'admin' && onOpenDealerFilter ? (
+              {onOpenDealerFilter ? (
                 <OrdersDealerBar
                   label={dealerLabel}
                   onPress={onOpenDealerFilter}
@@ -711,6 +809,20 @@ export function OrdersSignatureHome({
       onEndReached={onEndReached}
       onEndReachedThreshold={0.4}
       ListEmptyComponent={
+        isDealer ? (
+          <DealerEmptyState
+            title={
+              dealerFiltersActive
+                ? t('mobile.orders.emptyStamp')
+                : t('mobile.orders.emptyTitle')
+            }
+            body={
+              dealerFiltersActive
+                ? t('mobile.orders.emptyStampHint')
+                : t('mobile.orders.emptyBody')
+            }
+          />
+        ) : (
         <EmptyState
           title={
             searchActive
@@ -748,6 +860,7 @@ export function OrdersSignatureHome({
                       : t('mobile.orders.emptyBody')
           }
         />
+        )
       }
       ListFooterComponent={
         isFetchingNextPage ? (
@@ -765,6 +878,25 @@ export function OrdersSignatureHome({
             sectionKey={dayKey}
             expanded={expanded[dayKey]}
             onToggle={() => toggleSection(dayKey)}
+          />
+        );
+      }}
+      renderSectionFooter={({ section }) => {
+        if (!isDealer) return null;
+        const dayKey = section.dayKey ?? 'today';
+        if (!expanded[dayKey] || section.totalCount > 0) return null;
+        return (
+          <DealerEmptyPanel
+            text={
+              dealerFiltersActive
+                ? t('mobile.orders.emptyStampHint')
+                : dayKey === 'today'
+                  ? t('mobile.orders.emptyToday')
+                  : t('mobile.orders.emptyPast')
+            }
+            icon="file-tray-outline"
+            nested
+            compact
           />
         );
       }}
@@ -787,7 +919,12 @@ export function OrdersSignatureHome({
               onProgressPress={
                 item.kind === 'rfq'
                   ? undefined
-                  : () => router.push(dealerOrderFlowHref(item.id))
+                  : () =>
+                      router.push(
+                        variant === 'admin'
+                          ? adminOrderFlowHref(item.id)
+                          : dealerOrderFlowHref(item.id),
+                      )
               }
               onConfirmReceipt={
                 isDealer && item.kind !== 'rfq'
@@ -838,10 +975,11 @@ function OrderRowMotion({
   if (reduce || index > 10) {
     return <View>{children}</View>;
   }
-  // Layout animation on a wrapper only — keep opacity/press feedback on children.
   return (
-    <Animated.View layout={LinearTransition.duration(220)}>
-      <View>{children}</View>
-    </Animated.View>
+    <ListItemEnter index={index}>
+      <Animated.View layout={LinearTransition.duration(220)}>
+        <View>{children}</View>
+      </Animated.View>
+    </ListItemEnter>
   );
 }

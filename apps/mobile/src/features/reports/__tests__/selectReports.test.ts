@@ -3,6 +3,7 @@ import {
   reportsDateRangeParts,
   reportsPeriodRange,
   selectDashboardSnapshot,
+  selectMoneyDesk,
   selectStatusRows,
 } from '../selectReports';
 
@@ -62,3 +63,41 @@ describe('selectReports', () => {
     ]);
   });
 });
+
+describe('selectMoneyDesk', () => {
+  it('sums revenue, material, planned, and variance and keeps labor null', () => {
+    const totals = selectMoneyDesk([
+      { saleValue: 100, actualCost: 40, plannedCost: 35, grossMargin: 60 },
+      { saleValue: 50, actualCost: 20, plannedCost: 22, grossMargin: 30 },
+    ]);
+    expect(totals).toEqual({
+      revenue: 150,
+      material: 60,
+      labor: null,
+      margin: 90,
+      marginPct: 60,
+      planned: 57,
+      variance: 3,
+      orderCount: 2,
+    });
+  });
+
+  it('subtracts labor from margin when rates exist', () => {
+    const totals = selectMoneyDesk([
+      { saleValue: 200, actualCost: 100, labor: 40 },
+    ]);
+    expect(totals.labor).toBe(40);
+    expect(totals.margin).toBe(60);
+  });
+
+  it('returns null money fields for an empty period', () => {
+    expect(selectMoneyDesk([])).toMatchObject({
+      revenue: null,
+      material: null,
+      labor: null,
+      margin: null,
+      orderCount: 0,
+    });
+  });
+});
+

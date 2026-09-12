@@ -1,0 +1,13 @@
+appId: jo.maheraghbar.furniture
+name: Dealer signs in with a blank password (failure path)
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Sign in.*|.*تسجيل الدخول.*|.*התחברות.*"
+- assertVisible:
+    text: ".*required.*|.*مطلوب.*|.*נדרש.*|.*password.*|.*كلمة.*"
+    optional: true

@@ -8,14 +8,13 @@ import {
 import { money } from '../seed/util';
 import { assignRandomProductPhotos } from '../seed/productPhotoPool';
 import { materialPhotoUrl } from './material-photo-pool';
-import {
-  measurementsToPrisma,
-  standardMeasurementsForProduct,
-} from '../seed/productMeasurements';
+import { standardMeasurementsForProduct } from '../seed/productMeasurements';
 import { seedProductEstimates } from '../seed/product-estimates';
 import { STANDARD_FURNITURE_WORKFLOW_CODE } from '../seed/workflow';
 import { createRng } from '../seed/util';
 import type { DealerRef } from './people';
+import { seedSpecOptionLibraries } from '../seed/spec-options';
+import { backfillDefaultVariants } from '../seed/backfill-default-variants';
 import { ensureFurnitureInventoryRecipes } from './inventory-lifecycle';
 import {
   WF_ARMCHAIR,
@@ -36,6 +35,36 @@ export type ProductRef = {
   categoryCode: string;
   workflowCode: string;
   bom: Array<{ sku: string; qty: number }>;
+  defaultVariantId: string;
+  defaultVariantSku: string;
+  defaultVariantCode: string;
+  defaultVariantLabel: string;
+  factoryNotesAr: string;
+  factoryNotesEn: string;
+  factoryNotesHe: string | null;
+  width?: unknown;
+  height?: unknown;
+  depth?: unknown;
+};
+
+export type VariantRef = {
+  id: string;
+  productId: string;
+  productSku: string;
+  sku: string;
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe: string | null;
+  isDefault: boolean;
+  basePrice: Prisma.Decimal;
+  manufacturingCost: Prisma.Decimal | null;
+  bom: Array<{ sku: string; qty: number }>;
+  workflowCode: string;
+  categoryCode: string;
+  factoryNotesAr: string;
+  factoryNotesEn: string;
+  factoryNotesHe: string | null;
 };
 
 export type MaterialRef = {
@@ -424,6 +453,443 @@ const PRODUCTS: ProductSpec[] = [
   },
 ];
 
+type NamedVariantSpec = {
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe: string;
+  price: number;
+  mfg: number;
+  replaceSku?: Record<string, string>;
+  options?: Array<{ group: string; value: string }>;
+  notes: { ar: string; en: string; he: string };
+};
+
+function applyBomReplace(
+  bom: Array<{ sku: string; qty: number }>,
+  replace?: Record<string, string>,
+): Array<{ sku: string; qty: number }> {
+  if (!replace) return bom.map((row) => ({ ...row }));
+  return bom.map((row) => ({ sku: replace[row.sku] ?? row.sku, qty: row.qty }));
+}
+
+function stdFactoryNotes(p: ProductSpec): { ar: string; en: string; he: string } {
+  const fabric = p.bom.find((b) => b.sku.startsWith('MAT-VEL') || b.sku.startsWith('MAT-LIN') || b.sku.startsWith('MAT-BOU') || b.sku.startsWith('MAT-LEA') || b.sku.startsWith('MAT-CHE'))?.sku;
+  if (fabric) {
+    return {
+      ar: `قص القماش من اللوت المعتمد لـ ${p.nameAr}. لا تخلط لوتين على نفس القطعة. راجع المقاس قبل التنجيد.`,
+      en: `Cut fabric from the approved lot for ${p.nameEn}. Do not mix leftover rolls on the same piece. Recheck size before upholstery.`,
+      he: `חתוך בד מהלוט המאושר. אל תערבב גלילים על אותה יחידה.`,
+    };
+  }
+  return {
+    ar: `راجع مقاسات ${p.nameAr} قبل القص. صنفرة ناعمة قبل الدهان. لا تغيّر اللون بدون تأكيد.`,
+    en: `Check ${p.nameEn} dimensions before cutting. Fine sand before paint. Do not change colour without confirmation.`,
+    he: `בדוק מידות לפני ניסור. ליטוש עדין לפני צביעה.`,
+  };
+}
+
+const NAMED_VARIANTS: Record<string, NamedVariantSpec[]> = {
+  'SOF-3S-STD': [
+    {
+      code: 'KARINA',
+      nameEn: '3-Seater Karina velvet',
+      nameAr: 'كنبة ثلاثية كرينا',
+      nameHe: 'ספה קרינה',
+      price: 980,
+      mfg: 455,
+      replaceSku: { 'MAT-VEL-SAND': 'MAT-VEL-NAVY' },
+      options: [
+        { group: 'FOAM_DENSITY', value: 'D40' },
+        { group: 'FABRIC_FINISH', value: 'VELVET' },
+        { group: 'WOOD_TYPE', value: 'BEECH' },
+        { group: 'PIPING_STYLE', value: 'BACK_SAME' },
+        { group: 'LEG_TYPE', value: 'RING_12' },
+      ],
+      notes: {
+        ar: 'كرينا: قص المخمل الكحلي مع بريم داير الظهر نفس اللون. حلق 12 سم. لا تخلط مع الرملي.',
+        en: 'Karina: cut navy velvet with same-colour piping around the back. 12 cm rings. Do not mix with sand velvet.',
+        he: 'קרינה: קטיפה כחולה עם פאספול באותו צבע. טבעות 12 ס״מ.',
+      },
+    },
+    {
+      code: 'UKR',
+      nameEn: '3-Seater Ukrainian linen',
+      nameAr: 'كنبة ثلاثية أوكرانية',
+      nameHe: 'ספה אוקראינית',
+      price: 940,
+      mfg: 440,
+      replaceSku: { 'MAT-VEL-SAND': 'MAT-LIN-NAT' },
+      options: [
+        { group: 'FOAM_DENSITY', value: 'D35' },
+        { group: 'FABRIC_FINISH', value: 'LINEN' },
+        { group: 'WOOD_TYPE', value: 'BEECH' },
+        { group: 'PIPING_STYLE', value: 'SIMPLE_WRAP' },
+        { group: 'LEG_TYPE', value: 'WOOD_TAPERED' },
+      ],
+      notes: {
+        ar: 'أوكرانيه: كتان طبيعي، لف بسيط بدون كوع. إسفنج 35. راجع اتجاه النسيج قبل القص.',
+        en: 'Ukrainian: natural linen, simple wrap without elbow. Foam 35. Check fabric nap before cutting.',
+        he: 'אוקראינית: פשתן טבעי, עטיפה פשוטה.',
+      },
+    },
+  ],
+  'SOF-3S-LUX': [
+    {
+      code: 'NAVY',
+      nameEn: 'Luxury sofa navy velvet',
+      nameAr: 'كنبة فاخرة مخمل كحلي',
+      nameHe: 'ספת יוקרה כחולה',
+      price: 1320,
+      mfg: 630,
+      options: [
+        { group: 'FOAM_DENSITY', value: 'HR' },
+        { group: 'FABRIC_FINISH', value: 'VELVET' },
+        { group: 'WOOD_TYPE', value: 'OAK' },
+      ],
+      notes: {
+        ar: 'فاخرة كحلي: إسفنج جلوس HR ونوابض. قص المخمل باتجاه واحد.',
+        en: 'Luxury navy: HR seating foam and springs. Cut velvet in one nap direction.',
+        he: 'יוקרה כחולה: ספוג HR. כיוון הקטיפה אחיד.',
+      },
+    },
+  ],
+  'SOF-2S': [
+    {
+      code: 'OLIVE',
+      nameEn: 'Loveseat olive linen',
+      nameAr: 'كنبة ثنائية كتان زيتوني',
+      nameHe: 'ספת שניים זית',
+      price: 760,
+      mfg: 355,
+      replaceSku: { 'MAT-LIN-NAT': 'MAT-LIN-OLV' },
+      options: [
+        { group: 'FABRIC_FINISH', value: 'LINEN' },
+        { group: 'FOAM_DENSITY', value: 'D35' },
+      ],
+      notes: {
+        ar: 'كتان زيتوني: راجع اللوت مع العينة. لا تستخدم بقايا الرملي.',
+        en: 'Olive linen: match the approved swatch lot. Do not use leftover sand rolls.',
+        he: 'פשתן זית: התאם ללוט הדוגמה.',
+      },
+    },
+  ],
+  'SOF-L-SEC': [
+    {
+      code: 'CREAM',
+      nameEn: 'L-sectional bouclé cream',
+      nameAr: 'زاوية L بوكليه كريمي',
+      nameHe: 'ספת פינה בוקלה',
+      price: 1720,
+      mfg: 810,
+      options: [
+        { group: 'FABRIC_FINISH', value: 'BOUCLE' },
+        { group: 'FOAM_DENSITY', value: 'D40' },
+        { group: 'CUSHION_SIZE', value: 'SQ_47' },
+      ],
+      notes: {
+        ar: 'زاوية بوكليه: قص القطع الكبيرة أولاً. قرن 47×47. راجع اتجاه الوبرة.',
+        en: 'Bouclé sectional: cut large panels first. 47×47 cushions. Check pile direction.',
+        he: 'פינה בוקלה: חתוך פאנלים גדולים קודם. כריות 47.',
+      },
+    },
+  ],
+  'SOF-CORN': [
+    {
+      code: 'GREY',
+      nameEn: 'Corner sofa chenille grey',
+      nameAr: 'زاوية مدمجة شنيل رمادي',
+      nameHe: 'ספת פינה שניל',
+      price: 1020,
+      mfg: 480,
+      options: [{ group: 'FABRIC_FINISH', value: 'MATTE' }, { group: 'FOAM_DENSITY', value: 'D35' }],
+      notes: {
+        ar: 'شنيل رمادي: قص مع اتجاه الوبرة. لا تستخدم مخمل على هذه الزاوية.',
+        en: 'Grey chenille: cut with the pile. Do not substitute velvet on this corner.',
+        he: 'שניל אפור: חתוך עם כיוון הסיב.',
+      },
+    },
+  ],
+  'SOF-RECL': [
+    {
+      code: 'ITAL',
+      nameEn: 'Recliner Italian velvet',
+      nameAr: 'استرخاء مخمل إيطالي',
+      nameHe: 'ריקליינר קטיפה איטלקית',
+      price: 1680,
+      mfg: 790,
+      replaceSku: { 'MAT-LEA-BRN': 'MAT-ITAL-VEL' },
+      options: [{ group: 'FABRIC_FINISH', value: 'VELVET' }, { group: 'FOAM_DENSITY', value: 'HR' }],
+      notes: {
+        ar: 'مخمل إيطالي محجوز: لا تقص قبل وصول اللوت. آلية الاسترخاء تُركّب بعد التنجيد.',
+        en: 'Reserved Italian velvet: do not cut until the lot arrives. Fit the recliner mechanism after upholstery.',
+        he: 'קטיפה איטלקית שמורה: לא לחתוך לפני הגעת הלוט.',
+      },
+    },
+  ],
+  'ARM-01': [
+    {
+      code: 'SAND',
+      nameEn: 'Classic armchair sand velvet',
+      nameAr: 'كرسي كلاسيك مخمل رملي',
+      nameHe: 'כורסה קטיפה חול',
+      price: 410,
+      mfg: 190,
+      options: [
+        { group: 'FABRIC_FINISH', value: 'VELVET' },
+        { group: 'FOAM_DENSITY', value: 'D40' },
+        { group: 'PIPING_STYLE', value: 'BACK_SAME' },
+      ],
+      notes: {
+        ar: 'مخمل رملي: بريم داير الظهر نفس اللون. إسفنج 40 للمقعد.',
+        en: 'Sand velvet: piping around the back, same colour. Foam 40 on the seat.',
+        he: 'קטיפה חול: פאספול באותו צבע. ספוג 40.',
+      },
+    },
+  ],
+  'ARM-02': [
+    {
+      code: 'BLK',
+      nameEn: 'Club armchair black leatherette',
+      nameAr: 'كرسي نادي جلد أسود',
+      nameHe: 'כורסת מועדון שחור',
+      price: 480,
+      mfg: 225,
+      options: [{ group: 'FABRIC_FINISH', value: 'MATTE' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'جلد أسود: شدّ بدون تجاعيد على المسند. لا تستخدم مخمل بديلاً.',
+        en: 'Black leatherette: pull the backrest tight with no wrinkles. Do not substitute velvet.',
+        he: 'דמוי עור שחור: מתיחה חלקה במשענת.',
+      },
+    },
+  ],
+  'ARM-WING': [
+    {
+      code: 'NAVY',
+      nameEn: 'Wingback navy velvet',
+      nameAr: 'كرسي جناح مخمل كحلي',
+      nameHe: 'כנפיים קטיפה כחולה',
+      price: 590,
+      mfg: 275,
+      options: [{ group: 'FABRIC_FINISH', value: 'VELVET' }, { group: 'FOAM_DENSITY', value: 'D40' }],
+      notes: {
+        ar: 'جناح كحلي: قص الأجنحة من نفس اللوت. إسفنج 40.',
+        en: 'Navy wingback: cut both wings from the same lot. Foam 40.',
+        he: 'כנפיים כחולות: שתי הכנפיים מאותו לוט.',
+      },
+    },
+  ],
+  'CHAIR-DIN': [
+    {
+      code: 'OLIVE',
+      nameEn: 'Dining chair olive linen',
+      nameAr: 'كرسي سفرة كتان زيتوني',
+      nameHe: 'כיסא אוכל פשתן זית',
+      price: 155,
+      mfg: 72,
+      replaceSku: { 'MAT-LIN-OLV': 'MAT-LIN-OLV' },
+      options: [{ group: 'FABRIC_FINISH', value: 'LINEN' }, { group: 'WOOD_TYPE', value: 'BEECH' }],
+      notes: {
+        ar: 'كتان زيتوني: ستة كراسي من نفس اللوت. راجع لون الخشب قبل التنجيد.',
+        en: 'Olive linen: keep a six-chair set on the same lot. Confirm wood colour before upholstery.',
+        he: 'פשתן זית: שמור סט של שישה מאותו לוט.',
+      },
+    },
+  ],
+  'CHAIR-DIN-W': [
+    {
+      code: 'WHT',
+      nameEn: 'Dining chair painted white',
+      nameAr: 'كرسي سفرة أبيض مطلي',
+      nameHe: 'כיסא אוכל לבן',
+      price: 125,
+      mfg: 55,
+      options: [{ group: 'PAINT_COLOR', value: 'WHITE' }, { group: 'WOOD_TYPE', value: 'BEECH' }],
+      notes: {
+        ar: 'أبيض مطلي: طبقة برايمر ثم إينamel. لا تخلط مع صبغة الجوز.',
+        en: 'Painted white: primer then enamel. Do not mix with walnut stain.',
+        he: 'לבן צבוע: פריימר ואז אמייל.',
+      },
+    },
+  ],
+  'TABLE-DIN-6': [
+    {
+      code: 'WAL',
+      nameEn: 'Dining table 6 walnut stain',
+      nameAr: 'سفرة لستة صبغة جوز',
+      nameHe: 'שולחן שישה אגוז',
+      price: 720,
+      mfg: 330,
+      options: [{ group: 'PAINT_COLOR', value: 'WALNUT' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'صبغة جوز ثم لاكيه شفاف. راجع اتجاه العرق على السطح.',
+        en: 'Walnut stain then clear lacquer. Keep grain direction aligned on the top.',
+        he: 'צבע אגוז ואז לכה שקופה.',
+      },
+    },
+  ],
+  'TABLE-DIN-8': [
+    {
+      code: 'OAK',
+      nameEn: 'Dining table 8 natural oak',
+      nameAr: 'سفرة لثمانية سنديان طبيعي',
+      nameHe: 'שולחן שמונה אלון',
+      price: 890,
+      mfg: 415,
+      options: [{ group: 'PAINT_COLOR', value: 'OAK' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'سنديان طبيعي: صنفرة ناعمة. لا تستخدم صبغة جوز على هذا الطلب.',
+        en: 'Natural oak: fine sand only. Do not walnut-stain this order.',
+        he: 'אלון טבעי: ליטוש עדין בלבד.',
+      },
+    },
+  ],
+  'BED-Q': [
+    {
+      code: 'LIN',
+      nameEn: 'Queen bed natural linen',
+      nameAr: 'سرير كوين كتان طبيعي',
+      nameHe: 'מיטת קווין פשתן',
+      price: 820,
+      mfg: 375,
+      options: [{ group: 'FABRIC_FINISH', value: 'LINEN' }, { group: 'WOOD_TYPE', value: 'BEECH' }],
+      notes: {
+        ar: 'كتان طبيعي على المسند. راجع عرض 160 قبل القص.',
+        en: 'Natural linen on the headboard. Confirm 160 cm width before cutting.',
+        he: 'פשתן על הראש. אשר רוחב 160.',
+      },
+    },
+  ],
+  'BED-K': [
+    {
+      code: 'WAL',
+      nameEn: 'King bed walnut oak',
+      nameAr: 'سرير كينج صبغة جوز',
+      nameHe: 'מיטת קינג אגוז',
+      price: 980,
+      mfg: 450,
+      options: [{ group: 'PAINT_COLOR', value: 'WALNUT' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'كينج جوز: راجع عرض 180. لاكيه بعد الصبغة.',
+        en: 'King walnut: confirm 180 cm width. Lacquer after stain.',
+        he: 'קינג אגוז: אשר רוחב 180.',
+      },
+    },
+  ],
+  'CUS-OTT': [
+    {
+      code: 'SAND',
+      nameEn: 'Ottoman sand velvet',
+      nameAr: 'عثماني مخمل رملي',
+      nameHe: 'הדום קטיפה חול',
+      price: 230,
+      mfg: 105,
+      options: [{ group: 'FABRIC_FINISH', value: 'VELVET' }, { group: 'FOAM_DENSITY', value: 'D40' }],
+      notes: {
+        ar: 'عثماني رملي: إسفنج 40. قص غطاء واحد لكل قطعة.',
+        en: 'Sand ottoman: foam 40. Cut one cover per piece.',
+        he: 'הדום חול: ספוג 40. כיסוי אחד ליחידה.',
+      },
+    },
+  ],
+  'CUS-BANQ': [
+    {
+      code: 'NAVY',
+      nameEn: 'Banquette navy velvet',
+      nameAr: 'بانكيت مخمل كحلي',
+      nameHe: 'ספסל קטיפה כחולה',
+      price: 1040,
+      mfg: 490,
+      options: [{ group: 'FABRIC_FINISH', value: 'VELVET' }, { group: 'FOAM_DENSITY', value: 'D40' }],
+      notes: {
+        ar: 'بانكيت كحلي: قص حسب الطول المعتمد. لا تقص قبل تأكيد الزاوية.',
+        en: 'Navy banquette: cut to the confirmed length. Do not cut before the corner is confirmed.',
+        he: 'ספסל כחול: חתוך לפי האורך המאושר.',
+      },
+    },
+  ],
+  'CHAIR-BENCH': [
+    {
+      code: 'LIN',
+      nameEn: 'Dining bench natural linen',
+      nameAr: 'مقعد سفرة كتان طبيعي',
+      nameHe: 'ספסל פשתן',
+      price: 340,
+      mfg: 155,
+      options: [{ group: 'FABRIC_FINISH', value: 'LINEN' }, { group: 'WOOD_TYPE', value: 'BEECH' }],
+      notes: {
+        ar: 'مقعد كتان: قص الغطاء باتجاه واحد. راجع الطول قبل التنجيد.',
+        en: 'Linen bench: cut the cover in one direction. Confirm length before upholstery.',
+        he: 'ספסל פשתן: כיוון אחד לכיסוי.',
+      },
+    },
+  ],
+  'TABLE-CF': [
+    {
+      code: 'WAL',
+      nameEn: 'Coffee table walnut',
+      nameAr: 'طاولة قهوة صبغة جوز',
+      nameHe: 'שולחן קפה אגוז',
+      price: 310,
+      mfg: 140,
+      options: [{ group: 'PAINT_COLOR', value: 'WALNUT' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'قهوة جوز: صبغة ثم لاكيه. احمِ الأركان عند التغليف.',
+        en: 'Walnut coffee table: stain then lacquer. Protect corners when packing.',
+        he: 'שולחן קפה אגוז: צבע ואז לכה.',
+      },
+    },
+  ],
+  'BED-HEAD': [
+    {
+      code: 'SAND',
+      nameEn: 'Headboard sand velvet',
+      nameAr: 'مسند رأس مخمل رملي',
+      nameHe: 'ראש מיטה קטיפה חול',
+      price: 340,
+      mfg: 155,
+      options: [{ group: 'FABRIC_FINISH', value: 'VELVET' }, { group: 'FOAM_DENSITY', value: 'D35' }],
+      notes: {
+        ar: 'مسند رملي: قص المخمل باتجاه الوبرة. راجع العرض مع السرير.',
+        en: 'Sand headboard: cut velvet with the pile. Confirm width against the bed.',
+        he: 'ראש מיטה חול: כיוון הקטיפה. אשר רוחב.',
+      },
+    },
+  ],
+  'TABLE-SIDE': [
+    {
+      code: 'WHT',
+      nameEn: 'Side table painted white',
+      nameAr: 'طاولة جانبية أبيض مطلي',
+      nameHe: 'שולחן צד לבן',
+      price: 195,
+      mfg: 82,
+      options: [{ group: 'PAINT_COLOR', value: 'WHITE' }, { group: 'WOOD_TYPE', value: 'BEECH' }],
+      notes: {
+        ar: 'جانبية بيضاء: برايمر ثم إينamel. لا تخلط مع صبغة الجوز.',
+        en: 'Painted white side table: primer then enamel. Do not mix with walnut stain.',
+        he: 'שולחן צד לבן: פריימר ואמייל.',
+      },
+    },
+  ],
+  'TABLE-CONS': [
+    {
+      code: 'WAL',
+      nameEn: 'Console walnut stain',
+      nameAr: 'كونسول صبغة جوز',
+      nameHe: 'קונסולה אגוז',
+      price: 365,
+      mfg: 165,
+      options: [{ group: 'PAINT_COLOR', value: 'WALNUT' }, { group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'كونسول جوز: صبغة ثم لاكيه. راجع استواء السطح.',
+        en: 'Walnut console: stain then lacquer. Check the top is flat.',
+        he: 'קונסולה אגוז: צבע ואז לכה.',
+      },
+    },
+  ],
+};
+
 const MATERIALS: Array<{
   sku: string;
   nameEn: string;
@@ -498,10 +964,11 @@ const COLORS = [
   { code: 'CLR-WHT', nameEn: 'Painted White', nameAr: 'أبيض مطلي', hex: '#F5F1EA' },
   { code: 'CLR-GRY', nameEn: 'Warm Grey', nameAr: 'رمادي دافئ', hex: '#8A857C' },
   { code: 'CLR-TEAK', nameEn: 'Teak', nameAr: 'تيك', hex: '#B8860B' },
+  { code: 'CLR-GOLD', nameEn: 'Gold', nameAr: 'ذهبي', hex: '#C9A227' },
 ];
 
 export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
-  const rng = createRng(20260816);
+  const rng = createRng(20260912);
   const catByCode: Record<string, string> = {};
   for (const c of CATEGORIES) {
     const row = await prisma.productCategory.create({
@@ -564,13 +1031,25 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
     });
   }
 
+  const specOptions = await seedSpecOptionLibraries(prisma);
+  console.log(`  spec options: ${specOptions.groups} groups · ${specOptions.values} values`);
+
   const workflows = await prisma.productionWorkflow.findMany({
     where: { status: 'ACTIVE' },
     select: { id: true, code: true, activeVersionId: true },
   });
   const wfByCode = new Map(workflows.map((w) => [w.code, w]));
 
+  const optionValues = await prisma.specOptionValue.findMany({
+    include: { group: { select: { code: true } } },
+  });
+  const optionByKey = new Map(
+    optionValues.map((v) => [`${v.group.code}:${v.code}`, v.id] as const),
+  );
+
   const products: ProductRef[] = [];
+  const variants: VariantRef[] = [];
+
   for (const p of PRODUCTS) {
     const photos = assignRandomProductPhotos({ min: 2, max: 5, random: () => rng.next() });
     const measures = standardMeasurementsForProduct({
@@ -588,53 +1067,227 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
         nameAr: p.nameAr,
         nameHe: p.nameHe,
         description: measures.descriptionEn,
-        basePrice: money(p.basePrice),
-        manufacturingCost: money(p.mfg),
         unit: 'pcs',
         imageUrl: photos.imageUrl,
         galleryUrls: photos.galleryUrls,
-        bomDefaults: { materials: p.bom },
-        adminNotes: `Family ${p.workflowCode}. Confirm fabric lot before cutting.`,
-        ...measurementsToPrisma(measures),
         workflowConfiguration: { create: { workflowId: wf.id } },
       },
     });
+
+    const stdNotes = stdFactoryNotes(p);
+    const std = await prisma.productVariant.create({
+      data: {
+        productId: row.id,
+        sku: `${p.sku}-STD`,
+        code: 'STD',
+        nameAr: p.nameAr,
+        nameEn: p.nameEn,
+        nameHe: p.nameHe,
+        isDefault: true,
+        isActive: true,
+        sortOrder: 0,
+        basePrice: money(p.basePrice),
+        manufacturingCost: money(p.mfg),
+        bomDefaults: { materials: p.bom },
+        imageUrl: photos.imageUrl,
+        galleryUrls: photos.galleryUrls,
+        workflowId: wf.id,
+        width: money(measures.width),
+        height: money(measures.height),
+        depth: money(measures.depth),
+        seatHeight: measures.seatHeight == null ? null : money(measures.seatHeight),
+        measurements: [
+          { key: 'width', labelAr: 'العرض', labelEn: 'Width', labelHe: 'רוחב', value: measures.width, unit: 'cm' },
+          { key: 'height', labelAr: 'الارتفاع', labelEn: 'Height', labelHe: 'גובה', value: measures.height, unit: 'cm' },
+          { key: 'depth', labelAr: 'العمق', labelEn: 'Depth', labelHe: 'עומק', value: measures.depth, unit: 'cm' },
+          ...(measures.seatHeight == null
+            ? []
+            : [{ key: 'seatHeight', labelAr: 'ارتفاع المقعد', labelEn: 'Seat height', labelHe: 'גובה ישיבה', value: measures.seatHeight, unit: 'cm' }]),
+        ],
+        factoryNotesAr: stdNotes.ar,
+        factoryNotesEn: stdNotes.en,
+        factoryNotesHe: stdNotes.he,
+        adminNotes: `STD ${p.workflowCode}. Confirm fabric lot before cutting.`,
+      },
+    });
+
+    await prisma.product.update({
+      where: { id: row.id },
+      data: {
+        basePrice: std.basePrice,
+        manufacturingCost: std.manufacturingCost,
+        bomDefaults: std.bomDefaults as never,
+        width: std.width,
+        height: std.height,
+        depth: std.depth,
+        seatHeight: std.seatHeight,
+        adminNotes: std.adminNotes,
+        imageUrl: std.imageUrl,
+        galleryUrls: std.galleryUrls,
+      },
+    });
+
+    const stdRef: VariantRef = {
+      id: std.id,
+      productId: row.id,
+      productSku: p.sku,
+      sku: std.sku,
+      code: std.code,
+      nameEn: std.nameEn,
+      nameAr: std.nameAr,
+      nameHe: std.nameHe,
+      isDefault: true,
+      basePrice: std.basePrice ?? money(p.basePrice),
+      manufacturingCost: std.manufacturingCost,
+      bom: p.bom,
+      workflowCode: p.workflowCode,
+      categoryCode: p.categoryCode,
+      factoryNotesAr: stdNotes.ar,
+      factoryNotesEn: stdNotes.en,
+      factoryNotesHe: stdNotes.he,
+    };
+    variants.push(stdRef);
+
     products.push({
       id: row.id,
       sku: p.sku,
       nameEn: p.nameEn,
       nameAr: p.nameAr,
       nameHe: p.nameHe,
-      basePrice: row.basePrice ?? money(p.basePrice),
-      manufacturingCost: row.manufacturingCost,
-      imageUrl: row.imageUrl,
+      basePrice: std.basePrice ?? money(p.basePrice),
+      manufacturingCost: std.manufacturingCost,
+      imageUrl: std.imageUrl,
       categoryCode: p.categoryCode,
       workflowCode: p.workflowCode,
       bom: p.bom,
+      defaultVariantId: std.id,
+      defaultVariantSku: std.sku,
+      defaultVariantCode: std.code,
+      defaultVariantLabel: std.nameAr || std.nameEn,
+      factoryNotesAr: stdNotes.ar,
+      factoryNotesEn: stdNotes.en,
+      factoryNotesHe: stdNotes.he,
+      width: std.width,
+      height: std.height,
+      depth: std.depth,
     });
 
+    let sort = 10;
+    for (const extra of NAMED_VARIANTS[p.sku] ?? []) {
+      const extraPhotos = assignRandomProductPhotos({ min: 2, max: 4, random: () => rng.next() });
+      const extraBom = applyBomReplace(p.bom, extra.replaceSku);
+      const created = await prisma.productVariant.create({
+        data: {
+          productId: row.id,
+          sku: `${p.sku}-${extra.code}`,
+          code: extra.code,
+          nameAr: extra.nameAr,
+          nameEn: extra.nameEn,
+          nameHe: extra.nameHe,
+          isDefault: false,
+          isActive: true,
+          sortOrder: sort,
+          basePrice: money(extra.price),
+          manufacturingCost: money(extra.mfg),
+          bomDefaults: { materials: extraBom },
+          imageUrl: extraPhotos.imageUrl,
+          galleryUrls: extraPhotos.galleryUrls,
+          workflowId: wf.id,
+          width: money(measures.width),
+          height: money(measures.height),
+          depth: money(measures.depth),
+          seatHeight: measures.seatHeight == null ? null : money(measures.seatHeight),
+          measurements: [
+            { key: 'width', labelAr: 'العرض', labelEn: 'Width', labelHe: 'רוחב', value: measures.width, unit: 'cm' },
+            { key: 'height', labelAr: 'الارتفاع', labelEn: 'Height', labelHe: 'גובה', value: measures.height, unit: 'cm' },
+            { key: 'depth', labelAr: 'العمق', labelEn: 'Depth', labelHe: 'עומק', value: measures.depth, unit: 'cm' },
+            ...(measures.seatHeight == null
+              ? []
+              : [{ key: 'seatHeight', labelAr: 'ارتفاع المقعد', labelEn: 'Seat height', labelHe: 'גובה ישיבה', value: measures.seatHeight, unit: 'cm' }]),
+          ],
+          factoryNotesAr: extra.notes.ar,
+          factoryNotesEn: extra.notes.en,
+          factoryNotesHe: extra.notes.he,
+        },
+      });
+      sort += 10;
+      const optionIds = (extra.options ?? [])
+        .map((opt) => optionByKey.get(`${opt.group}:${opt.value}`))
+        .filter((id): id is string => Boolean(id));
+      if (optionIds.length) {
+        await prisma.productVariantOption.createMany({
+          data: optionIds.map((specOptionValueId) => ({
+            variantId: created.id,
+            specOptionValueId,
+          })),
+        });
+      }
+      variants.push({
+        id: created.id,
+        productId: row.id,
+        productSku: p.sku,
+        sku: created.sku,
+        code: created.code,
+        nameEn: created.nameEn,
+        nameAr: created.nameAr,
+        nameHe: created.nameHe,
+        isDefault: false,
+        basePrice: created.basePrice ?? money(extra.price),
+        manufacturingCost: created.manufacturingCost,
+        bom: extraBom,
+        workflowCode: p.workflowCode,
+        categoryCode: p.categoryCode,
+        factoryNotesAr: extra.notes.ar,
+        factoryNotesEn: extra.notes.en,
+        factoryNotesHe: extra.notes.he,
+      });
+    }
+  }
+
+  for (const variant of variants) {
     for (const dealer of dealers) {
       const factor = ['nile', 'balqis', 'qasr', 'jabal'].includes(dealer.username) ? 0.94 : 0.9;
       await prisma.dealerPrice.create({
         data: {
           customerId: dealer.id,
-          productId: row.id,
-          price: money(p.basePrice * factor),
+          productId: variant.productId,
+          variantId: variant.id,
+          price: money(Number(variant.basePrice) * factor),
           currency: 'ILS',
         },
       });
     }
   }
 
-  const estimates = await seedProductEstimates(prisma, products);
+  const safety = await backfillDefaultVariants(prisma);
+  console.log(`  default variants: ${variants.filter((v) => v.isDefault).length} STD · backfill skipped ${safety.skipped}`);
+
+  const estimates = await seedProductEstimates(
+    prisma,
+    variants.map((v) => ({
+      id: v.productId,
+      categoryCode: v.categoryCode,
+      variantId: v.id,
+    })),
+  );
   console.log(`  estimates: ${estimates.profiles} profiles · ${estimates.estimates} stage rows`);
 
-  await ensureFurnitureInventoryRecipes(prisma, products);
+  await ensureFurnitureInventoryRecipes(
+    prisma,
+    variants.map((v) => ({
+      id: v.productId,
+      sku: v.productSku,
+      nameEn: v.nameEn,
+      nameAr: v.nameAr,
+      nameHe: v.nameHe,
+      variantId: v.id,
+    })),
+  );
 
-  await seedStageMaterialMaps(prisma, products);
+  await seedStageMaterialMaps(prisma, variants);
 
-  console.log(`  catalog: ${products.length} products · ${materials.length} raw SKUs`);
-  return { products, materials };
+  console.log(`  catalog: ${products.length} products · ${variants.length} variants · ${materials.length} raw SKUs`);
+  return { products, variants, materials };
 }
 
 function stageCodeForRawSku(sku: string, codes: Set<string>): string | null {
@@ -671,7 +1324,7 @@ function stageCodeForRawSku(sku: string, codes: Set<string>): string | null {
   return has('CARPENTRY');
 }
 
-async function seedStageMaterialMaps(prisma: PrismaClient, products: ProductRef[]) {
+async function seedStageMaterialMaps(prisma: PrismaClient, variants: VariantRef[]) {
   const items = await prisma.inventoryItem.findMany({
     where: { archivedAt: null },
     select: { id: true, sku: true, unit: true },
@@ -683,8 +1336,8 @@ async function seedStageMaterialMaps(prisma: PrismaClient, products: ProductRef[
   });
   const wfByCode = new Map(workflows.map((w) => [w.code, w]));
   let count = 0;
-  for (const product of products) {
-    const wf = wfByCode.get(product.workflowCode);
+  for (const variant of variants) {
+    const wf = wfByCode.get(variant.workflowCode);
     if (!wf?.activeVersionId) continue;
     const nodes = await prisma.productionWorkflowNode.findMany({
       where: { workflowVersionId: wf.activeVersionId },
@@ -692,20 +1345,39 @@ async function seedStageMaterialMaps(prisma: PrismaClient, products: ProductRef[
     });
     const nodeByCode = new Map(nodes.map((n) => [n.stageDefinition.code, n]));
     const codes = new Set(nodeByCode.keys());
-    await prisma.productStageMaterialInput.deleteMany({ where: { productId: product.id } });
-    for (const line of product.bom) {
-      const item = itemBySku.get(line.sku);
+    const qtyBySku = new Map<string, number>();
+    for (const line of variant.bom) {
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.qty);
+    }
+    for (const [sku, qty] of qtyBySku) {
+      const item = itemBySku.get(sku);
       if (!item) continue;
-      const stageCode = stageCodeForRawSku(line.sku, codes);
+      const stageCode = stageCodeForRawSku(sku, codes);
       const node = stageCode ? nodeByCode.get(stageCode) : undefined;
       if (!node) continue;
+      const existing = await prisma.productStageMaterialInput.findFirst({
+        where: {
+          productId: variant.productId,
+          workflowNodeId: node.id,
+          inventoryItemId: item.id,
+          variantId: variant.id,
+        },
+      });
+      if (existing) {
+        await prisma.productStageMaterialInput.update({
+          where: { id: existing.id },
+          data: { qtyPerUnit: Number(existing.qtyPerUnit) + qty },
+        });
+        continue;
+      }
       await prisma.productStageMaterialInput.create({
         data: {
-          productId: product.id,
+          productId: variant.productId,
+          variantId: variant.id,
           workflowNodeId: node.id,
           stageDefinitionId: node.stageDefinitionId,
           inventoryItemId: item.id,
-          qtyPerUnit: line.qty,
+          qtyPerUnit: qty,
           unit: item.unit,
           required: true,
         },

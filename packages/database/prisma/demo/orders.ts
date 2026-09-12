@@ -51,7 +51,7 @@ import {
   presentationRequiredDelivery,
 } from './chronology';
 import type { DealerRef } from './people';
-import type { ProductRef } from './catalog';
+import type { ProductRef, VariantRef } from './catalog';
 import {
   loadProductInventoryInputs,
   loadProductInventoryOutputs,
@@ -63,10 +63,10 @@ import {
 } from './inventory-lifecycle';
 import { applyDemoMovement } from './stock';
 import { nextDoc, type SeqBag } from './seq';
-import { buildDemoStories, type DemoStory, type StoryKind } from './stories';
+import { buildDemoStories, storyLinesOf, type DemoStory, type StoryKind } from './stories';
 import { seedDemoQuotationLifecycle } from './quotation-lifecycle';
 
-async function loadCompiledWorkflow(prisma: PrismaClient, productId: string) {
+async function loadCompiledWorkflow(prisma: PrismaClient, productId: string, variantId?: string) {
   const config = await prisma.productWorkflowConfiguration.findUnique({
     where: { productId },
     include: { workflow: true, stageOverrides: true },
@@ -118,7 +118,16 @@ async function loadCompiledWorkflow(prisma: PrismaClient, productId: string) {
   }));
   const productEstimateMinutes: Record<string, number | null> = {};
   const estimates = await prisma.productStageEstimate.findMany({ where: { productId } });
+  const byStage = new Map<string, (typeof estimates)[number]>();
   for (const e of estimates) {
+    if (e.variantId == null) byStage.set(e.stageDefinitionId, e);
+  }
+  if (variantId) {
+    for (const e of estimates) {
+      if (e.variantId === variantId) byStage.set(e.stageDefinitionId, e);
+    }
+  }
+  for (const e of byStage.values()) {
     const minutes = e.fixedMinutes || (e.setupMinutes ?? 0) + (e.minutesPerUnit ?? 0);
     productEstimateMinutes[e.stageDefinitionId] = minutes || null;
   }
@@ -292,6 +301,7 @@ export async function seedDemoOrders(
     warehouseUserId: string;
     dealers: DealerRef[];
     products: ProductRef[];
+    variants: VariantRef[];
     counters: SeqBag;
     rawWhId: string;
   },
@@ -304,6 +314,14 @@ export async function seedDemoOrders(
   const stories = buildDemoStories().sort((a, b) => a.orderDay - b.orderDay || a.id.localeCompare(b.id));
   const dealerByUser = new Map(opts.dealers.map((d) => [d.username, d]));
   const productBySku = new Map(opts.products.map((p) => [p.sku, p]));
+  const variantByKey = new Map(opts.variants.map((v) => [`${v.productSku}:${v.code}`, v]));
+  const resolveVariant = (sku: string, code?: string): VariantRef => {
+    const wanted = (code ?? 'STD').toUpperCase();
+    const hit =
+      variantByKey.get(`${sku}:${wanted}`) ?? variantByKey.get(`${sku}:STD`);
+    if (!hit) throw new Error(`Story missing variant ${sku}:${wanted}`);
+    return hit;
+  };
   const dealerUsers = await prisma.user.findMany({
     where: { customerId: { in: opts.dealers.map((d) => d.id) } },
     select: { id: true, customerId: true },
@@ -330,9 +348,10 @@ export async function seedDemoOrders(
     story: DemoStory;
     dealer: DealerRef;
     product: ProductRef;
+    variant: VariantRef;
     so: { id: string; number: string; priority: Priority };
     po: { id: string; number: string };
-    line: { description: string };
+    line: { id: string; description: string; quantity: Prisma.Decimal; sortOrder: number };
     address: string;
     createdAt: Date;
     requiredDelivery: Date;
@@ -349,24 +368,55 @@ export async function seedDemoOrders(
     }>;
     stages: PlannerOrderInput['stages'];
     included: Array<{ stageCode: string; requiresInspection?: boolean }>;
+    demoSnapNodes: DemoSnapNodeRow[];
+    soLines: Array<{
+      description: string;
+      quantity: Prisma.Decimal;
+      unitPrice: Prisma.Decimal;
+      lineTotal: Prisma.Decimal;
+    }>;
   }> = [];
 
   for (const story of stories) {
     const dealer = dealerByUser.get(story.dealer);
-    const product = productBySku.get(story.sku);
-    if (!dealer || !product) {
-      throw new Error(`Story ${story.id} missing dealer ${story.dealer} or sku ${story.sku}`);
+    if (!dealer) {
+      throw new Error(`Story ${story.id} missing dealer ${story.dealer}`);
     }
+    const resolvedLines = storyLinesOf(story).map((storyLine, sortOrder) => {
+      const product = productBySku.get(storyLine.sku);
+      if (!product) throw new Error(`Story ${story.id} missing sku ${storyLine.sku}`);
+      const variant = resolveVariant(storyLine.sku, storyLine.variantCode);
+      return { ...storyLine, product, variant, sortOrder };
+    });
+    const primary = resolvedLines[0];
+    if (!primary) throw new Error(`Story ${story.id} has no lines`);
     const createdAt = addDays(windowStart, story.orderDay);
     createdAt.setUTCHours(createdAt.getUTCHours() + (story.orderDay % 5));
     const requiredDelivery = presentationRequiredDelivery(story, createdAt, asOf);
-    const dealerPrice = await prisma.dealerPrice.findUnique({
-      where: { customerId_productId: { customerId: dealer.id, productId: product.id } },
-    });
-    const unit = Number(dealerPrice?.price ?? product.basePrice);
-    const totals = lineTotals(story.qty, unit);
-    const mfg = Number(product.manufacturingCost ?? unit * 0.45) * story.qty;
-    const specText = [story.fabric, story.wood].filter(Boolean).join(' / ') || null;
+    const priced = await Promise.all(
+      resolvedLines.map(async (row) => {
+        const dealerPrice = await prisma.dealerPrice.findFirst({
+          where: { customerId: dealer.id, productId: row.product.id, variantId: row.variant.id },
+        });
+        const unit = Number(dealerPrice?.price ?? row.variant.basePrice);
+        const totals = lineTotals(row.qty, unit);
+        const mfg = Number(row.variant.manufacturingCost ?? unit * 0.45) * row.qty;
+        const specText =
+          [row.fabric, row.wood].filter(Boolean).join(' / ') ||
+          [story.fabric, story.wood].filter(Boolean).join(' / ') ||
+          null;
+        return { ...row, unit, totals, mfg, specText };
+      }),
+    );
+    const totals = priced.reduce(
+      (acc, row) => ({
+        subtotal: acc.subtotal + row.totals.subtotal,
+        taxAmount: acc.taxAmount + row.totals.taxAmount,
+        lineTotal: acc.lineTotal + row.totals.lineTotal,
+      }),
+      { subtotal: 0, taxAmount: 0, lineTotal: 0 },
+    );
+    const mfg = priced.reduce((sum, row) => sum + row.mfg, 0);
     const soStatus = soStatusFor(story.kind);
     const needsQuote = true;
 
@@ -388,19 +438,19 @@ export async function seedDemoOrders(
         createdAt: addDays(createdAt, -3),
         updatedAt: createdAt,
         items: {
-          create: [
-            {
-              productId: product.id,
-              productName: product.nameEn,
-              quantity: money(story.qty),
-              width: product.basePrice ? undefined : undefined,
-              fabricType: story.fabric,
-              fabricCode: story.fabric ? `FAB-${story.sku}` : undefined,
-              woodType: story.wood,
-              notes: story.notes,
-              sortOrder: 0,
-            },
-          ],
+          create: priced.map((row) => ({
+            productId: row.product.id,
+            variantId: row.variant.id,
+            variantSku: row.variant.sku,
+            variantLabel: row.variant.nameAr || row.variant.nameEn,
+            productName: row.variant.nameEn,
+            quantity: money(row.qty),
+            fabricType: row.fabric ?? story.fabric,
+            fabricCode: (row.fabric ?? story.fabric) ? `FAB-${row.sku}` : undefined,
+            woodType: row.wood ?? story.wood,
+            notes: story.notes,
+            sortOrder: row.sortOrder,
+          })),
         },
       },
     });
@@ -433,19 +483,20 @@ export async function seedDemoOrders(
         createdAt: sentAt,
         updatedAt: createdAt,
         lines: {
-          create: [
-            {
-              productId: product.id,
-              description: product.nameEn,
-              quantity: money(story.qty),
-              unitPrice: money(unit),
-              taxRate: VAT,
-              subtotal: money(totals.subtotal),
-              taxAmount: money(totals.taxAmount),
-              lineTotal: money(totals.lineTotal),
-              sortOrder: 0,
-            },
-          ],
+          create: priced.map((row) => ({
+            productId: row.product.id,
+            variantId: row.variant.id,
+            variantSku: row.variant.sku,
+            variantLabel: row.variant.nameAr || row.variant.nameEn,
+            description: row.variant.nameEn,
+            quantity: money(row.qty),
+            unitPrice: money(row.unit),
+            taxRate: VAT,
+            subtotal: money(row.totals.subtotal),
+            taxAmount: money(row.totals.taxAmount),
+            lineTotal: money(row.totals.lineTotal),
+            sortOrder: row.sortOrder,
+          })),
         },
       },
     });
@@ -488,30 +539,44 @@ export async function seedDemoOrders(
         createdAt,
         updatedAt: createdAt,
         lines: {
-          create: [
-            {
-              productId: product.id,
-              description: product.nameEn,
-              specifications: specText,
-              quantity: money(story.qty),
-              unitPrice: money(unit),
-              taxRate: VAT,
-              lineTotal: money(totals.lineTotal),
-              productionRequired: true,
-              deliveryRequired: true,
-              sortOrder: 0,
-            },
-          ],
+          create: priced.map((row) => ({
+            productId: row.product.id,
+            variantId: row.variant.id,
+            variantSku: row.variant.sku,
+            variantLabel: row.variant.nameAr || row.variant.nameEn,
+            description: row.variant.nameEn,
+            specifications: row.specText,
+            quantity: money(row.qty),
+            unitPrice: money(row.unit),
+            taxRate: VAT,
+            lineTotal: money(row.totals.lineTotal),
+            productionRequired: true,
+            deliveryRequired: true,
+            sortOrder: row.sortOrder,
+          })),
         },
       },
       include: { lines: true },
     });
     salesOrders += 1;
+    if (story.kind !== 'draft' && story.kind !== 'proposed') {
+      await prisma.salesOrder.update({
+        where: { id: so.id },
+        data: { plannedCostFrozenAt: createdAt },
+      });
+    }
 
-    const line = so.lines[0]!;
+    for (const line of so.lines) {
+    const pricedLine = priced.find((row) => row.sortOrder === line.sortOrder) ?? priced[0]!;
+    const product = pricedLine.product;
+    const variant = pricedLine.variant;
+    const unit = pricedLine.unit;
+    const specText = pricedLine.specText;
+    const lineQty = Number(line.quantity) || pricedLine.qty;
     const { workflowId, versionId, versionNumber, compiled } = await loadCompiledWorkflow(
       prisma,
       product.id,
+      variant.id,
     );
     const included = [...compiled.included].sort((a, b) => a.sortOrder - b.sortOrder);
     const codes = included.map((n) => n.stageCode);
@@ -533,6 +598,9 @@ export async function seedDemoOrders(
         salesOrderLineId: line.id,
         customerId: dealer.id,
         productId: product.id,
+        variantId: variant.id,
+        variantSku: variant.sku,
+        variantLabel: variant.nameAr || variant.nameEn,
         productDescription: line.description,
         quantity: line.quantity,
         specifications: line.specifications,
@@ -541,6 +609,9 @@ export async function seedDemoOrders(
         priority: so.priority,
         progressPercent: Math.round((done.size / Math.max(included.length, 1)) * 100),
         plannedStartDate: createdAt,
+        instructionsAr: variant.factoryNotesAr,
+        instructionsEn: variant.factoryNotesEn,
+        instructionsHe: variant.factoryNotesHe,
         createdById: opts.adminId,
         createdAt,
         updatedAt: createdAt,
@@ -548,6 +619,58 @@ export async function seedDemoOrders(
       },
     });
     productionOrders += 1;
+
+    const released =
+      story.kind !== 'draft' && story.kind !== 'proposed' && story.kind !== 'not_started';
+    if (released) {
+      const profile = await prisma.productProductionProfile.findFirst({
+        where: { productId: product.id, variantId: variant.id },
+      });
+      const laborHours = ((profile?.totalStandardMinutes ?? 0) * lineQty) / 60;
+      await prisma.productionOrder.update({
+        where: { id: po.id },
+        data: {
+          releasedToFactoryAt: createdAt,
+          plannedMaterialCost: money(pricedLine.mfg),
+          plannedLaborCost: money(laborHours * 25),
+          plannedCostFrozenAt: createdAt,
+          plannedCostBreakdown: {
+            materials: pricedLine.mfg,
+            labor: laborHours * 25,
+          },
+        },
+      });
+    }
+
+    const productionSetup = await prisma.salesOrderProductionSetup.upsert({
+      where: { salesOrderId: so.id },
+      update: {},
+      create: {
+        salesOrderId: so.id,
+        status: released ? 'RELEASED' : 'SETUP_IN_PROGRESS',
+        releasedAt: released ? createdAt : undefined,
+        releasedById: released ? opts.adminId : undefined,
+      },
+    });
+    await prisma.salesOrderLineSetup.upsert({
+      where: { salesOrderLineId: line.id },
+      update: {
+        instructionsAr: variant.factoryNotesAr,
+        instructionsEn: variant.factoryNotesEn,
+        instructionsHe: variant.factoryNotesHe,
+        factoryNotes: variant.factoryNotesAr,
+      },
+      create: {
+        productionSetupId: productionSetup.id,
+        salesOrderLineId: line.id,
+        status: released ? 'READY' : 'NEEDS_REVIEW',
+        manufacturingName: variant.nameAr || variant.nameEn,
+        factoryNotes: variant.factoryNotesAr,
+        instructionsAr: variant.factoryNotesAr,
+        instructionsEn: variant.factoryNotesEn,
+        instructionsHe: variant.factoryNotesHe,
+      },
+    });
 
     const snapshot = await prisma.productionOrderWorkflowSnapshot.create({
       data: {
@@ -568,9 +691,9 @@ export async function seedDemoOrders(
       estimatedMinutes: number;
     }> = [];
     const demoSnapNodes: DemoSnapNodeRow[] = [];
-    const productOutputs = await loadProductInventoryOutputs(prisma, product.id);
-    const productInputs = await loadProductInventoryInputs(prisma, product.id);
-    const productMaterialInputs = await loadProductMaterialInputs(prisma, product.id);
+    const productOutputs = await loadProductInventoryOutputs(prisma, product.id, variant.id);
+    const productInputs = await loadProductInventoryInputs(prisma, product.id, variant.id);
+    const productMaterialInputs = await loadProductMaterialInputs(prisma, product.id, variant.id);
 
     for (const n of included) {
       const completed = done.has(n.stageCode);
@@ -643,6 +766,9 @@ export async function seedDemoOrders(
           consumeInventoryItemIds:
             consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
           defaultWarehouseId: resolved.warehouseId ?? undefined,
+          instructionsAr: variant.factoryNotesAr,
+          instructionsEn: variant.factoryNotesEn,
+          instructionsHe: variant.factoryNotesHe,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,
@@ -717,7 +843,7 @@ export async function seedDemoOrders(
             estimatedMinutes,
             targetQty: Number(line.quantity) || 1,
             completedQty: completed
-              ? Number(story.physicalOutputQty ?? line.quantity) || 1
+              ? Number((line.sortOrder === 0 ? story.physicalOutputQty : undefined) ?? line.quantity) || 1
               : 0,
             priority: so.priority,
             createdAt,
@@ -775,6 +901,7 @@ export async function seedDemoOrders(
       story,
       dealer,
       product,
+      variant,
       so,
       po,
       line,
@@ -789,7 +916,14 @@ export async function seedDemoOrders(
       stages,
       included,
       demoSnapNodes,
+      soLines: so.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        lineTotal: l.lineTotal,
+      })),
     });
+    }
   }
 
   const planned = new Map<string, ReturnType<typeof planDemoAllocations>>();
@@ -820,11 +954,13 @@ export async function seedDemoOrders(
     }
   }
 
+  const deliveryBySo = new Map<string, string>();
   for (const p of pending) {
     const {
       story,
       dealer,
       product,
+      variant,
       so,
       po,
       line,
@@ -832,12 +968,12 @@ export async function seedDemoOrders(
       createdAt,
       requiredDelivery,
       totals,
-      unit,
       done,
       nextReady,
       taskRows,
       included,
       demoSnapNodes,
+      soLines,
     } = p;
     const result = planned.get(po.id);
     if (!result) throw new Error(`Missing plan for ${po.number}`);
@@ -857,7 +993,7 @@ export async function seedDemoOrders(
     const committedLate = story.kind === 'at_risk_committed';
     const deliveredLike = isHistoricalDemoKind(story.kind);
     const committedDate = committedLate
-      ? ammanLocal(2026, 8, 10, 16, 0)
+      ? ammanLocal(2026, 9, 5, 16, 0)
       : deliveredLike
         ? atOrBefore(result.earliestCompletion ?? requiredDelivery, asOf)
         : null;
@@ -956,10 +1092,10 @@ export async function seedDemoOrders(
       const prepTask = taskRows.find((t) => t.stageCode === 'MATERIAL_PREP');
       const alloc = result.allocations.find((a) => a.productionTaskId === prepTask?.id);
       const at = alloc?.plannedStart ?? createdAt;
-      for (const bom of product.bom) {
+      for (const bom of variant.bom) {
         const item = itemsBySku.get(bom.sku);
         if (!item) continue;
-        const qty = bom.qty * story.qty;
+        const qty = bom.qty * (Number(line.quantity) || story.qty);
         if (qty <= 0) continue;
         await applyDemoMovement(prisma, {
           type: InventoryTxType.PRODUCTION_ISSUE,
@@ -1055,32 +1191,139 @@ export async function seedDemoOrders(
 
     if (deliveredLike) {
       const deliveredAt = atOrBefore(result.earliestCompletion ?? requiredDelivery, asOf);
-      const delivery = await prisma.delivery.create({
-        data: {
-          number: await nextDoc(prisma, 'delivery', opts.counters),
-          salesOrderId: so.id,
-          customerId: dealer.id,
-          deliveryAddress: address,
-          latitude: dealer.lat,
-          longitude: dealer.lng,
-          deliveryDate: deliveredAt,
-          driverId: opts.driverId,
-          vehicle: 'Hyundai H-1',
-          status: DeliveryStatus.DELIVERED,
-          recipientName: dealer.nameEn,
-          createdAt: deliveredAt,
-          updatedAt: deliveredAt,
-          items: {
-            create: [{ description: product.nameEn, quantity: money(story.qty) }],
+      const outputQty =
+        (line.sortOrder === 0 ? story.physicalOutputQty : undefined) ??
+        (Number(line.quantity) || story.qty);
+      let deliveryId = deliveryBySo.get(so.id);
+      if (!deliveryId) {
+        const delivery = await prisma.delivery.create({
+          data: {
+            number: await nextDoc(prisma, 'delivery', opts.counters),
+            salesOrderId: so.id,
+            customerId: dealer.id,
+            deliveryAddress: address,
+            latitude: dealer.lat,
+            longitude: dealer.lng,
+            deliveryDate: deliveredAt,
+            driverId: opts.driverId,
+            vehicle: 'Hyundai H-1',
+            status: DeliveryStatus.DELIVERED,
+            recipientName: dealer.nameEn,
+            createdAt: deliveredAt,
+            updatedAt: deliveredAt,
+            items: {
+              create: soLines.map((l) => ({ description: l.description, quantity: l.quantity })),
+            },
           },
-        },
-      });
+        });
+        deliveryId = delivery.id;
+        deliveryBySo.set(so.id, delivery.id);
+        const paymentKind = story.payment ?? 'paid';
+        const paid =
+          paymentKind === 'paid' ? totals.lineTotal : paymentKind === 'partial' ? totals.lineTotal * 0.4 : 0;
+        const invStatus =
+          paid <= 0
+            ? InvoiceStatus.ISSUED
+            : paid + 0.01 >= totals.lineTotal
+              ? InvoiceStatus.PAID
+              : InvoiceStatus.PARTIALLY_PAID;
+        const invoice = await prisma.invoice.create({
+          data: {
+            number: await nextDoc(prisma, 'invoice', opts.counters),
+            customerId: dealer.id,
+            salesOrderId: so.id,
+            invoiceDate: deliveredAt,
+            dueDate: addDays(deliveredAt, 30),
+            currency: 'ILS',
+            status: invStatus,
+            subtotal: money(totals.subtotal),
+            taxTotal: money(totals.taxAmount),
+            total: money(totals.lineTotal),
+            paidAmount: money(paid),
+            outstandingAmount: money(totals.lineTotal - paid),
+            createdById: opts.adminId,
+            createdAt: deliveredAt,
+            lines: {
+              create: soLines.map((l) => ({
+                description: l.description,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                taxRate: VAT,
+                lineTotal: l.lineTotal,
+              })),
+            },
+          },
+        });
+        if (paid > 0) {
+          await prisma.payment.create({
+            data: {
+              number: await nextDoc(prisma, 'payment', opts.counters),
+              customerId: dealer.id,
+              invoiceId: invoice.id,
+              paymentDate: atOrBefore(addDays(deliveredAt, 2), asOf),
+              amount: money(paid),
+              currency: 'ILS',
+              method: PaymentMethod.BANK_TRANSFER,
+              createdById: opts.adminId,
+            },
+          });
+        }
+        await prisma.statementEntry.create({
+          data: {
+            customerId: dealer.id,
+            entryDate: deliveredAt,
+            type: 'INVOICE',
+            reference: invoice.number,
+            debit: money(totals.lineTotal),
+            credit: money(0),
+            balance: money(totals.lineTotal),
+            description: `Invoice ${invoice.number}`,
+          },
+        });
+        if (paid > 0) {
+          await prisma.statementEntry.create({
+            data: {
+              customerId: dealer.id,
+              entryDate: atOrBefore(addDays(deliveredAt, 2), asOf),
+              type: 'PAYMENT',
+              reference: invoice.number,
+              debit: money(0),
+              credit: money(paid),
+              balance: money(totals.lineTotal - paid),
+              description: `Payment ${invoice.number}`,
+            },
+          });
+        }
+        if (story.returnInfo) {
+          await prisma.returnRequest.create({
+            data: {
+              number: await nextDoc(prisma, 'return_request', opts.counters),
+              customerId: dealer.id,
+              salesOrderId: so.id,
+              productDesc: product.nameEn,
+              quantity: money(Math.min(story.returnInfo.qty, story.qty)),
+              reason: story.returnInfo.reason,
+              description: 'Dealer return from delivered order.',
+              approvalStatus: story.returnInfo.approval,
+              resolution:
+                story.returnInfo.approval === 'APPROVED'
+                  ? ReturnResolution.CREDIT_NOTE
+                  : story.returnInfo.approval === 'REJECTED'
+                    ? ReturnResolution.REJECTED
+                    : undefined,
+              inventoryFate: ReturnInventoryFate.PENDING,
+              createdAt: atOrBefore(addDays(deliveredAt, 4), asOf),
+            },
+          });
+        }
+      }
+
       await postDemoPhysicalOutputs({
         prisma,
         productionOrderId: po.id,
         salesOrderId: so.id,
         salesOrderLineId: line.id,
-        orderQty: story.physicalOutputQty ?? story.qty,
+        orderQty: outputQty,
         adminId: opts.adminId,
         counters: opts.counters,
         at: deliveredAt,
@@ -1088,137 +1331,42 @@ export async function seedDemoOrders(
         snapNodes: demoSnapNodes,
         keepFinInFactory: false,
         leaveFactoryViaDelivery: true,
-        deliveryId: delivery.id,
+        deliveryId,
       });
-      const paymentKind = story.payment ?? 'paid';
-      const paid =
-        paymentKind === 'paid' ? totals.lineTotal : paymentKind === 'partial' ? totals.lineTotal * 0.4 : 0;
-      const invStatus =
-        paid <= 0
-          ? InvoiceStatus.ISSUED
-          : paid + 0.01 >= totals.lineTotal
-            ? InvoiceStatus.PAID
-            : InvoiceStatus.PARTIALLY_PAID;
-      const invoice = await prisma.invoice.create({
-        data: {
-          number: await nextDoc(prisma, 'invoice', opts.counters),
-          customerId: dealer.id,
-          salesOrderId: so.id,
-          invoiceDate: deliveredAt,
-          dueDate: addDays(deliveredAt, 30),
-          currency: 'ILS',
-          status: invStatus,
-          subtotal: money(totals.subtotal),
-          taxTotal: money(totals.taxAmount),
-          total: money(totals.lineTotal),
-          paidAmount: money(paid),
-          outstandingAmount: money(totals.lineTotal - paid),
-          createdById: opts.adminId,
-          createdAt: deliveredAt,
-          lines: {
-            create: [
-              {
-                description: product.nameEn,
-                quantity: money(story.qty),
-                unitPrice: money(unit),
-                taxRate: VAT,
-                lineTotal: money(totals.lineTotal),
-              },
-            ],
-          },
-        },
-      });
-      if (paid > 0) {
-        await prisma.payment.create({
-          data: {
-            number: await nextDoc(prisma, 'payment', opts.counters),
-            customerId: dealer.id,
-            invoiceId: invoice.id,
-            paymentDate: atOrBefore(addDays(deliveredAt, 2), asOf),
-            amount: money(paid),
-            currency: 'ILS',
-            method: PaymentMethod.BANK_TRANSFER,
-            createdById: opts.adminId,
-          },
-        });
-      }
-      await prisma.statementEntry.create({
-        data: {
-          customerId: dealer.id,
-          entryDate: deliveredAt,
-          type: 'INVOICE',
-          reference: invoice.number,
-          debit: money(totals.lineTotal),
-          credit: money(0),
-          balance: money(totals.lineTotal),
-          description: `Invoice ${invoice.number}`,
-        },
-      });
-      if (paid > 0) {
-        await prisma.statementEntry.create({
-          data: {
-            customerId: dealer.id,
-            entryDate: atOrBefore(addDays(deliveredAt, 2), asOf),
-            type: 'PAYMENT',
-            reference: invoice.number,
-            debit: money(0),
-            credit: money(paid),
-            balance: money(totals.lineTotal - paid),
-            description: `Payment ${invoice.number}`,
-          },
-        });
-      }
-      if (story.returnInfo) {
-        await prisma.returnRequest.create({
-          data: {
-            number: await nextDoc(prisma, 'return_request', opts.counters),
-            customerId: dealer.id,
-            salesOrderId: so.id,
-            productDesc: product.nameEn,
-            quantity: money(Math.min(story.returnInfo.qty, story.qty)),
-            reason: story.returnInfo.reason,
-            description: 'Dealer return from delivered order.',
-            approvalStatus: story.returnInfo.approval,
-            resolution:
-              story.returnInfo.approval === 'APPROVED'
-                ? ReturnResolution.CREDIT_NOTE
-                : story.returnInfo.approval === 'REJECTED'
-                  ? ReturnResolution.REJECTED
-                  : undefined,
-            inventoryFate: ReturnInventoryFate.PENDING,
-            createdAt: atOrBefore(addDays(deliveredAt, 4), asOf),
-          },
-        });
-      }
     } else if (story.kind === 'ready_delivery') {
       const plannedDate =
         result.earliestCompletion && result.earliestCompletion.getTime() > requiredDelivery.getTime()
           ? result.earliestCompletion
           : requiredDelivery;
       const deliveryDate = plannedDate.getTime() < asOf.getTime() ? addDays(asOf, 3) : plannedDate;
-      await prisma.delivery.create({
-        data: {
-          number: await nextDoc(prisma, 'delivery', opts.counters),
-          salesOrderId: so.id,
-          customerId: dealer.id,
-          deliveryAddress: address,
-          latitude: dealer.lat,
-          longitude: dealer.lng,
-          deliveryDate,
-          driverId: opts.driverId,
-          status: DeliveryStatus.PLANNED,
-          createdAt: asOf,
-          items: {
-            create: [{ description: product.nameEn, quantity: money(story.qty) }],
+      if (!deliveryBySo.has(so.id)) {
+        const delivery = await prisma.delivery.create({
+          data: {
+            number: await nextDoc(prisma, 'delivery', opts.counters),
+            salesOrderId: so.id,
+            customerId: dealer.id,
+            deliveryAddress: address,
+            latitude: dealer.lat,
+            longitude: dealer.lng,
+            deliveryDate,
+            driverId: opts.driverId,
+            status: DeliveryStatus.PLANNED,
+            createdAt: asOf,
+            items: {
+              create: soLines.map((l) => ({ description: l.description, quantity: l.quantity })),
+            },
           },
-        },
-      });
+        });
+        deliveryBySo.set(so.id, delivery.id);
+      }
       await postDemoPhysicalOutputs({
         prisma,
         productionOrderId: po.id,
         salesOrderId: so.id,
         salesOrderLineId: line.id,
-        orderQty: story.physicalOutputQty ?? story.qty,
+        orderQty:
+          (line.sortOrder === 0 ? story.physicalOutputQty : undefined) ??
+          (Number(line.quantity) || story.qty),
         adminId: opts.adminId,
         counters: opts.counters,
         at: asOf,
@@ -1233,7 +1381,9 @@ export async function seedDemoOrders(
         productionOrderId: po.id,
         salesOrderId: so.id,
         salesOrderLineId: line.id,
-        orderQty: story.physicalOutputQty ?? story.qty,
+        orderQty:
+          (line.sortOrder === 0 ? story.physicalOutputQty : undefined) ??
+          (Number(line.quantity) || story.qty),
         adminId: opts.adminId,
         counters: opts.counters,
         at: createdAt,
@@ -1257,6 +1407,7 @@ export async function seedDemoOrders(
   const extraRfq = await nextDoc(prisma, 'rfq', opts.counters);
   const nile = dealerByUser.get('nile')!;
   const sofa = productBySku.get('SOF-3S-LUX')!;
+  const sofaVariant = resolveVariant('SOF-3S-LUX', 'NAVY');
   await prisma.requestForQuotation.create({
     data: {
       number: extraRfq,
@@ -1273,7 +1424,10 @@ export async function seedDemoOrders(
         create: [
           {
             productId: sofa.id,
-            productName: sofa.nameEn,
+            variantId: sofaVariant.id,
+            variantSku: sofaVariant.sku,
+            variantLabel: sofaVariant.nameAr || sofaVariant.nameEn,
+            productName: sofaVariant.nameEn,
             quantity: money(1),
             fabricType: 'Velvet Navy',
             woodType: 'Walnut',

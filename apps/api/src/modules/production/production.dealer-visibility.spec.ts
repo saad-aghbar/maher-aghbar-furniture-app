@@ -13,7 +13,7 @@ describe('ProductionService dealer visibility', () => {
     salesOrder: {
       customer: { id: 'cust-1', nameEn: 'Dealer' },
     },
-    product: { imageUrl: 'img.png' },
+    product: { imageUrl: 'img.png', manufacturingCost: 400 },
     stages: [
       {
         id: 's1',
@@ -109,6 +109,8 @@ describe('ProductionService dealer visibility', () => {
     expect(result.tasks).toEqual([]);
     expect(result.openBlockers).toEqual([]);
     expect(result.documents).toEqual([]);
+    expect(result.manufacturingCosting).toBeNull();
+    expect(result.product).not.toHaveProperty('manufacturingCost');
   });
 
   it('keeps tasks and enriched stages for admin (assignment surface)', async () => {

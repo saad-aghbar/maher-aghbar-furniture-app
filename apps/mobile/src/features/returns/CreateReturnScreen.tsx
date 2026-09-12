@@ -57,7 +57,7 @@ function reasonLabel(t: (key: string) => string, r: ReturnReason): string {
 }
 
 function lineMeta(line: SalesOrderLineItem): string {
-  return [line.fabricType, line.fabricColor, line.woodType, line.finish]
+  return [line.variantLabel, line.fabricType, line.fabricColor, line.woodType, line.finish]
     .map((v) => (typeof v === 'string' ? v.trim() : ''))
     .filter(Boolean)
     .join(' · ');
@@ -414,6 +414,15 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
                           >
                             {line.productName || line.description || '—'}
                           </AppText>
+                          {line.variantLabel ? (
+                            <AppText
+                              variant="caption"
+                              color="secondary"
+                              style={{ textAlign: isRTL ? 'right' : 'left' }}
+                            >
+                              {t('mobile.returns.variant')}: {line.variantLabel}
+                            </AppText>
+                          ) : null}
                           <AppText variant="caption" color="muted" dir="ltr">
                             {t('mobile.returns.qtyLabel', {
                               qty: String(line.quantity ?? 1),
@@ -620,37 +629,27 @@ function CreateReturnHeader({
   const leadSize = theme.sizes.touch.min;
 
   return (
-    <View style={{ gap: theme.spacing.xs }}>
-      <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
-            zIndex: 1,
-            justifyContent: 'center',
-          }}
-        >
-          <ScreenBackLead fallback={backFallback} />
-        </View>
-        <AppText
-          variant="largeTitle"
-          weight={titleWeight}
-          align="center"
-          numberOfLines={1}
-          style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
-        >
-          {t('mobile.returns.newReturn')}
-        </AppText>
+    <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          zIndex: 1,
+          justifyContent: 'center',
+        }}
+      >
+        <ScreenBackLead fallback={backFallback} />
       </View>
       <AppText
-        variant="caption"
-        color="muted"
+        variant="largeTitle"
+        weight={titleWeight}
         align="center"
-        style={{ paddingHorizontal: theme.spacing.lg }}
+        numberOfLines={1}
+        style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
       >
-        {t('mobile.returns.subtitle')}
+        {t('mobile.returns.newReturn')}
       </AppText>
     </View>
   );
@@ -680,12 +679,27 @@ function FloorSection({
       }}
     >
       <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: colors.brand,
+          opacity: 0.55,
+        }}
+      />
+      <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingHorizontal: theme.spacing.lg,
           paddingVertical: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
           backgroundColor: colors.surfaceSecondary,
@@ -700,7 +714,7 @@ function FloorSection({
           </AppText>
         ) : null}
       </View>
-      <View style={{ padding: theme.spacing.lg, gap: theme.spacing.md }}>{children}</View>
+      <View style={{ padding: theme.spacing.lg, gap: theme.spacing.md, ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }) }}>{children}</View>
     </View>
   );
 }

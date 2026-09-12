@@ -28,6 +28,7 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { BomFloorRow } from '@/features/catalog/components/BomFloorRow';
 import { BomMaterialPickerSheet } from '@/features/catalog/components/BomMaterialPickerSheet';
+import { BilingualNameField } from '@/features/catalog/components/BilingualNameField';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { OrderCardMedia } from '../components/OrderCardMedia';
 import { haptics, ListItemEnter } from '@/motion';
@@ -155,7 +156,9 @@ export function OrderProductionSetupLineScreen({
   const editable = canEdit && planEditable;
 
   const [name, setName] = useState('');
-  const [notes, setNotes] = useState('');
+  const [instructionsAr, setInstructionsAr] = useState('');
+  const [instructionsEn, setInstructionsEn] = useState('');
+  const [instructionsHe, setInstructionsHe] = useState('');
   const [width, setWidth] = useState('');
   const [height, setHeight] = useState('');
   const [depth, setDepth] = useState('');
@@ -173,7 +176,9 @@ export function OrderProductionSetupLineScreen({
 
   const hydrate = useCallback((next: OrderProductionSetupLine) => {
     setName(next.manufacturingName ?? '');
-    setNotes(next.factoryNotes ?? '');
+    setInstructionsAr(next.instructionsAr ?? next.factoryNotes ?? '');
+    setInstructionsEn(next.instructionsEn ?? '');
+    setInstructionsHe(next.instructionsHe ?? '');
     setWidth(formatDim(next.orderDimensions?.width).replace('—', ''));
     setHeight(formatDim(next.orderDimensions?.height).replace('—', ''));
     setDepth(formatDim(next.orderDimensions?.depth).replace('—', ''));
@@ -204,7 +209,9 @@ export function OrderProductionSetupLineScreen({
     if (!line) return null;
     return {
       name: line.manufacturingName ?? '',
-      notes: line.factoryNotes ?? '',
+      instructionsAr: line.instructionsAr ?? line.factoryNotes ?? '',
+      instructionsEn: line.instructionsEn ?? '',
+      instructionsHe: line.instructionsHe ?? '',
       width: formatDim(line.orderDimensions?.width).replace('—', ''),
       height: formatDim(line.orderDimensions?.height).replace('—', ''),
       depth: formatDim(line.orderDimensions?.depth).replace('—', ''),
@@ -226,7 +233,9 @@ export function OrderProductionSetupLineScreen({
   const dirty = useMemo(() => {
     if (!serverSnapshot || hydratedId == null) return false;
     if (name !== serverSnapshot.name) return true;
-    if (notes !== serverSnapshot.notes) return true;
+    if (instructionsAr !== serverSnapshot.instructionsAr) return true;
+    if (instructionsEn !== serverSnapshot.instructionsEn) return true;
+    if (instructionsHe !== serverSnapshot.instructionsHe) return true;
     if (width !== serverSnapshot.width) return true;
     if (height !== serverSnapshot.height) return true;
     if (depth !== serverSnapshot.depth) return true;
@@ -240,7 +249,9 @@ export function OrderProductionSetupLineScreen({
     serverSnapshot,
     hydratedId,
     name,
-    notes,
+    instructionsAr,
+    instructionsEn,
+    instructionsHe,
     width,
     height,
     depth,
@@ -306,7 +317,9 @@ export function OrderProductionSetupLineScreen({
         lineId: line.id,
         body: {
           manufacturingName: name.trim() || line.manufacturingName || 'Piece',
-          factoryNotes: notes.trim() || null,
+          instructionsAr: instructionsAr.trim() || null,
+          instructionsEn: instructionsEn.trim() || null,
+          instructionsHe: instructionsHe.trim() || null,
           orderDimensions: {
             width: parseNum(width),
             height: parseNum(height),
@@ -926,22 +939,29 @@ export function OrderProductionSetupLineScreen({
             <OrderBoardCard accent={colors.brand}>
               <OrderSectionHeader
                 icon="create-outline"
-                label={t('mobile.productionSetup.sections.notes')}
+                label={t('mobile.productionSetup.sections.instructions')}
                 accent={colors.brand}
               />
+              <AppText variant="caption" color="muted">
+                {t('mobile.productionSetup.itemInstructionsHint')}
+              </AppText>
               {editable ? (
-                <AppTextInput
-                  value={notes}
-                  onChangeText={setNotes}
-                  editable
+                <BilingualNameField
+                  arabic={instructionsAr}
+                  english={instructionsEn}
+                  onArabicChange={setInstructionsAr}
+                  onEnglishChange={setInstructionsEn}
+                  arabicLabel={t('catalog.factoryNotesAr')}
+                  englishLabel={t('catalog.factoryNotesEn')}
+                  kind="prose"
                   multiline
-                  placeholder={t('mobile.productionSetup.factoryNotesPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                  style={[fieldStyle, { minHeight: 100, textAlignVertical: 'top' }]}
                 />
               ) : (
-                <AppText variant="body" color={notes.trim() ? 'primary' : 'muted'}>
-                  {notes.trim() ? notes : '—'}
+                <AppText
+                  variant="body"
+                  color={instructionsAr.trim() || instructionsEn.trim() ? 'primary' : 'muted'}
+                >
+                  {instructionsAr.trim() || instructionsEn.trim() || '—'}
                 </AppText>
               )}
             </OrderBoardCard>

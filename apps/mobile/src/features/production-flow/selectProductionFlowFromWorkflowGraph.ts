@@ -131,14 +131,3 @@ export function selectProductionFlowFromWorkflowGraph(
     source: meta.source,
   };
 }
-
-export function pickProductionOrderIdFromSalesOrder(order: {
-  productionOrders?: Array<{ id: string; progressPercent?: number | null }>;
-}): string | null {
-  const pos = order.productionOrders ?? [];
-  if (!pos.length) return null;
-  const best = pos.reduce((a, b) =>
-    Number(b.progressPercent ?? 0) > Number(a.progressPercent ?? 0) ? b : a,
-  );
-  return best.id;
-}

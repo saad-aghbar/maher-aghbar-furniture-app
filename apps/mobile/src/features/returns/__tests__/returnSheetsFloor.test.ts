@@ -34,6 +34,7 @@ describe('returns pop-up floor', () => {
     expect(screen).toContain('ListItemEnter');
     expect(screen).toContain('orderBoardShadow');
     expect(screen).toContain('AnimatedPressable');
+    expect(screen).toContain('mobile.returns.variant');
     assertFloor(screen);
   });
 
@@ -133,5 +134,23 @@ describe('returns pop-up floor', () => {
     expect(filter).toContain('ScrollView');
     expect(picker).toContain('expandable');
     expect(picker).toContain('ScrollView');
+  });
+
+  it('puts the dealer list on a hub + chrome board with filed-date tickets', () => {
+    const screen = read(join(returnsDir, 'ReturnsListScreen.tsx'));
+    const card = read(join(returnsDir, 'components/ReturnBoardCard.tsx'));
+    const stub = read(join(returnsDir, 'components/ReturnPhaseStub.tsx'));
+    expect(screen).toContain('selectDealerReturnHub');
+    expect(screen).toContain('DealerSearchBar');
+    expect(screen).toContain('ReturnsStatusRail');
+    expect(screen).toContain('StatementDateTrigger');
+    expect(screen).toContain('DealerEmptyState');
+    expect(screen).toContain('ReturnBoardCard');
+    expect(screen).not.toContain('mobile.returns.subtitle');
+    expect(card).toContain('ReturnPhaseStub');
+    expect(card).toContain('ProductThumb');
+    expect(stub).toContain('stubPhase');
+    assertFloor(screen);
+    assertFloor(card);
   });
 });

@@ -1,0 +1,26 @@
+appId: jo.maheraghbar.furniture
+name: Admin builds Karina Ukrainian variant
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: ".*Sign in.*|.*تسجيل.*|.*התחברות.*"
+    timeout: 30000
+- tapOn:
+    text: ".*Products.*|.*المنتجات.*|.*מוצרים.*"
+    optional: true
+- tapOn:
+    text: ".*Variants.*|.*التنويعات.*|.*וריאנטים.*"
+    optional: true
+- tapOn:
+    text: ".*Add variant.*|.*إضافة تنويعة.*|.*הוסף וריאנט.*"
+    optional: true
+- assertVisible:
+    text: ".*Create variant.*|.*إنشاء تنويعة.*|.*צור וריאנט.*"
+    optional: true
+- tapOn:
+    text: ".*Left-facing.*|.*وجهة اليسار.*|.*חזית שמאל.*"
+    optional: true
+- tapOn:
+    text: ".*Save.*|.*حفظ.*|.*שמור.*"
+    optional: true

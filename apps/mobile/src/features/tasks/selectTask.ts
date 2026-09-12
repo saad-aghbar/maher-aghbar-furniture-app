@@ -1,7 +1,7 @@
 import type { PriorityLevel } from '@/components/badges/badgeStyles';
 import { translate } from '@/i18n/translate';
 import { localizedName } from '@maher/i18n';
-import type { Locale } from '@maher/types';
+import { pickLocalizedInstruction, type Locale } from '@maher/types';
 import type { TaskDetail, TaskFile, TaskListItem } from './api';
 import { buildLocalizedStageInstructions } from './buildLocalizedStageInstructions';
 import { isScheduledToday } from './isScheduledToday';
@@ -13,6 +13,8 @@ export type TaskCardModel = {
   title: string;
   requiredWork: string;
   orderNumber: string;
+  factoryOrderNumber: string | null;
+  variantLabel: string | null;
   productTitle: string;
   imageUrl: string | null;
   /** Product hero + gallery URLs for detail media band. */
@@ -43,6 +45,7 @@ export type TaskProblem = {
 
 export type TaskDetailViewModel = TaskCardModel & {
   instructions: string;
+  orderInstructions: string;
   notes: string | null;
   photos: TaskFile[];
   attachments: TaskFile[];
@@ -113,6 +116,26 @@ export function toPriorityLevel(priority: string): PriorityLevel {
   return 'medium';
 }
 
+export function withVariantLabel(title: string, variant?: string | null): string {
+  const base = title.trim();
+  const label = variant?.trim();
+  if (!label) return base;
+  if (!base) return label;
+  if (base.toLowerCase().includes(label.toLowerCase())) return base;
+  return `${base} · ${label}`;
+}
+
+export function secondaryFactoryOrderNumber(
+  salesOrderNumber?: string | null,
+  factoryOrderNumber?: string | null,
+): string | null {
+  const factory = factoryOrderNumber?.trim() || null;
+  const sales = salesOrderNumber?.trim() || null;
+  if (!factory) return null;
+  if (sales && sales === factory) return null;
+  return factory;
+}
+
 export function assertNoProgressLeak(value: unknown, path = 'root'): void {
   if (value == null || typeof value !== 'object') return;
   if (Array.isArray(value)) {
@@ -129,11 +152,20 @@ export function assertNoProgressLeak(value: unknown, path = 'root'): void {
 
 function productTitle(item: TaskListItem, locale: Locale): string {
   const product = item.productionOrder?.product;
-  return localizedName(
+  const base = localizedName(
     locale,
     product,
     item.productionOrder?.productDescription || item.name || '—',
   );
+  return withVariantLabel(base, taskVariantLabel(item));
+}
+
+function taskVariantLabel(item: TaskListItem): string | null {
+  return item.variantLabel?.trim() || item.productionOrder?.variantLabel?.trim() || null;
+}
+
+function taskFactoryOrderNumber(item: TaskListItem): string | null {
+  return item.factoryOrderNumber?.trim() || item.productionOrder?.number?.trim() || null;
 }
 
 function stageLabel(item: TaskListItem, locale: Locale): string {
@@ -197,6 +229,8 @@ export function selectTaskCard(
     title: stageLabel(item, locale),
     requiredWork: stageLabel(item, locale),
     orderNumber: orderNumber(item),
+    factoryOrderNumber: secondaryFactoryOrderNumber(orderNumber(item), taskFactoryOrderNumber(item)),
+    variantLabel: taskVariantLabel(item),
     productTitle: productTitle(item, locale),
     imageUrl: imageUrl(item),
     imageUrls: collectImageUrls(item),
@@ -258,6 +292,12 @@ export function selectTaskDetail(
         specifications: task.productionOrder?.specifications ?? null,
       })
     : stored || task.productionOrder?.specifications?.trim() || '';
+  const orderInstructions = pickLocalizedInstruction(
+    locale,
+    task.productionOrder?.instructionsAr,
+    task.productionOrder?.instructionsEn,
+    task.productionOrder?.instructionsHe,
+  ) || (task.productionOrder?.notes?.trim() || '');
 
   const timing = {
     ...(task.timing ?? {
@@ -282,6 +322,7 @@ export function selectTaskDetail(
   const vm: TaskDetailViewModel = {
     ...card,
     instructions: instructions || '',
+    orderInstructions,
     notes: task.notes ?? null,
     photos: task.photos ?? [],
     attachments: task.attachments ?? [],

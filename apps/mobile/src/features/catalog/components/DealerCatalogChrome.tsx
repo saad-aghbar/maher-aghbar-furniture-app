@@ -13,6 +13,7 @@ import type { CatalogBrowseMode } from '../catalogBrowseMode';
 import type { BrowseCategory } from '../api';
 import { SearchActionRow } from '@/components/layout/SearchActionRow';
 import { CatalogFilterButton } from './CatalogFilterButton';
+import { CatalogBasketButton } from './CatalogBasketButton';
 import { DealerCatalogModeTabs } from './DealerCatalogModeTabs';
 import { DealerCategoryRail } from './DealerCategoryRail';
 
@@ -30,6 +31,7 @@ type Props = {
   onBrowseModeChange: (mode: CatalogBrowseMode) => void;
   /** Hide category rail in Favorites / Ordered modes. */
   showCategories?: boolean;
+  showBasket?: boolean;
 };
 
 /** Dealer catalog header — brand hero, modes, search, category rail. */
@@ -46,6 +48,7 @@ export function DealerCatalogChrome({
   browseMode,
   onBrowseModeChange,
   showCategories = true,
+  showBasket = true,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -114,6 +117,7 @@ export function DealerCatalogChrome({
             {t(subtitleKey)}
           </AppText>
         </View>
+        {showBasket ? <CatalogBasketButton /> : null}
       </View>
 
       <DealerCatalogModeTabs value={browseMode} onChange={onBrowseModeChange} />

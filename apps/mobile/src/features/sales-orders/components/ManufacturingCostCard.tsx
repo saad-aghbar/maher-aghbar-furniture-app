@@ -10,6 +10,10 @@ export type ManufacturingCostingSummary = {
   incomplete?: boolean;
   estimatedTotal?: number | null;
   actualTotal?: number | null;
+  estimatedMaterials?: number | null;
+  actualMaterials?: number | null;
+  estimatedLabor?: number | null;
+  actualLabor?: number | null;
   varianceCost?: number | null;
   variancePct?: number | null;
   scrapCost?: number | null;
@@ -52,10 +56,15 @@ export function ManufacturingCostCard({
 
   const est = summary.estimatedTotal;
   const act = summary.actualTotal;
+  const materialsEst = summary.estimatedMaterials;
+  const materialsAct = summary.actualMaterials;
+  const laborEst = summary.estimatedLabor;
+  const laborAct = summary.actualLabor;
   const variance = summary.varianceCost;
   const incomplete = summary.incomplete || summary.status === 'INCOMPLETE';
   const accent = incomplete ? colors.warning : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const hasLabor = laborEst != null || laborAct != null;
 
   return (
     <OrderBoardCard
@@ -75,6 +84,7 @@ export function ManufacturingCostCard({
       >
         {statusLabel(t, summary.status)}
         {incomplete ? ` · ${t('mobile.orderDetail.mfgCostIncompleteHint')}` : ''}
+        {hasLabor ? ` · ${t('mobile.orderDetail.mfgCostAllInHint')}` : ''}
       </AppText>
 
       <View
@@ -102,6 +112,22 @@ export function ManufacturingCostCard({
           last={false}
           titleWeight={titleWeight}
         />
+        {hasLabor ? (
+          <MoneyRow
+            label={t('mobile.orderDetail.mfgCostMaterials')}
+            value={componentValue(formatCurrency, t, materialsEst, materialsAct)}
+            last={false}
+            titleWeight={titleWeight}
+          />
+        ) : null}
+        {hasLabor ? (
+          <MoneyRow
+            label={t('mobile.orderDetail.mfgCostLabor')}
+            value={componentValue(formatCurrency, t, laborEst, laborAct)}
+            last={false}
+            titleWeight={titleWeight}
+          />
+        ) : null}
         <MoneyRow
           label={t('mobile.orderDetail.mfgCostVariance')}
           value={
@@ -123,6 +149,22 @@ export function ManufacturingCostCard({
       />
     </OrderBoardCard>
   );
+}
+
+function componentValue(
+  formatCurrency: (n: number) => string,
+  t: (k: string) => string,
+  estimated: number | null | undefined,
+  actual: number | null | undefined,
+): string {
+  const est =
+    estimated != null ? formatCurrency(estimated) : t('mobile.orderDetail.mfgCostUnavailable');
+  const act =
+    actual != null ? formatCurrency(actual) : t('mobile.orderDetail.mfgCostUnavailable');
+  if (estimated == null && actual == null) return t('mobile.orderDetail.mfgCostUnavailable');
+  if (estimated != null && actual == null) return est;
+  if (actual != null && estimated == null) return act;
+  return `${est} → ${act}`;
 }
 
 function MoneyRow({

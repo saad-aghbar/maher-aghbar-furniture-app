@@ -10,6 +10,7 @@ export type TabName =
   | 'more'
   | 'catalog'
   | 'new-order'
+  | 'basket'
   | 'account'
   | 'schedule'
   | 'tasks'
@@ -87,6 +88,14 @@ export const customerScheduleTab: TabDef = {
 export const customerNewOrderTab: TabDef = {
   name: 'new-order',
   labelKey: 'newOrder',
+  visible: (u) => can(u, 'request.create'),
+  require: { permissions: ['request.create'], mode: 'all' },
+};
+
+/** Kept for catalog / PDP basket review — not a bottom-tab chip. */
+export const customerBasketTab: TabDef = {
+  name: 'basket',
+  labelKey: 'basket',
   visible: (u) => can(u, 'request.create'),
   require: { permissions: ['request.create'], mode: 'all' },
 };

@@ -53,6 +53,7 @@ import {
   summarizeAssignedOrderTasks,
   summarizeLane,
   workerOrderMatchesSearch,
+  groupMyOrdersBySalesOrder,
   type MyOrderSegment,
   type SnapshotLaneInput,
 } from './worker-order-workflow';
@@ -175,6 +176,16 @@ export class TasksService {
               salesOrder: { number: { contains: q, mode: 'insensitive' } },
             },
           },
+          {
+            productionOrder: {
+              variantLabel: { contains: q, mode: 'insensitive' },
+            },
+          },
+          {
+            productionOrder: {
+              variantSku: { contains: q, mode: 'insensitive' },
+            },
+          },
           ...(dealerIdsFromSearch?.length
             ? [
                 {
@@ -224,6 +235,10 @@ export class TasksService {
               number: true,
               status: true,
               productDescription: true,
+              salesOrderId: true,
+              salesOrderLineId: true,
+              variantLabel: true,
+              variantSku: true,
               salesOrder: { select: { id: true, number: true } },
               product: {
                 select: {
@@ -299,6 +314,11 @@ export class TasksService {
         productImageUrl: product?.imageUrl?.trim() || null,
         factoryOrderNumber: task.productionOrder.number,
         salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
+        salesOrderId:
+          task.productionOrder.salesOrderId ?? task.productionOrder.salesOrder?.id ?? null,
+        salesOrderLineId: task.productionOrder.salesOrderLineId ?? null,
+        variantLabel: task.productionOrder.variantLabel ?? null,
+        variantSku: task.productionOrder.variantSku ?? null,
       };
       if (canSeeAll) return row;
       const { progressPercent: _omit, ...safe } = row;
@@ -322,6 +342,10 @@ export class TasksService {
         status: true,
         quantity: true,
         productDescription: true,
+        salesOrderId: true,
+        salesOrderLineId: true,
+        variantLabel: true,
+        variantSku: true,
         plannedCompletionDate: true,
         requiredDeliveryDate: true,
         priority: true,
@@ -374,42 +398,46 @@ export class TasksService {
       return orderMatchesSegment(parsed, order.tasks, deadline, now, timezone);
     });
 
-    return {
-      data: visible.map((order) => {
-        const deadline = order.plannedCompletionDate ?? order.requiredDeliveryDate;
-        const scoped = remainingTasksForSegment(
-          searching ? 'open' : parsed,
-          order.tasks,
-          deadline,
-          now,
-          timezone,
-        );
-        const { myTaskCount, actionableCount, blockedCount } = summarizeAssignedOrderTasks(scoped);
-        return {
-          id: order.id,
-          number: order.number,
-          salesOrderNumber: order.salesOrder?.number ?? null,
-          externalOrderNumber: order.salesOrder?.externalOrderNumber ?? null,
-          status: order.status,
-          quantity: order.quantity,
-          productDescription: order.productDescription,
-          product: order.product,
-          productImageUrl: order.product?.imageUrl?.trim() || null,
-          dealer: order.salesOrder?.customer ?? null,
-          assignedStages: scoped.map((task) => ({
-            code: task.stageDefinition?.code ?? '',
-            nameEn: task.stageDefinition?.nameEn ?? null,
-            nameAr: task.stageDefinition?.nameAr ?? null,
-            nameHe: task.stageDefinition?.nameHe ?? null,
-          })),
-          priority: order.priority,
-          deadline,
-          myTaskCount,
-          actionableCount,
-          blockedCount,
-        };
-      }),
-    };
+    const items = visible.map((order) => {
+      const deadline = order.plannedCompletionDate ?? order.requiredDeliveryDate;
+      const scoped = remainingTasksForSegment(
+        searching ? 'open' : parsed,
+        order.tasks,
+        deadline,
+        now,
+        timezone,
+      );
+      const { myTaskCount, actionableCount, blockedCount } = summarizeAssignedOrderTasks(scoped);
+      return {
+        id: order.id,
+        number: order.number,
+        salesOrderId: order.salesOrderId ?? order.salesOrder?.id ?? null,
+        salesOrderLineId: order.salesOrderLineId ?? null,
+        salesOrderNumber: order.salesOrder?.number ?? null,
+        variantLabel: order.variantLabel ?? null,
+        variantSku: order.variantSku ?? null,
+        externalOrderNumber: order.salesOrder?.externalOrderNumber ?? null,
+        status: order.status,
+        quantity: order.quantity,
+        productDescription: order.productDescription,
+        product: order.product,
+        productImageUrl: order.product?.imageUrl?.trim() || null,
+        dealer: order.salesOrder?.customer ?? null,
+        assignedStages: scoped.map((task) => ({
+          code: task.stageDefinition?.code ?? '',
+          nameEn: task.stageDefinition?.nameEn ?? null,
+          nameAr: task.stageDefinition?.nameAr ?? null,
+          nameHe: task.stageDefinition?.nameHe ?? null,
+        })),
+        priority: order.priority,
+        deadline,
+        myTaskCount,
+        actionableCount,
+        blockedCount,
+      };
+    });
+    const grouped = groupMyOrdersBySalesOrder(items);
+    return { orders: grouped, data: grouped };
   }
 
   async getMyOrderWorkflow(productionOrderId: string, userId: string) {
@@ -550,7 +578,11 @@ export class TasksService {
     return {
       id: order.id,
       number: order.number,
+      salesOrderId: order.salesOrderId ?? order.salesOrder?.id ?? null,
+      salesOrderLineId: order.salesOrderLineId ?? null,
       salesOrderNumber: order.salesOrder?.number ?? null,
+      variantLabel: order.variantLabel ?? null,
+      variantSku: order.variantSku ?? null,
       quantity: order.quantity,
       productDescription: order.productDescription,
       product: order.product,
@@ -649,6 +681,10 @@ export class TasksService {
             returnRequestId: true,
             returnPieceId: true,
             originType: true,
+            salesOrderId: true,
+            salesOrderLineId: true,
+            variantLabel: true,
+            variantSku: true,
             salesOrder: { select: { id: true, number: true } },
             product: {
               select: {
@@ -661,6 +697,10 @@ export class TasksService {
                 galleryUrls: true,
               },
             },
+            instructionsAr: true,
+            instructionsEn: true,
+            instructionsHe: true,
+            notes: true,
           },
         },
         stageDefinition: true,
@@ -808,6 +848,11 @@ export class TasksService {
       productImageUrls,
       factoryOrderNumber: task.productionOrder.number,
       salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
+      salesOrderId:
+        task.productionOrder.salesOrderId ?? task.productionOrder.salesOrder?.id ?? null,
+      salesOrderLineId: task.productionOrder.salesOrderLineId ?? null,
+      variantLabel: task.productionOrder.variantLabel ?? null,
+      variantSku: task.productionOrder.variantSku ?? null,
       producesSemiFinished,
       expectedPieceCount,
       requiresPhotos,

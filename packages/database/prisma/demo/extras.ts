@@ -22,7 +22,7 @@ export async function seedDemoExtras(
       type: CommunicationType.WHATSAPP,
       subject: 'Abdoun lounge fabric confirmation',
       summary: 'Confirmed sand velvet lot and 14-day receiving window.',
-      occurredAt: ammanLocal(2026, 6, 20, 11),
+      occurredAt: ammanLocal(2026, 8, 24, 11),
       employeeId: opts.salesId,
     },
   });
@@ -33,9 +33,9 @@ export async function seedDemoExtras(
       type: CommunicationType.PHONE_CALL,
       subject: 'Italian velvet ETA',
       summary: 'Dealer asked for velvet arrival; purchasing confirmed inbound PO.',
-      occurredAt: ammanLocal(2026, 8, 14, 16),
+      occurredAt: ammanLocal(2026, 9, 8, 16),
       employeeId: opts.salesId,
-      nextFollowUpAt: ammanLocal(2026, 8, 18, 10),
+      nextFollowUpAt: ammanLocal(2026, 9, 10, 10),
     },
   });
 

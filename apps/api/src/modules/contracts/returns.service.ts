@@ -129,23 +129,29 @@ export class ReturnsService {
           id: true,
           salesOrderId: true,
           productId: true,
+          variantId: true,
+          variantSku: true,
+          variantLabel: true,
           description: true,
           productionOrders: { select: { id: true }, orderBy: { createdAt: 'desc' }, take: 1 },
         },
       });
-      if (!line) return { salesOrderLineId: null, productId: null, sourceProductionOrderId: null };
+      if (!line) return { salesOrderLineId: null, productId: null, variantId: null, sourceProductionOrderId: null };
       return {
         salesOrderLineId: line.id,
         productId: line.productId,
+        variantId: line.variantId,
+        variantSku: line.variantSku,
+        variantLabel: line.variantLabel,
         sourceProductionOrderId: line.productionOrders[0]?.id ?? null,
       };
     }
     if (!params.salesOrderId) {
-      return { salesOrderLineId: null, productId: null, sourceProductionOrderId: null };
+      return { salesOrderLineId: null, productId: null, variantId: null, sourceProductionOrderId: null };
     }
     const lines = await this.prisma.salesOrderLine.findMany({
       where: { salesOrderId: params.salesOrderId },
-      select: { id: true, productId: true },
+      select: { id: true, productId: true, variantId: true, variantSku: true, variantLabel: true },
     });
     if (lines.length === 1) {
       const po = await this.prisma.productionOrder.findFirst({
@@ -156,10 +162,13 @@ export class ReturnsService {
       return {
         salesOrderLineId: lines[0]!.id,
         productId: lines[0]!.productId,
+        variantId: lines[0]!.variantId,
+        variantSku: lines[0]!.variantSku,
+        variantLabel: lines[0]!.variantLabel,
         sourceProductionOrderId: po?.id ?? null,
       };
     }
-    return { salesOrderLineId: null, productId: null, sourceProductionOrderId: null };
+    return { salesOrderLineId: null, productId: null, variantId: null, sourceProductionOrderId: null };
   }
 
   applyState(current: string | null | undefined, next: Lifecycle) {
