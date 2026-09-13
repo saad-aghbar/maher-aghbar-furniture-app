@@ -15,6 +15,8 @@ import {
 import { TextField } from '@/components/forms/TextField';
 import { LocationMapPicker, LocationPinField, type MapCoords } from '@/components/maps';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -41,9 +43,7 @@ const TYPES = ['COMPANY', 'INDIVIDUAL', 'SHOWROOM'] as const;
 const LANGS = ['ar', 'en', 'he'] as const;
 
 const empty = () => ({
-  nameAr: '',
-  nameEn: '',
-  nameHe: '',
+  name: '',
   customerType: 'COMPANY',
   companyName: '',
   phone: '',
@@ -108,7 +108,7 @@ export function CreateDealerSheet({ open, onClose }: Props) {
 
   const onSubmit = async () => {
     setError(null);
-    if (!form.nameAr.trim() && !form.nameEn.trim() && !form.nameHe.trim()) {
+    if (!form.name.trim()) {
       setError(t('customers.nameRequired'));
       return;
     }
@@ -147,14 +147,15 @@ export function CreateDealerSheet({ open, onClose }: Props) {
     }
 
     try {
+      const names = await resolveTrilingualName(form.name, locale);
       const created = await createMutation.mutateAsync({
-        nameAr: form.nameAr.trim() || undefined,
-        nameEn: form.nameEn.trim() || undefined,
-        nameHe: form.nameHe.trim() || undefined,
+        nameAr: names.nameAr || undefined,
+        nameEn: names.nameEn || undefined,
+        nameHe: names.nameHe || undefined,
         customerType: form.customerType,
         companyName:
           form.customerType === 'COMPANY' || form.customerType === 'SHOWROOM'
-            ? form.companyName.trim() || form.nameEn.trim() || form.nameAr.trim() || undefined
+            ? form.companyName.trim() || names.nameEn || names.nameAr || undefined
             : undefined,
         phone: toE164Phone(form.phone),
         fax: toE164Phone(form.fax) || undefined,
@@ -266,20 +267,10 @@ export function CreateDealerSheet({ open, onClose }: Props) {
               label={t('customers.name')}
               titleWeight={titleWeight}
             >
-              <TextField
-                label={t('customers.nameAr')}
-                value={form.nameAr}
-                onChangeText={(v) => set('nameAr', v)}
-              />
-              <TextField
-                label={t('customers.nameEn')}
-                value={form.nameEn}
-                onChangeText={(v) => set('nameEn', v)}
-              />
-              <TextField
-                label={t('customers.nameHe')}
-                value={form.nameHe}
-                onChangeText={(v) => set('nameHe', v)}
+              <LocaleNameField
+                value={form.name}
+                onChange={(v) => set('name', v)}
+                label={t('customers.name')}
               />
               {form.customerType !== 'INDIVIDUAL' ? (
                 <TextField

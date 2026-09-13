@@ -9,6 +9,7 @@ export default function AdminReportsRoute() {
       user={user}
       require={[
         'inventory.cost.read',
+        'report.inventory.read',
         'report.sales.read',
         'report.production.read',
         'report.financial.read',

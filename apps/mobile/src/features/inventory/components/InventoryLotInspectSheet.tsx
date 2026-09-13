@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
@@ -15,6 +16,7 @@ type Props = {
   open: boolean;
   lot: SemiFinishedLot | null;
   onClose: () => void;
+  onClosed?: () => void;
   onShowQr?: (lot: SemiFinishedLot) => void;
   onPrintQr?: (lot: SemiFinishedLot) => void;
 };
@@ -152,13 +154,19 @@ function SectionEyebrow({ label }: { label: string }) {
 
 export function InventoryLotInspectSheet({
   open,
-  lot,
+  lot: lotProp,
   onClose,
+  onClosed,
   onShowQr,
   onPrintQr,
 }: Props) {
   const { t, locale, isRTL, formatDateTime } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  // Keep the last lot mounted so BottomSheet can animate closed and fire onClosed
+  // (Show QR / Print). Returning null here skips that handoff.
+  const heldLot = useRef(lotProp);
+  if (lotProp) heldLot.current = lotProp;
+  const lot = lotProp ?? heldLot.current;
   if (!lot) return null;
 
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -203,12 +211,14 @@ export function InventoryLotInspectSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
+      onClosed={onClosed}
       title={t('mobile.inventory.inspectLot')}
       fitContent
     >
       <ScrollView
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
+        style={{ maxHeight: 460 }}
         contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
       >
         <View
@@ -489,16 +499,17 @@ export function InventoryLotInspectSheet({
             )}
           </View>
         </View>
-
+      </ScrollView>
         {scanCode && onShowQr ? (
           <InventorySheetFooter
             primaryLabel={t('mobile.inventory.wipShowQr')}
             onPrimary={() => onShowQr(lot)}
             secondaryLabel={onPrintQr ? t('mobile.inventory.wipPrintKitLabel') : t('mobile.inventory.cancel')}
             onSecondary={onPrintQr ? () => onPrintQr(lot) : onClose}
+            tertiaryLabel={onPrintQr ? t('mobile.inventory.cancel') : undefined}
+            onTertiary={onPrintQr ? onClose : undefined}
           />
         ) : null}
-      </ScrollView>
     </BottomSheet>
   );
 }

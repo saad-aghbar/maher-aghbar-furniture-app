@@ -6,13 +6,6 @@ export type TrilingualNames = {
   nameHe: string;
 };
 
-/** Locale-first field order for create forms (Arabic-first when admin uses ar). */
-export function nameFieldOrder(locale: string): Array<keyof TrilingualNames> {
-  if (locale === 'ar') return ['nameAr', 'nameEn', 'nameHe'];
-  if (locale === 'he') return ['nameHe', 'nameEn', 'nameAr'];
-  return ['nameEn', 'nameAr', 'nameHe'];
-}
-
 export function slugFromEnglishName(nameEn: string, prefix: string): string {
   const base = nameEn
     .trim()

@@ -12,7 +12,10 @@ import {
 } from '@/components/forms/countryDialCodes';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
+import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { useUpdateDealerMutation } from '../query';
@@ -47,6 +50,8 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
   const updateMutation = useUpdateDealerMutation(dealer.id);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
+    name: '',
+    originalName: '',
     nameAr: '',
     nameEn: '',
     nameHe: '',
@@ -61,7 +66,10 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    const name = localizedName(locale, dealer, '');
     setForm({
+      name,
+      originalName: name,
       nameAr: dealer.nameAr ?? '',
       nameEn: dealer.nameEn ?? '',
       nameHe: dealer.nameHe ?? '',
@@ -74,7 +82,7 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
       notes: dealer.notes ?? '',
     });
     setError(null);
-  }, [open, dealer]);
+  }, [open, dealer, locale]);
 
   const entityNameLabel = useMemo(() => {
     if (form.customerType === 'SHOWROOM') return t('customers.showroomName');
@@ -87,7 +95,7 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
 
   const onSubmit = async () => {
     setError(null);
-    if (!form.nameAr.trim() && !form.nameEn.trim() && !form.nameHe.trim()) {
+    if (!form.name.trim()) {
       setError(t('customers.nameRequired'));
       return;
     }
@@ -104,10 +112,20 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
       return;
     }
     try {
+      const names = await resolveTrilingualIfChanged({
+        typed: form.name,
+        locale,
+        original: form.originalName,
+        existing: {
+          nameEn: form.nameEn,
+          nameAr: form.nameAr,
+          nameHe: form.nameHe,
+        },
+      });
       await updateMutation.mutateAsync({
-        nameAr: form.nameAr.trim() || undefined,
-        nameEn: form.nameEn.trim() || undefined,
-        nameHe: form.nameHe.trim() || undefined,
+        nameAr: names.nameAr || undefined,
+        nameEn: names.nameEn || undefined,
+        nameHe: names.nameHe || undefined,
         customerType: form.customerType,
         companyName:
           form.customerType === 'INDIVIDUAL'
@@ -184,21 +202,11 @@ export function EditDealerSheet({ open, onClose, dealer }: Props) {
             label={t('customers.name')}
             titleWeight={titleWeight}
           >
-            <TextField
-              label={t('customers.nameAr')}
-              value={form.nameAr}
-              onChangeText={(v) => set('nameAr', v)}
-            />
-            <TextField
-              label={t('customers.nameEn')}
-              value={form.nameEn}
-              onChangeText={(v) => set('nameEn', v)}
-            />
-            <TextField
-              label={t('customers.nameHe')}
-              value={form.nameHe}
-              onChangeText={(v) => set('nameHe', v)}
-            />
+              <LocaleNameField
+                value={form.name}
+                onChange={(v) => set('name', v)}
+                label={t('customers.name')}
+              />
             {form.customerType !== 'INDIVIDUAL' ? (
               <TextField
                 label={entityNameLabel}

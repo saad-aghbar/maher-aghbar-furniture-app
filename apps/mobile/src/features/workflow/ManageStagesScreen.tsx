@@ -37,7 +37,9 @@ import {
   DealerFormSection,
 } from '@/features/dealers/components/dealerSheetForm';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged, resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
@@ -49,13 +51,17 @@ import {
 import { StageLibraryCard, StageLibrarySection } from './components/StageLibraryCard';
 import { WorkflowPageHeader } from './components/WorkflowPageHeader';
 import { useStageLibraryQuery } from './query';
-import { nameFieldOrder, type TrilingualNames } from './trilingualNames';
 
 const LIST_BACK = '/(app)/(admin)/production/workflow' as Href;
 
 type EditorMode = 'create' | 'edit';
 
-type Draft = TrilingualNames & {
+type Draft = {
+  name: string;
+  originalName: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe: string;
   hours: string;
   requiresInspection: boolean;
   requiresPhotos: boolean;
@@ -64,6 +70,8 @@ type Draft = TrilingualNames & {
 };
 
 const emptyDraft = (): Draft => ({
+  name: '',
+  originalName: '',
   nameEn: '',
   nameAr: '',
   nameHe: '',
@@ -74,8 +82,11 @@ const emptyDraft = (): Draft => ({
   resourceSlots: '1',
 });
 
-function draftFromRow(row: StageDefinition): Draft {
+function draftFromRow(row: StageDefinition, locale: string): Draft {
+  const shown = localizedName(locale, row, '');
   return {
+    name: shown,
+    originalName: shown,
     nameEn: row.nameEn,
     nameAr: row.nameAr,
     nameHe: row.nameHe ?? '',
@@ -106,12 +117,6 @@ export function ManageStagesScreen() {
   const [deleting, setDeleting] = useState(false);
   const editorScrollRef = useRef<ScrollView>(null);
 
-  const fieldOrder = nameFieldOrder(locale);
-  const nameLabels: Record<keyof TrilingualNames, string> = {
-    nameEn: t('mobile.production.workflow.nameEn'),
-    nameAr: t('mobile.production.workflow.nameAr'),
-    nameHe: t('mobile.production.workflow.nameHe'),
-  };
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const activeRows = useMemo(() => {
@@ -143,16 +148,16 @@ export function ManageStagesScreen() {
   }
 
   function openEdit(row: StageDefinition) {
-    setDraft(draftFromRow(row));
+    setDraft(draftFromRow(row, locale));
     setEditor({ mode: 'edit', row });
   }
 
   async function saveEditor() {
     if (!canManage || saving) return;
-    if (!lockedEditor && (!draft.nameEn.trim() || !draft.nameAr.trim())) {
+    if (!lockedEditor && !draft.name.trim()) {
       showToast({
         variant: 'error',
-        message: t('mobile.production.workflow.namesRequired'),
+        message: t('catalog.namesRequired'),
       });
       return;
     }
@@ -170,13 +175,26 @@ export function ManageStagesScreen() {
             : 1,
       };
       if (editor?.mode === 'create') {
+        const names = await resolveTrilingualName(draft.name, locale);
         await createStageDefinition({
-          nameEn: draft.nameEn.trim(),
-          nameAr: draft.nameAr.trim(),
-          nameHe: draft.nameHe.trim() || undefined,
+          nameEn: names.nameEn,
+          nameAr: names.nameAr,
+          nameHe: names.nameHe || undefined,
           ...settings,
         });
       } else if (editor?.row) {
+        const names = lockedEditor
+          ? null
+          : await resolveTrilingualIfChanged({
+              typed: draft.name,
+              locale,
+              original: draft.originalName,
+              existing: {
+                nameEn: draft.nameEn,
+                nameAr: draft.nameAr,
+                nameHe: draft.nameHe,
+              },
+            });
         await updateStageDefinition(
           editor.row.id,
           lockedEditor
@@ -185,9 +203,9 @@ export function ManageStagesScreen() {
                 estimatedHours: Number.isFinite(hours) ? hours! : null,
               }
             : {
-                nameEn: draft.nameEn.trim(),
-                nameAr: draft.nameAr.trim(),
-                nameHe: draft.nameHe.trim() || null,
+                nameEn: names!.nameEn,
+                nameAr: names!.nameAr,
+                nameHe: names!.nameHe || null,
                 ...settings,
                 estimatedHours: Number.isFinite(hours) ? hours! : null,
               },
@@ -440,23 +458,13 @@ export function ManageStagesScreen() {
           ) : null}
 
           <DealerFormSection icon="language-outline" label={t('mobile.production.workflow.namesSection')} titleWeight={titleWeight}>
-            <AppText variant="caption" color="secondary">
-              {t('mobile.production.workflow.namesHint')}
-            </AppText>
-            {fieldOrder.map((key) => (
-              <TextField
-                key={key}
-                label={
-                  key === 'nameHe'
-                    ? `${nameLabels[key]} (${t('mobile.production.workflow.hebrewOptional')})`
-                    : nameLabels[key]
-                }
-                value={draft[key]}
-                editable={!lockedEditor}
-                onChangeText={(v) => setDraft((d) => ({ ...d, [key]: v }))}
-                autoCapitalize={key === 'nameEn' ? 'words' : 'none'}
-              />
-            ))}
+            <LocaleNameField
+              value={draft.name}
+              onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
+              label={t('mobile.production.workflow.stageName')}
+              editable={!lockedEditor}
+              autoCapitalize="words"
+            />
           </DealerFormSection>
 
           <DealerFormSection
@@ -551,7 +559,7 @@ export function ManageStagesScreen() {
             loading={saving}
             disabled={
               saving ||
-              (!lockedEditor && (!draft.nameEn.trim() || !draft.nameAr.trim()))
+              (!lockedEditor && !draft.name.trim())
             }
           />
         ) : null}

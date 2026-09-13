@@ -243,15 +243,30 @@ export function WorkflowFloorRow({
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
+          accessibilityState={{ selected: active }}
           onPress={onPress}
-          style={{ flex: 1, minWidth: 0 }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+          }}
         >
           {main}
+          {trailing ? (
+            <View style={{ paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.sm }}>
+              {trailing}
+            </View>
+          ) : null}
         </AnimatedPressable>
       ) : (
-        main
+        <>
+          {main}
+          {trailing ? (
+            <View style={{ paddingVertical: theme.spacing.sm }}>{trailing}</View>
+          ) : null}
+        </>
       )}
-      {trailing ? <View style={{ paddingVertical: theme.spacing.sm }}>{trailing}</View> : null}
     </View>
   );
 }

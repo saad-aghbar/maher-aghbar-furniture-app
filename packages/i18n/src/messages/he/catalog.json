@@ -128,6 +128,21 @@
   "searchSpecOptions": "חיפוש אפשרויות…",
   "noSpecOptionsMatch": "אין אפשרויות תואמות.",
   "noSpecOption": "ללא אפשרות",
+  "addSpec": "הוספת מפרט",
+  "editSpec": "עריכת מפרט",
+  "specsHint": "רק המפרט שהפריט באמת משתמש בו. תנו שם, סווגו, וצמדו.",
+  "noSpecs": "אין מפרט מצורף",
+  "noSpecsBody": "הוסיפו קטגוריה, ואז תנו שם למפרט של הוריאנט.",
+  "specCategory": "קטגוריה",
+  "newSpecCategory": "קטגוריה חדשה",
+  "newSpecCategoryHint": "ספוג, עץ, פאספול — לפי מה שהפריט צריך.",
+  "specName": "שם המפרט",
+  "newSpecName": "תנו שם למפרט",
+  "newSpecNameHint": "ניסוח המפעל לוריאנט הזה. נשמר כשורה בספרייה.",
+  "pinSpec": "צירוף מפרט",
+  "saveSpec": "שמירת מפרט",
+  "searchSpecCategories": "חיפוש קטגוריות…",
+  "librarySpecs": "שורות ספרייה",
   "inputType": "סוג קלט",
   "appliesTo": "חל על",
   "sortOrder": "סדר מיון",
@@ -914,5 +929,5 @@
   "variantWorkflowHint": "בחרו תהליך ואז פתחו את הגדרת הייצור לחומרים ולזמני שלבים.",
   "workflowStageSummary": "{stages} שלבים · {minutes}",
   "stageTime": "זמן שלב",
-  "stageTimeHint": "דקות ליחידה לשלב הזה. נשמר יחד עם שאר ההגדרה."
+  "stageTimeHint": "כמה זמן השלב הזה לוקח בוריאנט הזה."
 }

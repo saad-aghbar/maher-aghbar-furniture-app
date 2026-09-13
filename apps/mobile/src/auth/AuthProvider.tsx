@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         applyUser(profile);
         setPendingMfa(null);
         setStatus('authenticated');
-        void saveBiometricCredentials(input.username, input.password);
+        void saveBiometricCredentials(input.username);
         void registerPushDevice(profile);
         return { ok: true as const };
       } catch (error) {

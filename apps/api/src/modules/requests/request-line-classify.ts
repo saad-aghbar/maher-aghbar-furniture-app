@@ -222,6 +222,10 @@ export function mapRequestItemCreate(
     customMeasurements: item.customMeasurements?.length
       ? (item.customMeasurements as unknown as Prisma.InputJsonValue)
       : undefined,
+    photoDocumentIds: item.photoDocumentIds?.length
+      ? (item.photoDocumentIds as unknown as Prisma.InputJsonValue)
+      : undefined,
+    primaryImageDocumentId: item.primaryImageDocumentId,
     manufacturingComplexity,
     sortOrder: index,
   };

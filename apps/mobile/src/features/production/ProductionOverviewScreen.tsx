@@ -5,7 +5,6 @@ import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -26,6 +25,7 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { ProductionDateMode, ProductionDayFocus, ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
+import { ProductionProblemsBar } from './components/ProductionProblemsBar';
 import { ProductionDealerSheet } from './components/ProductionDealerSheet';
 import { ProductionDayLensBoard } from './components/ProductionDayLensBoard';
 import { ProductionDayOrderCard } from './components/ProductionDayOrderCard';
@@ -41,6 +41,7 @@ import {
   useProductionDaySummaryQuery,
   useProductionDealersQuery,
   useProductionOrdersInfiniteQuery,
+  useProductionProblemsQuery,
   useProductionSummaryQuery,
 } from './query';
 import { productionHubOrderHref } from './productionHubOrderHref';
@@ -156,6 +157,7 @@ export function ProductionOverviewScreen() {
     allowed && dateScope === 'day',
   );
   const dealersQuery = useProductionDealersQuery(allowed);
+  const openProblemsQuery = useProductionProblemsQuery('open', allowed);
   const listQuery = useProductionOrdersInfiniteQuery(
     {
       bucket,
@@ -344,6 +346,7 @@ export function ProductionOverviewScreen() {
               void summaryQuery.refetch();
               void daySummaryQuery.refetch();
               void listQuery.refetch();
+              void openProblemsQuery.refetch();
             }}
           />
         }
@@ -578,10 +581,9 @@ export function ProductionOverviewScreen() {
                 ...orderBoardShadow(colorScheme),
               }}
             >
-              <PrimaryButton
-                label={t('mobile.tasks.problemsTitle')}
+              <ProductionProblemsBar
+                openCount={openProblemsQuery.data?.data.length ?? 0}
                 onPress={() => {
-                  void haptics.selection();
                   router.push('/(app)/(admin)/production/problems' as Href);
                 }}
               />

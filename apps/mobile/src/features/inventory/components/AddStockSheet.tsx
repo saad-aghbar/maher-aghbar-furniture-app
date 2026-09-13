@@ -13,6 +13,7 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItem, Warehouse } from '../api';
 import { resolveInventoryScan } from '../resolveInventoryScan';
+import { selectSelectScanMode } from '../selectScanPresentation';
 import { selectInventoryItemCard } from '../selectInventory';
 import { useLabelVerifyScan } from '../useLabelVerifyScan';
 import { useInventoryOpenReceiptsQuery } from '../query';
@@ -268,35 +269,30 @@ export function AddStockSheet({
     setError(null);
     try {
       const resolved = await resolveInventoryScan(code);
-      if (resolved.status === 'ORDER_FABRIC') {
-        // Order fabric is committed stock — say so instead of "not found".
+      const selectMode = selectSelectScanMode(resolved);
+      if (selectMode !== 'item') {
         void haptics.error();
         setConfirmItem(null);
-        setConfirmFabric({
-          code: resolved.lot.qrCode ?? code,
-          label: resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
-          orderNumber: resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
-        });
-        setConfirmMode('order-fabric');
+        if (selectMode === 'order-fabric' && resolved.status === 'ORDER_FABRIC') {
+          setConfirmFabric({
+            code: resolved.lot.qrCode ?? code,
+            label:
+              resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
+            orderNumber:
+              resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+          });
+        } else {
+          setConfirmFabric(null);
+        }
+        setConfirmMode(selectMode);
         setConfirmOpen(true);
         return;
       }
-      if (
-        resolved.status === 'NOT_FOUND' ||
-        resolved.status === 'FOUND_KIT' ||
-        resolved.status === 'FOUND_LOT' ||
-        resolved.status === 'FOUND_BIN'
-      ) {
+      if (resolved.status !== 'FOUND') {
         void haptics.error();
         setConfirmItem(null);
+        setConfirmFabric(null);
         setConfirmMode('not-found');
-        setConfirmOpen(true);
-        return;
-      }
-      if (resolved.status === 'ERROR') {
-        void haptics.error();
-        setConfirmItem(null);
-        setConfirmMode('error');
         setConfirmOpen(true);
         return;
       }

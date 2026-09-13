@@ -127,6 +127,10 @@ class CreateInventoryItemDto {
 
   @IsOptional()
   @IsString()
+  nameHe?: string;
+
+  @IsOptional()
+  @IsString()
   unit?: string;
 
   @IsOptional()
@@ -208,6 +212,10 @@ class UpdateInventoryItemDto {
   @IsOptional()
   @IsString()
   nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  nameHe?: string;
 
   @IsOptional()
   @IsString()

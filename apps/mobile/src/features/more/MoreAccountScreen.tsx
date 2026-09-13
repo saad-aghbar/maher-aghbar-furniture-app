@@ -47,6 +47,7 @@ import {
 } from '@/auth/biometrics';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Linking, Pressable, Switch, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -671,8 +672,8 @@ export function MoreAccountScreen({
 
                 {setupActive ? (
                   <View style={{ gap: theme.spacing.sm }}>
-                    <AppText variant="caption" color="secondary" dir="ltr">
-                      {t('auth.mfaSecret')}: {mfaSecret}
+                    <AppText variant="caption" color="secondary">
+                      {t('auth.mfaSetupHint')}
                     </AppText>
                     {mfaOtpauth ? (
                       <Pressable
@@ -685,6 +686,16 @@ export function MoreAccountScreen({
                         </AppText>
                       </Pressable>
                     ) : null}
+                    <SecondaryButton
+                      label={t('auth.mfaCopySecret')}
+                      onPress={() => {
+                        if (!mfaSecret) return;
+                        void Clipboard.setStringAsync(mfaSecret).then(() => {
+                          showToast({ variant: 'success', message: t('auth.mfaCopySecret') });
+                        });
+                      }}
+                      style={{ borderRadius: theme.radius.xl }}
+                    />
                     <TextField
                       label={t('auth.mfaCode')}
                       value={mfaCode}

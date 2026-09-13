@@ -24,6 +24,11 @@ jest.mock('@/api/modules/catalogAdmin', () => ({
     nameAr: 'أوكرانيه',
     nameEn: 'Ukrainian',
   }),
+  translateCatalogName: jest.fn(async (text: string) => ({
+    nameAr: text,
+    nameEn: text,
+    nameHe: text,
+  })),
 }));
 
 describe('CreateVariantSheet geometry', () => {
@@ -47,7 +52,7 @@ describe('CreateVariantSheet geometry', () => {
     );
     assertSheetHeightContract(view);
     assertFitContentDoesNotExceedCap(view);
-    fireEvent.changeText(view.getByLabelText('Floor name (Arabic)'), 'أوكرانيه');
+    fireEvent.changeText(view.getByLabelText('Name'), 'أوكرانيه');
     assertFooterActionHitTestable(view, 'Create variant');
   });
 });

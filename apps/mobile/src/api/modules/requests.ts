@@ -38,17 +38,19 @@ export type CreateRequestItemInput = {
   foamDensity?: string;
   finish?: string;
   accessories?: string;
-  orientation?: string;
-  options?: Array<{
-    specOptionValueId?: string;
-    groupCode?: string;
-    code?: string;
-    nameEn?: string;
-    nameAr?: string;
-    qty?: number;
-    note?: string;
-  }>;
-};
+    orientation?: string;
+    options?: Array<{
+      specOptionValueId?: string;
+      groupCode?: string;
+      code?: string;
+      nameEn?: string;
+      nameAr?: string;
+      qty?: number;
+      note?: string;
+    }>;
+    photoDocumentIds?: string[];
+    primaryImageDocumentId?: string;
+  };
 
 export type CreateRequestInput = {
   source?: string;
@@ -166,7 +168,7 @@ export async function verifyRequestSpec(
     itemId?: string;
     action: 'CONFIRM' | 'CORRECT';
     message?: string;
-    fields?: Record<string, string>;
+    fields?: Record<string, unknown>;
   },
 ): Promise<RequestDetail> {
   return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/verify-spec`, body);

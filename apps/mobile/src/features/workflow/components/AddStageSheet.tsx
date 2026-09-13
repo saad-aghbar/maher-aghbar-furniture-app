@@ -8,9 +8,10 @@ import type { WorkflowVersion } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
-import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
@@ -41,7 +42,7 @@ import {
   middleProductionNodes,
 } from '../workflowTerminal';
 import { stageNodeLabel } from '../stageNodeLabel';
-import { nameFieldOrder, slugFromEnglishName, type TrilingualNames } from '../trilingualNames';
+import { slugFromEnglishName } from '../trilingualNames';
 import { canonicalEdgesForLayout, toDomainGraph } from '../toDomainGraph';
 import { WorkflowCompactPickRow, WorkflowFloorBoard } from './WorkflowFloorList';
 import { PlacementArrowPreview } from './PlacementArrowPreview';
@@ -114,21 +115,10 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
   const [parallelIds, setParallelIds] = useState<string[]>([]);
   const [afterScope, setAfterScope] = useState<'one' | 'band'>('one');
   const [leadsIntoIds, setLeadsIntoIds] = useState<string[]>([]);
-  const [names, setNames] = useState<TrilingualNames>({
-    nameEn: '',
-    nameAr: '',
-    nameHe: '',
-  });
+  const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-
-  const fieldOrder = nameFieldOrder(locale);
-  const nameLabels: Record<keyof TrilingualNames, string> = {
-    nameEn: t('mobile.production.workflow.nameEn'),
-    nameAr: t('mobile.production.workflow.nameAr'),
-    nameHe: t('mobile.production.workflow.nameHe'),
-  };
 
   const usedCodes = useMemo(
     () => new Set(version.nodes.map((n) => n.stageDefinition?.code).filter((c): c is string => Boolean(c))),
@@ -248,14 +238,14 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
     const code =
       mode === 'pick'
         ? (availableStages.find((s) => s.id === stageId)?.code ?? 'YOU')
-        : slugFromEnglishName(names.nameEn, 'STAGE');
+        : slugFromEnglishName(name, 'STAGE');
     return simulateWorkflowMutation(domain, {
       kind: 'ADD',
       nodeId: tempId,
       code,
       placement: placementIntent,
     });
-  }, [domain, placementIntent, mode, stageId, availableStages, names.nameEn]);
+  }, [domain, placementIntent, mode, stageId, availableStages, name]);
 
   const previewEdges = useMemo(() => canonicalEdgesForLayout(simulated), [simulated]);
   const previewRunsAfter = simulated.predecessorsByNode['__you__'] ?? [];
@@ -270,14 +260,12 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
       ? selectedStage
         ? localizedName(locale, selectedStage, selectedStage.code)
         : t('mobile.production.workflow.previewYou')
-      : names.nameEn.trim() ||
-        names.nameAr.trim() ||
-        t('mobile.production.workflow.previewYou');
+      : name.trim() || t('mobile.production.workflow.previewYou');
 
   const canSave =
     mode === 'pick'
       ? Boolean(selectedStage)
-      : Boolean(names.nameEn.trim() && names.nameAr.trim());
+      : Boolean(name.trim());
 
   const placementReady =
     placement === 'start' ||
@@ -292,7 +280,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
     setFormError(null);
     setMode('pick');
     setStageId('');
-    setNames({ nameEn: '', nameAr: '', nameHe: '' });
+    setName('');
     setPlacement(editableNodes.length > 0 ? 'after' : 'start');
     setAfterIds([]);
     setAfterScope('one');
@@ -337,7 +325,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
     setAfterScope('one');
     setParallelIds([]);
     setLeadsIntoIds([]);
-    setNames({ nameEn: '', nameAr: '', nameHe: '' });
+    setName('');
     setSaving(false);
     setFormError(null);
   }
@@ -347,7 +335,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
     if (!canSave) {
       setFormError(
         mode === 'create'
-          ? t('mobile.production.workflow.namesRequired')
+          ? t('catalog.namesRequired')
           : t('mobile.production.workflow.pickStageFirst'),
       );
       scrollRef.current?.scrollToEnd({ animated: true });
@@ -367,21 +355,24 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
     Keyboard.dismiss();
 
     try {
+      const createdNames =
+        mode === 'create' ? await resolveTrilingualName(name, locale) : null;
       const healed = await commitAddWorkflowStage({
         workflowId,
         version,
         stageDefinitionId: selectedStage?.id ?? '',
         nodeKey: selectedStage?.code ?? '',
-        code: selectedStage?.code ?? slugFromEnglishName(names.nameEn, 'STAGE'),
+        code:
+          selectedStage?.code ??
+          slugFromEnglishName(createdNames?.nameEn ?? name, 'STAGE'),
         placement: placementIntent,
-        createStage:
-          mode === 'create'
-            ? {
-                nameEn: names.nameEn.trim(),
-                nameAr: names.nameAr.trim(),
-                nameHe: names.nameHe.trim() || undefined,
-              }
-            : undefined,
+        createStage: createdNames
+          ? {
+              nameEn: createdNames.nameEn,
+              nameAr: createdNames.nameAr,
+              nameHe: createdNames.nameHe || undefined,
+            }
+          : undefined,
       });
 
       await applyCache(healed);
@@ -498,19 +489,12 @@ export function AddStageSheet({ open, onClose, workflowId, version, scope, onDir
           )
         ) : (
           <View style={{ gap: theme.spacing.md }}>
-            {fieldOrder.map((key) => (
-              <TextField
-                key={key}
-                label={
-                  key === 'nameHe'
-                    ? `${nameLabels[key]} (${t('mobile.production.workflow.hebrewOptional')})`
-                    : nameLabels[key]
-                }
-                value={names[key]}
-                onChangeText={(v) => setNames((n) => ({ ...n, [key]: v }))}
-                autoCapitalize={key === 'nameEn' ? 'words' : 'none'}
-              />
-            ))}
+            <LocaleNameField
+              value={name}
+              onChange={setName}
+              label={t('mobile.production.workflow.stageName')}
+              autoCapitalize="words"
+            />
           </View>
         )}
         <View style={{ gap: theme.spacing.sm }}>

@@ -28,11 +28,12 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { BomFloorRow } from '@/features/catalog/components/BomFloorRow';
 import { BomMaterialPickerSheet } from '@/features/catalog/components/BomMaterialPickerSheet';
-import { BilingualNameField } from '@/features/catalog/components/BilingualNameField';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { OrderCardMedia } from '../components/OrderCardMedia';
 import { haptics, ListItemEnter } from '@/motion';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { useTheme } from '@/theme';
 import type {
   OrderProductionSetupLine,
@@ -156,6 +157,8 @@ export function OrderProductionSetupLineScreen({
   const editable = canEdit && planEditable;
 
   const [name, setName] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [originalInstructions, setOriginalInstructions] = useState('');
   const [instructionsAr, setInstructionsAr] = useState('');
   const [instructionsEn, setInstructionsEn] = useState('');
   const [instructionsHe, setInstructionsHe] = useState('');
@@ -175,10 +178,18 @@ export function OrderProductionSetupLineScreen({
   const [hydratedId, setHydratedId] = useState<string | null>(null);
 
   const hydrate = useCallback((next: OrderProductionSetupLine) => {
+    const storedNotes = {
+      nameAr: next.instructionsAr ?? next.factoryNotes ?? '',
+      nameEn: next.instructionsEn ?? '',
+      nameHe: next.instructionsHe ?? '',
+    };
+    const shownNotes = localizedName(locale, storedNotes, '');
     setName(next.manufacturingName ?? '');
-    setInstructionsAr(next.instructionsAr ?? next.factoryNotes ?? '');
-    setInstructionsEn(next.instructionsEn ?? '');
-    setInstructionsHe(next.instructionsHe ?? '');
+    setInstructions(shownNotes);
+    setOriginalInstructions(shownNotes);
+    setInstructionsAr(storedNotes.nameAr);
+    setInstructionsEn(storedNotes.nameEn);
+    setInstructionsHe(storedNotes.nameHe);
     setWidth(formatDim(next.orderDimensions?.width).replace('—', ''));
     setHeight(formatDim(next.orderDimensions?.height).replace('—', ''));
     setDepth(formatDim(next.orderDimensions?.depth).replace('—', ''));
@@ -197,7 +208,7 @@ export function OrderProductionSetupLineScreen({
     setWorkflowId(next.workflowId);
     setWorkflowConfirmed(Boolean(next.workflowConfirmedAt));
     setHydratedId(next.id);
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     if (!line) return;
@@ -207,11 +218,14 @@ export function OrderProductionSetupLineScreen({
 
   const serverSnapshot = useMemo(() => {
     if (!line) return null;
+    const storedNotes = {
+      nameAr: line.instructionsAr ?? line.factoryNotes ?? '',
+      nameEn: line.instructionsEn ?? '',
+      nameHe: line.instructionsHe ?? '',
+    };
     return {
       name: line.manufacturingName ?? '',
-      instructionsAr: line.instructionsAr ?? line.factoryNotes ?? '',
-      instructionsEn: line.instructionsEn ?? '',
-      instructionsHe: line.instructionsHe ?? '',
+      instructions: localizedName(locale, storedNotes, ''),
       width: formatDim(line.orderDimensions?.width).replace('—', ''),
       height: formatDim(line.orderDimensions?.height).replace('—', ''),
       depth: formatDim(line.orderDimensions?.depth).replace('—', ''),
@@ -228,14 +242,12 @@ export function OrderProductionSetupLineScreen({
       workflowId: line.workflowId,
       workflowConfirmed: Boolean(line.workflowConfirmedAt),
     };
-  }, [line]);
+  }, [line, locale]);
 
   const dirty = useMemo(() => {
     if (!serverSnapshot || hydratedId == null) return false;
     if (name !== serverSnapshot.name) return true;
-    if (instructionsAr !== serverSnapshot.instructionsAr) return true;
-    if (instructionsEn !== serverSnapshot.instructionsEn) return true;
-    if (instructionsHe !== serverSnapshot.instructionsHe) return true;
+    if (instructions !== serverSnapshot.instructions) return true;
     if (width !== serverSnapshot.width) return true;
     if (height !== serverSnapshot.height) return true;
     if (depth !== serverSnapshot.depth) return true;
@@ -249,9 +261,7 @@ export function OrderProductionSetupLineScreen({
     serverSnapshot,
     hydratedId,
     name,
-    instructionsAr,
-    instructionsEn,
-    instructionsHe,
+    instructions,
     width,
     height,
     depth,
@@ -294,8 +304,21 @@ export function OrderProductionSetupLineScreen({
     return Number.isFinite(n) ? n : null;
   }
 
-  function saveAll() {
+  async function saveAll() {
     if (!line || !editable) return;
+    const notes = instructions.trim()
+      ? await resolveTrilingualIfChanged({
+          typed: instructions,
+          locale,
+          original: originalInstructions,
+          existing: {
+            nameAr: instructionsAr,
+            nameEn: instructionsEn,
+            nameHe: instructionsHe,
+          },
+          kind: 'prose',
+        })
+      : { nameAr: '', nameEn: '', nameHe: '' };
     const labels = pieceLabelsText
       .split('\n')
       .map((s) => s.trim())
@@ -317,9 +340,9 @@ export function OrderProductionSetupLineScreen({
         lineId: line.id,
         body: {
           manufacturingName: name.trim() || line.manufacturingName || 'Piece',
-          instructionsAr: instructionsAr.trim() || null,
-          instructionsEn: instructionsEn.trim() || null,
-          instructionsHe: instructionsHe.trim() || null,
+          instructionsAr: notes.nameAr.trim() || null,
+          instructionsEn: notes.nameEn.trim() || null,
+          instructionsHe: notes.nameHe.trim() || null,
           orderDimensions: {
             width: parseNum(width),
             height: parseNum(height),
@@ -946,22 +969,18 @@ export function OrderProductionSetupLineScreen({
                 {t('mobile.productionSetup.itemInstructionsHint')}
               </AppText>
               {editable ? (
-                <BilingualNameField
-                  arabic={instructionsAr}
-                  english={instructionsEn}
-                  onArabicChange={setInstructionsAr}
-                  onEnglishChange={setInstructionsEn}
-                  arabicLabel={t('catalog.factoryNotesAr')}
-                  englishLabel={t('catalog.factoryNotesEn')}
-                  kind="prose"
+                <LocaleNameField
+                  value={instructions}
+                  onChange={setInstructions}
+                  label={t('catalog.factoryNotes')}
                   multiline
                 />
               ) : (
                 <AppText
                   variant="body"
-                  color={instructionsAr.trim() || instructionsEn.trim() ? 'primary' : 'muted'}
+                  color={instructions.trim() ? 'primary' : 'muted'}
                 >
-                  {instructionsAr.trim() || instructionsEn.trim() || '—'}
+                  {instructions.trim() || '—'}
                 </AppText>
               )}
             </OrderBoardCard>
@@ -978,7 +997,7 @@ export function OrderProductionSetupLineScreen({
                   ? t('mobile.productionSetup.saveChanges')
                   : t('mobile.productionSetup.saved')
               }
-              onPress={saveAll}
+              onPress={() => void saveAll()}
               loading={actions.patchLine.isPending || actions.putMaterials.isPending}
               disabled={!dirty}
               style={{ alignSelf: 'stretch', width: '100%' }}

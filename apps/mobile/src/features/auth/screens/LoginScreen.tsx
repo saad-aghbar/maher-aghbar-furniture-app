@@ -93,6 +93,18 @@ export function LoginScreen() {
     onDisabled: () => router.replace('/(auth)/disabled' as Href),
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const creds = await getBiometricCredentials();
+      if (cancelled || !creds?.username) return;
+      form.setUsername(creds.username);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.setUsername]);
+
   const err = mapLoginErrorMessage(form.errorCode, t);
   const bioChrome = biometricLoginPresentation(bioKind);
   const bioLabel = (() => {
@@ -115,22 +127,7 @@ export function LoginScreen() {
       );
       if (!ok) return;
       clearLoginError();
-      const result = await login({
-        username: creds.username,
-        password: creds.password,
-      });
-      if (result.ok) {
-        void haptics.completeStrong();
-        await onSuccess();
-        return;
-      }
-      if (result.error === 'mfa_required') {
-        router.push('/(auth)/mfa' as Href);
-        return;
-      }
-      if (result.error === 'disabled') {
-        router.replace('/(auth)/disabled' as Href);
-      }
+      form.setUsername(creds.username);
     } finally {
       setBioBusy(false);
     }
@@ -139,9 +136,7 @@ export function LoginScreen() {
     clearLoginError,
     form.loading,
     form.success,
-    login,
-    onSuccess,
-    router,
+    form.setUsername,
     t,
   ]);
 

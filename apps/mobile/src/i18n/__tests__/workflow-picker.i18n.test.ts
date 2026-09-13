@@ -11,6 +11,8 @@ const KEYS = [
   'mobile.production.workflow.scopeStandard',
   'mobile.production.workflow.scopeReturn',
   'mobile.production.workflow.scopeHint',
+  'mobile.production.workflow.scopeSection',
+  'mobile.production.workflow.searchWorkflows',
 ] as const;
 
 describe('workflow picker i18n', () => {
@@ -26,6 +28,12 @@ describe('workflow picker i18n', () => {
     expect(translate('en', 'mobile.productionSetup.pickWorkflow')).toBe('Choose workflow');
     expect(translate('en', 'mobile.productionSetup.workflowListTitle')).toBe('Published paths');
     expect(translate('en', 'mobile.productionSetup.versionLabel')).toBe('Version {n}');
+    expect(translate('en', 'mobile.production.workflow.scopeAll')).toBe('All');
+    expect(translate('en', 'mobile.production.workflow.scopeStandard')).toBe('Normal');
+    expect(translate('en', 'mobile.production.workflow.scopeReturn')).toBe('Return / recovery');
+    expect(translate('en', 'mobile.production.workflow.searchWorkflows')).toBe(
+      'Search workflows…',
+    );
     expect(translate('en', 'mobile.productionSetup.pickWorkflow')).not.toBe(
       translate('en', 'mobile.productionSetup.pickWorkflow').toUpperCase(),
     );

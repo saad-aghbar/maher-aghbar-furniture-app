@@ -82,7 +82,12 @@ export class RequestsController {
   @Post(':id/verify-spec')
   verifySpec(
     @Param('id') id: string,
-    @Body() body: { itemId?: string; action: 'CONFIRM' | 'CORRECT'; message?: string; fields?: Record<string, string> },
+    @Body() body: {
+      itemId?: string;
+      action: 'CONFIRM' | 'CORRECT';
+      message?: string;
+      fields?: Record<string, unknown>;
+    },
     @CurrentUser() user: AuthUser,
   ) {
     return this.requests.verifySpec(id, user, body);

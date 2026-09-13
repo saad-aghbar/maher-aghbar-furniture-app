@@ -184,6 +184,7 @@ export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
 export type CreateWarehouseInput = {
   nameEn: string;
   nameAr: string;
+  nameHe?: string;
   type: WarehouseType;
   code?: string;
   isDefault?: boolean;
@@ -428,6 +429,7 @@ export type CreateInventoryItemInput = {
   sku?: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string;
   unit?: string;
   category?: string;
   minStock?: number;
@@ -446,6 +448,7 @@ export type CreateInventoryItemInput = {
 export type UpdateInventoryItemInput = {
   nameEn?: string;
   nameAr?: string;
+  nameHe?: string | null;
   unit?: string;
   category?: string;
   minStock?: number;

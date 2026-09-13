@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { queryKeys } from '@/api/queryKeys';
 import { keepPreviousListDataIfSameScope } from '@/api/keepPreviousListScope';
 import {
@@ -138,8 +139,8 @@ export function useSalesOrderQuery(id: string | undefined, enabled: boolean) {
 function useInvalidateSalesOrder(id: string) {
   const qc = useQueryClient();
   return async () => {
+    await invalidateFactoryJourney(qc);
     await qc.invalidateQueries({ queryKey: queryKeys.salesOrders.detail(id) });
-    await qc.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
   };
 }
 

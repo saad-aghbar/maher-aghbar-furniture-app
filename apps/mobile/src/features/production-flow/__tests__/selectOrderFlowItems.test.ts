@@ -97,11 +97,11 @@ describe('selectOrderFlowItems', () => {
     expect(shouldSkipOrderFlowList(items)).toBe(false);
   });
 
-  it('skips the list when the order has a single production item', () => {
+  it('still lists a single production item instead of skipping to workflow', () => {
     const order = threeItemOrder();
     order.productionOrders = [order.productionOrders![0]!];
     const items = selectOrderFlowItems(order, 'en');
     expect(items).toHaveLength(1);
-    expect(shouldSkipOrderFlowList(items)).toBe(true);
+    expect(shouldSkipOrderFlowList(items)).toBe(false);
   });
 });

@@ -14,7 +14,22 @@ export async function freezePlannedCostAtRelease(tx: Tx, salesOrderId: string) {
       costBreakdown: true,
       plannedCostFrozenAt: true,
       productionOrders: {
-        select: { id: true, quantity: true, productId: true, variantId: true },
+        select: {
+          id: true,
+          quantity: true,
+          productId: true,
+          variantId: true,
+          salesOrderLineId: true,
+        },
+      },
+      lines: {
+        select: {
+          id: true,
+          quantity: true,
+          productId: true,
+          variantId: true,
+          product: { select: { manufacturingCost: true } },
+        },
       },
     },
   });
@@ -57,8 +72,28 @@ export async function freezePlannedCostAtRelease(tx: Tx, salesOrderId: string) {
       })
     : [];
 
+  const variantIds = [
+    ...new Set(so.productionOrders.map((po) => po.variantId).filter(Boolean)),
+  ] as string[];
+  const variants =
+    variantIds.length && typeof tx.productVariant?.findMany === 'function'
+      ? await tx.productVariant.findMany({
+          where: { id: { in: variantIds } },
+          select: { id: true, manufacturingCost: true },
+        })
+      : [];
+  const variantCost = new Map(
+    variants.map((row) => [row.id, positiveUnitCost(row.manufacturingCost)]),
+  );
+
   for (const po of so.productionOrders) {
-    const share = header != null ? header * (Number(po.quantity) / totalQty) : null;
+    const qtyShare = header != null ? header * (Number(po.quantity) / totalQty) : null;
+    const line = so.lines?.find((row) => row.id === po.salesOrderLineId);
+    const unit =
+      (po.variantId ? variantCost.get(po.variantId) : null) ??
+      positiveUnitCost(line?.product?.manufacturingCost);
+    const share =
+      unit != null ? unit * (Number(po.quantity) || 1) : qtyShare;
     const scoped = pickVariantScopedRows(
       estimateRows.filter((row) => row.productId === po.productId),
       po.variantId,

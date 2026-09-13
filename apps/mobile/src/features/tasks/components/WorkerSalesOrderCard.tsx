@@ -1,7 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 import { useLocale } from '@/i18n';
 import type { MyOrderSegment } from '../api';
-import type { WorkerSalesOrderCardModel } from '../selectWorkerOrder';
+import { workerSalesOrderHref, type WorkerSalesOrderCardModel } from '../selectWorkerOrder';
 import { IndustrialFloorTaskCard } from './IndustrialFloorTaskCard';
 
 type Props = {
@@ -27,18 +27,7 @@ export function WorkerSalesOrderCard({
       index={index}
       animateEnter={animateEnter}
       onPress={() => {
-        if (order.itemCount <= 1) {
-          router.push(`/(app)/(employee)/lane/${order.laneId}` as Href);
-          return;
-        }
-        router.push({
-          pathname: '/(app)/(employee)/orders/[salesOrderId]',
-          params: {
-            salesOrderId: order.id,
-            ...(segment ? { segment } : {}),
-            ...(q?.trim() ? { q: q.trim() } : {}),
-          },
-        });
+        router.push(workerSalesOrderHref(order, { segment, q }) as Href);
       }}
       metaStage={{
         label: t('mobile.tasks.cardRemaining'),

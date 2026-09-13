@@ -262,6 +262,7 @@ describe('Phase C catalog seedFromCatalog', () => {
       fabricProcurement: {
         create: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       productStageMaterialInput: {
         findMany: jest.fn().mockResolvedValue([]),

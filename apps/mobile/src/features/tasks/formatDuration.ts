@@ -43,6 +43,36 @@ export function totalMinutesToHoursMinutes(total: number): { hours: number; minu
   return { hours: Math.floor(whole / 60), minutes: whole % 60 };
 }
 
+/** Nudge the workshop clock. Minutes wrap into hours; hours stay 0–99. */
+export function bumpStageClock(
+  totalMinutes: number,
+  part: 'hours' | 'minutes',
+  delta: number,
+): number {
+  let { hours, minutes } = totalMinutesToHoursMinutes(totalMinutes);
+  if (part === 'hours') {
+    hours = Math.max(0, Math.min(99, hours + delta));
+  } else {
+    let nextH = hours;
+    let nextM = minutes + delta;
+    while (nextM >= 60) {
+      nextH += 1;
+      nextM -= 60;
+    }
+    while (nextM < 0) {
+      if (nextH <= 0) {
+        nextM = 0;
+        break;
+      }
+      nextH -= 1;
+      nextM += 60;
+    }
+    hours = Math.max(0, Math.min(99, nextH));
+    minutes = nextM;
+  }
+  return hoursMinutesToTotalMinutes(hours, minutes);
+}
+
 /** Whole minutes between two timestamps (clamped ≥ 0). */
 export function minutesBetween(
   start: string | Date | null | undefined,

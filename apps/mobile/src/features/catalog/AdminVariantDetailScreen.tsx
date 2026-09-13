@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
-import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { renderVariantSpecLine } from '@maher/types';
 import {
@@ -25,6 +24,7 @@ import {
 import { listSpecOptionGroups, listSpecOptionValues } from '@/api/modules/catalog';
 import { listCustomers } from '@/api/modules/customers';
 import { getProductProductionSetup } from '@/api/modules/workflow';
+import { WorkflowPickDesk } from '@/features/workflow/components/WorkflowPickDesk';
 import { useWorkflowsQuery } from '@/features/workflow/query';
 import { formatMinutesDuration } from '@/features/tasks/formatDuration';
 import { isApiError } from '@/api/errors';
@@ -42,10 +42,12 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
+import { localizedName } from '@maher/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
-import { BilingualNameField } from './components/BilingualNameField';
+import { LocaleNameField } from './components/BilingualNameField';
 import { BomFloorRow } from './components/BomFloorRow';
 import { BomMaterialPickerSheet } from './components/BomMaterialPickerSheet';
 import {
@@ -55,11 +57,10 @@ import {
   FLOOR_ROW_ESTIMATE,
 } from './components/CatalogFloorList';
 import { CatalogSectionBoard } from './components/CatalogSectionBoard';
-import { VariantOptionGroupsBoard } from './components/VariantOptionGroupsBoard';
+import { VariantSpecsBoard } from './components/VariantSpecsBoard';
 import { MeasurementFloorRow, displayMeasurementUnit } from './components/MeasurementFloorRow';
 import { MeasurementValuePanel } from './components/MeasurementValueSheet';
 import { SellerPriceFloorRow } from './components/SellerPriceFloorRow';
-import { selectActiveSpecOptionGroups } from './selectSpecOptions';
 
 /** Per-customer: variant price overrides product-level. */
 function mergeVariantDealerPrices(
@@ -78,6 +79,8 @@ function mergeVariantDealerPrices(
 
 type Draft = {
   sku: string;
+  name: string;
+  originalName: string;
   nameAr: string;
   nameEn: string;
   nameHe: string;
@@ -91,6 +94,8 @@ type Draft = {
     unit: string;
   }>;
   selectedByGroup: Record<string, string | null>;
+  factoryNotes: string;
+  originalFactoryNotes: string;
   factoryNotesAr: string;
   factoryNotesEn: string;
   factoryNotesHe: string;
@@ -118,7 +123,7 @@ function bomLinesFromDefaults(bom: unknown): AdminBomLine[] {
     });
 }
 
-function toDraft(v: AdminProductVariant): Draft {
+function toDraft(v: AdminProductVariant, locale: string): Draft {
   const selectedByGroup: Record<string, string | null> = {};
   for (const opt of v.options ?? []) {
     const groupId = opt.specOptionValue?.groupId;
@@ -126,9 +131,21 @@ function toDraft(v: AdminProductVariant): Draft {
   }
 
   const measurements = v.measurements ?? [];
+  const name = localizedName(locale, v, '');
+  const factoryNotes = localizedName(
+    locale,
+    {
+      nameAr: v.factoryNotesAr,
+      nameEn: v.factoryNotesEn,
+      nameHe: v.factoryNotesHe,
+    },
+    '',
+  );
 
   return {
     sku: v.sku,
+    name,
+    originalName: name,
     nameAr: v.nameAr,
     nameEn: v.nameEn,
     nameHe: v.nameHe ?? '',
@@ -142,6 +159,8 @@ function toDraft(v: AdminProductVariant): Draft {
       unit: m.unit || 'cm',
     })),
     selectedByGroup,
+    factoryNotes,
+    originalFactoryNotes: factoryNotes,
     factoryNotesAr: v.factoryNotesAr ?? '',
     factoryNotesEn: v.factoryNotesEn ?? '',
     factoryNotesHe: v.factoryNotesHe ?? '',
@@ -165,7 +184,14 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
   const [measureSheet, setMeasureSheet] = useState(false);
   const [measureValueSheet, setMeasureValueSheet] = useState(false);
   const [editingMeasureIndex, setEditingMeasureIndex] = useState<number | null>(null);
-  const [newMeasure, setNewMeasure] = useState({ labelAr: '', labelEn: '', value: '', unit: 'cm' });
+  const [newMeasure, setNewMeasure] = useState({
+    label: '',
+    originalLabel: '',
+    labelAr: '',
+    labelEn: '',
+    value: '',
+    unit: 'cm',
+  });
   const [materialSheet, setMaterialSheet] = useState(false);
   const [sellerSheet, setSellerSheet] = useState(false);
   const [sellerEditing, setSellerEditing] = useState(false);
@@ -207,7 +233,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
 
   useEffect(() => {
     if (!variantQuery.data) return;
-    setDraft(toDraft(variantQuery.data));
+    setDraft(toDraft(variantQuery.data, locale));
   }, [variantQuery.data]);
 
   const specLine = useMemo(() => {
@@ -254,13 +280,34 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error('draft');
+      const names = await resolveTrilingualIfChanged({
+        typed: draft.name,
+        locale,
+        original: draft.originalName,
+        existing: {
+          nameEn: draft.nameEn,
+          nameAr: draft.nameAr,
+          nameHe: draft.nameHe,
+        },
+      });
+      const notes = await resolveTrilingualIfChanged({
+        typed: draft.factoryNotes,
+        locale,
+        original: draft.originalFactoryNotes,
+        existing: {
+          nameEn: draft.factoryNotesEn,
+          nameAr: draft.factoryNotesAr,
+          nameHe: draft.factoryNotesHe,
+        },
+        kind: 'prose',
+      });
       const options = Object.values(draft.selectedByGroup)
         .filter((id): id is string => Boolean(id))
         .map((specOptionValueId) => ({ specOptionValueId }));
       const row = await patchProductVariant(productId, variantId, {
-        nameAr: draft.nameAr.trim(),
-        nameEn: draft.nameEn.trim() || undefined,
-        nameHe: draft.nameHe.trim() || null,
+        nameAr: names.nameAr,
+        nameEn: names.nameEn || undefined,
+        nameHe: names.nameHe || null,
         basePrice: draft.basePrice.trim() ? Number(draft.basePrice) : null,
         adminNotes: draft.adminNotes.trim() || null,
         bomDefaults: {
@@ -280,9 +327,9 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
             value: m.value === '' ? null : Number(m.value),
             unit: m.unit || 'cm',
           })),
-        factoryNotesAr: draft.factoryNotesAr || null,
-        factoryNotesEn: draft.factoryNotesEn || null,
-        factoryNotesHe: draft.factoryNotesHe || null,
+        factoryNotesAr: notes.nameAr || null,
+        factoryNotesEn: notes.nameEn || null,
+        factoryNotesHe: notes.nameHe || null,
         options,
       });
       return row;
@@ -304,7 +351,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
   const copyFromStandard = useMutation({
     mutationFn: () => copyVariantFromStandard(productId, variantId),
     onSuccess: async (row) => {
-      setDraft(toDraft(row));
+      setDraft(toDraft(row, locale));
       await qc.invalidateQueries({ queryKey: queryKeys.catalog.variant(productId, variantId) });
       await qc.invalidateQueries({ queryKey: queryKeys.catalog.dealerPrices(productId, variantId) });
       await qc.invalidateQueries({ queryKey: queryKeys.workflow.productionSetup(productId, variantId) });
@@ -321,7 +368,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
   const makeStandard = useMutation({
     mutationFn: () => patchProductVariant(productId, variantId, { isDefault: true }),
     onSuccess: async (row) => {
-      setDraft(toDraft(row));
+      setDraft(toDraft(row, locale));
       await qc.invalidateQueries({ queryKey: queryKeys.catalog.variant(productId, variantId) });
       await qc.invalidateQueries({ queryKey: queryKeys.catalog.variants(productId) });
       showToast({ variant: 'success', message: t('catalog.madeStandard') });
@@ -405,7 +452,6 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
   };
 
   const variant = variantQuery.data;
-  const activeSpecGroups = selectActiveSpecOptionGroups(groupsQuery.data?.data ?? []);
   const footerPad = theme.spacing.xl + surfaceTabBarStackInset(insets.bottom, theme.spacing.md);
   const dealerPrices = mergeVariantDealerPrices(pricesQuery.data ?? [], variantId);
   const totalMinutes = (setupQuery.data?.stages ?? []).reduce(
@@ -413,8 +459,38 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
     0,
   );
 
-  const applyMeasurement = (value: string, unit: string) => {
-    const next = { ...newMeasure, value, unit };
+  const emptyMeasure = () => ({
+    label: '',
+    originalLabel: '',
+    labelAr: '',
+    labelEn: '',
+    value: '',
+    unit: 'cm',
+  });
+
+  const applyMeasurement = async (value: string, unit: string) => {
+    const label = newMeasure.label.trim();
+    if (!label) {
+      void haptics.error();
+      showToast({ variant: 'error', message: t('catalog.measurementNamesRequired') });
+      return;
+    }
+    const names = await resolveTrilingualIfChanged({
+      typed: label,
+      locale,
+      original: newMeasure.originalLabel,
+      existing: {
+        nameAr: newMeasure.labelAr,
+        nameEn: newMeasure.labelEn,
+        nameHe: '',
+      },
+    });
+    const next = {
+      labelAr: names.nameAr,
+      labelEn: names.nameEn,
+      value,
+      unit,
+    };
     if (editingMeasureIndex != null && draft) {
       setDraft({
         ...draft,
@@ -422,16 +498,13 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           i === editingMeasureIndex ? { ...m, ...next } : m,
         ),
       });
-    } else if (draft && next.labelAr.trim()) {
+    } else if (draft) {
       setDraft({
         ...draft,
-        measurements: [
-          ...draft.measurements,
-          { key: `m-${Date.now()}`, ...next },
-        ],
+        measurements: [...draft.measurements, { key: `m-${Date.now()}`, ...next }],
       });
     }
-    setNewMeasure({ labelAr: '', labelEn: '', value: '', unit: 'cm' });
+    setNewMeasure(emptyMeasure());
     setEditingMeasureIndex(null);
     setMeasureValueSheet(false);
     setMeasureSheet(false);
@@ -470,7 +543,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
       >
         <BackButton label={t('common.back')} onPress={() => router.back()} />
         <AppText variant="title" weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
-          {draft.nameAr || draft.nameEn}
+          {draft.name}
         </AppText>
       </View>
 
@@ -489,13 +562,10 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
             <AppText variant="caption" color="muted" dir="ltr">
               {draft.sku}
             </AppText>
-            <BilingualNameField
-              arabic={draft.nameAr}
-              english={draft.nameEn}
-              onArabicChange={(nameAr) => setDraft({ ...draft, nameAr })}
-              onEnglishChange={(nameEn) => setDraft({ ...draft, nameEn })}
-              arabicLabel={t('catalog.variantNameAr')}
-              englishLabel={t('catalog.variantNameEn')}
+            <LocaleNameField
+              value={draft.name}
+              onChange={(name) => setDraft({ ...draft, name })}
+              label={t('catalog.name')}
             />
             {specLine ? (
               <AppText variant="caption" color="muted">
@@ -539,42 +609,33 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
         </ListItemEnter>
 
         <ListItemEnter index={1}>
+          <VariantSpecsBoard
+            compose
+            titleWeight={titleWeight}
+            groups={groupsQuery.data?.data ?? []}
+            values={valuesQuery.data?.data ?? []}
+            selectedByGroup={draft.selectedByGroup}
+            onChange={(groupId, valueId) =>
+              setDraft({
+                ...draft,
+                selectedByGroup: { ...draft.selectedByGroup, [groupId]: valueId },
+              })
+            }
+          />
+        </ListItemEnter>
+
+        <ListItemEnter index={2}>
           <CatalogSectionBoard title={t('catalog.variantWorkflow')} titleWeight={titleWeight}>
             <AppText variant="caption" color="muted">
               {t('catalog.variantWorkflowHint')}
             </AppText>
-            {(workflowsQuery.data ?? [])
-              .filter((wf) => Boolean(wf.activeVersion))
-              .map((wf) => {
-                const selected = (variant?.workflowId ?? setupQuery.data?.workflow?.id) === wf.id;
-                return (
-                  <AnimatedPressable
-                    key={wf.id}
-                    variant="button"
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: selected }}
-                    accessibilityLabel={localizedName(locale, wf)}
-                    onPress={() => {
-                      void haptics.selection();
-                      setWorkflow.mutate(wf.id);
-                    }}
-                    style={{
-                      minHeight: theme.sizes.touch.min,
-                      borderRadius: theme.radius.xl,
-                      borderWidth: 1,
-                      borderColor: selected ? colors.brand : colors.borderStrong,
-                      backgroundColor: selected ? colors.brandSoft : colors.surfaceSecondary,
-                      paddingHorizontal: theme.spacing.md,
-                      paddingVertical: theme.spacing.sm,
-                      ...orderBoardShadow(colorScheme),
-                    }}
-                  >
-                    <AppText variant="body" weight={titleWeight}>
-                      {localizedName(locale, wf)}
-                    </AppText>
-                  </AnimatedPressable>
-                );
-              })}
+            <WorkflowPickDesk
+              embedded
+              workflows={workflowsQuery.data ?? []}
+              selectedId={variant?.workflowId ?? setupQuery.data?.workflow?.id ?? null}
+              onSelect={(id) => setWorkflow.mutate(id)}
+              loading={workflowsQuery.isLoading}
+            />
             <AppText variant="caption" color="muted">
               {t('catalog.workflowStageSummary', {
                 stages: (setupQuery.data?.stages ?? []).length,
@@ -587,25 +648,34 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
                     : t('mobile.production.workflow.noProductionTimeYet'),
               })}
             </AppText>
-            <SecondaryButton
+            <PrimaryButton
               label={t('mobile.production.workflow.openProductionSetup')}
+              haptic="selection"
               onPress={() =>
                 router.push(
                   `/(app)/(admin)/products/${productId}/production-setup?variantId=${variantId}` as Href,
                 )
               }
+              style={{ borderRadius: theme.radius.xl }}
             />
           </CatalogSectionBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={2}>
+        <ListItemEnter index={3}>
           <CatalogSectionBoard
             title={t('catalog.measurements')}
             titleWeight={titleWeight}
             actionLabel={t('catalog.addMeasurement')}
             onAction={() => {
               setEditingMeasureIndex(null);
-              setNewMeasure({ labelAr: '', labelEn: '', value: '', unit: 'cm' });
+              setNewMeasure({
+                label: '',
+                originalLabel: '',
+                labelAr: '',
+                labelEn: '',
+                value: '',
+                unit: 'cm',
+              });
               setMeasureSheet(true);
             }}
           >
@@ -626,18 +696,11 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
                   gap={theme.spacing.sm}
                 >
                   {draft.measurements.map((row, index) => {
-                    const name =
-                      locale === 'ar'
-                        ? row.labelAr || row.labelEn || row.key
-                        : row.labelEn || row.labelAr || row.key;
-                    const secondary =
-                      locale === 'ar'
-                        ? row.labelEn && row.labelEn !== name
-                          ? row.labelEn
-                          : null
-                        : row.labelAr && row.labelAr !== name
-                          ? row.labelAr
-                          : null;
+                    const name = localizedName(
+                      locale,
+                      { nameAr: row.labelAr, nameEn: row.labelEn },
+                      row.key,
+                    );
                     const valueLabel =
                       row.value !== ''
                         ? `${row.value} ${displayMeasurementUnit(row.unit)}`
@@ -647,11 +710,13 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
                         key={row.key}
                         index={index}
                         name={name || '—'}
-                        secondary={secondary}
+                        secondary={null}
                         valueLabel={valueLabel}
                         onEdit={() => {
                           setEditingMeasureIndex(index);
                           setNewMeasure({
+                            label: name,
+                            originalLabel: name,
                             labelAr: row.labelAr,
                             labelEn: row.labelEn,
                             value: row.value,
@@ -675,7 +740,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           </CatalogSectionBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={3}>
+        <ListItemEnter index={4}>
           <CatalogSectionBoard title={t('catalog.costs')} titleWeight={titleWeight}>
             <TextField
               label={t('catalog.basePrice')}
@@ -717,7 +782,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           </CatalogSectionBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={4}>
+        <ListItemEnter index={5}>
           <CatalogSectionBoard
             title={t('catalog.sellerPrices')}
             titleWeight={titleWeight}
@@ -785,7 +850,7 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           </CatalogSectionBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={5}>
+        <ListItemEnter index={6}>
           <CatalogSectionBoard
             title={t('catalog.bomMaterials')}
             titleWeight={titleWeight}
@@ -838,39 +903,15 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           </CatalogSectionBoard>
         </ListItemEnter>
 
-
-        {activeSpecGroups.length ? (
-
-          <ListItemEnter index={6}>
-            <CatalogSectionBoard titleWeight={titleWeight}>
-              <VariantOptionGroupsBoard
-                groups={groupsQuery.data?.data ?? []}
-                values={valuesQuery.data?.data ?? []}
-                selectedByGroup={draft.selectedByGroup}
-                onChange={(groupId, valueId) =>
-                  setDraft({
-                    ...draft,
-                    selectedByGroup: { ...draft.selectedByGroup, [groupId]: valueId },
-                  })
-                }
-              />
-            </CatalogSectionBoard>
-          </ListItemEnter>
-        ) : null}
-
         <ListItemEnter index={7}>
           <CatalogSectionBoard title={t('catalog.defaultInstructions')} titleWeight={titleWeight}>
             <AppText variant="caption" color="muted">
               {t('catalog.defaultInstructionsHint')}
             </AppText>
-            <BilingualNameField
-              arabic={draft.factoryNotesAr}
-              english={draft.factoryNotesEn}
-              onArabicChange={(factoryNotesAr) => setDraft({ ...draft, factoryNotesAr })}
-              onEnglishChange={(factoryNotesEn) => setDraft({ ...draft, factoryNotesEn })}
-              arabicLabel={t('catalog.factoryNotesAr')}
-              englishLabel={t('catalog.factoryNotesEn')}
-              kind="prose"
+            <LocaleNameField
+              value={draft.factoryNotes}
+              onChange={(factoryNotes) => setDraft({ ...draft, factoryNotes })}
+              label={t('catalog.factoryNotes')}
               multiline
             />
           </CatalogSectionBoard>
@@ -940,18 +981,15 @@ export function AdminVariantDetailScreen({ productId, variantId }: Props) {
           />
         ) : (
           <View style={{ gap: theme.spacing.md }}>
-            <BilingualNameField
-              arabic={newMeasure.labelAr}
-              english={newMeasure.labelEn}
-              onArabicChange={(labelAr) => setNewMeasure((s) => ({ ...s, labelAr }))}
-              onEnglishChange={(labelEn) => setNewMeasure((s) => ({ ...s, labelEn }))}
-              arabicLabel={t('catalog.measurementNameAr')}
-              englishLabel={t('catalog.measurementNameEn')}
+            <LocaleNameField
+              value={newMeasure.label}
+              onChange={(label) => setNewMeasure((s) => ({ ...s, label }))}
+              label={t('catalog.name')}
             />
             <SecondaryButton
               label={t('catalog.pickMeasurementValue')}
               onPress={() => {
-                if (!newMeasure.labelAr.trim()) {
+                if (!newMeasure.label.trim()) {
                   void haptics.error();
                   showToast({ variant: 'error', message: t('catalog.measurementNamesRequired') });
                   return;

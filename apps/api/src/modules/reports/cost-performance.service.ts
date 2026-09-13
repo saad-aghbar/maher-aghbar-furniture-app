@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InventoryTxType, Prisma } from '@maher/database';
 import { can } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
+import { lineVisualIdentity } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { positiveUnitCost } from '../inventory/issue-unit-cost';
@@ -220,10 +221,17 @@ export class CostPerformanceService {
         lines: {
           orderBy: { sortOrder: 'asc' },
           include: {
-            product: { select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true } },
+            product: { select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
             productionOrders: {
               where: { archivedAt: null },
-              select: { id: true, originType: true, quantity: true, plannedMaterialCost: true, plannedCostFrozenAt: true },
+              select: {
+                id: true,
+                originType: true,
+                quantity: true,
+                plannedMaterialCost: true,
+                plannedLaborCost: true,
+                plannedCostFrozenAt: true,
+              },
             },
           },
         },
@@ -314,7 +322,18 @@ export class CostPerformanceService {
     );
 
     const saleValue = saleValueFromSubtotals(order.invoices[0]?.subtotal, order.subtotal);
-    const planned = order.plannedCostFrozenAt ? positiveUnitCost(order.manufacturingCost) : null;
+    const plannedFromPos = originalPos.reduce((sum, po) => {
+      return (
+        sum +
+        (positiveUnitCost(po.plannedMaterialCost) ?? 0) +
+        (positiveUnitCost(po.plannedLaborCost) ?? 0)
+      );
+    }, 0);
+    const planned = order.plannedCostFrozenAt
+      ? plannedFromPos > 0
+        ? plannedFromPos
+        : positiveUnitCost(order.manufacturingCost)
+      : null;
     const labor = await this.laborForTasks(
       originalPos.flatMap((po) => po.tasks),
     );
@@ -342,6 +361,17 @@ export class CostPerformanceService {
 
     const returnCost = await this.returnLifetime(order.id, returnPos, txs);
     const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
+    const laborByLineId = new Map<string, number | null>();
+    for (const line of order.lines) {
+      const linePoIds = new Set(
+        line.productionOrders.filter((po) => po.originType === 'SALES_ORDER').map((po) => po.id),
+      );
+      const lineTasks = originalPos
+        .filter((po) => linePoIds.has(po.id) || po.salesOrderLineId === line.id)
+        .flatMap((po) => po.tasks);
+      const lineLabor = await this.laborForTasks(lineTasks);
+      laborByLineId.set(line.id, lineLabor.total);
+    }
 
     return {
       id: order.id,
@@ -364,20 +394,65 @@ export class CostPerformanceService {
         perPieceTracked: false,
       },
       lines: order.lines.map((line) => {
-        const linePoIds = new Set(line.productionOrders.filter((po) => po.originType === 'SALES_ORDER').map((po) => po.id));
+        const linePoIds = new Set(
+          line.productionOrders.filter((po) => po.originType === 'SALES_ORDER').map((po) => po.id),
+        );
         const lineTxs = originalTxs.filter((tx) => {
           const poId = tx.productionOrderId || tx.referenceId;
           return poId != null && linePoIds.has(poId);
         });
         const lineLedger = actualMaterialFromTransactions(lineTxs);
+        const fabricTxs = lineTxs.filter(
+          (tx) => String(tx.inventoryItem?.category ?? '').toUpperCase() === 'FABRIC',
+        );
+        const fabricLedger = actualMaterialFromTransactions(fabricTxs);
+        const scrapCost = lineTxs
+          .filter((tx) => String(tx.type) === 'SCRAP' || String(tx.type) === 'DAMAGE')
+          .reduce((sum, tx) => sum + (positiveUnitCost(tx.unitCost) ?? 0) * Number(tx.quantity ?? 0), 0);
+        const reworkMaterial = line.productionOrders
+          .flatMap((po) => originalPos.find((row) => row.id === po.id)?.materialUsages ?? [])
+          .filter((row) => row.task?.isRework)
+          .reduce((sum, row) => sum + (positiveUnitCost(row.extendedCost) ?? 0), 0);
         const lineQty = Number(line.quantity);
+        const spec =
+          line.orderSpec && typeof line.orderSpec === 'object' && !Array.isArray(line.orderSpec)
+            ? (line.orderSpec as {
+                productImageRef?: string | null;
+                primaryImageDocumentId?: string | null;
+                variantLabel?: string | null;
+                variantCode?: string | null;
+              })
+            : null;
+        const plannedMaterial = line.productionOrders
+          .filter((po) => po.originType === 'SALES_ORDER')
+          .reduce(
+            (sum, po) =>
+              sum +
+              (positiveUnitCost(po.plannedMaterialCost) ?? 0) +
+              (positiveUnitCost(po.plannedLaborCost) ?? 0),
+            0,
+          );
         return {
           id: line.id,
           description: line.description,
           sku: line.product?.sku ?? null,
+          variantLabel: line.variantLabel ?? spec?.variantLabel ?? spec?.variantCode ?? null,
+          manufacturingComplexity: line.manufacturingComplexity ?? null,
+          imageUrl: lineVisualIdentity({
+            primaryImageDocumentId: spec?.primaryImageDocumentId,
+            productImageRef: spec?.productImageRef,
+            productImageUrl: line.product?.imageUrl ?? null,
+          }),
           quantity: lineQty,
           actualCost: lineLedger.actualCost,
+          actualMaterial: lineLedger.actualCost,
+          actualFabric: fabricLedger.actualCost,
+          actualLabor: laborByLineId.get(line.id) ?? null,
+          plannedCost: plannedMaterial > 0 ? plannedMaterial : null,
+          waste: scrapCost > 0 ? scrapCost : null,
+          rework: reworkMaterial > 0 ? reworkMaterial : null,
           averageCostPerUnit: averagePerUnit(lineLedger.actualCost, lineQty),
+          perPieceTracked: false,
           note:
             lineQty > 1
               ? 'Per-physical-piece cost is not tracked. Quantity, total, and average per unit only.'

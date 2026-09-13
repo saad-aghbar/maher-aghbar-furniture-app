@@ -32,7 +32,6 @@ const ADMIN_INVENTORY: Permission[] = [
   'inventory.read',
   'inventory.count',
   'inventory.receive',
-  'purchase-order.read',
 ];
 const ADMIN_PRODUCTION: Permission[] = ['production-order.read', 'production-task.read'];
 

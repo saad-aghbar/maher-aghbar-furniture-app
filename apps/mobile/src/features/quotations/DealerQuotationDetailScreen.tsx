@@ -14,6 +14,7 @@ import {
   requestQuotationRevision,
 } from '@/api/modules/quotations';
 import { queryKeys } from '@/api/queryKeys';
+import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
@@ -128,7 +129,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: queryKeys.quotations.all });
-    await qc.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
+    await invalidateFactoryJourney(qc);
   };
 
   const fail = (err: unknown) => {

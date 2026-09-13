@@ -128,6 +128,21 @@
   "searchSpecOptions": "ابحث في الخيارات…",
   "noSpecOptionsMatch": "لا توجد خيارات مطابقة.",
   "noSpecOption": "بدون خيار",
+  "addSpec": "إضافة مواصفة",
+  "editSpec": "تعديل المواصفة",
+  "specsHint": "فقط المواصفات التي تستخدمها هذه القطعة. سمِّها وصنّفها وثبّتها.",
+  "noSpecs": "لا مواصفات مثبتة",
+  "noSpecsBody": "أضف تصنيفاً، ثم سمِّ المواصفة لهذه النسخة.",
+  "specCategory": "التصنيف",
+  "newSpecCategory": "تصنيف جديد",
+  "newSpecCategoryHint": "إسفنج، خشب، بريم — حسب ما تحتاجه هذه القطعة.",
+  "specName": "اسم المواصفة",
+  "newSpecName": "سمِّ هذه المواصفة",
+  "newSpecNameHint": "صيغة المصنع لهذه النسخة. تُحفظ كسطر مستقل في المكتبة.",
+  "pinSpec": "تثبيت المواصفة",
+  "saveSpec": "حفظ المواصفة",
+  "searchSpecCategories": "ابحث في التصنيفات…",
+  "librarySpecs": "سطور المكتبة",
   "inputType": "نوع الإدخال",
   "appliesTo": "ينطبق على",
   "sortOrder": "ترتيب العرض",
@@ -914,5 +929,5 @@
   "variantWorkflowHint": "اختر المسار ثم افتح إعداد الإنتاج لتحديد مواد وأزمنة المراحل.",
   "workflowStageSummary": "{stages} مراحل · {minutes}",
   "stageTime": "زمن المرحلة",
-  "stageTimeHint": "الدقائق لكل وحدة لهذه المرحلة. تُحفظ مع بقية الإعداد."
+  "stageTimeHint": "كم تستغرق هذه المرحلة لهذه النسخة."
 }

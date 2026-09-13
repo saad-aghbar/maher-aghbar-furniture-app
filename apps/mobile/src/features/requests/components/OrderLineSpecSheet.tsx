@@ -9,6 +9,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { applyOptionToLine, type NewOrderLine } from '../newOrderLine';
+import { lineHasManufacturingDiffs } from '../newOrderBasket';
 import { NamedPickerSheet } from './NamedPickerSheet';
 import { useEffect, useState } from 'react';
 
@@ -163,11 +164,21 @@ export function OrderLineSpecSheet({
         overlay
         onSelect={(id) => {
           const picked = variants.find((row) => row.id === id);
+          const shouldReseed = !lineHasManufacturingDiffs(line);
           onChange({
             ...line,
             variantId: id ?? '',
             variantSku: picked?.sku ?? '',
             variantLabel: picked ? localizedName(locale, picked) || picked.code : '',
+            ...(shouldReseed
+              ? {
+                  dimWidth: picked?.width != null ? String(picked.width) : line.dimWidth,
+                  dimHeight: picked?.height != null ? String(picked.height) : line.dimHeight,
+                  dimDepth: picked?.depth != null ? String(picked.depth) : line.dimDepth,
+                  dimSeat:
+                    picked?.seatHeight != null ? String(picked.seatHeight) : line.dimSeat,
+                }
+              : {}),
           });
         }}
       />

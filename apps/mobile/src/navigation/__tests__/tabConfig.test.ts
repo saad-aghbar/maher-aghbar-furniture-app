@@ -146,6 +146,11 @@ describe('tabConfig', () => {
     expect(visibleTabsForUser('admin', none).map((t) => t.name)).toEqual(['index', 'more']);
   });
 
+  it('does not show inventory from purchase-order.read alone', () => {
+    const buyer: AuthUser = { ...base, permissions: ['purchase-order.read'] };
+    expect(visibleTabsForUser('admin', buyer).map((t) => t.name)).not.toContain('inventory');
+  });
+
   it('does not leak admin tabs onto staff, worker, or dealer snapshots', () => {
     const admin: AuthUser = {
       ...base,

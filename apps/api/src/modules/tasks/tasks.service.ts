@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Prisma, TaskStatus } from '@maher/database';
+import { lineVisualFromOrderSpec } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { IdempotencyService } from '../../common/idempotency.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
@@ -71,6 +72,24 @@ function startOfUtcDay(d = new Date()) {
 function endOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
 }
+
+function productionOrderImageUrl(order: {
+  product?: { imageUrl?: string | null } | null;
+  salesOrderLine?: {
+    orderSpec?: unknown;
+    variant?: { imageUrl?: string | null } | null;
+  } | null;
+}): string | null {
+  return lineVisualFromOrderSpec(order.salesOrderLine?.orderSpec, {
+    variantImageUrl: order.salesOrderLine?.variant?.imageUrl,
+    productImageUrl: order.product?.imageUrl,
+  });
+}
+
+const SALES_ORDER_LINE_VISUAL_SELECT = {
+  orderSpec: true,
+  variant: { select: { imageUrl: true } },
+} as const;
 
 @Injectable()
 export class TasksService {
@@ -344,6 +363,7 @@ export class TasksService {
         productDescription: true,
         salesOrderId: true,
         salesOrderLineId: true,
+        originType: true,
         variantLabel: true,
         variantSku: true,
         plannedCompletionDate: true,
@@ -352,6 +372,7 @@ export class TasksService {
         product: {
           select: { id: true, imageUrl: true, nameEn: true, nameAr: true, nameHe: true },
         },
+        salesOrderLine: { select: SALES_ORDER_LINE_VISUAL_SELECT },
         salesOrder: {
           select: {
             id: true,
@@ -421,8 +442,9 @@ export class TasksService {
         quantity: order.quantity,
         productDescription: order.productDescription,
         product: order.product,
-        productImageUrl: order.product?.imageUrl?.trim() || null,
+        productImageUrl: productionOrderImageUrl(order),
         dealer: order.salesOrder?.customer ?? null,
+        assignedToMe: true,
         assignedStages: scoped.map((task) => ({
           code: task.stageDefinition?.code ?? '',
           nameEn: task.stageDefinition?.nameEn ?? null,
@@ -436,6 +458,84 @@ export class TasksService {
         blockedCount,
       };
     });
+
+    const assignedIds = new Set(items.map((item) => item.id));
+    const soIds = [
+      ...new Set(items.map((item) => item.salesOrderId).filter((id): id is string => Boolean(id))),
+    ];
+    if (soIds.length) {
+      const siblings = await this.prisma.productionOrder.findMany({
+        where: {
+          salesOrderId: { in: soIds },
+          originType: 'SALES_ORDER',
+          archivedAt: null,
+          id: { notIn: [...assignedIds] },
+        },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          quantity: true,
+          productDescription: true,
+          salesOrderId: true,
+          salesOrderLineId: true,
+          originType: true,
+          variantLabel: true,
+          variantSku: true,
+          plannedCompletionDate: true,
+          requiredDeliveryDate: true,
+          priority: true,
+          product: {
+            select: { id: true, imageUrl: true, nameEn: true, nameAr: true, nameHe: true },
+          },
+          salesOrderLine: { select: SALES_ORDER_LINE_VISUAL_SELECT },
+          salesOrder: {
+            select: {
+              id: true,
+              number: true,
+              externalOrderNumber: true,
+              customer: {
+                select: {
+                  code: true,
+                  name: true,
+                  nameEn: true,
+                  nameAr: true,
+                  nameHe: true,
+                  companyName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      for (const order of siblings) {
+        if (assignedIds.has(order.id)) continue;
+        items.push({
+          id: order.id,
+          number: order.number,
+          salesOrderId: order.salesOrderId ?? order.salesOrder?.id ?? null,
+          salesOrderLineId: order.salesOrderLineId ?? null,
+          salesOrderNumber: order.salesOrder?.number ?? null,
+          variantLabel: order.variantLabel ?? null,
+          variantSku: order.variantSku ?? null,
+          externalOrderNumber: order.salesOrder?.externalOrderNumber ?? null,
+          status: order.status,
+          quantity: order.quantity,
+          productDescription: order.productDescription,
+          product: order.product,
+          productImageUrl: productionOrderImageUrl(order),
+          dealer: order.salesOrder?.customer ?? null,
+          assignedToMe: false,
+          assignedStages: [],
+          priority: order.priority,
+          deadline: order.plannedCompletionDate ?? order.requiredDeliveryDate,
+          myTaskCount: 0,
+          actionableCount: 0,
+          blockedCount: 0,
+        });
+      }
+    }
+
     const grouped = groupMyOrdersBySalesOrder(items);
     return { orders: grouped, data: grouped };
   }
@@ -445,10 +545,30 @@ export class TasksService {
       where: {
         id: productionOrderId,
         archivedAt: null,
-        tasks: { some: { assignedEmployeeId: userId, status: { not: TaskStatus.CANCELLED } } },
+        OR: [
+          {
+            tasks: {
+              some: { assignedEmployeeId: userId, status: { not: TaskStatus.CANCELLED } },
+            },
+          },
+          {
+            originType: 'SALES_ORDER',
+            salesOrder: {
+              productionOrders: {
+                some: {
+                  originType: 'SALES_ORDER',
+                  tasks: {
+                    some: { assignedEmployeeId: userId, status: { not: TaskStatus.CANCELLED } },
+                  },
+                },
+              },
+            },
+          },
+        ],
       },
       include: {
         product: { select: { id: true, imageUrl: true, nameEn: true, nameAr: true, nameHe: true } },
+        salesOrderLine: { select: SALES_ORDER_LINE_VISUAL_SELECT },
         salesOrder: { select: { id: true, number: true } },
         stages: { select: { id: true, status: true } },
         workflowSnapshot: {
@@ -586,7 +706,7 @@ export class TasksService {
       quantity: order.quantity,
       productDescription: order.productDescription,
       product: order.product,
-      productImageUrl: order.product?.imageUrl?.trim() || null,
+      productImageUrl: productionOrderImageUrl(order),
       priority: order.priority,
       deadline: order.plannedCompletionDate ?? order.requiredDeliveryDate,
       ...counts,

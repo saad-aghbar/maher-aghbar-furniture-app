@@ -88,7 +88,7 @@ export function UnscheduledOrderCardView({ order, onSchedule, onOpen }: Props) {
         <OrderCardMedia imageUrl={order.product?.imageUrl ?? null} size={56} />
         <View style={{ flex: 1, gap: 4 }}>
           <AppText weight={titleWeight} dir="ltr">
-            {order.salesOrderNumber ?? order.number}
+            {order.number}
           </AppText>
           <AppText numberOfLines={2}>{title}</AppText>
           {order.dealerName ? (

@@ -56,6 +56,18 @@ describe('newOrderLine', () => {
     expect(item.customMeasurements).toEqual([expect.objectContaining({ value: '45' })]);
   });
 
+  it('sends custom photos on the request item, not only RFQ documents', () => {
+    const line = emptyOrderLine({
+      customProductName: 'Corner bench',
+      photoDocumentIds: ['doc-photo'],
+      primaryImageDocumentId: 'doc-photo',
+    });
+    const item = lineToRequestItem(line, 'Untitled', 'Seat');
+    expect(item.productId).toBeUndefined();
+    expect(item.photoDocumentIds).toEqual(['doc-photo']);
+    expect(item.primaryImageDocumentId).toBe('doc-photo');
+  });
+
   it('maps a foam pick onto foamDensity so the RFQ column is not empty', () => {
     const next = applyOptionToLine(
       emptyOrderLine(),

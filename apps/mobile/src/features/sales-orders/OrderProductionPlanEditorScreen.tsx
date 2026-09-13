@@ -48,7 +48,10 @@ import {
   productionOriginTraceLine,
 } from '@/features/production/components/ProductionOriginChip';
 import { selectProductionOrigin } from '@/features/production/selectProduction';
-import { WorkflowPickerSheet } from '@/features/sales-orders/production-setup/components/WorkflowPickerSheet';
+import { AssignOrderWorkflowCard } from '@/features/workflow/components/AssignOrderWorkflowCard';
+import { WorkflowPickDesk } from '@/features/workflow/components/WorkflowPickDesk';
+import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useAssignOrderWorkflowMutation, useWorkflowsQuery } from '@/features/workflow/query';
 import { ProductionTaskSheet } from '@/features/production/components/ProductionTaskSheet';
 import { todayYmd } from '@/features/production/assignWindow';
 import {
@@ -77,7 +80,6 @@ import {
   setupUsesSemi,
   terminalSetupMode,
 } from '@/features/workflow/productionSetupBehavior';
-import { useAssignOrderWorkflowMutation } from '@/features/workflow/query';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
@@ -655,6 +657,7 @@ export function OrderProductionPlanEditorScreen({
     productionOrderId,
   );
   const assignWorkflowMutation = useAssignOrderWorkflowMutation(productionOrderId);
+  const workflowsQuery = useWorkflowsQuery(workflowOpen);
   const startMutation = useStartProductionMutation(productionOrderId);
   const suggestScheduleMutation = useSuggestPlanScheduleMutation(productionOrderId);
   const assignMutation = useAssignTaskMutation(productionOrderId);
@@ -1251,6 +1254,17 @@ export function OrderProductionPlanEditorScreen({
         </ListItemEnter>
 
         <ListItemEnter index={2}>
+          {String(data.manufacturingComplexity ?? '').toUpperCase() === 'CUSTOM' &&
+          !data.readiness.hasWorkflow ? (
+            <AssignOrderWorkflowCard
+              productionOrderId={productionOrderId}
+              preferredScope={
+                data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT'
+                  ? 'RETURN'
+                  : 'STANDARD'
+              }
+            />
+          ) : (
           <DealerBoard title={t('mobile.production.hubJumpWorkflow')} titleWeight={titleWeight}>
             <View
               style={{
@@ -1302,6 +1316,7 @@ export function OrderProductionPlanEditorScreen({
               </>
             ) : null}
           </DealerBoard>
+          )}
         </ListItemEnter>
 
         <ListItemEnter index={3}>
@@ -1585,40 +1600,52 @@ export function OrderProductionPlanEditorScreen({
         }}
       />
 
-      <WorkflowPickerSheet
+      <BottomSheet
         open={workflowOpen}
         onClose={() => setWorkflowOpen(false)}
-        selectedId={data.workflow?.id ?? null}
-        preferredScope={
-          data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT'
-            ? 'RETURN'
-            : 'STANDARD'
-        }
-        onPick={(wf) => {
-          setWorkflowOpen(false);
-          if (wf.id === data.workflow?.id) return;
-          assignWorkflowMutation.mutate(wf.id, {
-            onSuccess: () => {
-              void haptics.confirmLight();
-              setDirty(false);
-              showToast({
-                variant: 'success',
-                message: t('mobile.productionSetup.workflowRebuilt'),
-              });
-              void query.refetch();
-            },
-            onError: (err) => {
-              void haptics.error();
-              showToast({
-                variant: 'error',
-                message: isApiError(err)
-                  ? toastMessageForError(err)
-                  : t('mobile.productionSetup.actionFailed'),
-              });
-            },
-          });
-        }}
-      />
+        title={t('mobile.productionSetup.pickWorkflow')}
+        expandable
+      >
+        <WorkflowPickDesk
+          workflows={workflowsQuery.data ?? []}
+          selectedId={data.workflow?.id ?? null}
+          preferredScope={
+            data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT'
+              ? 'RETURN'
+              : 'STANDARD'
+          }
+          initialScope={
+            data.originType === 'RETURN_WORK' || data.originType === 'REPLACEMENT'
+              ? 'RETURN'
+              : 'STANDARD'
+          }
+          loading={workflowsQuery.isLoading}
+          onSelect={(id) => {
+            setWorkflowOpen(false);
+            if (id === data.workflow?.id) return;
+            assignWorkflowMutation.mutate(id, {
+              onSuccess: () => {
+                void haptics.confirmLight();
+                setDirty(false);
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.productionSetup.workflowRebuilt'),
+                });
+                void query.refetch();
+              },
+              onError: (err) => {
+                void haptics.error();
+                showToast({
+                  variant: 'error',
+                  message: isApiError(err)
+                    ? toastMessageForError(err)
+                    : t('mobile.productionSetup.actionFailed'),
+                });
+              },
+            });
+          }}
+        />
+      </BottomSheet>
 
       <ProductionStageSetupSheet
         open={Boolean(editingStage)}

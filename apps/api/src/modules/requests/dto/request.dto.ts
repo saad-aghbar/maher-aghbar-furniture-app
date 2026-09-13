@@ -243,6 +243,17 @@ export class RequestItemDto {
   @ValidateNested({ each: true })
   @Type(() => CustomMeasurementItemDto)
   customMeasurements?: CustomMeasurementItemDto[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  photoDocumentIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  primaryImageDocumentId?: string;
 }
 
 export class CreateRequestDto {

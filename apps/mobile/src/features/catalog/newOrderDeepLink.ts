@@ -121,6 +121,28 @@ export function parseDeepLinkText(
   return raw?.trim() ?? '';
 }
 
+/** Dealer PDP Customize → modified-order desk for this catalog variant. */
+export function customizeVariantHref(
+  productId: string,
+  variantId: string,
+  qty = 1,
+  extras?: { lineId?: string },
+): Href {
+  const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
+  const id = encodeURIComponent(productId);
+  const variant = encodeURIComponent(variantId.trim());
+  const line = extras?.lineId?.trim()
+    ? `&lineId=${encodeURIComponent(extras.lineId.trim())}`
+    : '';
+  return `/(app)/(customer)/catalog/${id}/customize?variantId=${variant}&qty=${q}${line}` as Href;
+}
+
+/** Dealer basket → custom piece desk (no catalog product, no dealer price). */
+export function customItemHref(lineId?: string): Href {
+  const q = lineId?.trim() ? `?lineId=${encodeURIComponent(lineId.trim())}` : '';
+  return `/(app)/(customer)/order/custom${q}` as Href;
+}
+
 export function navigateToBasketReview(router: NewOrderRouter): void {
   const href = {
     pathname: '/(app)/(customer)/(tabs)/basket' as const,

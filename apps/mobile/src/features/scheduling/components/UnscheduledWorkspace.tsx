@@ -4,8 +4,9 @@ import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import type { UnscheduledOrderCard } from '@/api/modules/scheduling';
 import { useLocale } from '@/i18n';
-import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
+import { groupSchedulingCardsBySalesOrder } from '../selectAdminScheduling';
+import { SchedulingSalesOrderGroups } from './SchedulingSalesOrderGroups';
 import { UnscheduledOrderCardView } from './UnscheduledOrderCard';
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 export function UnscheduledWorkspace({ orders, onOpen, onSchedule }: Props) {
   const { t } = useLocale();
   const { theme } = useTheme();
+  const groups = groupSchedulingCardsBySalesOrder(orders);
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -26,15 +28,16 @@ export function UnscheduledWorkspace({ orders, onOpen, onSchedule }: Props) {
       {orders.length === 0 ? (
         <DealerEmptyPanel text={t('mobile.adminScheduling.searchEmpty')} />
       ) : (
-        orders.map((order, index) => (
-          <ListItemEnter key={order.id} index={index}>
+        <SchedulingSalesOrderGroups
+          groups={groups}
+          renderCard={(order) => (
             <UnscheduledOrderCardView
               order={order}
               onOpen={() => onOpen(order)}
               onSchedule={() => onSchedule(order)}
             />
-          </ListItemEnter>
-        ))
+          )}
+        />
       )}
     </View>
   );

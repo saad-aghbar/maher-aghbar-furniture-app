@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import {
   buildBinLabelSheetPdf,
@@ -336,6 +338,7 @@ describe('buildSimplePdf', () => {
     });
 
     expect(imageXObjectCount(withQr)).toBeGreaterThan(imageXObjectCount(without));
+    expect(imageXObjectCount(withQr) - imageXObjectCount(without)).toBeGreaterThanOrEqual(2);
     expect(imageXObjectCount(mockQr)).toBe(imageXObjectCount(without));
     expect(pdfRaw(withQr)).not.toContain('exp://');
     expect(pdfHasLatin(withQr, 'MAT-FAB-ROLL')).toBe(true);
@@ -437,5 +440,20 @@ describe('buildInventoryItemReportPdf', () => {
     expect(pdfHasLatin(without, 'Inventory Item Report')).toBe(true);
     expect(pdfHasLatin(without, 'MAT-ITAL-VEL')).toBe(true);
     expect(imageXObjectCount(without)).toBeGreaterThan(0); // QR
+  });
+});
+
+describe('branded QR overlay', () => {
+  it('uses H correction, the sofa M, and one draw helper for every QR', () => {
+    const src = readFileSync(join(__dirname, '../pdf.util.ts'), 'utf8');
+    expect(src).toContain("errorCorrectionLevel: 'H'");
+    expect(src).not.toContain("errorCorrectionLevel: 'M'");
+    expect(src).toContain('function drawBrandedQr');
+    expect(src).toContain('QR_MARK_PATH');
+    expect(src).toContain("path.join(BRAND_DIR, 'watermark-mark.png')");
+    expect(src).toContain('QR_LOGO_RATIO = 0.24');
+    expect(src).toContain('QR_BADGE_RATIO = 0.28');
+    expect(src.match(/drawBrandedQr\(/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(src).not.toMatch(/doc\.image\(qrPng/);
   });
 });

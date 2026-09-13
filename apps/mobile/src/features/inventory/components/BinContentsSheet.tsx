@@ -16,6 +16,7 @@ type Props = {
   open: boolean;
   bin: WarehouseBinContents | null;
   onClose: () => void;
+  onClosed?: () => void;
   onScanAgain?: () => void;
   onViewItem?: (inventoryItemId: string) => void;
   onPrintLabel?: () => void;
@@ -30,6 +31,7 @@ export function BinContentsSheet({
   open,
   bin,
   onClose,
+  onClosed,
   onScanAgain,
   onViewItem,
   onPrintLabel,
@@ -50,6 +52,7 @@ export function BinContentsSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
+      onClosed={onClosed}
       title={t('mobile.inventory.binContents')}
       sheetHeight={Math.min(Math.round(height * 0.72), 640)}
     >
@@ -111,35 +114,60 @@ export function BinContentsSheet({
               const name =
                 locale === 'ar' ? row.nameAr || row.nameEn : row.nameEn || row.nameAr || row.sku;
               const inner = (
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    gap: theme.spacing.md,
-                    padding: theme.spacing.md,
-                  }}
-                >
-                  <InventorySkuThumb uri={row.imageUrl} size={48} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText
-                      weight={titleWeight}
-                      numberOfLines={2}
-                      style={{ textAlign: isRTL ? 'right' : 'left' }}
-                    >
-                      {name}
-                    </AppText>
-                    <AppText variant="caption" color="muted" dir="ltr" numberOfLines={2}>
-                      {row.sku}
-                      {row.unit
-                        ? ` · ${formatQty(row.availableQty)} ${row.unit}`
-                        : ` · ${formatQty(row.availableQty)}`}
-                      {Number(row.reservedQty) > 0
-                        ? ` · ${t('mobile.inventory.reservedLabel')} ${formatQty(row.reservedQty)}`
-                        : ''}
-                    </AppText>
+                <>
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      width: 3,
+                      backgroundColor: colors.brand,
+                      opacity: 0.55,
+                      ...(isRTL ? { right: 0 } : { left: 0 }),
+                    }}
+                  />
+                  <View
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      gap: theme.spacing.md,
+                      padding: theme.spacing.md,
+                      ...(isRTL
+                        ? { paddingRight: theme.spacing.md + 4 }
+                        : { paddingLeft: theme.spacing.md + 4 }),
+                    }}
+                  >
+                    <InventorySkuThumb uri={row.imageUrl} size={48} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText
+                        weight={titleWeight}
+                        numberOfLines={2}
+                        style={{ textAlign: isRTL ? 'right' : 'left' }}
+                      >
+                        {name}
+                      </AppText>
+                      <AppText variant="caption" color="muted" dir="ltr" numberOfLines={2}>
+                        {row.sku}
+                        {row.unit
+                          ? ` · ${formatQty(row.availableQty)} ${row.unit}`
+                          : ` · ${formatQty(row.availableQty)}`}
+                        {Number(row.reservedQty) > 0
+                          ? ` · ${t('mobile.inventory.reservedLabel')} ${formatQty(row.reservedQty)}`
+                          : ''}
+                      </AppText>
+                    </View>
                   </View>
-                </View>
+                </>
               );
+              const rowShell = {
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
+                backgroundColor: colors.surface,
+                overflow: 'hidden' as const,
+                ...orderBoardShadow(colorScheme),
+              };
               return onViewItem ? (
                 <AnimatedPressable
                   key={row.inventoryItemId}
@@ -149,29 +177,12 @@ export function BinContentsSheet({
                     void haptics.selection();
                     onViewItem(row.inventoryItemId);
                   }}
-                  style={{
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.surface,
-                    overflow: 'hidden',
-                    ...orderBoardShadow(colorScheme),
-                  }}
+                  style={rowShell}
                 >
                   {inner}
                 </AnimatedPressable>
               ) : (
-                <View
-                  key={row.inventoryItemId}
-                  style={{
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.surface,
-                    overflow: 'hidden',
-                    ...orderBoardShadow(colorScheme),
-                  }}
-                >
+                <View key={row.inventoryItemId} style={rowShell}>
                   {inner}
                 </View>
               );
@@ -188,8 +199,16 @@ export function BinContentsSheet({
                 : undefined
           }
           onPrimary={onPrintLabel ?? onScanAgain}
-          secondaryLabel={t('mobile.inventory.done')}
-          onSecondary={onClose}
+          secondaryLabel={
+            onPrintLabel && onScanAgain
+              ? t('mobile.inventory.scanAgain')
+              : t('mobile.inventory.done')
+          }
+          onSecondary={onPrintLabel && onScanAgain ? onScanAgain : onClose}
+          tertiaryLabel={
+            onPrintLabel && onScanAgain ? t('mobile.inventory.done') : undefined
+          }
+          onTertiary={onPrintLabel && onScanAgain ? onClose : undefined}
         />
       </View>
     </BottomSheet>

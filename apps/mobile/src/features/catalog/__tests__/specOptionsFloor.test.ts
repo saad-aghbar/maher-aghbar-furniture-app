@@ -17,14 +17,21 @@ function assertFloor(source: string) {
 describe('Spec option picker floor', () => {
   const files = [
     'components/SpecOptionPickerSheet.tsx',
+    'components/SpecFloorRow.tsx',
+    'components/VariantSpecsBoard.tsx',
+    'components/VariantSpecEditSheet.tsx',
     'components/SpecOptionChips.tsx',
+    'components/DealerOrderSpecsBoard.tsx',
+    'components/DealerAddSpecSheet.tsx',
   ];
 
   it('keeps parchment boards and forbids SaaS cards', () => {
     for (const file of files) {
       const source = read(file);
       assertFloor(source);
-      expect(source).toMatch(/DealerBoard|orderBoardShadow|AnimatedPressable|BottomSheet/);
+      expect(source).toMatch(
+        /DealerBoard|orderBoardShadow|AnimatedPressable|BottomSheet|CatalogSectionBoard/,
+      );
     }
   });
 
@@ -34,5 +41,13 @@ describe('Spec option picker floor', () => {
     expect(picker).toContain('localizedName');
     expect(picker).toContain('SpecOptionValue');
     expect(picker).not.toMatch(/catch-all|free.?text box/i);
+  });
+
+  it('variant ledger is a named ticket list, not chips', () => {
+    const board = read('components/VariantSpecsBoard.tsx');
+    expect(board).toContain('SpecFloorRow');
+    expect(board).toContain('VariantSpecEditSheet');
+    expect(board).toContain('compose');
+    expect(board).not.toContain('SpecOptionChips');
   });
 });

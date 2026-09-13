@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet } from '../client';
+import { apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 
 export type BrowseCategory = {
@@ -135,6 +135,39 @@ export async function listSpecOptionValues(
 
 export async function getSpecOptionValue(id: string): Promise<SpecOptionValue> {
   return apiGet<SpecOptionValue>(`/spec-option-values/${encodeURIComponent(id)}`);
+}
+
+export async function createSpecOptionGroup(input: {
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nameHe?: string;
+  inputType?: SpecOptionGroup['inputType'];
+  sortOrder?: number;
+}): Promise<SpecOptionGroup> {
+  return apiPost<SpecOptionGroup>('/spec-option-groups', input);
+}
+
+export async function createSpecOptionValue(input: {
+  groupId: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nameHe?: string;
+  sortOrder?: number;
+}): Promise<SpecOptionValue> {
+  return apiPost<SpecOptionValue>('/spec-option-values', input);
+}
+
+export async function patchSpecOptionValue(
+  id: string,
+  input: Partial<{
+    nameAr: string;
+    nameEn: string;
+    nameHe: string;
+  }>,
+): Promise<SpecOptionValue> {
+  return apiPatch<SpecOptionValue>(`/spec-option-values/${encodeURIComponent(id)}`, input);
 }
 
 export type CatalogNamedRow = {

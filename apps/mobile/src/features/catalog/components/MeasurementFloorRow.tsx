@@ -11,7 +11,7 @@ type Props = {
   name: string;
   secondary?: string | null;
   valueLabel: string;
-  onRemove: () => void;
+  onRemove?: () => void;
   onEdit?: () => void;
 };
 
@@ -150,18 +150,20 @@ export function MeasurementFloorRow({
             </AnimatedPressable>
           ) : null}
 
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('common.delete')}
-            onPress={() => {
-              void haptics.selection();
-              onRemove();
-            }}
-            style={{ ...iconBtn, backgroundColor: colors.errorSoft }}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.error} />
-          </AnimatedPressable>
+          {onRemove ? (
+            <AnimatedPressable
+              variant="button"
+              accessibilityRole="button"
+              accessibilityLabel={t('common.delete')}
+              onPress={() => {
+                void haptics.selection();
+                onRemove();
+              }}
+              style={{ ...iconBtn, backgroundColor: colors.errorSoft }}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.error} />
+            </AnimatedPressable>
+          ) : null}
         </View>
       </View>
     </ListItemEnter>

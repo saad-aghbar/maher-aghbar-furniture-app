@@ -29,10 +29,11 @@ import {
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
-import { BilingualNameField } from './BilingualNameField';
+import { LocaleNameField } from './BilingualNameField';
 import { ProductGalleryBoard } from './ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './ProductPhotoSourceSheet';
 import { splitProductPhotos } from '../productPhotos';
@@ -52,16 +53,14 @@ type Props = {
 };
 
 const emptyForm = (categoryId: string | null = null) => ({
-  nameEn: '',
-  nameAr: '',
-  nameHe: '',
+  name: '',
   description: '',
   categoryId,
   isActive: true,
 });
 
 /**
- * Add-product sheet — photos, bilingual name, category, description, and active.
+ * Add-product sheet — photos, name, category, description, and active.
  */
 export function CreateProductSheet({
   open,
@@ -151,16 +150,17 @@ export function CreateProductSheet({
     },
   });
 
-  const onSubmit = () => {
+  const onSubmit = async () => {
     setError(null);
-    if (!form.nameAr.trim()) {
-      setError(label('catalog.namesRequired', 'Arabic name is required.'));
+    if (!form.name.trim()) {
+      setError(label('catalog.namesRequired', 'Name is required.'));
       return;
     }
+    const names = await resolveTrilingualName(form.name, locale);
     createMutation.mutate({
-      nameEn: form.nameEn.trim() || undefined,
-      nameAr: form.nameAr.trim(),
-      nameHe: form.nameHe.trim() || undefined,
+      nameEn: names.nameEn || undefined,
+      nameAr: names.nameAr,
+      nameHe: names.nameHe || undefined,
       description: form.description.trim() || undefined,
       categoryId: form.categoryId,
       ...(() => {
@@ -299,16 +299,9 @@ export function CreateProductSheet({
               label={label('catalog.product', 'Product')}
               titleWeight={titleWeight}
             >
-              <BilingualNameField
-                arabic={form.nameAr}
-                english={form.nameEn}
-                onArabicChange={(v) => set('nameAr', v)}
-                onEnglishChange={(v) => set('nameEn', v)}
-              />
-              <TextField
-                label={t('catalog.nameHe')}
-                value={form.nameHe}
-                onChangeText={(v) => set('nameHe', v)}
+              <LocaleNameField
+                value={form.name}
+                onChange={(v) => set('name', v)}
               />
               <TextField
                 label={t('catalog.description')}

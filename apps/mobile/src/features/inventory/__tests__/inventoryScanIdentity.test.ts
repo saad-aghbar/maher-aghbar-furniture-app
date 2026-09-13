@@ -51,6 +51,7 @@ describe('inventory scan identity (mobile)', () => {
     expect(hook).toContain('runInventoryLabelVerify');
     expect(match).toContain('MATCH');
     expect(match).toContain('MISMATCH');
+    expect(match).toContain('SHELF');
     expect(match).toContain('onUseScanned');
     expect(match).toContain('keepSelectedMaterial');
     // Inline result — no BottomSheet Modal for match UI.
@@ -124,9 +125,13 @@ describe('inventory scan identity (mobile)', () => {
     const qr = readFileSync(join(inventoryDir, 'components/InventoryQrSheet.tsx'), 'utf8');
     expect(qr).toContain('onClosed');
     expect(home).toContain('printLabelAfterQrCloses');
-    expect(home).toContain('onClosed={flushPendingPrint}');
+    expect(home).toContain("printKind: 'wip-kit'");
+    expect(home).toContain('printKind: target.kind');
+    expect(home).toContain('flushPendingPrint');
     expect(home).toContain('pendingPrintRef');
     expect(home).toContain('openInventoryQrLabelPdf');
+    expect(home).toContain('openFabricLotQrLabelPdf');
+    expect(home).toContain("kind: 'lot'");
     expect(home).toContain('openInventoryLabelPdf');
   });
 
@@ -192,6 +197,24 @@ describe('inventory scan identity (mobile)', () => {
     expect(home).toContain('onViewItem');
     expect(sheet).toContain('onViewItem');
     expect(sheet).toContain('AnimatedPressable');
+    expect(sheet).toContain('tertiaryLabel');
+    expect(sheet).toContain("t('mobile.inventory.scanAgain')");
+    expect(sheet).toContain("t('mobile.inventory.printLabel')");
+    expect(home).toContain('onPrintLabel');
+    expect(home).toContain('openWarehouseLocationQrLabelPdf');
+  });
+
+  it('identify result pins Receive/Issue/QR above the footer, not under the PO scroll', () => {
+    const src = readFileSync(
+      join(inventoryDir, 'components/InventoryScanResultSheet.tsx'),
+      'utf8',
+    );
+    const afterScroll = src.slice(src.indexOf('</ScrollView>'));
+    expect(afterScroll).toContain("t('mobile.inventory.receive')");
+    expect(afterScroll).toContain("t('mobile.inventory.issue')");
+    expect(afterScroll).toContain("t('mobile.inventory.qrCode')");
+    const inScroll = src.slice(0, src.indexOf('</ScrollView>'));
+    expect(inScroll).not.toContain("t('mobile.inventory.receive')");
   });
 
   it('admin create/edit forms omit qrCode and label barcode as supplier barcode', () => {
@@ -216,5 +239,20 @@ describe('inventory scan identity (mobile)', () => {
     expect(updateFn).not.toContain('sku:');
     expect(admin).toContain("ti('supplierBarcode')");
     expect(admin).not.toMatch(/ti\('qrCode'\)/);
+  });
+
+  it('lot inspect sheets keep the last lot mounted so onClosed can open QR/Print', () => {
+    for (const name of [
+      'components/InventoryFgLotInspectSheet.tsx',
+      'components/InventoryLotInspectSheet.tsx',
+    ]) {
+      const src = readFileSync(join(inventoryDir, name), 'utf8');
+      expect(src).toContain('heldLot');
+      expect(src).toContain('lot: lotProp');
+      expect(src).toContain('const lot = lotProp ?? heldLot.current');
+    }
+    const home = readFileSync(join(inventoryDir, 'components/InventorySignatureHome.tsx'), 'utf8');
+    expect(home).toContain('flushAfterLotInspect');
+    expect(home).toContain('pendingAfterLotInspectRef');
   });
 });

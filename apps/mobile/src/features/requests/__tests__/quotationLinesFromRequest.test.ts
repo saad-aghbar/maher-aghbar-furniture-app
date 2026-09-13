@@ -23,10 +23,12 @@ describe('quotationLinesFromRequestItems', () => {
         taxRate: 0.16,
         fabric: 'Velvet',
         color: 'Navy',
+        lineSpec: { notes: 'Gate code 12' },
       },
     ]);
     expect(lines[0]).not.toHaveProperty('notes');
     expect(lines[0]).not.toHaveProperty('productId');
+    expect(lines[0]?.lineSpec?.notes).toBe('Gate code 12');
   });
 
   it('keeps a real product UUID and defaults empty quantity to 1', () => {

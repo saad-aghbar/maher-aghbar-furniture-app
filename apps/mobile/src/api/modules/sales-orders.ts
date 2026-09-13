@@ -289,6 +289,8 @@ export type SalesOrderLineItem = {
   variantId?: string | null;
   variantSku?: string | null;
   variantLabel?: string | null;
+  manufacturingComplexity?: string | null;
+  imageUrl?: string | null;
 };
 
 export type SalesOrderLine = {
@@ -877,6 +879,7 @@ export type OrderProductionSetupLine = {
     nameHe?: string | null;
     imageUrl?: string | null;
   } | null;
+  imageUrl?: string | null;
   description: string | null;
   materials: SetupMaterialRequirement[];
   estimatedCostSummary?: SetupEstimatedCostSummary | null;

@@ -13,14 +13,17 @@ import { ProductionListSkeleton } from '@/features/production/components/Product
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrderProductionPlanEditorScreen } from './OrderProductionPlanEditorScreen';
-import { useOrderProductionSetupActions } from './production-setup/query';
+import { OrderProductionPlanItemBoard } from './OrderProductionPlanItemBoard';
+import {
+  useOrderProductionSetupActions,
+  useOrderProductionSetupQuery,
+} from './production-setup/query';
 import { productionOrderIdForLineId } from './productionOrderIdForLine';
 import { useSalesOrderQuery } from './query';
 
 /**
- * Canonical Preparing Production Plan host.
- * Always opens OrderProductionPlanEditorScreen (screenshot floor plan desk).
- * Creates the PO under the hood when missing — never mounts Setup Home / PrePo desk.
+ * Preparing Production Plan host.
+ * No lineId → SO item board. With lineId → existing per-line editor.
  */
 export function OrderProductionPlanScreen({
   salesOrderId,
@@ -34,6 +37,7 @@ export function OrderProductionPlanScreen({
   const { user } = useAuth();
   const router = useRouter();
   const query = useSalesOrderQuery(salesOrderId, Boolean(salesOrderId));
+  const setupQuery = useOrderProductionSetupQuery(salesOrderId, Boolean(salesOrderId));
   const canEditSetup = can(user, 'production.setup.edit');
   const actions = useOrderProductionSetupActions(salesOrderId);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -42,25 +46,32 @@ export function OrderProductionPlanScreen({
   const attempted = useRef(false);
 
   const order = query.data;
-  const mappedPoId = productionOrderIdForLineId({
-    lineId,
-    productionOrders: order?.productionOrders,
-    setupLines: order?.productionSetup?.lines,
-    fallbackId:
-      order?.productionReadinessSummary?.primaryProductionOrderId ??
-      order?.productionOrders?.[0]?.id ??
-      null,
-  });
+  const mappedPoId = lineId
+    ? productionOrderIdForLineId({
+        lineId,
+        productionOrders: order?.productionOrders,
+        setupLines: setupQuery.data?.lines ?? order?.productionSetup?.lines,
+        fallbackId:
+          order?.productionReadinessSummary?.primaryProductionOrderId ??
+          order?.productionOrders?.[0]?.id ??
+          null,
+      })
+    : null;
   const poId = ensuredPoId ?? mappedPoId;
   const released = (order?.productionOrders ?? []).some((po) => {
     const row = po as { releasedToFactoryAt?: string | null };
     return Boolean(row.releasedToFactoryAt);
   });
+  const hasSetupLines = Boolean(
+    (setupQuery.data?.lines ?? order?.productionSetup?.lines ?? []).length,
+  );
 
   useEffect(() => {
-    if (!order || poId || released || attempted.current || booting) return;
+    if (!order || released || attempted.current || booting) return;
+    if (lineId && poId) return;
+    if (!lineId && hasSetupLines) return;
     if (!canEditSetup) {
-      setBootError(t('mobile.orders.journey.planNeedsPo'));
+      if (lineId) setBootError(t('mobile.orders.journey.planNeedsPo'));
       return;
     }
 
@@ -72,6 +83,8 @@ export function OrderProductionPlanScreen({
       try {
         const result = await actions.ensurePlan.mutateAsync(undefined);
         const refreshed = await query.refetch();
+        await setupQuery.refetch();
+        if (!lineId) return;
         const id = productionOrderIdForLineId({
           lineId,
           productionOrders: refreshed.data?.productionOrders,
@@ -101,8 +114,10 @@ export function OrderProductionPlanScreen({
     canEditSetup,
     actions.ensurePlan,
     query,
+    setupQuery,
     booting,
     lineId,
+    hasSetupLines,
     t,
   ]);
 
@@ -126,11 +141,40 @@ export function OrderProductionPlanScreen({
     );
   }
 
+  if (!lineId) {
+    const setupLines = setupQuery.data?.lines ?? [];
+    if (booting || (!bootError && canEditSetup && !attempted.current && !hasSetupLines)) {
+      return (
+        <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.sm,
+            }}
+          >
+            <BackButton onPress={() => router.back()} />
+          </View>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <ActivityIndicator color={colors.brand} />
+            <AppText variant="caption" color="muted">
+              {t('mobile.orders.journey.openingPlan')}
+            </AppText>
+          </View>
+        </AppScreen>
+      );
+    }
+    if (setupLines.length) {
+      return <OrderProductionPlanItemBoard salesOrderId={salesOrderId} lines={setupLines} />;
+    }
+  }
+
   if (released && poId) {
     return <Redirect href={`/(app)/(admin)/production/${poId}` as Href} />;
   }
 
-  if (poId) {
+  if (lineId && poId) {
     return (
       <OrderProductionPlanEditorScreen
         productionOrderId={poId}

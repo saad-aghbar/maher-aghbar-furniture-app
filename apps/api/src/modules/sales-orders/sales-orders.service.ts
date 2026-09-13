@@ -7,7 +7,13 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
-import { parseManufacturingComplexity, rollupOrderType, type AuthUser } from '@maher/types';
+import {
+  lineVisualFromOrderSpec,
+  lineVisualIdentity,
+  parseManufacturingComplexity,
+  rollupOrderType,
+  type AuthUser,
+} from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
@@ -153,6 +159,44 @@ function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
   }
 
   return copy as T;
+}
+
+function photoUrlList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string' && Boolean(v.trim()));
+}
+
+function specDims(orderSpec: unknown): {
+  width?: unknown;
+  height?: unknown;
+  depth?: unknown;
+  fabricType?: string | null;
+  fabricColor?: string | null;
+  woodType?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  notes?: string | null;
+} {
+  if (!orderSpec || typeof orderSpec !== 'object' || Array.isArray(orderSpec)) return {};
+  const spec = orderSpec as {
+    requestedDimensions?: { width?: unknown; height?: unknown; depth?: unknown };
+    fabric?: { type?: string | null; color?: string | null };
+    woodType?: string | null;
+    foamDensity?: string | null;
+    finish?: string | null;
+    notes?: string | null;
+  };
+  return {
+    width: spec.requestedDimensions?.width,
+    height: spec.requestedDimensions?.height,
+    depth: spec.requestedDimensions?.depth,
+    fabricType: spec.fabric?.type ?? null,
+    fabricColor: spec.fabric?.color ?? null,
+    woodType: spec.woodType ?? null,
+    foamDensity: spec.foamDensity ?? null,
+    finish: spec.finish ?? null,
+    notes: spec.notes ?? null,
+  };
 }
 
 const STATUS_GROUPS: Record<'pending' | 'production' | 'delivered', SalesOrderStatus[]> = {
@@ -1193,6 +1237,7 @@ export class SalesOrdersService {
                 bomDefaults: true,
               },
             },
+            variant: { select: { id: true, imageUrl: true, code: true } },
           },
         },
         productionOrders: {
@@ -1518,6 +1563,48 @@ export class SalesOrdersService {
 
     const request = order.quotation?.request ?? null;
     const aiJob = request?.aiJobs?.[0] ?? null;
+    const visualDocs = (request?.documents ?? []) as Array<{
+      id: string;
+      fileName?: string | null;
+      mimeType?: string | null;
+      storageKey: string;
+    }>;
+    const resolveVisualDoc = (id: string) => {
+      const doc = visualDocs.find((row) => row.id === id);
+      return this.documentImageUrl(doc);
+    };
+    const soLineImage = (line: (typeof order.lines)[number]) =>
+      lineVisualFromOrderSpec(line.orderSpec, {
+        variantImageUrl: (line as { variant?: { imageUrl?: string | null } | null }).variant
+          ?.imageUrl,
+        productImageUrl: line.product?.imageUrl,
+        resolveDocumentUrl: resolveVisualDoc,
+      });
+    const orderedItems = order.lines.map((line) => {
+      const extra = specDims(line.orderSpec);
+      return {
+        id: line.id,
+        productId: line.productId ?? null,
+        productName: line.description,
+        description: line.specifications,
+        quantity: line.quantity,
+        unit: 'pcs',
+        width: extra.width,
+        height: extra.height,
+        depth: extra.depth,
+        fabricType: extra.fabricType,
+        fabricColor: extra.fabricColor,
+        woodType: extra.woodType,
+        foamDensity: extra.foamDensity,
+        finish: extra.finish,
+        notes: extra.notes ?? line.specifications,
+        variantId: line.variantId ?? null,
+        variantSku: line.variantSku ?? null,
+        variantLabel: line.variantLabel ?? null,
+        manufacturingComplexity: line.manufacturingComplexity ?? null,
+        imageUrl: soLineImage(line),
+      };
+    });
     const customerRequest = request
       ? {
           id: request.id,
@@ -1537,27 +1624,41 @@ export class SalesOrdersService {
           deliveryLng: request.deliveryLng,
           priority: request.priority,
           createdAt: request.createdAt,
-          items: request.items.map((item) => ({
-            id: item.id,
-            productId: item.productId ?? null,
-            productName: item.productName,
-            description: item.description,
-            quantity: item.quantity,
-            unit: item.unit,
-            width: item.width,
-            height: item.height,
-            depth: item.depth,
-            material: item.material,
-            fabricType: item.fabricType,
-            fabricColor: item.fabricColor,
-            woodType: item.woodType,
-            foamDensity: item.foamDensity,
-            finish: item.finish,
-            accessories: item.accessories,
-            notes: item.notes,
-            customMeasurements: item.customMeasurements ?? null,
-            fabricCode: item.fabricCode ?? null,
-          })),
+          items: request.items.map((item, index) => {
+            const soLine =
+              order.lines.find((row) => row.sortOrder === item.sortOrder) ?? order.lines[index];
+            return {
+              id: item.id,
+              productId: item.productId ?? null,
+              productName: item.productName,
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+              width: item.width,
+              height: item.height,
+              depth: item.depth,
+              material: item.material,
+              fabricType: item.fabricType,
+              fabricColor: item.fabricColor,
+              woodType: item.woodType,
+              foamDensity: item.foamDensity,
+              finish: item.finish,
+              accessories: item.accessories,
+              notes: item.notes,
+              customMeasurements: item.customMeasurements ?? null,
+              fabricCode: item.fabricCode ?? null,
+              variantId: item.variantId ?? null,
+              variantSku: item.variantSku ?? null,
+              variantLabel: item.variantLabel ?? null,
+              manufacturingComplexity: item.manufacturingComplexity ?? null,
+              imageUrl: lineVisualIdentity({
+                primaryImageDocumentId: item.primaryImageDocumentId,
+                photoUrls: photoUrlList(item.photoDocumentIds),
+                productImageRef: soLine ? soLineImage(soLine) : null,
+                resolveDocumentUrl: resolveVisualDoc,
+              }),
+            };
+          }),
           documents: request.documents,
           originalText: aiJob?.originalText ?? null,
           translatedText: aiJob?.translatedText ?? request.notes ?? null,
@@ -1569,15 +1670,7 @@ export class SalesOrdersService {
           deliveryAddress: order.deliveryAddress,
           requiredDeliveryDate: order.requiredDeliveryDate,
           projectName: order.projectName,
-          items: order.lines.map((line) => ({
-            id: line.id,
-            productId: line.productId ?? null,
-            productName: line.description,
-            description: line.specifications,
-            quantity: line.quantity,
-            unit: 'pcs',
-            notes: null,
-          })),
+          items: orderedItems,
           documents: [],
           originalText: null,
           translatedText: null,
@@ -1595,18 +1688,13 @@ export class SalesOrdersService {
       (primaryProduct
         ? primaryProduct.nameEn || primaryProduct.nameAr || order.lines[0]?.description
         : order.lines[0]?.description ?? titleFromRequest) || null;
-    let imageUrl = primaryProduct?.imageUrl ?? null;
-    if (!imageUrl && title) {
+    let imageUrl =
+      orderedItems.find((item) => item.imageUrl)?.imageUrl ?? primaryProduct?.imageUrl ?? null;
+    if (!imageUrl && title && primaryProduct) {
       imageUrl = await this.resolveCatalogImage(title);
     }
     if (!imageUrl) {
-      const docs = (customerRequest.documents ?? []) as Array<{
-        id: string;
-        fileName?: string | null;
-        mimeType?: string | null;
-        storageKey: string;
-      }>;
-      imageUrl = this.documentImageUrl(firstImageDocument(docs));
+      imageUrl = this.documentImageUrl(firstImageDocument(visualDocs));
     }
 
     let assignedEmployee: { id: string; name: string } | null = null;
@@ -1636,8 +1724,8 @@ export class SalesOrdersService {
       productionPrice,
       profit,
       customerRequest,
-      /** Alias used by UIs that previously showed ERP "lines" */
-      orderedItems: customerRequest.items,
+      /** Sales-order lines — ids match productionOrders.salesOrderLineId. */
+      orderedItems,
       title,
       imageUrl,
       assignedEmployee,

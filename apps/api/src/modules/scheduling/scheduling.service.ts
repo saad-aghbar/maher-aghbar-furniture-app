@@ -17,10 +17,7 @@ import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService, type SchedulingJobName } from './scheduling-queue';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
-import {
-  loadFabricReadinessForProductionOrder,
-  loadFabricReadinessForSalesOrder,
-} from '../production/fabric-readiness-load';
+import { loadFabricReadinessForProductionOrder } from '../production/fabric-readiness-load';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import {
   type OccupancyInterval,
@@ -778,6 +775,8 @@ export class SchedulingService implements OnModuleInit {
         product: { select: { id: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
         salesOrder: {
           select: {
+            id: true,
+            number: true,
             customerId: true,
             customer: { select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true } },
           },
@@ -815,6 +814,8 @@ export class SchedulingService implements OnModuleInit {
         scheduleId: bucket.scheduleId,
         version: bucket.version,
         number: order?.number ?? '',
+        salesOrderId: order?.salesOrder?.id ?? null,
+        salesOrderNumber: order?.salesOrder?.number ?? null,
         productName: order?.product?.nameEn ?? null,
         productNameAr: order?.product?.nameAr ?? null,
         productNameHe: order?.product?.nameHe ?? null,
@@ -1412,9 +1413,7 @@ export class SchedulingService implements OnModuleInit {
       }
     }
     {
-      const fabric = po.salesOrderId
-        ? await loadFabricReadinessForSalesOrder(this.prisma, po.salesOrderId)
-        : await loadFabricReadinessForProductionOrder(this.prisma, po.id);
+      const fabric = await loadFabricReadinessForProductionOrder(this.prisma, po.id);
       for (const item of fabric.items) {
         if (!item.sku) continue;
         const key = inventorySkuKey(item.sku);
@@ -4496,6 +4495,8 @@ export class SchedulingService implements OnModuleInit {
             },
             salesOrder: {
               select: {
+                id: true,
+                number: true,
                 customer: { select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true } },
               },
             },
@@ -4618,6 +4619,8 @@ export class SchedulingService implements OnModuleInit {
     const { schedule: s, order, requested, committed, projected, classification } = row;
     return {
       productionOrderId: s.productionOrderId,
+      salesOrderId: order.salesOrder?.id ?? null,
+      salesOrderNumber: order.salesOrder?.number ?? null,
       number: order.number,
       status: order.status,
       priority: order.priority,
@@ -6451,6 +6454,7 @@ export class SchedulingService implements OnModuleInit {
       return {
         ...o,
         dealerName: o.salesOrder?.customer?.nameEn ?? o.salesOrder?.customer?.name ?? null,
+        salesOrderId: o.salesOrder?.id ?? null,
         salesOrderNumber: o.salesOrder?.number ?? null,
         planningState,
         planningStatus: planningState,

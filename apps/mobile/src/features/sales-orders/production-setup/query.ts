@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { queryKeys } from '@/api/queryKeys';
 import {
   ensureOrderProductionPlan,
@@ -37,16 +38,13 @@ export function useOrderProductionSetupReleasePreviewQuery(
 function useInvalidateOrderSetup(salesOrderId: string) {
   const qc = useQueryClient();
   return async () => {
+    await invalidateFactoryJourney(qc);
     await qc.invalidateQueries({
       queryKey: queryKeys.salesOrders.productionSetup(salesOrderId),
     });
     await qc.invalidateQueries({
       queryKey: queryKeys.salesOrders.productionSetupReleasePreview(salesOrderId),
     });
-    await qc.invalidateQueries({
-      queryKey: queryKeys.salesOrders.detail(salesOrderId),
-    });
-    await qc.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
   };
 }
 

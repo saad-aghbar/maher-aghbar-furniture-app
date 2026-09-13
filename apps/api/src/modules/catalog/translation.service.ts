@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { TranslateProvider } from '@maher/integrations';
+import type { SupportedLocale, TranslateProvider } from '@maher/integrations';
 import { TRANSLATE_PROVIDER } from '../../integrations/integrations.module';
 
 export type TranslatedNames = {
@@ -8,10 +8,38 @@ export type TranslatedNames = {
   nameHe: string;
 };
 
+export type NameSourceLocale = SupportedLocale;
+
+export function parseSourceLocale(value: unknown): NameSourceLocale {
+  if (value === 'en' || value === 'he' || value === 'ar') return value;
+  return 'ar';
+}
+
+function localeKey(locale: NameSourceLocale): keyof TranslatedNames {
+  if (locale === 'ar') return 'nameAr';
+  if (locale === 'he') return 'nameHe';
+  return 'nameEn';
+}
+
+function emptyNames(): TranslatedNames {
+  return { nameAr: '', nameEn: '', nameHe: '' };
+}
+
+function preserveSource(
+  source: string,
+  sourceLocale: NameSourceLocale,
+  suggested: Partial<TranslatedNames>,
+): TranslatedNames {
+  return {
+    nameAr: sourceLocale === 'ar' ? source : suggested.nameAr?.trim() || source,
+    nameEn: sourceLocale === 'en' ? source : suggested.nameEn?.trim() || source,
+    nameHe: sourceLocale === 'he' ? source : suggested.nameHe?.trim() || source,
+  };
+}
+
 /**
- * Arabic-first catalog copy. English is filled on save when blank, and on
- * demand from the translate-name endpoint. Failures stay empty — UI falls
- * back to Arabic.
+ * Locale-source catalog copy. The typed language is stored as-is; the other
+ * two locales are filled from the translate provider.
  */
 @Injectable()
 export class TranslationService {
@@ -19,19 +47,20 @@ export class TranslationService {
 
   constructor(@Inject(TRANSLATE_PROVIDER) private readonly translate: TranslateProvider) {}
 
-  async translateName(text: string): Promise<TranslatedNames> {
+  async translateName(
+    text: string,
+    sourceLocale: NameSourceLocale = 'ar',
+  ): Promise<TranslatedNames> {
     const source = text.trim();
-    if (!source) return { nameAr: '', nameEn: '', nameHe: '' };
+    if (!source) return emptyNames();
     try {
       const suggested = await this.translate.suggestNameTranslations(source);
-      return {
-        nameAr: suggested.nameAr?.trim() || source,
-        nameEn: suggested.nameEn?.trim() || '',
-        nameHe: suggested.nameHe?.trim() || '',
-      };
+      return preserveSource(source, sourceLocale, suggested);
     } catch (err) {
       this.logger.warn(`Name translation failed: ${err instanceof Error ? err.message : String(err)}`);
-      return { nameAr: source, nameEn: '', nameHe: '' };
+      const failed = emptyNames();
+      failed[localeKey(sourceLocale)] = source;
+      return failed;
     }
   }
 
@@ -47,6 +76,33 @@ export class TranslationService {
     }
   }
 
+  async translateProseAll(
+    text: string,
+    sourceLocale: NameSourceLocale = 'ar',
+  ): Promise<TranslatedNames> {
+    const source = text.trim();
+    if (!source) return emptyNames();
+    const names = emptyNames();
+    names[localeKey(sourceLocale)] = source;
+    const targets: NameSourceLocale[] = (['ar', 'en', 'he'] as const).filter(
+      (locale) => locale !== sourceLocale,
+    );
+    await Promise.all(
+      targets.map(async (to) => {
+        try {
+          const translated = await this.translate.translate(source, sourceLocale, to);
+          names[localeKey(to)] = translated.trim() || source;
+        } catch (err) {
+          this.logger.warn(
+            `Prose translation failed (${sourceLocale}→${to}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+          names[localeKey(to)] = source;
+        }
+      }),
+    );
+    return names;
+  }
+
   /** Keep an existing English value; otherwise translate Arabic. */
   async fillEnglishName(
     arabic: string | null | undefined,
@@ -56,7 +112,7 @@ export class TranslationService {
     if (en) return en;
     const ar = String(arabic ?? '').trim();
     if (!ar) return '';
-    const suggested = await this.translateName(ar);
+    const suggested = await this.translateName(ar, 'ar');
     return suggested.nameEn;
   }
 

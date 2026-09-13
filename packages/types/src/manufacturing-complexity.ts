@@ -52,6 +52,7 @@ export type OrderSpecOption = {
 };
 
 export type CatalogDimRef = {
+  sku?: string | null;
   width?: number | null;
   height?: number | null;
   depth?: number | null;
@@ -400,8 +401,11 @@ export type OrderLineSpecSnapshot = {
   variantId?: string | null;
   variantSku?: string | null;
   variantLabel?: string | null;
+  variantCode?: string | null;
+  modelSku?: string | null;
   productName: string;
   productImageRef?: string | null;
+  primaryImageDocumentId?: string | null;
   quantity: number;
   catalogDimensions?: {
     width?: number | null;
@@ -447,8 +451,11 @@ export function buildOrderLineSpecSnapshot(input: {
   variantId?: string | null;
   variantSku?: string | null;
   variantLabel?: string | null;
+  variantCode?: string | null;
+  modelSku?: string | null;
   productName: string;
   productImageRef?: string | null;
+  primaryImageDocumentId?: string | null;
   quantity: number;
   catalog?: CatalogDimRef | null;
   width?: number | null;
@@ -523,8 +530,11 @@ export function buildOrderLineSpecSnapshot(input: {
     variantId: input.variantId ?? null,
     variantSku: str(input.variantSku),
     variantLabel: str(input.variantLabel),
+    variantCode: str(input.variantCode),
+    modelSku: str(input.modelSku) ?? str(input.catalog?.sku),
     productName: input.productName,
     productImageRef: input.productImageRef ?? null,
+    primaryImageDocumentId: str(input.primaryImageDocumentId),
     quantity: Number(input.quantity),
     catalogDimensions: input.catalog
       ? {

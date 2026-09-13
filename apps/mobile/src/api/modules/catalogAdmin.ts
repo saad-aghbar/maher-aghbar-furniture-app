@@ -235,8 +235,13 @@ export type TranslatedCatalogName = {
 export async function translateCatalogName(
   text: string,
   kind: 'name' | 'prose' = 'name',
+  sourceLocale: 'ar' | 'en' | 'he' = 'ar',
 ): Promise<TranslatedCatalogName> {
-  return apiPost<TranslatedCatalogName>('/catalog/translate-name', { text, kind });
+  return apiPost<TranslatedCatalogName>('/catalog/translate-name', {
+    text,
+    kind,
+    sourceLocale,
+  });
 }
 
 export async function deleteDealerPrice(customerId: string, priceId: string): Promise<unknown> {

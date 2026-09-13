@@ -7,7 +7,6 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -152,10 +151,11 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const showReceive = canReceive && detail?.isActive && !detail?.archivedAt && detail?.itemClass !== 'FINISHED_GOOD';
   const canOrder = canCreatePo && Boolean(detail && inventoryItemCanPurchase(detail));
   const showOrderDock = canOrder;
+  const dockActionCount = (showOrderDock ? 1 : 0) + (showReceive ? 1 : 0);
   const dockBody =
-    (showOrderDock ? 56 : 0) +
-    (showReceive ? 56 : 0) +
-    (showReceive && showOrderDock ? theme.spacing.sm : 0);
+    (dockActionCount > 0 ? theme.spacing.sm * 2 : 0) +
+    dockActionCount * theme.sizes.touch.min +
+    (dockActionCount > 1 ? theme.spacing.sm : 0);
   const stickyPad =
     showReceive || showOrderDock
       ? stickyCtaBottomInset(
@@ -647,22 +647,17 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           floating
           tabClearance={surfaceTabBarStackInset(insets.bottom)}
         >
-          <View style={{ gap: theme.spacing.sm }}>
-            {showOrderDock ? (
-              <PrimaryButton
-                label={t('mobile.inventory.createPurchaseOrder')}
-                onPress={() =>
-                  router.push(
-                    `/(app)/(admin)/purchasing/new?itemIds=${encodeURIComponent(detail.id)}` as Href,
-                  )
-                }
-                style={{ borderRadius: theme.radius.full, minHeight: 44 }}
-              />
-            ) : null}
-            {showReceive ? (
-              <InventoryReceiveDock onPress={() => setStockMode('receive')} />
-            ) : null}
-          </View>
+          <InventoryReceiveDock
+            onCreatePo={
+              showOrderDock
+                ? () =>
+                    router.push(
+                      `/(app)/(admin)/purchasing/new?itemIds=${encodeURIComponent(detail.id)}` as Href,
+                    )
+                : undefined
+            }
+            onReceive={showReceive ? () => setStockMode('receive') : undefined}
+          />
         </FloatingActionDock>
       ) : null}
 

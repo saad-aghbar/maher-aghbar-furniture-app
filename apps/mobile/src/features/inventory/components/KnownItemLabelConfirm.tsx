@@ -1,13 +1,13 @@
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItem } from '../api';
 import { formatInventoryMaterialType } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { InventoryBoardCard } from './InventoryBoardCard';
 import {
   InventoryScanMatchResult,
   type InventoryScanMatchCurrent,
@@ -52,12 +52,25 @@ export function KnownItemLabelConfirm({
   onScanAgain,
   onUseScanned,
 }: Props) {
-  const { t, isRTL } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { t, locale, isRTL } = useLocale();
+  const { colors, theme } = useTheme();
   const materialTypeLabel = formatInventoryMaterialType(current.materialType, t);
   const kind = resultKind;
   const scanned = resultScanned;
   const busy = Boolean(scanning);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const accent =
+    kind === 'MATCH'
+      ? colors.success
+      : kind === 'MISMATCH' || kind === 'ERROR' || kind === 'UNKNOWN' || kind === 'ARCHIVED'
+        ? colors.error
+        : kind === 'DISALLOWED' ||
+            kind === 'SHELF' ||
+            kind === 'KIT' ||
+            kind === 'LOT' ||
+            kind === 'ORDER_FABRIC'
+          ? colors.warning
+          : colors.brand;
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -65,40 +78,17 @@ export function KnownItemLabelConfirm({
         variant="caption"
         color="muted"
         style={{
-          letterSpacing: 0.6,
-          textTransform: 'uppercase',
           fontSize: 11,
           lineHeight: 14,
+          ...(locale === 'ar'
+            ? null
+            : { letterSpacing: 0.55, textTransform: 'uppercase' as const }),
         }}
       >
         {t('mobile.inventory.selectedMaterial')}
       </AppText>
 
-      <View
-        style={{
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor:
-            kind === 'MATCH'
-              ? colors.success
-              : kind === 'MISMATCH' || kind === 'ERROR' || kind === 'UNKNOWN' || kind === 'ARCHIVED'
-                ? colors.error
-                : kind === 'DISALLOWED'
-                  ? colors.warning
-                  : colors.borderStrong,
-          backgroundColor:
-            kind === 'MATCH'
-              ? colors.successSoft
-              : kind === 'MISMATCH' || kind === 'ERROR' || kind === 'UNKNOWN' || kind === 'ARCHIVED'
-                ? colors.errorSoft
-                : kind === 'DISALLOWED'
-                  ? colors.warningSoft
-                  : colors.surface,
-          padding: theme.spacing.md,
-          gap: theme.spacing.md,
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
+      <InventoryBoardCard accent={accent} hideAccent={!kind}>
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -108,7 +98,7 @@ export function KnownItemLabelConfirm({
         >
           <InventorySkuThumb uri={current.imageUrl ?? null} size={72} />
           <View style={{ flex: 1, gap: theme.spacing.xs }}>
-            <AppText variant="body" weight="semibold">
+            <AppText variant="body" weight={titleWeight}>
               {current.name}
             </AppText>
             <AppText variant="caption" color="muted" dir="ltr">
@@ -124,7 +114,8 @@ export function KnownItemLabelConfirm({
         ) : null}
 
         {kind !== 'MATCH' ? (
-          <Pressable
+          <AnimatedPressable
+            variant="button"
             accessibilityRole="button"
             accessibilityLabel={t('mobile.inventory.scanLabelToConfirm')}
             disabled={disabled || busy}
@@ -134,7 +125,7 @@ export function KnownItemLabelConfirm({
             }}
             style={{
               minHeight: theme.sizes.touch.min,
-              borderRadius: theme.radius.xl,
+              borderRadius: theme.radius.full,
               borderWidth: 1,
               borderColor: colors.brand,
               backgroundColor: colors.brandSoft,
@@ -150,12 +141,12 @@ export function KnownItemLabelConfirm({
               size={20}
               color={colors.brand}
             />
-            <AppText variant="label" weight="semibold" color="brand">
+            <AppText variant="label" weight={titleWeight} color="brand">
               {busy ? t('mobile.inventory.identifyingItem') : t('mobile.inventory.scanLabelToConfirm')}
             </AppText>
-          </Pressable>
+          </AnimatedPressable>
         ) : null}
-      </View>
+      </InventoryBoardCard>
 
       {kind ? (
         <InventoryScanMatchResult

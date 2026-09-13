@@ -80,6 +80,7 @@ import {
 import { selectFactoryLoadByDay } from './selectFactoryCapacity';
 import {
   filterScheduleCards,
+  groupSchedulingCardsBySalesOrder,
   selectAdminCalendarDayMeta,
   selectAtRiskCards,
   selectConflictCards,
@@ -97,6 +98,7 @@ import {
 } from './selectFactoryTower';
 import type { FactoryDayWorker } from '@/api/modules/scheduling';
 import { AtRiskOrderCard } from './components/AtRiskOrderCard';
+import { SchedulingSalesOrderGroups } from './components/SchedulingSalesOrderGroups';
 
 const BACK_FALLBACK = '/(app)/(admin)/(tabs)/more' as Href;
 
@@ -525,35 +527,34 @@ export function AdminSchedulingScreen() {
         ) : null}
 
         {focus === 'atRisk' ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            {atRisk.map((card, index) => (
-              <ListItemEnter key={card.productionOrderId} index={index}>
-                <AtRiskOrderCard
-                  card={card}
-                  onPress={() => {
-                    void haptics.selection();
-                    setSelectedOrder({
-                      id: card.id,
-                      productionOrderId: card.productionOrderId,
-                      number: card.number,
-                      productName: card.title,
-                      dealerName: card.dealerName,
-                      imageUrl: card.imageUrl,
-                      plannedStart: card.plannedStart,
-                      plannedEnd: card.plannedEnd,
-                      status: card.status,
-                      materialRisk: card.materialRisk,
-                      hasConflict: card.hasConflict,
-                      conflictReason: card.reason,
-                      version: card.scheduleVersion,
-                      requestedDeliveryDate: card.requiredDeliveryDate,
-                      committedDeliveryDate: card.committedDeliveryDate,
-                    } as ScheduleOrderCard);
-                  }}
-                />
-              </ListItemEnter>
-            ))}
-          </View>
+          <SchedulingSalesOrderGroups
+            groups={groupSchedulingCardsBySalesOrder(atRisk)}
+            renderCard={(card) => (
+              <AtRiskOrderCard
+                card={card}
+                onPress={() => {
+                  void haptics.selection();
+                  setSelectedOrder({
+                    id: card.id,
+                    productionOrderId: card.productionOrderId,
+                    number: card.number,
+                    productName: card.title,
+                    dealerName: card.dealerName,
+                    imageUrl: card.imageUrl,
+                    plannedStart: card.plannedStart,
+                    plannedEnd: card.plannedEnd,
+                    status: card.status,
+                    materialRisk: card.materialRisk,
+                    hasConflict: card.hasConflict,
+                    conflictReason: card.reason,
+                    version: card.scheduleVersion,
+                    requestedDeliveryDate: card.requiredDeliveryDate,
+                    committedDeliveryDate: card.committedDeliveryDate,
+                  } as ScheduleOrderCard);
+                }}
+              />
+            )}
+          />
         ) : null}
 
         {focus === 'conflicts' ? (
@@ -605,8 +606,9 @@ export function AdminSchedulingScreen() {
         {focus === 'week' ? (
           <View style={{ gap: theme.spacing.sm }}>
             <AppText>{t('mobile.adminScheduling.weekOrdersTitle')}</AppText>
-            {weekOrders.map((card, index) => (
-              <ListItemEnter key={card.productionOrderId} index={index}>
+            <SchedulingSalesOrderGroups
+              groups={groupSchedulingCardsBySalesOrder(weekOrders)}
+              renderCard={(card) => (
                 <SchedulingOrderCard
                   order={{
                     id: card.id,
@@ -642,8 +644,8 @@ export function AdminSchedulingScreen() {
                     })
                   }
                 />
-              </ListItemEnter>
-            ))}
+              )}
+            />
           </View>
         ) : null}
 
@@ -693,8 +695,9 @@ export function AdminSchedulingScreen() {
             ) : null}
             <View style={{ gap: theme.spacing.sm }}>
               <AppText>{t('mobile.adminScheduling.dayOrdersTitle', { date: selectedDay })}</AppText>
-              {dayOrders.map((card, index) => (
-                <ListItemEnter key={card.productionOrderId} index={index}>
+              <SchedulingSalesOrderGroups
+                groups={groupSchedulingCardsBySalesOrder(dayOrders)}
+                renderCard={(card) => (
                   <SchedulingOrderCard
                     order={{
                       id: card.id,
@@ -730,8 +733,8 @@ export function AdminSchedulingScreen() {
                       })
                     }
                   />
-                </ListItemEnter>
-              ))}
+                )}
+              />
             </View>
           </>
         ) : null}

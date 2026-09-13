@@ -1986,6 +1986,9 @@ model RequestItem {
   orientation String?
   notes       String?
   customMeasurements Json?
+  /// Item photos (custom identity). Not RFQ-level documents.
+  photoDocumentIds Json?
+  primaryImageDocumentId String?
   /// STANDARD | MODIFIED | CUSTOM — order line vs catalog template.
   manufacturingComplexity ManufacturingComplexity?
   sortOrder   Int                 @default(0)
@@ -2080,6 +2083,10 @@ model QuotationLine {
   manufacturingComplexity ManufacturingComplexity?
   /// Named measurements copied from the RFQ so MODIFIED spec survives accept.
   customMeasurements Json?
+  /// Wood / foam / finish / options / notes / seat so accept is not RFQ-index fragile.
+  lineSpec      Json?
+  photoDocumentIds Json?
+  primaryImageDocumentId String?
   sortOrder     Int        @default(0)
 
   @@index([quotationId])

@@ -95,6 +95,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     expirationDate: expirationDate || undefined,
     offeredDeliveryDate: offeredDeliveryDate || undefined,
     lines: (data?.lines ?? []).map((line) => ({
+      id: line.id,
       description: line.description,
       quantity: Number(line.quantity) || 1,
       unitPrice: Number(draftPrices[line.id] ?? line.unitPrice) || 0,

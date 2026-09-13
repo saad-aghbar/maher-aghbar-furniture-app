@@ -72,8 +72,9 @@ describe('inventory QR complete interaction matrix', () => {
     expect(action).toContain('MODE B — SELECT');
     expect(action).toContain('resolveInventoryScan');
     expect(action).toContain('InventoryScanSelectInline');
+    expect(action).toContain('selectSelectScanMode');
     expect(action).toContain("present('not-found'");
-    expect(action).toContain("present('error'");
+    expect(action).toContain('present(selectMode');
     expect(action).not.toContain('ScannedInventoryItemConfirm');
     expect(action).not.toContain('showToast');
 
@@ -96,6 +97,7 @@ describe('inventory QR complete interaction matrix', () => {
     expect(verify).toContain('InventoryScanMatchResult');
     expect(verify).toContain('onUseScanned');
     expect(pipeline).toContain('classifyLabelScan');
+    expect(pipeline).toContain('selectVerifyScanKind');
     expect(hook).toContain('runInventoryLabelVerify');
 
     const hosts = sources.filter((f) => f.src.includes('<KnownItemLabelConfirm'));
@@ -117,6 +119,17 @@ describe('inventory QR complete interaction matrix', () => {
     expect(home).toContain('FOUND_LOT');
     expect(home).toContain('FOUND_BIN');
     expect(home).not.toContain('getInventoryItemByCode');
+  });
+
+  it('DEV simulate field is the camera stand-in (same openScanner path)', () => {
+    const scanner = readFileSync(
+      join(__dirname, '../../../components/scan/CodeScannerScreen.tsx'),
+      'utf8',
+    );
+    expect(scanner).toContain('DEV_SIMULATE');
+    expect(scanner).toContain('testID="dev-simulate-code"');
+    expect(scanner).toContain('KeyboardAvoidingView');
+    expect(scanner).toContain('if (DEV_SIMULATE) return');
   });
 
   it('CodeScannerProvider always flushes openScanner (no onDismiss-only hang)', () => {

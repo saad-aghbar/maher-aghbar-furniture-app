@@ -87,7 +87,7 @@ describe('worker list sales-order grouping', () => {
     expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/orders/so-1');
   });
 
-  it('skips the items list when the sales order has a single production order', () => {
+  it('always opens the items list, including a single production order', () => {
     const grouped: WorkerMySalesOrder[] = mySalesOrdersFromResponse({
       orders: [
         {
@@ -106,7 +106,12 @@ describe('worker list sales-order grouping', () => {
     const card = selectWorkerSalesOrderCard(grouped[0]!, 'en');
     expect(card.itemCount).toBe(1);
     expect(card.factoryOrderNumber).toBe('PO-1');
-    expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/lane/po-1');
+    expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/orders/so-1');
+  });
+
+  it('marks sibling production orders as view-only', () => {
+    const card = selectWorkerOrderCard({ ...order, assignedToMe: false }, 'en');
+    expect(card.assignedToMe).toBe(false);
   });
 });
 

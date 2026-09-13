@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
@@ -112,6 +112,7 @@ export function WorkerOrderWorkflowScreen({ productionOrderId }: Props) {
           paddingBottom: theme.spacing['3xl'],
           gap: theme.spacing.md,
         }}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={Boolean(query.isRefetching)}
@@ -202,6 +203,35 @@ export function WorkerOrderWorkflowScreen({ productionOrderId }: Props) {
                     stage: localizedLaneStageName(selected, locale),
                   })}
                 </AppText>
+              ) : null}
+              {isLaneTaskOpenable(selected) ? (
+                <Pressable
+                  testID="worker-lane-open-station"
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selected.lockState.kind === 'needs_receive'
+                      ? t('mobile.tasks.takeInTitle')
+                      : t('mobile.tasks.openWork')
+                  }
+                  onPress={() => openNode(selected)}
+                  style={{
+                    alignSelf: 'stretch',
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.surfaceSecondary,
+                    paddingHorizontal: theme.spacing.md,
+                  }}
+                >
+                  <AppText variant="label" weight="medium" style={{ color: colors.brand }}>
+                    {selected.lockState.kind === 'needs_receive'
+                      ? t('mobile.tasks.takeInTitle')
+                      : t('mobile.tasks.openWork')}
+                  </AppText>
+                </Pressable>
               ) : null}
             </View>
           </DealerBoard>

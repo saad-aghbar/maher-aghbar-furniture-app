@@ -26,6 +26,14 @@ describe('TaskMaterialsFloorSection extra-material picker', () => {
     expect(src).toContain('suggestedWarehouseId');
   });
 
+  it('pins material Scan as a full-width secondary CTA so the dock cannot steal the chip tap', () => {
+    expect(src).toContain('testID="task-scan-material"');
+    expect(src).toContain('SecondaryButton');
+    expect(src).toContain('testID="task-add-material"');
+    expect(src).toContain('setPickerOpen(false)');
+    expect(src).toContain('openScan');
+  });
+
   it('lets the worker tap the material and choose a warehouse on the row', () => {
     expect(src).toContain('toggleSelect(line.inventoryItemId)');
     expect(src).toContain('renderWarehousePicker(line, \'issue\')');

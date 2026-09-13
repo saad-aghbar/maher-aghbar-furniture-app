@@ -58,6 +58,24 @@ export function quotationLinesFromRequestItems(
     if (item.customMeasurements?.length) {
       line.customMeasurements = item.customMeasurements;
     }
+    const lineSpec: NonNullable<CreateQuotationLineInput['lineSpec']> = {};
+    if (item.woodType?.trim()) lineSpec.woodType = item.woodType.trim();
+    if (item.woodColor?.trim()) lineSpec.woodColor = item.woodColor.trim();
+    if (item.foamDensity?.trim()) lineSpec.foamDensity = item.foamDensity.trim();
+    if (item.finish?.trim()) lineSpec.finish = item.finish.trim();
+    if (item.accessories?.trim()) lineSpec.accessories = item.accessories.trim();
+    if (item.orientation?.trim()) lineSpec.orientation = item.orientation.trim();
+    if (item.notes?.trim()) lineSpec.notes = item.notes.trim();
+    if (item.options?.length) lineSpec.options = item.options;
+    if (item.photoDocumentIds?.length) {
+      line.photoDocumentIds = item.photoDocumentIds.filter(Boolean);
+      lineSpec.photoDocumentIds = line.photoDocumentIds;
+    }
+    if (item.primaryImageDocumentId?.trim()) {
+      line.primaryImageDocumentId = item.primaryImageDocumentId.trim();
+      lineSpec.primaryImageDocumentId = item.primaryImageDocumentId.trim();
+    }
+    if (Object.keys(lineSpec).length) line.lineSpec = lineSpec;
     return line;
   });
 }

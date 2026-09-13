@@ -5,6 +5,7 @@ import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type CreateQuotationLineInput = {
+  id?: string;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -34,6 +35,20 @@ export type CreateQuotationLineInput = {
   depth?: number;
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
   customMeasurements?: { label?: string; value?: string; key?: string }[];
+  lineSpec?: {
+    woodType?: string | null;
+    woodColor?: string | null;
+    foamDensity?: string | null;
+    finish?: string | null;
+    accessories?: string | null;
+    orientation?: string | null;
+    notes?: string | null;
+    options?: unknown;
+    photoDocumentIds?: string[];
+    primaryImageDocumentId?: string | null;
+  };
+  photoDocumentIds?: string[];
+  primaryImageDocumentId?: string;
 };
 
 export type CreateQuotationInput = {
@@ -81,9 +96,13 @@ export type QuotationLine = {
   lineTotal?: number | string | null;
   unit?: string | null;
   productId?: string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantLabel?: string | null;
   material?: string | null;
   fabric?: string | null;
   color?: string | null;
+  fabrics?: CreateQuotationLineInput['fabrics'];
   width?: number | string | null;
   height?: number | string | null;
   depth?: number | string | null;
@@ -91,6 +110,11 @@ export type QuotationLine = {
   taxRate?: number | string | null;
   discountValue?: number | string | null;
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+  customMeasurements?: CreateQuotationLineInput['customMeasurements'];
+  lineSpec?: CreateQuotationLineInput['lineSpec'];
+  photoDocumentIds?: string[] | null;
+  primaryImageDocumentId?: string | null;
+  options?: unknown;
   priceRequired?: boolean;
   referenceUnitPrice?: number | string | null;
   product?: {

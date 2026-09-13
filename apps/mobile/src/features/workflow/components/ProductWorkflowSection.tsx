@@ -1,14 +1,12 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { stageEstimateMinutes } from '@/api/modules/scheduling';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
-import { TextField } from '@/components/forms/TextField';
 import {
   useProductProductionProfileQuery,
   useProductStageEstimatesQuery,
@@ -22,7 +20,7 @@ import {
   useUpsertProductWorkflowMutation,
   useWorkflowsQuery,
 } from '@/features/workflow/query';
-import { WorkflowFloorBoard, WorkflowFloorRow } from './WorkflowFloorList';
+import { WorkflowPickDesk } from './WorkflowPickDesk';
 
 type Props = {
   productId: string;
@@ -35,11 +33,11 @@ export function ProductWorkflowSection({
   showHeading = true,
   titleWeight = 'semibold',
 }: Props) {
-  const { t, locale, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
-  const [query, setQuery] = useState('');
+  const headingWeight = titleWeight === 'semibold' && locale === 'ar' ? 'medium' : titleWeight;
   const workflowsQuery = useWorkflowsQuery(true);
   const configQuery = useProductWorkflowQuery(productId);
   const upsertMutation = useUpsertProductWorkflowMutation(productId);
@@ -47,16 +45,6 @@ export function ProductWorkflowSection({
   const estimatesQuery = useProductStageEstimatesQuery(productId);
 
   const selectedId = configQuery.data?.workflowId ?? null;
-
-  const filtered = useMemo(() => {
-    const rows = (workflowsQuery.data ?? []).filter((wf) => Boolean(wf.activeVersion));
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((wf) => {
-      const name = localizedName(locale, wf, wf.code).toLowerCase();
-      return name.includes(q) || wf.code.toLowerCase().includes(q);
-    });
-  }, [locale, query, workflowsQuery.data]);
 
   const totalMinutes = useMemo(() => {
     if (profileQuery.data?.totalStandardMinutes != null) {
@@ -74,12 +62,10 @@ export function ProductWorkflowSection({
     const wf = (workflowsQuery.data ?? []).find((w) => w.id === selectedId);
     const nodeCount = wf?.activeVersion?._count?.nodes ?? 0;
     if (!selectedId || nodeCount === 0) return 0;
-    // Approximate: if we have fewer timed stages than workflow nodes, some need time.
     return Math.max(0, nodeCount - timed.size);
   }, [estimatesQuery.data, selectedId, workflowsQuery.data]);
 
   function openProductionSetup() {
-    void haptics.selection();
     router.push(`/(app)/(admin)/products/${productId}/production-setup`);
   }
 
@@ -87,7 +73,7 @@ export function ProductWorkflowSection({
     <View style={{ gap: theme.spacing.md }}>
       {showHeading ? (
         <View style={{ gap: 4 }}>
-          <AppText variant="body" weight={titleWeight}>
+          <AppText variant="body" weight={headingWeight}>
             {t('mobile.production.workflow.productSectionTitle')}
           </AppText>
           <AppText variant="caption" color="muted">
@@ -102,9 +88,12 @@ export function ProductWorkflowSection({
 
       {selectedId ? (
         <Pressable
-          onPress={() => openProductionSetup()}
+          onPress={() => {
+            void haptics.selection();
+            openProductionSetup();
+          }}
           style={({ pressed }) => ({
-            borderRadius: theme.radius.lg,
+            borderRadius: theme.radius.xl,
             borderWidth: 1,
             borderColor: colors.borderStrong,
             backgroundColor: colors.surfaceSecondary,
@@ -125,7 +114,7 @@ export function ProductWorkflowSection({
               <AppText variant="caption" color="muted">
                 {t('mobile.production.workflow.totalProductionTime')}
               </AppText>
-              <AppText variant="body" weight="semibold">
+              <AppText variant="body" weight={headingWeight}>
                 {totalMinutes > 0
                   ? formatMinutesDuration(totalMinutes, {
                       hour: t('mobile.workerHome.durationHour'),
@@ -157,7 +146,7 @@ export function ProductWorkflowSection({
           router.push(`/(app)/(admin)/products/${productId}/production-setup`);
         }}
         style={({ pressed }) => ({
-          borderRadius: theme.radius.lg,
+          borderRadius: theme.radius.xl,
           borderWidth: 1,
           borderColor: colors.borderStrong,
           backgroundColor: colors.surfaceSecondary,
@@ -166,7 +155,7 @@ export function ProductWorkflowSection({
           gap: 4,
         })}
       >
-        <AppText variant="body" weight="semibold">
+        <AppText variant="body" weight={headingWeight}>
           {t('mobile.production.workflow.openProductionSetup')}
         </AppText>
         <AppText variant="caption" color="muted">
@@ -174,77 +163,34 @@ export function ProductWorkflowSection({
         </AppText>
       </Pressable>
 
-      <TextField
-        value={query}
-        onChangeText={setQuery}
-        placeholder={t('mobile.production.workflow.searchWorkflows')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        clearButtonMode="while-editing"
+      <WorkflowPickDesk
+        workflows={workflowsQuery.data ?? []}
+        selectedId={selectedId}
+        selectAgain
+        loading={workflowsQuery.isLoading || configQuery.isLoading}
+        onSelect={(id) => {
+          if (id === selectedId) {
+            openProductionSetup();
+            return;
+          }
+          upsertMutation.mutate(id, {
+            onSuccess: () => {
+              showToast({
+                variant: 'success',
+                message: t('mobile.production.workflow.productWorkflowSaved'),
+              });
+            },
+            onError: (err) => {
+              showToast({
+                variant: 'error',
+                message: isApiError(err)
+                  ? toastMessageForError(err)
+                  : t('mobile.production.workflow.loadError'),
+              });
+            },
+          });
+        }}
       />
-
-      {workflowsQuery.isLoading || configQuery.isLoading ? (
-        <AppText color="muted">{t('mobile.production.loadingMore')}</AppText>
-      ) : (workflowsQuery.data ?? []).length === 0 ? (
-        <AppText color="muted">{t('mobile.production.workflow.emptyWorkflowHint')}</AppText>
-      ) : filtered.length === 0 ? (
-        <AppText color="muted">{t('mobile.production.workflow.noWorkflowMatches')}</AppText>
-      ) : (
-        <ScrollView
-          style={{ maxHeight: 300 }}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-        >
-          <WorkflowFloorBoard
-            title={t('mobile.production.workflow.productSectionTitle')}
-            count={filtered.length}
-          >
-            {filtered.map((wf) => {
-              const active = selectedId === wf.id;
-              return (
-                <WorkflowFloorRow
-                  key={wf.id}
-                  label={localizedName(locale, wf, wf.code)}
-                  meta={
-                    wf.activeVersion
-                      ? t('mobile.production.workflow.cardMeta', {
-                          version: wf.activeVersion.versionNumber,
-                          stages: wf.activeVersion._count?.nodes ?? 0,
-                        })
-                      : t('mobile.production.workflow.draftVersion')
-                  }
-                  active={active}
-                  showChevron={active}
-                  onPress={() => {
-                    void haptics.selection();
-                    if (active) {
-                      openProductionSetup();
-                      return;
-                    }
-                    upsertMutation.mutate(wf.id, {
-                      onSuccess: () => {
-                        showToast({
-                          variant: 'success',
-                          message: t('mobile.production.workflow.productWorkflowSaved'),
-                        });
-                      },
-                      onError: (err) => {
-                        showToast({
-                          variant: 'error',
-                          message: isApiError(err)
-                            ? toastMessageForError(err)
-                            : t('mobile.production.workflow.loadError'),
-                        });
-                      },
-                    });
-                  }}
-                />
-              );
-            })}
-          </WorkflowFloorBoard>
-        </ScrollView>
-      )}
     </View>
   );
 }

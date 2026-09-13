@@ -1,5 +1,6 @@
 import { qrLog, qrWarn } from './qrSessionLog';
 import { resolveInventoryScan } from './resolveInventoryScan';
+import { selectVerifyScanKind } from './selectScanPresentation';
 import {
   classifyLabelScan,
   type InventoryScanMatchKind,
@@ -35,43 +36,38 @@ export async function runInventoryLabelVerify(args: {
   qrLog(0, `VERIFY lookup start ${code}`);
   try {
     const resolved = await resolveInventoryScan(code);
-    if (resolved.status === 'ORDER_FABRIC') {
-      // Real answer: this bundle belongs to an order, it is not free stock.
-      qrLog(0, 'VERIFY lookup ORDER_FABRIC');
-      return {
-        kind: 'ORDER_FABRIC',
-        scanned: null,
-        fabric: {
-          code: resolved.lot.qrCode ?? code,
-          label: resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
-          orderNumber:
-            resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
-        },
-      };
-    }
-    if (
-      resolved.status === 'NOT_FOUND' ||
-      resolved.status === 'FOUND_KIT' ||
-      resolved.status === 'FOUND_LOT' ||
-      resolved.status === 'FOUND_BIN'
-    ) {
+    const kind = selectVerifyScanKind(resolved);
+    if (kind !== 'item') {
       qrLog(0, `VERIFY lookup ${resolved.status}`);
-      return { kind: 'UNKNOWN', scanned: null };
+      if (kind === 'ORDER_FABRIC' && resolved.status === 'ORDER_FABRIC') {
+        return {
+          kind,
+          scanned: null,
+          fabric: {
+            code: resolved.lot.qrCode ?? code,
+            label:
+              resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
+            orderNumber:
+              resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+          },
+        };
+      }
+      return { kind, scanned: null };
     }
-    if (resolved.status === 'ERROR') {
-      qrLog(0, 'VERIFY lookup ERROR');
-      return { kind: 'ERROR', scanned: null };
+    if (resolved.status !== 'FOUND') {
+      qrLog(0, `VERIFY lookup ${resolved.status} after item gate`);
+      return { kind: 'UNKNOWN', scanned: null };
     }
 
     qrLog(0, `VERIFY lookup FOUND ${resolved.item.id} ${resolved.item.sku}`);
-    const kind = classifyLabelScan({
+    const matchKind = classifyLabelScan({
       currentId,
       scanned: resolved.item,
       allowItem,
     });
     qrLog(0, `VERIFY comparison current=${currentId} scanned=${resolved.item.id}`);
-    qrLog(0, `VERIFY result ${kind}`);
-    return { kind, scanned: resolved.item };
+    qrLog(0, `VERIFY result ${matchKind}`);
+    return { kind: matchKind, scanned: resolved.item };
   } catch (err) {
     qrWarn(0, `VERIFY lookup threw ${err instanceof Error ? err.message : String(err)}`);
     return { kind: 'ERROR', scanned: null };

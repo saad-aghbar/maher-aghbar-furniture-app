@@ -1,18 +1,20 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { formatCurrency } from '@/i18n/format';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import { CostNotConfiguredSlot } from './components/CostNotConfiguredSlot';
+import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { CostPressableRow } from './components/CostPressableRow';
+import { CostNotConfiguredSlot } from './components/CostNotConfiguredSlot';
 import { useCostOrderDossierQuery } from './query';
 
 const BACK_FALLBACK = '/(app)/(admin)/reports' as Href;
@@ -107,26 +109,74 @@ export function CostOrderDossierScreen({ id }: Props) {
           </ListItemEnter>
 
           <ListItemEnter index={1}>
-            <DealerBoard title={t('mobile.reports.orderLines')} titleWeight={titleWeight}>
+            <View style={{ gap: theme.spacing.md }}>
               {(query.data.lines ?? []).length ? (
-                <View style={{ gap: theme.spacing.sm }}>
-                  {(query.data.lines ?? []).map((line) => (
-                    <CostPressableRow
-                      key={line.id}
-                      accessibilityLabel={line.description || line.sku || line.id}
-                      onPress={openOrder}
-                    >
-                      <AppText weight={titleWeight}>{line.description || line.sku || line.id}</AppText>
-                      <AppText variant="caption" dir="ltr">
-                        {line.quantity} · {money(line.actualCost)}
+                (query.data.lines ?? []).map((line) => (
+                  <DealerBoard
+                    key={line.id}
+                    title={line.description || line.sku || t('mobile.reports.orderLines')}
+                    titleWeight={titleWeight}
+                  >
+                    <View style={{ gap: theme.spacing.xs }}>
+                      <View
+                        style={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: theme.radius.md,
+                          overflow: 'hidden',
+                          backgroundColor: colors.surfaceSecondary,
+                        }}
+                      >
+                        {line.imageUrl ? (
+                          <Image
+                            source={{ uri: line.imageUrl }}
+                            style={{ width: 56, height: 56 }}
+                          />
+                        ) : (
+                          <EmptyProductImage />
+                        )}
+                      </View>
+                      {line.variantLabel ? (
+                        <AppText variant="caption" color="muted">
+                          {line.variantLabel}
+                        </AppText>
+                      ) : null}
+                      {line.manufacturingComplexity ? (
+                        <AppText variant="caption">
+                          {t(
+                            `mobile.lineKind.${manufacturingComplexityDisplayKey(line.manufacturingComplexity)}`,
+                          )}
+                        </AppText>
+                      ) : null}
+                      <AppText dir="ltr">
+                        {t('accounting.plannedCost')}: {money(line.plannedCost)}
                       </AppText>
-                    </CostPressableRow>
-                  ))}
-                </View>
+                      <AppText dir="ltr">
+                        {t('accounting.actualCost')}: {money(line.actualCost)}
+                      </AppText>
+                      <AppText dir="ltr">
+                        {t('mobile.reports.materials')}: {money(line.actualMaterial)}
+                      </AppText>
+                      <AppText dir="ltr">
+                        {t('mobile.orderDetail.fabric')}: {money(line.actualFabric)}
+                      </AppText>
+                      <AppText dir="ltr">
+                        {t('accounting.laborCost')}: {money(line.actualLabor)}
+                      </AppText>
+                      {line.note ? (
+                        <AppText variant="caption" color="muted">
+                          {line.note}
+                        </AppText>
+                      ) : null}
+                    </View>
+                  </DealerBoard>
+                ))
               ) : (
-                <DealerEmptyPanel nested compact text={t('accounting.noData')} />
+                <DealerBoard title={t('mobile.reports.orderLines')} titleWeight={titleWeight}>
+                  <DealerEmptyPanel nested compact text={t('accounting.noData')} />
+                </DealerBoard>
               )}
-            </DealerBoard>
+            </View>
           </ListItemEnter>
 
           <ListItemEnter index={2}>
@@ -266,7 +316,11 @@ export function CostOrderDossierScreen({ id }: Props) {
                         {tx.number} · {tx.sku}
                       </AppText>
                       <AppText variant="caption" dir="ltr">
-                        {tx.type} · {money(tx.unitCost)}
+                        {(() => {
+                          const key = `mobile.inventory.txType.${tx.type}`;
+                          const label = t(key);
+                          return `${label === key ? tx.type : label} · ${money(tx.unitCost)}`;
+                        })()}
                       </AppText>
                     </CostPressableRow>
                   ))}

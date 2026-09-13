@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can, canAny } from '@maher/permissions';
@@ -73,6 +73,7 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
   const [binForm, setBinForm] = useState<'add' | HoldingLocationOption | null>(null);
   const [inspectLoc, setInspectLoc] = useState<WarehouseDeskLocation | null>(null);
   const [qrLoc, setQrLoc] = useState<WarehouseDeskLocation | null>(null);
+  const pendingPrintLocRef = useRef<WarehouseDeskLocation | null>(null);
 
   const desk = deskQuery.data;
   const name = desk ? warehouseDisplayName(desk, locale) : '';
@@ -142,6 +143,20 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
     } catch (err) {
       fail(err);
     }
+  }
+
+  /** Close the bin/QR sheet first — iOS no-ops PdfDownloadSheet while another Modal is up. */
+  function queueBinPrint(loc: WarehouseDeskLocation) {
+    pendingPrintLocRef.current = loc;
+    setInspectLoc(null);
+    setQrLoc(null);
+  }
+
+  function flushPendingBinPrint() {
+    const loc = pendingPrintLocRef.current;
+    pendingPrintLocRef.current = null;
+    if (!loc) return;
+    void printBin(loc);
   }
 
   const inspectBin = desk && inspectLoc ? deskLocationToBinContents(desk, inspectLoc) : null;
@@ -363,12 +378,9 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
         open={inspectBin != null}
         bin={inspectBin}
         onClose={() => setInspectLoc(null)}
+        onClosed={flushPendingBinPrint}
         onPrintLabel={
-          inspectLoc && canPrint
-            ? () => {
-                void printBin(inspectLoc);
-              }
-            : undefined
+          inspectLoc && canPrint ? () => queueBinPrint(inspectLoc) : undefined
         }
         onViewItem={(itemId) => {
           setInspectLoc(null);
@@ -380,13 +392,8 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
         open={qrItem != null}
         item={qrItem}
         onClose={() => setQrLoc(null)}
-        onPrint={
-          qrLoc && canPrint
-            ? () => {
-                void printBin(qrLoc);
-              }
-            : undefined
-        }
+        onClosed={flushPendingBinPrint}
+        onPrint={qrLoc && canPrint ? () => queueBinPrint(qrLoc) : undefined}
       />
       {pdfDownloadSheet}
     </AppScreen>

@@ -3,6 +3,7 @@ import {
   migrateLegacyDimensionsNotes,
   parseDimNumber,
   seedDimensionsFromProduct,
+  seedDimensionsFromVariant,
   toRequestCustomMeasurements,
 } from '../newOrderMeasurements';
 
@@ -57,6 +58,43 @@ describe('newOrderMeasurements', () => {
     expect(seeded.width).toBe('160');
     expect(seeded.seat).toBe('45');
     expect(seeded.custom[0]?.label).toBe('Arm');
+  });
+
+  it('seeds variant extra measurements with a unit', () => {
+    const seeded = seedDimensionsFromVariant(
+      {
+        width: 160,
+        measurements: [
+          {
+            key: 'arm',
+            labelEn: 'Arm height',
+            labelAr: 'ارتفاع الذراع',
+            value: 62,
+            unit: 'cm',
+          },
+        ],
+      },
+      'en',
+    );
+    expect(seeded.width).toBe('160');
+    expect(seeded.custom[0]).toEqual(
+      expect.objectContaining({ label: 'Arm height', value: '62', unit: 'cm' }),
+    );
+  });
+
+  it('keeps a non-cm unit on the API label', () => {
+    expect(
+      toRequestCustomMeasurements(
+        {
+          width: '',
+          height: '',
+          depth: '',
+          seat: '',
+          custom: [{ id: '1', label: 'Cushions', value: '4', unit: 'pcs' }],
+        },
+        'Seat',
+      ),
+    ).toEqual([{ label: 'Cushions (pcs)', value: '4' }]);
   });
 
   it('migrates legacy freeform notes', () => {

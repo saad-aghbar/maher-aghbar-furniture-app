@@ -25,6 +25,13 @@ export type DemoStoryLine = {
   qty: number;
   fabric?: string;
   wood?: string;
+  custom?: boolean;
+  complexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+  width?: number;
+  height?: number;
+  depth?: number;
+  notes?: string;
+  name?: string;
 };
 
 export type DemoStory = {
@@ -162,6 +169,48 @@ export function buildDemoStories(): DemoStory[] {
       deliveryLeadDays: 30,
       notes:
         'Just entered production — empty materials, WIP, and floor progress. Use for production hub / setup checks.',
+    },
+    {
+      id: 'nile-golden-factory-path',
+      dealer: 'nile',
+      sku: 'SOF-3S-STD',
+      variantCode: 'STD',
+      qty: 2,
+      kind: 'not_started',
+      projectName: 'Golden factory path',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: windowDay(18),
+      deliveryLeadDays: 21,
+      extraLines: [
+        {
+          sku: 'SOF-3S-STD',
+          variantCode: 'KARINA',
+          qty: 1,
+          fabric: 'Velvet Navy',
+          wood: 'Beech',
+          complexity: 'STANDARD',
+        },
+        {
+          sku: 'SOF-3S-STD',
+          variantCode: 'STD',
+          qty: 1,
+          fabric: 'Velvet Sand',
+          wood: 'Beech',
+          complexity: 'MODIFIED',
+          width: 280,
+        },
+        {
+          sku: 'CUSTOM',
+          custom: true,
+          complexity: 'CUSTOM',
+          qty: 1,
+          fabric: 'Boucle Cream',
+          notes: 'Bespoke corner bench to the sketch.',
+          name: 'Custom corner bench',
+        },
+      ],
+      notes: 'Golden factory path — four manufacturing kinds on one sales order.',
     },
     {
       id: 'noor-banquette-partial-frames',

@@ -19,6 +19,7 @@ import {
   buildCatalogDiff,
   compositionToPiecePlan,
   joinTrilingualNotes,
+  lineVisualFromOrderSpec,
   normalizeOrderFabrics,
   normalizeOrderMeasurements,
   pickVariantScopedRows,
@@ -330,21 +331,21 @@ export class OrderProductionSetupService {
 
     const catalogDimensions: Dims = {
       width:
+        this.num(spec?.catalogDimensions?.width) ??
         this.num(variant?.width) ??
-        this.num(line.product?.width) ??
-        this.num(spec?.catalogDimensions?.width),
+        this.num(line.product?.width),
       height:
+        this.num(spec?.catalogDimensions?.height) ??
         this.num(variant?.height) ??
-        this.num(line.product?.height) ??
-        this.num(spec?.catalogDimensions?.height),
+        this.num(line.product?.height),
       depth:
+        this.num(spec?.catalogDimensions?.depth) ??
         this.num(variant?.depth) ??
-        this.num(line.product?.depth) ??
-        this.num(spec?.catalogDimensions?.depth),
+        this.num(line.product?.depth),
       seatHeight:
+        this.num(spec?.catalogDimensions?.seatHeight) ??
         this.num(variant?.seatHeight) ??
-        this.num(line.product?.seatHeight) ??
-        this.num(spec?.catalogDimensions?.seatHeight),
+        this.num(line.product?.seatHeight),
     };
     const orderDimensions: Dims = {
       width: this.num(spec?.requestedDimensions?.width) ?? catalogDimensions.width,
@@ -377,7 +378,10 @@ export class OrderProductionSetupService {
       extraItems: optionSkus,
     });
 
-    const workflowId = variant?.workflowId ?? line.product?.workflowConfiguration?.workflowId ?? null;
+    const workflowId =
+      complexity === ManufacturingComplexity.CUSTOM
+        ? null
+        : variant?.workflowId ?? line.product?.workflowConfiguration?.workflowId ?? null;
     const needsReview = complexity === ManufacturingComplexity.MODIFIED || complexity === ManufacturingComplexity.CUSTOM;
     const hasWorkflow = Boolean(workflowId);
     const lineStatus = released
@@ -700,6 +704,7 @@ export class OrderProductionSetupService {
                     imageUrl: true,
                   },
                 },
+                variant: { select: { id: true, imageUrl: true } },
               },
             },
             workflow: {
@@ -905,6 +910,12 @@ export class OrderProductionSetupService {
               }
             : null,
           product: line.salesOrderLine.product,
+          imageUrl: lineVisualFromOrderSpec(line.salesOrderLine.orderSpec, {
+            variantImageUrl: (
+              line.salesOrderLine as { variant?: { imageUrl?: string | null } | null }
+            ).variant?.imageUrl,
+            productImageUrl: line.salesOrderLine.product?.imageUrl,
+          }),
           basedOnProduct:
             line.manufacturingComplexity === ManufacturingComplexity.CUSTOM &&
             line.salesOrderLine.product
@@ -2701,6 +2712,11 @@ export class OrderProductionSetupService {
             instructionsEn: lineSetup.instructionsEn ?? undefined,
             instructionsHe: lineSetup.instructionsHe ?? undefined,
           },
+        });
+
+        await tx.fabricProcurement.updateMany({
+          where: { salesOrderLineId: line.id, productionOrderId: null },
+          data: { productionOrderId: productionOrder.id },
         });
 
         const materialOverrides = lineSetup.materialRequirements

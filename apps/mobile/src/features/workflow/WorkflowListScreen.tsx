@@ -21,7 +21,9 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
@@ -34,7 +36,7 @@ import {
   useCreateWorkflowMutation,
   useWorkflowsQuery,
 } from './query';
-import { nameFieldOrder, slugFromEnglishName, type TrilingualNames } from './trilingualNames';
+import { slugFromEnglishName } from './trilingualNames';
 import { workflowScopeLabelKey } from './workflowScope';
 import { isReturnWorkflowScope } from '@maher/types';
 
@@ -60,20 +62,10 @@ export function WorkflowListScreen() {
   const [scopeFilter, setScopeFilter] = useState<WorkflowScope | null>(null);
   const [createScope, setCreateScope] = useState<WorkflowScope>('STANDARD');
   const [deleteTarget, setDeleteTarget] = useState<WorkflowListItem | null>(null);
-  const [names, setNames] = useState<TrilingualNames>({
-    nameEn: '',
-    nameAr: '',
-    nameHe: '',
-  });
-
-  const fieldOrder = nameFieldOrder(locale);
+  const [name, setName] = useState('');
+  const [translating, setTranslating] = useState(false);
   /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
   const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
-  const nameLabels: Record<keyof TrilingualNames, string> = {
-    nameEn: t('mobile.production.workflow.nameEn'),
-    nameAr: t('mobile.production.workflow.nameAr'),
-    nameHe: t('mobile.production.workflow.nameHe'),
-  };
 
   const filtered = useMemo(() => {
     const rows = (listQuery.data ?? []).filter((row) =>
@@ -235,7 +227,7 @@ export function WorkflowListScreen() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onClosed={() => {
-          setNames({ nameEn: '', nameAr: '', nameHe: '' });
+          setName('');
           setCreateScope('STANDARD');
         }}
         title={t('mobile.production.workflow.newWorkflow')}
@@ -456,15 +448,12 @@ export function WorkflowListScreen() {
                     : { paddingLeft: theme.spacing.md + 4 }),
                 }}
               >
-                {fieldOrder.map((key) => (
-                  <TextField
-                    key={key}
-                    label={nameLabels[key]}
-                    value={names[key]}
-                    onChangeText={(v) => setNames((n) => ({ ...n, [key]: v }))}
-                    autoCapitalize={key === 'nameEn' ? 'words' : 'none'}
-                  />
-                ))}
+                <LocaleNameField
+                  value={name}
+                  onChange={setName}
+                  label={t('catalog.name')}
+                  autoCapitalize="words"
+                />
               </View>
             </View>
           </ScrollView>
@@ -491,8 +480,8 @@ export function WorkflowListScreen() {
             />
             <PrimaryButton
               label={t('mobile.production.workflow.createWorkflow')}
-              loading={createMutation.isPending}
-              disabled={!names.nameEn.trim() || !names.nameAr.trim() || !names.nameHe.trim()}
+              loading={createMutation.isPending || translating}
+              disabled={!name.trim() || createMutation.isPending || translating}
               style={{
                 flex: 1.35,
                 borderRadius: theme.radius.full,
@@ -501,31 +490,40 @@ export function WorkflowListScreen() {
                 ...orderBoardShadow(colorScheme),
               }}
               onPress={() => {
-                createMutation.mutate(
-                  {
-                    code: slugFromEnglishName(names.nameEn, 'WORKFLOW'),
-                    nameEn: names.nameEn.trim(),
-                    nameAr: names.nameAr.trim(),
-                    nameHe: names.nameHe.trim(),
-                    scope: createScope,
-                  },
-                  {
-                    onSuccess: (created) => {
-                      setCreateOpen(false);
-                      void haptics.confirmLight();
-                      router.push(`/(app)/(admin)/production/workflow/${created.id}` as Href);
-                    },
-                    onError: (err) => {
-                      void haptics.error();
-                      showToast({
-                        variant: 'error',
-                        message: isApiError(err)
-                          ? toastMessageForError(err)
-                          : t('mobile.production.workflow.loadError'),
-                      });
-                    },
-                  },
-                );
+                void (async () => {
+                  if (!name.trim() || createMutation.isPending || translating) return;
+                  setTranslating(true);
+                  try {
+                    const names = await resolveTrilingualName(name, locale);
+                    createMutation.mutate(
+                      {
+                        code: slugFromEnglishName(names.nameEn, 'WORKFLOW'),
+                        nameEn: names.nameEn,
+                        nameAr: names.nameAr,
+                        nameHe: names.nameHe,
+                        scope: createScope,
+                      },
+                      {
+                        onSuccess: (created) => {
+                          setCreateOpen(false);
+                          void haptics.confirmLight();
+                          router.push(`/(app)/(admin)/production/workflow/${created.id}` as Href);
+                        },
+                        onError: (err) => {
+                          void haptics.error();
+                          showToast({
+                            variant: 'error',
+                            message: isApiError(err)
+                              ? toastMessageForError(err)
+                              : t('mobile.production.workflow.loadError'),
+                          });
+                        },
+                      },
+                    );
+                  } finally {
+                    setTranslating(false);
+                  }
+                })();
               }}
             />
           </View>

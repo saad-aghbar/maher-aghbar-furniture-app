@@ -4,9 +4,11 @@ export { DirectionalIcon, ChevronGlyph } from './DirectionalIcon';
 export { BrandMark } from './BrandMark';
 export {
   AnimatedBrandIntro,
+  BrandQrCode,
   LoginReveal,
   MaherAghbarLogo,
 } from './branding';
+
 
 export { TextField } from './forms/TextField';
 export { PasswordField } from './forms/PasswordField';

@@ -81,6 +81,7 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
       'report.production.read',
       'report.financial.read',
       'report.inventory.read',
+      'inventory.cost.read',
     ],
     mode: 'any',
     span: 'half',

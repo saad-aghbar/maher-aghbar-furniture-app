@@ -27,6 +27,11 @@ import {
   type DealerEditPolicy,
 } from './dealer-edit-policy';
 import { loadCatalogMap, catalogForItem, mapRequestItemCreate } from './request-line-classify';
+import {
+  mergeVerifySpecItem,
+  verifySpecUpdateData,
+  type VerifySpecFields,
+} from './verify-spec-fields';
 import { specProvenance } from './spec-provenance';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
@@ -910,30 +915,27 @@ export class RequestsService {
       itemId?: string;
       action: 'CONFIRM' | 'CORRECT';
       message?: string;
-      fields?: Record<string, string>;
+      fields?: VerifySpecFields;
     },
   ) {
     this.assertStaffReview(user);
     const existing = await this.getById(id, user);
     if (body.action === 'CORRECT' && body.itemId && body.fields) {
-      const num = (key: string) => {
-        const raw = body.fields?.[key];
-        if (raw == null || raw === '') return undefined;
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : undefined;
-      };
+      const current = await this.prisma.requestItem.findFirst({
+        where: { id: body.itemId, requestId: id },
+      });
+      if (!current) {
+        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Request item not found.' });
+      }
+      const merged = mergeVerifySpecItem(current, body.fields);
+      const catalogMap = await loadCatalogMap(this.prisma, [merged]);
       await this.prisma.requestItem.update({
-        where: { id: body.itemId },
-        data: {
-          ...(body.fields.productName != null ? { productName: body.fields.productName } : {}),
-          ...(num('width') != null ? { width: num('width') } : {}),
-          ...(num('height') != null ? { height: num('height') } : {}),
-          ...(num('depth') != null ? { depth: num('depth') } : {}),
-          ...(body.fields.foamDensity != null ? { foamDensity: body.fields.foamDensity } : {}),
-          ...(body.fields.woodType != null ? { woodType: body.fields.woodType } : {}),
-          ...(body.fields.finish != null ? { finish: body.fields.finish } : {}),
-          ...(body.fields.orientation != null ? { orientation: body.fields.orientation } : {}),
-        },
+        where: { id: current.id },
+        data: verifySpecUpdateData(
+          merged,
+          catalogForItem(catalogMap, merged),
+          current.sortOrder,
+        ),
       });
     }
     const history = appendReviewHistory(existing.reviewHistory, {

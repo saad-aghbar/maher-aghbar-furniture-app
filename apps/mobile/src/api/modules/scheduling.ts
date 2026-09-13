@@ -485,6 +485,7 @@ export type UnscheduledOrderCard = {
   planningState: PlanningState;
   planningStatus?: PlanningState | string;
   dealerName?: string | null;
+  salesOrderId?: string | null;
   salesOrderNumber?: string | null;
   product?: {
     id: string;
@@ -555,6 +556,8 @@ export type AtRiskRecommendedAction =
 
 export type AtRiskOrder = {
   productionOrderId: string;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
   number: string;
   status: string;
   priority: string;
@@ -798,6 +801,8 @@ export async function resolveAllConflicts(): Promise<ResolveAllConflictsResult> 
 export type ScheduleOrderCard = {
   id: string;
   productionOrderId: string;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
   scheduleId?: string | null;
   version?: number | null;
   number: string;

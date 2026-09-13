@@ -63,7 +63,11 @@ jest.mock('@/api/modules/catalogAdmin', () => ({
   })),
   upsertDealerPrice: jest.fn(async () => ({})),
   deleteDealerPrice: jest.fn(async () => ({})),
-  translateCatalogName: jest.fn(async (text: string) => ({ nameAr: text, nameEn: '', nameHe: '' })),
+  translateCatalogName: jest.fn(async (text: string, _kind?: string, sourceLocale?: string) => ({
+    nameAr: sourceLocale === 'ar' ? text : '',
+    nameEn: sourceLocale === 'en' ? text : '',
+    nameHe: sourceLocale === 'he' ? text : '',
+  })),
   listMaterials: jest.fn(async () => ({ data: [] })),
 }));
 
@@ -91,7 +95,7 @@ describe('AdminVariantDetailScreen', () => {
       <AdminVariantDetailScreen productId="p-karina" variantId="v-ukr" />,
     );
     await waitFor(() => {
-      expect(view.getByText('أوكرانيه')).toBeTruthy();
+      expect(view.getByDisplayValue('Ukrainian')).toBeTruthy();
     });
     expectEveryActionWired(view);
   });

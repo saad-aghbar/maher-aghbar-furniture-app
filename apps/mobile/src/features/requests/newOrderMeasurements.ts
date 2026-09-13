@@ -2,6 +2,7 @@ export type NewOrderCustomMeasurement = {
   id: string;
   label: string;
   value: string;
+  unit?: string;
 };
 
 export type NewOrderDimensionFields = {
@@ -52,7 +53,11 @@ export function toRequestCustomMeasurements(
     const label = m.label.trim();
     const value = m.value.trim();
     if (!label || !value) continue;
-    rows.push({ label, value });
+    const unit = String(m.unit ?? '').trim();
+    rows.push({
+      label: unit && unit !== 'cm' ? `${label} (${unit})` : label,
+      value,
+    });
   }
   return rows;
 }
@@ -74,11 +79,7 @@ export function seedDimensionsFromProduct(
   },
   locale: string,
 ): NewOrderDimensionFields {
-  const fmt = (v: number | string | null | undefined) => {
-    if (v == null || v === '') return '';
-    const n = Number(v);
-    return Number.isFinite(n) ? String(n) : '';
-  };
+  const fmt = fmtDim;
   const custom: NewOrderCustomMeasurement[] = [];
   for (const m of product.customMeasurements ?? []) {
     const label =
@@ -103,7 +104,100 @@ export function seedDimensionsFromProduct(
   };
 }
 
-/** When loading an old draft that only has a freeform dimensions note. */
+function fmtDim(v: number | string | null | undefined): string {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : '';
+}
+
+function variantMeasurementLabel(
+  row: {
+    key?: string;
+    labelAr?: string | null;
+    labelEn?: string | null;
+    labelHe?: string | null;
+  },
+  locale: string,
+): string {
+  if (locale === 'ar') return String(row.labelAr || row.labelEn || row.key || '').trim();
+  if (locale === 'he') {
+    return String(row.labelHe || row.labelEn || row.labelAr || row.key || '').trim();
+  }
+  return String(row.labelEn || row.labelAr || row.key || '').trim();
+}
+
+/** Core W/H/D/seat plus the variant’s extra measurement rows. */
+export function seedDimensionsFromVariant(
+  variant: {
+    width?: number | string | null;
+    height?: number | string | null;
+    depth?: number | string | null;
+    seatHeight?: number | string | null;
+    measurements?: Array<{
+      key?: string;
+      labelAr?: string | null;
+      labelEn?: string | null;
+      labelHe?: string | null;
+      value: number | string | null;
+      unit?: string | null;
+    }> | null;
+  },
+  locale: string,
+): NewOrderDimensionFields {
+  const custom: NewOrderCustomMeasurement[] = [];
+  for (const row of variant.measurements ?? []) {
+    const label = variantMeasurementLabel(row, locale);
+    if (!label) continue;
+    const value = fmtDim(row.value);
+    custom.push({
+      id: `vm-${row.key ?? label}-${custom.length}`,
+      label,
+      value,
+      unit: String(row.unit ?? 'cm').trim() || 'cm',
+    });
+  }
+  return {
+    width: fmtDim(variant.width),
+    height: fmtDim(variant.height),
+    depth: fmtDim(variant.depth),
+    seat: fmtDim(variant.seatHeight),
+    custom,
+  };
+}
+
+export function seedDimensionsFromRequestItem(
+  item: {
+    width?: number | string | null;
+    height?: number | string | null;
+    depth?: number | string | null;
+    customMeasurements?: Array<{ label?: string | null; value?: string | null }> | null;
+  } | undefined,
+  seatLabel: string,
+): NewOrderDimensionFields {
+  const base = emptyDimensionFields();
+  if (!item) return base;
+  const fmt = (v: number | string | null | undefined) => {
+    if (v == null || v === '') return '';
+    const n = Number(v);
+    return Number.isFinite(n) ? String(n) : String(v);
+  };
+  base.width = fmt(item.width);
+  base.height = fmt(item.height);
+  base.depth = fmt(item.depth);
+  const custom = item.customMeasurements ?? [];
+  const seatKey = seatLabel.trim().toLowerCase();
+  const seatRow = custom.find((m) => String(m.label ?? '').trim().toLowerCase() === seatKey);
+  if (seatRow) base.seat = String(seatRow.value ?? '');
+  base.custom = custom
+    .filter((m) => String(m.label ?? '').trim().toLowerCase() !== seatKey)
+    .map((m, i) => ({
+      id: `m-${i}-${m.label ?? ''}`,
+      label: String(m.label ?? ''),
+      value: String(m.value ?? ''),
+    }));
+  return base;
+}
+
 export function migrateLegacyDimensionsNotes(
   notes: string,
 ): Partial<NewOrderDimensionFields> | null {

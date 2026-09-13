@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@maher/database';
-import { isReturnWorkflowScope, pickVariantScopedRows } from '@maher/types';
+import { isReturnWorkflowScope, isFactoryWorkStarted, pickVariantScopedRows } from '@maher/types';
 import { PrismaService } from '../../../common/prisma.service';
 import { SequenceService } from '../../../common/sequence.service';
 import { buildStageTaskInstructions } from '../../../common/helpers/stage-task-instructions';
@@ -170,18 +170,7 @@ export class WorkflowSnapshotService {
         });
       }
 
-      const status = String(po.status ?? '').toUpperCase();
-      const factoryStarted =
-        Boolean(po.releasedToFactoryAt) ||
-        Boolean(po.actualStartDate) ||
-        [
-          'IN_PROGRESS',
-          'ON_HOLD',
-          'QUALITY_CHECK',
-          'READY_FOR_PACKAGING',
-          'READY_FOR_DELIVERY',
-          'COMPLETED',
-        ].includes(status);
+      const factoryStarted = isFactoryWorkStarted(po);
       const workflow = await tx.productionWorkflow.findUnique({
         where: { id: workflowId },
         select: { scope: true },
@@ -252,7 +241,7 @@ export class WorkflowSnapshotService {
           data: {
             currentStageCode: null,
             progressPercent: 0,
-            status: status === 'DRAFT' ? 'DRAFT' : 'PLANNED',
+            status: po.status === 'DRAFT' ? 'DRAFT' : 'PLANNED',
           },
         });
       }

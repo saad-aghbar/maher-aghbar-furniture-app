@@ -1,5 +1,7 @@
 import {
   catalogNewOrderParams,
+  customItemHref,
+  customizeVariantHref,
   isCatalogOrderDeepLink,
   navigateToBasketReview,
   navigateToCreateOrder,
@@ -115,6 +117,30 @@ describe('isCatalogOrderDeepLink', () => {
     expect(isCatalogOrderDeepLink({ productId: 'p1' })).toBe(true);
     expect(isCatalogOrderDeepLink({})).toBe(false);
     expect(isCatalogOrderDeepLink({ productId: '  ' })).toBe(false);
+  });
+});
+
+describe('customizeVariantHref', () => {
+  it('opens the dealer modify desk for the selected variant', () => {
+    const href = String(customizeVariantHref('prod-abc', 'v-olive', 2));
+    expect(href).toContain('/(app)/(customer)/catalog/prod-abc/customize');
+    expect(href).toContain('variantId=v-olive');
+    expect(href).toContain('qty=2');
+    expect(href).not.toContain('lineId=');
+  });
+
+  it('carries a basket line id when editing from the basket', () => {
+    const href = String(
+      customizeVariantHref('prod-abc', 'v-olive', 2, { lineId: 'line-9' }),
+    );
+    expect(href).toContain('lineId=line-9');
+  });
+});
+
+describe('customItemHref', () => {
+  it('opens the custom piece desk', () => {
+    expect(String(customItemHref())).toBe('/(app)/(customer)/order/custom');
+    expect(String(customItemHref('line-4'))).toContain('lineId=line-4');
   });
 });
 

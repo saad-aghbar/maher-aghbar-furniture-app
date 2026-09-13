@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import QRCode from 'react-native-qrcode-svg';
 import { localizedName } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
+import { BrandQrCode } from '@/components/branding/BrandQrCode';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { ProductThumb } from '@/components/desk';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -238,17 +238,12 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                   style={{
                     padding: theme.spacing.lg,
                     borderRadius: theme.radius.xl,
-                    backgroundColor: colors.surfaceElevated,
+                    backgroundColor: '#FFFFFF',
                     borderWidth: 1,
-                    borderColor: colors.borderMuted,
+                    borderColor: colors.border,
                   }}
                 >
-                  <QRCode
-                    value={kit.qrCode}
-                    size={208}
-                    backgroundColor={colors.surfaceElevated}
-                    color={colors.textPrimary}
-                  />
+                  <BrandQrCode value={kit.qrCode} size={208} />
                 </View>
                 <View style={{ gap: 4, alignItems: 'center', paddingHorizontal: theme.spacing.sm }}>
                   <AppText variant="body" weight={titleWeight} align="center" numberOfLines={2}>
@@ -257,7 +252,7 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                   <AppText variant="caption" color="muted" dir="ltr" align="center">
                     {kit.qrCode}
                   </AppText>
-                  <AppText variant="caption" weight="semibold" style={{ color: accent }}>
+                  <AppText variant="caption" weight={titleWeight} style={{ color: accent }}>
                     {stage}
                   </AppText>
                 </View>

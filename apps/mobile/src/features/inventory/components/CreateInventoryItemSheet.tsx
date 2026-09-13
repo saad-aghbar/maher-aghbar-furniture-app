@@ -4,7 +4,9 @@ import { AppText } from '@/components/AppText';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import {
   INVENTORY_CATEGORY_FOR_CREATE,
   type CreateInventoryItemInput,
@@ -60,8 +62,7 @@ export function CreateInventoryItemSheet({
 
   const [materialGroup, setMaterialGroup] =
     useState<InventoryCategoryGroup>(categoryGroup);
-  const [nameEn, setNameEn] = useState('');
-  const [nameAr, setNameAr] = useState('');
+  const [name, setName] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [minStock, setMinStock] = useState('0');
   const [reorderQty, setReorderQty] = useState('0');
@@ -75,6 +76,7 @@ export function CreateInventoryItemSheet({
   const [photoRemoteUrl, setPhotoRemoteUrl] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
   const [unitSheet, setUnitSheet] = useState(false);
   const [typeSheet, setTypeSheet] = useState(false);
   const measureEditor = useInventoryMeasurementEditor(
@@ -103,8 +105,7 @@ export function CreateInventoryItemSheet({
       return;
     }
     setMaterialGroup(categoryGroup);
-    setNameEn('');
-    setNameAr('');
+    setName('');
     setUnit(categoryGroup === 'fabric' ? 'm' : 'pcs');
     setMinStock('0');
     setReorderQty('0');
@@ -130,9 +131,9 @@ export function CreateInventoryItemSheet({
 
   const costOk = !requireCost || Number(standardCost) > 0;
 
-  function submit() {
-    if (!nameEn.trim() || !nameAr.trim()) {
-      setError(t('mobile.inventory.createItemRequired'));
+  async function submit() {
+    if (!name.trim()) {
+      setError(t('catalog.namesRequired'));
       return;
     }
     if (!costOk) {
@@ -143,20 +144,27 @@ export function CreateInventoryItemSheet({
     Keyboard.dismiss();
     setUnitSheet(false);
     setTypeSheet(false);
-    onSubmit({
-      nameEn: nameEn.trim(),
-      nameAr: nameAr.trim(),
-      unit: unit.trim() || 'pcs',
-      category: INVENTORY_CATEGORY_FOR_CREATE[materialGroup],
-      materialType: materialGroup,
-      minStock: Number(minStock) || 0,
-      reorderQty: Number(reorderQty) > 0 ? Number(reorderQty) : undefined,
-      standardCost: Number(standardCost) || 0,
-      preferredSupplierId: preferredSupplierId || undefined,
-      color: color.trim() || undefined,
-      customMeasurements: measurements,
-      ...(showPhoto && photoRemoteUrl ? { imageUrl: photoRemoteUrl } : {}),
-    });
+    setTranslating(true);
+    try {
+      const names = await resolveTrilingualName(name, locale);
+      onSubmit({
+        nameEn: names.nameEn,
+        nameAr: names.nameAr,
+        nameHe: names.nameHe || undefined,
+        unit: unit.trim() || 'pcs',
+        category: INVENTORY_CATEGORY_FOR_CREATE[materialGroup],
+        materialType: materialGroup,
+        minStock: Number(minStock) || 0,
+        reorderQty: Number(reorderQty) > 0 ? Number(reorderQty) : undefined,
+        standardCost: Number(standardCost) || 0,
+        preferredSupplierId: preferredSupplierId || undefined,
+        color: color.trim() || undefined,
+        customMeasurements: measurements,
+        ...(showPhoto && photoRemoteUrl ? { imageUrl: photoRemoteUrl } : {}),
+      });
+    } finally {
+      setTranslating(false);
+    }
   }
 
   return (
@@ -186,16 +194,7 @@ export function CreateInventoryItemSheet({
               }}
             />
           ) : null}
-          <TextField
-            label={t('mobile.inventory.nameEn')}
-            value={nameEn}
-            onChangeText={setNameEn}
-          />
-          <TextField
-            label={t('mobile.inventory.nameAr')}
-            value={nameAr}
-            onChangeText={setNameAr}
-          />
+          <LocaleNameField value={name} onChange={setName} />
           <InventoryPickerRow
             label={t('mobile.inventory.unit')}
             value={unit}
@@ -260,8 +259,8 @@ export function CreateInventoryItemSheet({
           primaryLabel={t('mobile.inventory.saveItem')}
           onPrimary={submit}
           onSecondary={onClose}
-          loading={loading || photoBusy}
-          disabled={loading || photoBusy || !costOk}
+          loading={loading || photoBusy || translating}
+          disabled={loading || photoBusy || translating || !costOk}
         />
       </BottomSheet>
 
@@ -274,6 +273,7 @@ export function CreateInventoryItemSheet({
         draft={measureEditor.draft}
         setDraft={measureEditor.setDraft}
         save={measureEditor.save}
+        saving={measureEditor.saving}
       />
       <InventoryUnitPickerSheet
         open={unitSheet}

@@ -54,10 +54,12 @@ function normalizeCustomRows(raw: unknown): NewOrderCustomMeasurement[] {
       const label = String(r.label ?? '').trim();
       const value = String(r.value ?? '').trim();
       if (!label && !value) return null;
+      const unit = String(r.unit ?? '').trim();
       return {
         id: String(r.id ?? `m-${i}`),
         label,
         value,
+        ...(unit ? { unit } : {}),
       };
     })
     .filter((r): r is NewOrderCustomMeasurement => Boolean(r));

@@ -150,7 +150,7 @@ export function WipKitBoardSection({ enabled }: Props) {
                     category: 'SEMI_FINISHED',
                     unit: `${kit.pieces.length}/${kit.expectedPieceCount}`,
                     imageUrl: null,
-                    itemClass: 'SEMI_FINISHED_GOOD',
+                    printKind: 'wip-kit',
                   });
                 }}
                 style={{

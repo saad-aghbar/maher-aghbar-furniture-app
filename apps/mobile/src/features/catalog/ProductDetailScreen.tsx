@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
-import { listSpecOptionGroups, listSpecOptionValues } from '@/api/modules/catalog';
 import { listProductVariants } from '@/api/modules/catalogAdmin';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
@@ -36,11 +35,12 @@ import { ProductDetailSkeleton } from './components/ProductDetailSkeleton';
 import { ProductImageCarousel } from './components/ProductImageCarousel';
 import { RelatedProductsRail } from './components/RelatedProductsRail';
 import { useToast } from '@/components/feedback/Toast';
-import { navigateToBasketReview, navigateToNewOrderWithProduct } from './newOrderDeepLink';
+import {
+  customizeVariantHref,
+  navigateToBasketReview,
+  navigateToNewOrderWithProduct,
+} from './newOrderDeepLink';
 import { useOptionalOrderBasket } from '@/features/requests/OrderBasketProvider';
-import { OrderLineSpecSheet } from '@/features/requests/components/OrderLineSpecSheet';
-import { emptyOrderLine, type NewOrderLine } from '@/features/requests/newOrderLine';
-import { lineHasProduct } from '@/features/requests/newOrderBasket';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useBrowseProductQuery, usePreviouslyOrderedQuery } from './query';
 import {
@@ -98,26 +98,12 @@ export function ProductDetailScreen({
   const [qty, setQty] = useState(1);
   const [variantId, setVariantId] = useState<string | null>(null);
   const [variantCleared, setVariantCleared] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [customizeLine, setCustomizeLine] = useState<NewOrderLine | null>(null);
   const query = useBrowseProductQuery(productId, allowed && !forceState);
   const variantsQuery = useQuery({
     queryKey: queryKeys.catalog.variants(productId, { includeInactive: false }),
     queryFn: () => listProductVariants(productId, false),
     enabled: isDealer && allowed && !forceState && Boolean(productId),
     staleTime: 30_000,
-  });
-  const specGroupsQuery = useQuery({
-    queryKey: queryKeys.catalog.specOptionGroups({ pageSize: 100 }),
-    queryFn: () => listSpecOptionGroups({ page: 1, pageSize: 100 }),
-    enabled: isDealer && allowed && !forceState,
-    staleTime: 60_000,
-  });
-  const specValuesQuery = useQuery({
-    queryKey: queryKeys.catalog.specOptionValues({ pageSize: 200 }),
-    queryFn: () => listSpecOptionValues({ page: 1, pageSize: 200 }),
-    enabled: isDealer && allowed && !forceState,
-    staleTime: 60_000,
   });
   const refreshing = query.isRefetching && !query.isLoading;
   const favorites = useDealerFavorites(isDealer ? user?.id : undefined);
@@ -214,6 +200,14 @@ export function ProductDetailScreen({
       variantId: variantId ?? undefined,
       variantLabel: label,
       variantSku: selectedVariant?.sku,
+      dimWidth: selectedVariant?.width != null ? String(selectedVariant.width) : undefined,
+      dimHeight: selectedVariant?.height != null ? String(selectedVariant.height) : undefined,
+      dimDepth: selectedVariant?.depth != null ? String(selectedVariant.depth) : undefined,
+      dimSeat:
+        selectedVariant?.seatHeight != null ? String(selectedVariant.seatHeight) : undefined,
+      imageUrl: vm.imageUris[0],
+      dealerPrice: displayPrice != null ? String(displayPrice) : undefined,
+      preferUpdate: true,
     };
   };
 
@@ -444,29 +438,9 @@ export function ProductDetailScreen({
                   testID="pdp-customize-variant"
                   onPress={() => {
                     void haptics.selection();
-                    const label =
-                      localizedName(locale, selectedVariant) || selectedVariant.code;
-                    setCustomizeLine(
-                      emptyOrderLine({
-                        productId: vm.id,
-                        customProductName: vm.name,
-                        quantity: String(qty),
-                        variantId: selectedVariant.id,
-                        variantLabel: label,
-                        variantSku: selectedVariant.sku ?? '',
-                        dimWidth:
-                          selectedVariant.width != null ? String(selectedVariant.width) : '',
-                        dimHeight:
-                          selectedVariant.height != null ? String(selectedVariant.height) : '',
-                        dimDepth:
-                          selectedVariant.depth != null ? String(selectedVariant.depth) : '',
-                        dimSeat:
-                          selectedVariant.seatHeight != null
-                            ? String(selectedVariant.seatHeight)
-                            : '',
-                      }),
+                    router.push(
+                      customizeVariantHref(vm.id, selectedVariant.id, qty),
                     );
-                    setCustomizeOpen(true);
                   }}
                   style={{
                     minHeight: theme.sizes.touch.min,
@@ -909,36 +883,6 @@ export function ProductDetailScreen({
             </View>
           </View>
         </FloatingActionDock>
-      ) : null}
-
-      {isDealer ? (
-        <OrderLineSpecSheet
-          open={customizeOpen}
-          onClose={() => {
-            setCustomizeOpen(false);
-            setCustomizeLine(null);
-          }}
-          onConfirm={() => {
-            if (customizeLine && basket) {
-              basket.setLines((prev) => {
-                if (!prev.some(lineHasProduct)) return [customizeLine];
-                return [...prev.filter(lineHasProduct), customizeLine];
-              });
-              showToast({
-                variant: 'success',
-                message: t('mobile.productDetail.addedToBasket'),
-              });
-            }
-            setCustomizeOpen(false);
-            setCustomizeLine(null);
-          }}
-          confirmLabel={t('mobile.productDetail.addToBasket')}
-          line={customizeLine}
-          onChange={setCustomizeLine}
-          variants={variants}
-          groups={specGroupsQuery.data?.data ?? []}
-          values={specValuesQuery.data?.data ?? []}
-        />
       ) : null}
     </AppScreen>
   );

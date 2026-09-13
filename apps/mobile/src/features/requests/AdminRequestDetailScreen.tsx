@@ -8,13 +8,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
-import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { createQuotation } from '@/api/modules/quotations';
 import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { quotationLinesFromRequestItems } from './quotationLinesFromRequest';
-import { formatRequestItemSpec } from './requestItemSpec';
+import { mergeDraftRequestSaveItems } from './factoryLineDesk';
 import {
   closeRequest,
   confirmRequestDelivery,
@@ -25,7 +24,6 @@ import {
   markRequestUnderReview,
   submitRequest,
   updateRequest,
-  verifyRequestSpec,
 } from '@/api/modules/requests';
 import { resolveDocumentUrl, uploadFile, uploadFromUrl } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
@@ -44,6 +42,12 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import {
+  MonthCalendar,
+  initialCursorFromValue,
+  todayYmd,
+  type CalendarCursor,
+} from '@/components/calendar';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
@@ -52,8 +56,7 @@ import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
 import { RequestIdentityBoard } from '@/features/requests/components/RequestIdentityBoard';
-import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
-import { SpecCorrectSheet } from '@/features/requests/components/SpecCorrectSheet';
+import { RfqLineTicket } from '@/features/requests/components/RfqLineTicket';
 import {
   RfqStageRail,
   isRfqWaitingForReview,
@@ -84,15 +87,6 @@ function priorityLabel(
   const key = `mobile.production.priority.${priority.toUpperCase()}`;
   const label = t(key);
   return label === key ? priority : label;
-}
-
-function complexityLabel(
-  code: string | null | undefined,
-  t: (k: string) => string,
-): string | null {
-  if (!code) return null;
-  const key = manufacturingComplexityDisplayKey(code);
-  return t(`mobile.orders.lineKind.${key}`);
 }
 
 function collectIncompleteWarnings(
@@ -210,7 +204,9 @@ export function AdminRequestDetailScreen({
   >([]);
   const [deliveryChangeDate, setDeliveryChangeDate] = useState('');
   const [deliveryChangeReason, setDeliveryChangeReason] = useState('');
-  const [correctItem, setCorrectItem] = useState<RequestItem | null>(null);
+  const [deliveryCursor, setDeliveryCursor] = useState<CalendarCursor>(() =>
+    initialCursorFromValue(todayYmd()),
+  );
 
   useEffect(() => {
     if (initialStage) setPickedStage(initialStage);
@@ -241,6 +237,10 @@ export function AdminRequestDetailScreen({
     setDeliveryChangeDate(
       (detail.offeredDeliveryDate ?? detail.requiredDeliveryDate ?? '').toString().slice(0, 10),
     );
+    const ymd = (detail.offeredDeliveryDate ?? detail.requiredDeliveryDate ?? '')
+      .toString()
+      .slice(0, 10);
+    if (ymd) setDeliveryCursor(initialCursorFromValue(ymd));
     setDraftLines(
       (detail.items ?? []).map((item, index) => ({
         key: item.id ?? `line-${index}`,
@@ -301,13 +301,7 @@ export function AdminRequestDetailScreen({
     mutationFn: () => {
       const isDraft = detail?.status === 'DRAFT';
       const items = isDraft
-        ? draftLines
-            .filter((line) => line.productName.trim())
-            .map((line) => ({
-              productName: line.productName.trim(),
-              quantity: Number(line.quantity) || 0,
-              notes: line.notes.trim() || undefined,
-            }))
+        ? mergeDraftRequestSaveItems(detail.items ?? [], draftLines)
         : undefined;
       return updateRequest(requestId, {
         externalOrderNumber: externalOrderNumber.trim() || undefined,
@@ -325,24 +319,6 @@ export function AdminRequestDetailScreen({
     onError: (err) => {
       setMessage(null);
       setError(isApiError(err) ? err.message : t('mobile.adminRequest.saveFailed'));
-      void haptics.error();
-    },
-  });
-
-  const verifyMutation = useMutation({
-    mutationFn: (body: {
-      itemId?: string;
-      action: 'CONFIRM' | 'CORRECT';
-      message?: string;
-      fields?: Record<string, string>;
-    }) => verifyRequestSpec(requestId, body),
-    onSuccess: async () => {
-      setMessage(t('mobile.adminRequest.specConfirmed'));
-      void haptics.confirmMedium();
-      await invalidate();
-    },
-    onError: (err) => {
-      setError(isApiError(err) ? err.message : t('mobile.adminRequest.actionFailed'));
       void haptics.error();
     },
   });
@@ -692,20 +668,6 @@ export function AdminRequestDetailScreen({
           />
         </ListItemEnter>
 
-        {galleryUris.length > 1 ? (
-          <ListItemEnter index={nextIndex()}>
-            <DealerBoard title={t('mobile.adminRequest.sheetRecord')} titleWeight={titleWeight}>
-              <ImageCarousel uris={galleryUris} height={220} />
-            </DealerBoard>
-          </ListItemEnter>
-        ) : galleryUris.length === 1 ? (
-          <ListItemEnter index={nextIndex()}>
-            <DealerBoard title={t('mobile.adminRequest.sheetRecord')} titleWeight={titleWeight}>
-              <ImageCarousel uris={galleryUris} height={220} />
-            </DealerBoard>
-          </ListItemEnter>
-        ) : null}
-
         {(detail.documents ?? []).some((doc) => (doc.category ?? '').includes('HANDWRITTEN') || (doc.fileName ?? '').endsWith('.pdf')) ? (
           <ListItemEnter index={nextIndex()}>
             <DealerBoard title={t('mobile.adminRequest.openPdf')} titleWeight={titleWeight}>
@@ -954,6 +916,10 @@ export function AdminRequestDetailScreen({
                 value={detail.endCustomerName?.trim() || '—'}
               />
               <MetaCell
+                label={t('mobile.adminRequest.endCustomerPhone')}
+                value={detail.endCustomerPhone?.trim() || '—'}
+              />
+              <MetaCell
                 label={t('mobile.adminRequest.deliveryAddress')}
                 value={detail.deliveryAddress?.trim() || '—'}
               />
@@ -980,6 +946,14 @@ export function AdminRequestDetailScreen({
               multiline
               copyable
             />
+            {detail.notes?.trim() ? (
+              <View style={{ gap: 2 }}>
+                <AppText variant="caption" color="muted">
+                  {t('mobile.adminRequest.dealerNotes')}
+                </AppText>
+                <AppText variant="body">{detail.notes.trim()}</AppText>
+              </View>
+            ) : null}
 
             <SecondaryButton
               label={t('mobile.adminRequest.save')}
@@ -1088,167 +1062,13 @@ export function AdminRequestDetailScreen({
               </AppText>
             ) : (
               <View style={{ gap: theme.spacing.sm }}>
-                {(detail.items ?? []).map((item, index) => {
-                  const complexity = complexityLabel(item.manufacturingComplexity, t);
-                  return (
-                  <View
-                    key={item.id ?? `${item.productName}-${index}`}
-                    style={{
-                      padding: theme.spacing.md,
-                      borderRadius: theme.radius.lg,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      backgroundColor: colors.surfaceSecondary,
-                      gap: theme.spacing.sm,
-                    }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                        gap: theme.spacing.sm,
-                      }}
-                    >
-                      <AppText
-                        variant="label"
-                        weight={titleWeight}
-                        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
-                        numberOfLines={4}
-                      >
-                        {item.productName}
-                      </AppText>
-                      {item.variantLabel ? (
-                        <AppText variant="caption" color="muted">
-                          {item.variantLabel}
-                        </AppText>
-                      ) : null}
-                      <View
-                        style={{
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          flexWrap: 'wrap',
-                          gap: theme.spacing.xs,
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          maxWidth: '48%',
-                        }}
-                      >
-                        {complexity ? (
-                          <View
-                            style={{
-                              paddingHorizontal: theme.spacing.sm,
-                              paddingVertical: 4,
-                              borderRadius: theme.radius.md,
-                              backgroundColor: colors.warningSoft,
-                              borderWidth: 1,
-                              borderColor: colors.warning,
-                            }}
-                          >
-                            <AppText
-                              variant="caption"
-                              weight="semibold"
-                              style={{ color: colors.warning }}
-                            >
-                              {complexity}
-                            </AppText>
-                          </View>
-                        ) : null}
-                        <View
-                          style={{
-                            paddingHorizontal: theme.spacing.sm,
-                            paddingVertical: 4,
-                            borderRadius: theme.radius.md,
-                            backgroundColor: colors.brandSoft,
-                            borderWidth: 1,
-                            borderColor: colors.brand,
-                          }}
-                        >
-                          <AppText
-                            variant="caption"
-                            weight="semibold"
-                            style={{ color: colors.brand }}
-                            dir="ltr"
-                          >
-                            ×{String(item.quantity)}
-                          </AppText>
-                        </View>
-                      </View>
-                    </View>
-                    {(item.notes || item.description) ? (
-                      <View style={{ gap: 2 }}>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{
-                            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                            letterSpacing: locale === 'ar' ? 0 : 0.5,
-                            fontSize: 10,
-                          }}
-                        >
-                          {t('mobile.adminRequest.itemNotes')}
-                        </AppText>
-                        <AppText variant="caption" color="secondary">
-                          {item.notes || item.description}
-                        </AppText>
-                      </View>
-                    ) : null}
-                    {formatRequestItemSpec(item) !== '—' ? (
-                      <View style={{ gap: 2 }}>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{
-                            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                            letterSpacing: locale === 'ar' ? 0 : 0.5,
-                            fontSize: 10,
-                          }}
-                        >
-                          {t('mobile.adminRequest.specs')}
-                        </AppText>
-                        <AppText variant="caption" color="secondary">
-                          {formatRequestItemSpec(item)}
-                        </AppText>
-                      </View>
-                    ) : null}
-                    {(item.provenance ?? []).some((row) => row.source !== 'missing') ? (
-                      <View style={{ gap: theme.spacing.xs }}>
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.adminRequest.aiVsDealer')}
-                        </AppText>
-                        {(item.provenance ?? [])
-                          .filter((row) => row.source !== 'missing')
-                          .map((row) => (
-                            <AppText key={row.key} variant="caption" color="secondary">
-                              {row.key}: {t('mobile.adminRequest.aiValue')} {row.ai ?? '—'} ·{' '}
-                              {t('mobile.adminRequest.dealerValue')} {row.dealer ?? '—'}
-                            </AppText>
-                          ))}
-                      </View>
-                    ) : null}
-                    {canUpdate && item.id ? (
-                      <View style={{ gap: theme.spacing.sm }}>
-                        <SecondaryButton
-                          label={t('mobile.adminRequest.confirmSpec')}
-                          onPress={() =>
-                            verifyMutation.mutate({ itemId: item.id, action: 'CONFIRM' })
-                          }
-                          loading={verifyMutation.isPending}
-                          style={floorBtn}
-                        />
-                        <TertiaryButton
-                          label={t('mobile.adminRequest.correctSpec')}
-                          onPress={() => {
-                            void haptics.selection();
-                            setCorrectItem(item);
-                          }}
-                          loading={verifyMutation.isPending}
-                          style={floorBtn}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                  );
-                })}
+                {(detail.items ?? []).map((item) => (
+                  <RfqLineTicket
+                    key={item.id ?? item.productName}
+                    requestId={requestId}
+                    item={item}
+                  />
+                ))}
               </View>
             )}
           </DealerBoard>
@@ -1452,11 +1272,14 @@ export function AdminRequestDetailScreen({
                     style={floorBtn}
                   />
                 ) : null}
-                <TextField
-                  label={t('mobile.adminRequest.changeDate')}
+                <MonthCalendar
                   value={deliveryChangeDate}
-                  onChangeText={setDeliveryChangeDate}
-                  placeholder="YYYY-MM-DD"
+                  onSelect={setDeliveryChangeDate}
+                  monthCursor={deliveryCursor}
+                  onMonthChange={setDeliveryCursor}
+                  variant="admin"
+                  embedded
+                  disableUnavailable={false}
                 />
                 <TextField
                   label={t('mobile.adminRequest.changeDateReason')}
@@ -1651,21 +1474,6 @@ export function AdminRequestDetailScreen({
         cancelLabel={t('mobile.adminRequest.cancel')}
         destructive
         onConfirm={() => workflowMutation.mutate({ kind: 'close' })}
-      />
-      <SpecCorrectSheet
-        open={Boolean(correctItem)}
-        item={correctItem}
-        onClose={() => setCorrectItem(null)}
-        onSave={(fields) => {
-          if (!correctItem?.id) return;
-          verifyMutation.mutate({
-            itemId: correctItem.id,
-            action: 'CORRECT',
-            message: formatRequestItemSpec(correctItem),
-            fields,
-          });
-          setCorrectItem(null);
-        }}
       />
     </AppScreen>
   );

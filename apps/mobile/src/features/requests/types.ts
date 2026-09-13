@@ -67,7 +67,10 @@ export type RequestItem = {
     code?: string | null;
     nameEn?: string | null;
     nameAr?: string | null;
+    note?: string | null;
   }> | null;
+  photoDocumentIds?: string[] | null;
+  primaryImageDocumentId?: string | null;
   provenance?: Array<{
     key: string;
     ai: string | null;

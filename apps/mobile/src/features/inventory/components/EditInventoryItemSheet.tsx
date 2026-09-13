@@ -4,7 +4,9 @@ import { AppText } from '@/components/AppText';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import {
   INVENTORY_CATEGORY_FOR_CREATE,
   categoryGroupFromCategory,
@@ -56,8 +58,11 @@ export function EditInventoryItemSheet({
 
   const [materialGroup, setMaterialGroup] =
     useState<InventoryCategoryGroup>('fabric');
+  const [name, setName] = useState('');
+  const [originalName, setOriginalName] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
+  const [nameHe, setNameHe] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [minStock, setMinStock] = useState('0');
   const [reorderQty, setReorderQty] = useState('0');
@@ -72,6 +77,7 @@ export function EditInventoryItemSheet({
   const [photoDirty, setPhotoDirty] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
   const [unitSheet, setUnitSheet] = useState(false);
   const [typeSheet, setTypeSheet] = useState(false);
   const measureEditor = useInventoryMeasurementEditor(
@@ -96,9 +102,13 @@ export function EditInventoryItemSheet({
   useEffect(() => {
     if (!open || !item) return;
     const group = categoryGroupFromCategory(item.category);
+    const shown = localizedName(locale, item, item.name);
     setMaterialGroup(group);
+    setName(shown);
+    setOriginalName(shown);
     setNameEn(item.nameEn);
     setNameAr(item.nameAr);
+    setNameHe(item.nameHe ?? '');
     setUnit(item.unit || 'pcs');
     setMinStock(String(item.minStock ?? 0));
     setReorderQty(item.reorderQty != null && item.reorderQty > 0 ? String(item.reorderQty) : '0');
@@ -114,7 +124,7 @@ export function EditInventoryItemSheet({
     setError(null);
     setUnitSheet(false);
     setTypeSheet(false);
-  }, [open, item]);
+  }, [open, item, locale]);
 
   function selectMaterialGroup(next: InventoryCategoryGroup) {
     setMaterialGroup(next);
@@ -123,16 +133,25 @@ export function EditInventoryItemSheet({
     );
   }
 
-  function submit() {
-    if (!nameEn.trim() || !nameAr.trim()) {
-      setError(t('mobile.inventory.editItemRequired'));
+  async function submit() {
+    if (!name.trim()) {
+      setError(t('catalog.namesRequired'));
       return;
     }
     setError(null);
-    const body: UpdateInventoryItemInput = {
-      nameEn: nameEn.trim(),
-      nameAr: nameAr.trim(),
-      unit: unit.trim() || 'pcs',
+    setTranslating(true);
+    try {
+      const names = await resolveTrilingualIfChanged({
+        typed: name,
+        locale,
+        original: originalName,
+        existing: { nameEn, nameAr, nameHe },
+      });
+      const body: UpdateInventoryItemInput = {
+        nameEn: names.nameEn,
+        nameAr: names.nameAr,
+        nameHe: names.nameHe || null,
+        unit: unit.trim() || 'pcs',
       category: INVENTORY_CATEGORY_FOR_CREATE[materialGroup],
       materialType: materialGroup,
       minStock: Number(minStock) || 0,
@@ -151,6 +170,9 @@ export function EditInventoryItemSheet({
       body.imageUrl = photoRemoteUrl;
     }
     onSubmit(body);
+    } finally {
+      setTranslating(false);
+    }
   }
 
   return (
@@ -174,16 +196,7 @@ export function EditInventoryItemSheet({
               }}
             />
           ) : null}
-          <TextField
-            label={t('mobile.inventory.nameEn')}
-            value={nameEn}
-            onChangeText={setNameEn}
-          />
-          <TextField
-            label={t('mobile.inventory.nameAr')}
-            value={nameAr}
-            onChangeText={setNameAr}
-          />
+          <LocaleNameField value={name} onChange={setName} />
           <InventoryPickerRow
             label={t('mobile.inventory.unit')}
             value={unit}
@@ -244,8 +257,8 @@ export function EditInventoryItemSheet({
           primaryLabel={t('mobile.inventory.saveItem')}
           onPrimary={submit}
           onSecondary={onClose}
-          loading={loading || photoBusy}
-          disabled={loading || photoBusy || !item}
+          loading={loading || photoBusy || translating}
+          disabled={loading || photoBusy || translating || !item}
         />
       </BottomSheet>
 
@@ -258,6 +271,7 @@ export function EditInventoryItemSheet({
         draft={measureEditor.draft}
         setDraft={measureEditor.setDraft}
         save={measureEditor.save}
+        saving={measureEditor.saving}
       />
       <InventoryUnitPickerSheet
         open={unitSheet}

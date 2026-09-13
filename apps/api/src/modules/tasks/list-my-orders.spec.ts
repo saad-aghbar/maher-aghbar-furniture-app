@@ -182,6 +182,20 @@ describe('TasksService.listMyOrders assignment', () => {
     expect(found.orders[0]?.items[0]?.id).toBe('po-1');
   });
 
+  it('uses the frozen custom photo when the PO has no catalog product image', async () => {
+    const custom = {
+      ...assignedCarpentry,
+      product: { ...assignedCarpentry.product, imageUrl: null },
+      salesOrderLine: {
+        orderSpec: { productImageRef: 'https://example.com/custom.jpg' },
+        variant: null,
+      },
+    };
+    const { service } = makeService([custom]);
+    const result = await service.listMyOrders('worker-a', 'open');
+    expect(result.orders[0]?.items[0]?.productImageUrl).toBe('https://example.com/custom.jpg');
+  });
+
   it('groups three production orders on the same sales order into one card', async () => {
     const second = {
       ...assignedCarpentry,
@@ -243,5 +257,62 @@ describe('TasksService.listMyOrders assignment', () => {
     expect(result.orders[1]?.salesOrderId).toBeNull();
     expect(result.orders[1]?.items[0]?.id).toBe('po-orphan');
     expect(result.orders[1]?.items[0]?.variantLabel).toBe('Return seat');
+  });
+
+  it('includes sibling sales-order POs as read-only when the worker is assigned to another line', async () => {
+    const sibling = {
+      ...assignedCarpentry,
+      id: 'po-sib',
+      number: 'PO-SIB',
+      productDescription: 'Matching ottoman',
+      salesOrderId: 'so-1',
+      salesOrderLineId: 'line-sib',
+      originType: 'SALES_ORDER',
+      variantLabel: 'Ottoman',
+      variantSku: 'CUS-OTT',
+      tasks: [],
+    };
+    const productionOrderFindMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ ...assignedCarpentry, salesOrderId: 'so-1' }])
+      .mockResolvedValueOnce([sibling]);
+    const prisma = {
+      productionOrder: { findMany: productionOrderFindMany },
+      factoryCalendar: { findFirst: jest.fn().mockResolvedValue({ timezone: 'Asia/Amman' }) },
+    };
+    const service = new TasksService(
+      prisma as unknown as PrismaService,
+      {} as StagePipelineService,
+      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn(), onStageQtyProgress: jest.fn() } as never,
+      { hasUsageRows: jest.fn().mockResolvedValue(false), finalizeForTask: jest.fn(), ensureExpectedLines: jest.fn(), recordLines: jest.fn() } as never,
+      {
+        registerFromTaskComplete: jest.fn(),
+        markConsumedForStage: jest.fn(),
+        claimRequirementsForTask: jest.fn().mockResolvedValue({
+          required: false,
+          kits: [],
+          unclaimed: [],
+          allClaimed: true,
+        }),
+      } as never,
+      {} as InvoicesService,
+      { createAccessToken: jest.fn(() => 'tok') } as unknown as LocalStorageService,
+      mockIdempotency(),
+      {
+        sendFromTemplate: jest.fn().mockResolvedValue({ ok: true }),
+        notifyAdminUsers: jest.fn().mockResolvedValue({ ok: true }),
+        notifyCustomerUsers: jest.fn().mockResolvedValue({ ok: true }),
+      } as never,
+    );
+    const result = await service.listMyOrders('worker-a', 'open');
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0]?.items).toHaveLength(2);
+    expect(result.orders[0]?.items.map((item) => item.id)).toEqual(['po-1', 'po-sib']);
+    expect(result.orders[0]?.items[0]).toMatchObject({ assignedToMe: true, id: 'po-1' });
+    expect(result.orders[0]?.items[1]).toMatchObject({
+      assignedToMe: false,
+      id: 'po-sib',
+      myTaskCount: 0,
+    });
   });
 });

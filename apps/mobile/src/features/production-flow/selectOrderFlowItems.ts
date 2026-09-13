@@ -91,6 +91,6 @@ export function selectOrderFlowItems(
   });
 }
 
-export function shouldSkipOrderFlowList(items: OrderFlowItem[]): boolean {
-  return items.length === 1;
+export function shouldSkipOrderFlowList(_items: OrderFlowItem[]): boolean {
+  return false;
 }

@@ -20,13 +20,14 @@ import {
   type ProductLike,
   type ProductVariantLike,
 } from '@maher/types';
-import { dealerOrCatalogOptions, pickRfqItemForLine, type RfqSpecItem } from './rfq-item-spec';
+import { dealerOrCatalogOptions, mergeLineSpec, pickRfqItemForLine, type RfqSpecItem } from './rfq-item-spec';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { calcLineTotals, roundMoney } from '../../common/helpers/money.util';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { CreateQuotationDto, ListQuotationsDto, UpdateQuotationDto } from './dto/quotation.dto';
+import { mergeQuotationDraftLines } from './merge-quotation-draft-lines';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SalesOrdersService } from '../sales-orders/sales-orders.service';
 import {
@@ -239,6 +240,13 @@ export class QuotationsService {
       lineTotal: totals.lineTotal,
       manufacturingComplexity: parseManufacturingComplexity(line.manufacturingComplexity),
       customMeasurements: this.lineCustomMeasurementsJson(line.customMeasurements),
+      lineSpec: line.lineSpec
+        ? (line.lineSpec as unknown as Prisma.InputJsonValue)
+        : undefined,
+      photoDocumentIds: line.photoDocumentIds?.length
+        ? (line.photoDocumentIds as unknown as Prisma.InputJsonValue)
+        : undefined,
+      primaryImageDocumentId: line.primaryImageDocumentId,
       sortOrder: index,
     };
   }
@@ -850,7 +858,8 @@ export class QuotationsService {
     if (dto.internalNotes !== undefined) data.internalNotes = dto.internalNotes || null;
 
     if (dto.lines?.length) {
-      const resolved = await this.resolveSellerLines(quotation.customerId, dto.lines);
+      const merged = mergeQuotationDraftLines(quotation.lines ?? [], dto.lines);
+      const resolved = await this.resolveSellerLines(quotation.customerId, merged);
       const lineData = resolved.map((_, index) => this.buildLineData(resolved, index));
       const totals = this.sumQuotation(lineData);
       Object.assign(data, totals);
@@ -1274,14 +1283,23 @@ export class QuotationsService {
                     });
                   const rfqItems = (quotation.request as { items?: RfqSpecItem[] } | null)?.items;
                   const rfqItem = pickRfqItemForLine(rfqItems, line, index);
-                  const snapshotOptions = dealerOrCatalogOptions(
+                  const quoteSpec = mergeLineSpec(
+                    line as {
+                      lineSpec?: unknown;
+                      photoDocumentIds?: unknown;
+                      primaryImageDocumentId?: string | null;
+                    },
                     rfqItem,
+                  );
+                  const snapshotOptions = dealerOrCatalogOptions(
+                    { options: quoteSpec.options ?? rfqItem?.options },
                     (effective?.options ?? []).map((row) => ({
                       specOptionValueId: row.specOptionValueId,
                       qty: row.qty != null ? Number(row.qty) : null,
                       note: row.note ?? null,
                     })),
                   );
+                  const linePhotoIds = quoteSpec.photoDocumentIds ?? [];
                   const orderSpec = buildOrderLineSpecSnapshot({
                     productId: line.productId,
                     variantId,
@@ -1294,34 +1312,46 @@ export class QuotationsService {
                       effective?.nameAr ??
                       effective?.nameEn ??
                       null,
+                    variantCode:
+                      (effective as { code?: string | null } | null)?.code ??
+                      (line as { variantSku?: string | null }).variantSku ??
+                      null,
+                    modelSku: product?.sku ?? null,
                     productName: line.description,
-                    productImageRef: effective?.imageUrl ?? product?.imageUrl ?? null,
+                    productImageRef: line.productId
+                      ? effective?.imageUrl ?? product?.imageUrl ?? null
+                      : null,
+                    primaryImageDocumentId: quoteSpec.primaryImageDocumentId,
                     quantity: Number(line.quantity),
-                    catalog: catalogRef,
+                    catalog: catalogRef
+                      ? { ...catalogRef, sku: product?.sku ?? null }
+                      : catalogRef,
                     width: line.width != null ? Number(line.width) : null,
                     height: line.height != null ? Number(line.height) : null,
                     depth: line.depth != null ? Number(line.depth) : null,
+                    seatHeight: quoteSpec.seatHeight,
                     fabric: line.fabric,
                     color: line.color,
                     fabrics: rfqItem?.fabrics ?? (line as { fabrics?: unknown }).fabrics,
                     material: line.material,
-                    woodType: (rfqItem?.woodType as string | null | undefined) ?? undefined,
-                    woodColor: (rfqItem?.woodColor as string | null | undefined) ?? undefined,
-                    foamDensity: (rfqItem?.foamDensity as string | null | undefined) ?? undefined,
-                    finish: (rfqItem?.finish as string | null | undefined) ?? undefined,
-                    accessories: (rfqItem?.accessories as string | null | undefined) ?? undefined,
+                    woodType: quoteSpec.woodType ?? undefined,
+                    woodColor: quoteSpec.woodColor ?? undefined,
+                    foamDensity: quoteSpec.foamDensity ?? undefined,
+                    finish: quoteSpec.finish ?? undefined,
+                    accessories: quoteSpec.accessories ?? undefined,
+                    notes: quoteSpec.notes ?? undefined,
                     customMeasurements: (
                       line as { customMeasurements?: unknown }
                     ).customMeasurements,
                     manufacturingComplexity: complexity,
-                    attachmentIds,
+                    attachmentIds: [...new Set([...attachmentIds, ...linePhotoIds])],
                     dealerReference: requestRow?.externalOrderNumber ?? null,
                     requiredDeliveryDate: requiredDeliveryDate ?? null,
                     options: snapshotOptions.length
                       ? (snapshotOptions as OrderSpecOption[])
                       : catalogFromVariant?.options,
                     composition: catalogFromVariant?.composition,
-                    orientation: rfqItem?.orientation as string | null | undefined,
+                    orientation: quoteSpec.orientation ?? (rfqItem?.orientation as string | null | undefined),
                     includedItems: catalogFromVariant?.includedItems,
                   });
                   const optionCreates = snapshotOptions

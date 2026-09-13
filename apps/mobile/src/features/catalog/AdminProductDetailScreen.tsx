@@ -39,11 +39,12 @@ import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CategoryPickerSheet } from './components/CategoryPickerSheet';
-import { BilingualNameField } from './components/BilingualNameField';
+import { LocaleNameField } from './components/BilingualNameField';
 import { CatalogFloorEmpty } from './components/CatalogFloorList';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
@@ -60,18 +61,25 @@ import {
 } from './productPhotoUpload';
 
 type Draft = {
+  name: string;
+  originalName: string;
   nameEn: string;
   nameAr: string;
+  nameHe: string;
   description: string;
   categoryId: string | null;
   photos: string[];
   isActive: boolean;
 };
 
-function toDraft(p: AdminProductDetail): Draft {
+function toDraft(p: AdminProductDetail, locale: string): Draft {
+  const name = localizedName(locale, p, '');
   return {
+    name,
+    originalName: name,
     nameEn: p.nameEn ?? '',
     nameAr: p.nameAr ?? '',
+    nameHe: p.nameHe ?? '',
     description: p.description ?? '',
     categoryId: p.categoryId ?? null,
     photos: mergeProductPhotos(p.imageUrl, p.galleryUrls),
@@ -126,14 +134,14 @@ export function AdminProductDetailScreen({ productId }: Props) {
   });
 
   useEffect(() => {
-    if (productQuery.data) setDraft(toDraft(productQuery.data));
-  }, [productQuery.data]);
+    if (productQuery.data) setDraft(toDraft(productQuery.data, locale));
+  }, [productQuery.data, locale]);
 
   const saveMutation = useMutation({
     mutationFn: (body: AdminProductPatch) => patchAdminProduct(productId, body),
     onSuccess: (data) => {
       void haptics.confirmMedium();
-      setDraft(toDraft(data));
+      setDraft(toDraft(data, locale));
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog.adminDetail(productId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.catalog.lists() });
       showToast({ message: t('mobile.adminProduct.saved'), variant: 'success' });
@@ -163,12 +171,23 @@ export function AdminProductDetailScreen({ productId }: Props) {
     return cat.nameEn || cat.nameAr;
   }, [draft?.categoryId, categories, productQuery.data?.category, locale]);
 
-  const onSave = () => {
+  const onSave = async () => {
     if (!draft) return;
+    const names = await resolveTrilingualIfChanged({
+      typed: draft.name,
+      locale,
+      original: draft.originalName,
+      existing: {
+        nameEn: draft.nameEn,
+        nameAr: draft.nameAr,
+        nameHe: draft.nameHe,
+      },
+    });
     const split = splitProductPhotos(draft.photos);
     const body: AdminProductPatch = {
-      nameEn: draft.nameEn.trim(),
-      nameAr: draft.nameAr.trim(),
+      nameEn: names.nameEn,
+      nameAr: names.nameAr,
+      nameHe: names.nameHe || null,
       description: draft.description.trim() || null,
       categoryId: draft.categoryId,
       imageUrl: split.imageUrl,
@@ -223,7 +242,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
     locale,
     nameEn: draft.nameEn,
     nameAr: draft.nameAr,
-    nameHe: productQuery.data?.nameHe,
+    nameHe: draft.nameHe,
     sku,
     fallback: t('catalog.product'),
   });
@@ -455,11 +474,9 @@ export function AdminProductDetailScreen({ productId }: Props) {
               </View>
             </View>
 
-            <BilingualNameField
-              arabic={draft.nameAr}
-              english={draft.nameEn}
-              onArabicChange={(v) => set('nameAr', v)}
-              onEnglishChange={(v) => set('nameEn', v)}
+            <LocaleNameField
+              value={draft.name}
+              onChange={(v) => set('name', v)}
             />
             <TextField
               label={t('catalog.description')}

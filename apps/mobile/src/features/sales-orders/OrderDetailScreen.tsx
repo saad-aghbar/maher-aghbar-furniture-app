@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   Linking,
   RefreshControl,
   StyleSheet,
@@ -19,7 +20,8 @@ import { returnProductionOrderToPreparing } from '@/api/modules/production';
 import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { mapConfirmReceiptErrorCode } from '@maher/types';
+import { mapConfirmReceiptErrorCode, manufacturingComplexityDisplayKey } from '@maher/types';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { seedOrdersDeskChip } from './ordersDeskContext';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { openInvoicePdf } from '@/api/modules/invoices';
@@ -1233,14 +1235,16 @@ export function OrderDetailScreen({
               <OrderBoardCard>
                 <OrderSectionHeader
                   icon="cube-outline"
-                  label={t('mobile.orderDetail.whatTheyOrdered')}
+                  label={t('mobile.orderDetail.items')}
                 />
                 {vm.items.length === 0 ? (
                   <AppText variant="caption" color="muted">
                     {t('mobile.orderDetail.noCustomerItems')}
                   </AppText>
                 ) : (
-                  vm.items.map((item) => <LineItemCard key={item.id} item={item} t={t} />)
+                  vm.items.map((item) => (
+                    <LineItemCard key={item.id} item={item} t={t} />
+                  ))
                 )}
               </OrderBoardCard>
             </ListItemEnter>
@@ -1856,8 +1860,10 @@ function LineItemCard({
   item: OrderLineItemView;
   t: (key: string) => string;
 }) {
-  const { colors, theme } = useTheme();
-  const { isRTL } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const { isRTL, locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const kind = manufacturingComplexityDisplayKey(item.manufacturingComplexity);
   const nameParts = splitLineStatusFragment(item.productName);
   const descParts = splitLineStatusFragment(item.description);
   const statusFragment = nameParts.fragment ?? descParts.fragment;
@@ -1882,36 +1888,67 @@ function LineItemCard({
   return (
     <View
       style={{
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: theme.radius.lg,
-        padding: theme.spacing.sm,
-        gap: theme.spacing.xs,
-        backgroundColor: colors.surfaceSecondary,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surface,
         overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
       }}
     >
       <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          width: 3,
+          backgroundColor: colors.brand,
+          opacity: 0.55,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+        }}
+      />
+      <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
+          gap: theme.spacing.md,
+          padding: theme.spacing.md,
+          ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
         <View
           style={{
-            flex: 1,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: theme.spacing.xs,
+            width: 72,
+            height: 72,
+            borderRadius: theme.radius.lg,
+            overflow: 'hidden',
+            backgroundColor: colors.surfaceSecondary,
           }}
         >
+          {item.imageUrl ? (
+            <Image source={{ uri: item.imageUrl }} style={{ width: 72, height: 72 }} />
+          ) : (
+            <EmptyProductImage />
+          )}
+        </View>
+        <View style={{ flex: 1, gap: theme.spacing.xs }}>
           {productName ? (
-            <AppText variant="body" weight="semibold" style={{ flexShrink: 1 }}>
+            <AppText variant="body" weight={titleWeight} numberOfLines={2}>
               {productName}
             </AppText>
+          ) : null}
+          {item.variantLabel ? (
+            <AppText variant="caption" color="muted">
+              {item.variantLabel}
+            </AppText>
+          ) : null}
+          {item.manufacturingComplexity ? (
+            <AppText variant="caption">
+              {t(`mobile.lineKind.${kind}`)}
+              {item.quantity != null ? ` · × ${item.quantity}` : ''}
+            </AppText>
+          ) : item.quantity != null ? (
+            <AppText variant="caption">× {item.quantity}</AppText>
           ) : null}
           {statusFragment ? (
             <StatusBadge
@@ -1921,24 +1958,56 @@ function LineItemCard({
             />
           ) : null}
         </View>
-        {item.quantity != null ? (
-          <AppText variant="caption" color="secondary">
-            × {item.quantity}
-          </AppText>
-        ) : null}
       </View>
       {description ? (
-        <AppText variant="caption" color="secondary">
+        <AppText
+          variant="caption"
+          color="secondary"
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingBottom: bits.length || item.productionStatus || item.notes ? 0 : theme.spacing.md,
+            ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
           {description}
         </AppText>
       ) : null}
       {bits.length ? (
-        <AppText variant="caption" color="muted">
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingBottom: item.productionStatus || item.notes ? 0 : theme.spacing.md,
+            ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
           {bits.join(' · ')}
         </AppText>
       ) : null}
+      {item.productionStatus ? (
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingBottom: item.notes ? 0 : theme.spacing.md,
+            ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
+          {t(`statuses.${item.productionStatus}`)}
+        </AppText>
+      ) : null}
       {item.notes ? (
-        <AppText variant="caption" color="secondary">
+        <AppText
+          variant="caption"
+          color="secondary"
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingBottom: theme.spacing.md,
+            ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
           {item.notes}
         </AppText>
       ) : null}

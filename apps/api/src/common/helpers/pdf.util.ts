@@ -1100,11 +1100,52 @@ async function qrPngBuffer(
       type: 'png',
       margin: 1,
       width: Math.max(128, Math.round(pixelSize)),
-      errorCorrectionLevel: 'M',
+      errorCorrectionLevel: 'H',
     });
   } catch {
     return null;
   }
+}
+
+const QR_MARK_PATH = path.join(BRAND_DIR, 'watermark-mark.png');
+/** White badge — a little larger than the first branded QR pass. */
+const QR_BADGE_RATIO = 0.28;
+const QR_LOGO_RATIO = 0.24;
+
+/**
+ * Draw a scannable QR with the sofa M centered on a white badge.
+ * Always uses the light brown mark — never the inverted dark-theme mark.
+ */
+function drawBrandedQr(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  size: number,
+  png: Buffer,
+): void {
+  try {
+    doc.image(png, x, y, { width: size, height: size });
+  } catch {
+    return;
+  }
+  if (!fs.existsSync(QR_MARK_PATH)) return;
+  const badge = Math.max(16, Math.round(size * QR_BADGE_RATIO));
+  const logo = Math.max(12, Math.round(size * QR_LOGO_RATIO));
+  const radius = Math.max(2, Math.round(badge * 0.12));
+  const badgeX = x + (size - badge) / 2;
+  const badgeY = y + (size - badge) / 2;
+  const logoX = x + (size - logo) / 2;
+  const logoY = y + (size - logo) / 2;
+  doc.save();
+  try {
+    doc.opacity(1);
+    doc.fillColor('#FFFFFF');
+    doc.roundedRect(badgeX, badgeY, badge, badge, radius).fill();
+    doc.image(QR_MARK_PATH, logoX, logoY, { width: logo });
+  } catch {
+    /* ignore decode errors */
+  }
+  doc.restore();
 }
 
 /**
@@ -1353,11 +1394,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
         doc.y += 8;
       }
       const qrX = rtl ? PAGE_MARGIN + usable - QR_SIZE : PAGE_MARGIN;
-      try {
-        doc.image(qrPng, qrX, doc.y, { width: QR_SIZE });
-      } catch {
-        /* ignore decode errors */
-      }
+      drawBrandedQr(doc, qrX, doc.y, QR_SIZE, qrPng);
       doc.y += QR_SIZE + 8;
     }
 
@@ -1546,11 +1583,7 @@ export async function buildInventoryLabelPdf(
         .lineWidth(1.15)
         .roundedRect(cardX, cardY, card, card, 14)
         .fillAndStroke('#FFFFFF', palette.rule);
-      try {
-        doc.image(qrPng, cardX + pad, cardY + pad, { width: qrSize });
-      } catch {
-        /* ignore */
-      }
+      drawBrandedQr(doc, cardX + pad, cardY + pad, qrSize, qrPng);
       doc.restore();
       doc.y = cardY + card + 8;
     }
@@ -1738,7 +1771,7 @@ export async function buildInventoryItemReportPdf(
         .save()
         .roundedRect(qrX - 8, doc.y - 8, REPORT_QR_SIZE + 16, REPORT_QR_SIZE + 16, 6)
         .fillAndStroke('#FFFFFF', palette.rule);
-      doc.image(qrPng, qrX, doc.y, { width: REPORT_QR_SIZE });
+      drawBrandedQr(doc, qrX, doc.y, REPORT_QR_SIZE, qrPng);
       doc.restore();
     } catch {
       /* ignore */
@@ -1861,7 +1894,7 @@ export async function buildBinLabelSheetPdf(opts: {
         const png = pngs[i + idx];
         const qrX = x + (cellW - qrSize) / 2;
         if (png) {
-          doc.image(png, qrX, y + 10, { width: qrSize, height: qrSize });
+          drawBrandedQr(doc, qrX, y + 10, qrSize, png);
         }
         const textY = y + 10 + qrSize + 6;
         drawMixedText(doc, item.title, {

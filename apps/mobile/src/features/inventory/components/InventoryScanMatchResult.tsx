@@ -1,9 +1,10 @@
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import type { InventoryItem } from '../api';
 import {
   formatInventoryMaterialType,
@@ -15,6 +16,9 @@ export type InventoryScanMatchKind =
   | 'MATCH'
   | 'MISMATCH'
   | 'UNKNOWN'
+  | 'SHELF'
+  | 'KIT'
+  | 'LOT'
   | 'ARCHIVED'
   | 'DISALLOWED'
   | 'ORDER_FABRIC'
@@ -77,10 +81,11 @@ export function InventoryScanMatchResult({
   onOpenFabric,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const scannedCard = scanned ? selectInventoryItemCard(scanned, locale) : null;
   const scannedType = formatInventoryMaterialType(scannedCard?.materialType, t);
   const row = isRTL ? ('row-reverse' as const) : ('row' as const);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   if (kind === 'MATCH') {
     return (
@@ -91,12 +96,13 @@ export function InventoryScanMatchResult({
         })}
         style={{
           borderRadius: theme.radius.xl,
-          borderWidth: 1.5,
+          borderWidth: 1,
           borderColor: colors.success,
           backgroundColor: colors.successSoft,
           padding: theme.spacing.md,
           gap: theme.spacing.sm,
           overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
@@ -105,8 +111,9 @@ export function InventoryScanMatchResult({
             top: 0,
             bottom: 0,
             [isRTL ? 'right' : 'left']: 0,
-            width: 4,
+            width: 3,
             backgroundColor: colors.success,
+            opacity: 0.9,
           }}
         />
         <View
@@ -132,10 +139,10 @@ export function InventoryScanMatchResult({
             <Ionicons name="checkmark-circle" size={28} color={colors.success} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <AppText variant="caption" weight="semibold" color="success">
+            <AppText variant="caption" weight={titleWeight} color="success">
               {t('mobile.inventory.labelConfirmed')}
             </AppText>
-            <AppText variant="body" weight="semibold">
+            <AppText variant="body" weight={titleWeight}>
               {current.name}
             </AppText>
             <AppText variant="caption" color="muted" dir="ltr">
@@ -158,12 +165,13 @@ export function InventoryScanMatchResult({
         accessibilityLabel={t('mobile.inventory.fabricScanNotStockTitle')}
         style={{
           borderRadius: theme.radius.xl,
-          borderWidth: 1.5,
+          borderWidth: 1,
           borderColor: colors.warning,
           backgroundColor: colors.warningSoft,
           padding: theme.spacing.md,
           gap: theme.spacing.md,
           overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
@@ -172,8 +180,9 @@ export function InventoryScanMatchResult({
             top: 0,
             bottom: 0,
             [isRTL ? 'right' : 'left']: 0,
-            width: 4,
+            width: 3,
             backgroundColor: colors.warning,
+            opacity: 0.9,
           }}
         />
         <View
@@ -199,7 +208,7 @@ export function InventoryScanMatchResult({
             <Ionicons name="color-palette-outline" size={26} color={colors.warning} />
           </View>
           <View style={{ flex: 1, gap: theme.spacing.xs }}>
-            <AppText variant="body" weight="semibold" color="warning">
+            <AppText variant="body" weight={titleWeight} color="warning">
               {t('mobile.inventory.fabricScanNotStockTitle')}
             </AppText>
             <AppText variant="caption" color="secondary">
@@ -225,17 +234,20 @@ export function InventoryScanMatchResult({
             <ActionPill
               label={t('mobile.inventory.fabricScanOpenBundle')}
               tone="brand"
+              titleWeight={titleWeight}
               onPress={onOpenFabric}
             />
           ) : null}
           <ActionPill
             label={t('mobile.inventory.scanAgain')}
             tone="neutral"
+            titleWeight={titleWeight}
             onPress={onScanAgain}
           />
           <ActionPill
             label={t('mobile.inventory.cancel')}
             tone="neutral"
+            titleWeight={titleWeight}
             onPress={onKeepCurrent}
           />
         </View>
@@ -256,7 +268,11 @@ export function InventoryScanMatchResult({
         ? ('alert-circle' as const)
         : kind === 'ARCHIVED'
           ? ('archive-outline' as const)
-          : ('help-circle' as const);
+          : kind === 'SHELF'
+            ? ('file-tray-full-outline' as const)
+            : kind === 'KIT' || kind === 'LOT'
+              ? ('cube-outline' as const)
+              : ('help-circle' as const);
 
   const title =
     kind === 'MISMATCH'
@@ -267,7 +283,13 @@ export function InventoryScanMatchResult({
           ? t('mobile.inventory.cannotUseHere')
           : kind === 'ERROR'
             ? t('mobile.inventory.couldntIdentifyItem')
-            : t('mobile.inventory.itemNotFound');
+            : kind === 'SHELF'
+              ? t('mobile.inventory.scanIsBinTitle')
+              : kind === 'KIT'
+                ? t('mobile.inventory.scanIsKitTitle')
+                : kind === 'LOT'
+                  ? t('mobile.inventory.scanIsLotTitle')
+                  : t('mobile.inventory.itemNotFound');
 
   const body =
     kind === 'MISMATCH'
@@ -277,11 +299,17 @@ export function InventoryScanMatchResult({
         })
       : kind === 'UNKNOWN'
         ? t('mobile.inventory.labelUnknownBody')
-        : kind === 'ARCHIVED'
-          ? t('mobile.inventory.inactiveCannotSelect')
-          : kind === 'ERROR'
-            ? t('mobile.inventory.couldntIdentifyHint')
-            : t('mobile.inventory.cannotUseHere');
+        : kind === 'SHELF'
+          ? t('mobile.inventory.scanIsBinBody')
+          : kind === 'KIT'
+            ? t('mobile.inventory.scanIsKitBody')
+            : kind === 'LOT'
+              ? t('mobile.inventory.scanIsLotBody')
+              : kind === 'ARCHIVED'
+                ? t('mobile.inventory.inactiveCannotSelect')
+                : kind === 'ERROR'
+                  ? t('mobile.inventory.couldntIdentifyHint')
+                  : t('mobile.inventory.cannotUseHere');
 
   const a11y =
     kind === 'MISMATCH'
@@ -297,12 +325,13 @@ export function InventoryScanMatchResult({
       accessibilityLabel={a11y}
       style={{
         borderRadius: theme.radius.xl,
-        borderWidth: 1.5,
+        borderWidth: 1,
         borderColor: accent,
         backgroundColor: soft,
         padding: theme.spacing.md,
         gap: theme.spacing.md,
         overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
       }}
     >
       <View
@@ -311,8 +340,9 @@ export function InventoryScanMatchResult({
           top: 0,
           bottom: 0,
           [isRTL ? 'right' : 'left']: 0,
-          width: 4,
+          width: 3,
           backgroundColor: accent,
+          opacity: 0.9,
         }}
       />
 
@@ -341,7 +371,7 @@ export function InventoryScanMatchResult({
         <View style={{ flex: 1, gap: theme.spacing.xs }}>
           <AppText
             variant="body"
-            weight="semibold"
+            weight={titleWeight}
             color={tone === 'error' ? 'error' : 'warning'}
           >
             {title}
@@ -367,7 +397,7 @@ export function InventoryScanMatchResult({
           <View style={{ flexDirection: row, alignItems: 'center', gap: theme.spacing.sm }}>
             <AppText
               variant="caption"
-              weight="semibold"
+              weight={titleWeight}
               color={tone === 'error' ? 'error' : 'warning'}
               style={{ flex: 1 }}
             >
@@ -388,7 +418,7 @@ export function InventoryScanMatchResult({
                 }}
               >
                 <Ionicons name="close" size={12} color={accent} />
-                <AppText variant="caption" weight="semibold" color="error">
+                <AppText variant="caption" weight={titleWeight} color="error">
                   ≠
                 </AppText>
               </View>
@@ -397,7 +427,7 @@ export function InventoryScanMatchResult({
           <View style={{ flexDirection: row, gap: theme.spacing.md, alignItems: 'center' }}>
             <InventorySkuThumb uri={scannedCard.imageUrl} size={56} />
             <View style={{ flex: 1, gap: 2 }}>
-              <AppText variant="body" weight="semibold">
+              <AppText variant="body" weight={titleWeight}>
                 {scannedCard.name}
               </AppText>
               <AppText variant="caption" color="muted" dir="ltr">
@@ -438,15 +468,17 @@ export function InventoryScanMatchResult({
               : t('mobile.inventory.scanAgain')
           }
           tone="brand"
+          titleWeight={titleWeight}
           onPress={onScanAgain}
         />
         <ActionPill
           label={
-            kind === 'ERROR' || kind === 'UNKNOWN'
+            kind === 'ERROR' || kind === 'UNKNOWN' || kind === 'SHELF' || kind === 'KIT' || kind === 'LOT'
               ? t('mobile.inventory.cancel')
               : t('mobile.inventory.keepSelectedMaterial')
           }
           tone="neutral"
+          titleWeight={titleWeight}
           onPress={onKeepCurrent}
         />
         {kind === 'MISMATCH' && onUseScanned && scannedCard ? (
@@ -456,6 +488,7 @@ export function InventoryScanMatchResult({
               name: scannedCard.name,
             })}
             tone="danger"
+            titleWeight={titleWeight}
             onPress={() => {
               void haptics.selection();
               onUseScanned();
@@ -472,17 +505,20 @@ function ActionPill({
   onPress,
   tone,
   accessibilityLabel,
+  titleWeight,
 }: {
   label: string;
   onPress: () => void;
   tone: 'brand' | 'neutral' | 'danger';
   accessibilityLabel?: string;
+  titleWeight: 'medium' | 'semibold';
 }) {
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const filled = tone === 'brand';
   const danger = tone === 'danger';
   return (
-    <Pressable
+    <AnimatedPressable
+      variant="button"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       onPress={() => {
@@ -490,8 +526,8 @@ function ActionPill({
         onPress();
       }}
       style={{
-        minHeight: 44,
-        borderRadius: theme.radius.xl,
+        minHeight: theme.sizes.touch.min,
+        borderRadius: theme.radius.full,
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: theme.spacing.md,
@@ -502,11 +538,12 @@ function ActionPill({
             : colors.surface,
         borderWidth: filled ? 0 : 1,
         borderColor: danger ? colors.error : colors.borderStrong,
+        ...(filled ? null : orderBoardShadow(colorScheme)),
       }}
     >
       <AppText
         variant="label"
-        weight="semibold"
+        weight={titleWeight}
         style={
           filled
             ? { color: colors.onBrand }
@@ -518,6 +555,6 @@ function ActionPill({
       >
         {label}
       </AppText>
-    </Pressable>
+    </AnimatedPressable>
   );
 }

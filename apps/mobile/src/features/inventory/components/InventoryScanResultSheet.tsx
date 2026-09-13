@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -6,7 +6,7 @@ import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItem } from '../api';
 import { useInventoryOpenReceiptsQuery, useMaterialDemandQuery } from '../query';
@@ -16,6 +16,7 @@ import {
 } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { InventoryBoardCard, InventoryQtyStrip } from './InventoryBoardCard';
 import { WarehouseBinPlace } from './WarehouseBinBoard';
 
 type Props = {
@@ -61,6 +62,7 @@ export function InventoryScanResultSheet({
   const { t, locale, isRTL, formatDate } = useLocale();
   const { theme, colors } = useTheme();
   const { height } = useWindowDimensions();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const notFound = item === 'not-found';
   const found = item && item !== 'not-found' ? item : null;
   const card = found ? selectInventoryItemCard(found, locale) : null;
@@ -100,9 +102,11 @@ export function InventoryScanResultSheet({
         maxHeight={Math.round(height * 0.45)}
       >
         <View style={{ gap: theme.spacing.md }}>
-          <AppText variant="body" color="muted">
-            {t('mobile.inventory.lookupFailed')}
-          </AppText>
+          <InventoryBoardCard accent={colors.warning}>
+            <AppText variant="body" color="muted">
+              {t('mobile.inventory.lookupFailed')}
+            </AppText>
+          </InventoryBoardCard>
           <InventorySheetFooter
             primaryLabel={t('mobile.inventory.scanAgain')}
             onPrimary={onScanAgain}
@@ -128,12 +132,12 @@ export function InventoryScanResultSheet({
             contentContainerStyle={{ gap: theme.spacing.lg, paddingBottom: theme.spacing.sm }}
             showsVerticalScrollIndicator={false}
           >
-            {/* Hero */}
-            <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
+            <InventoryBoardCard>
+              <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
               <InventorySkuThumb uri={card.imageUrl} size={112} />
               <AppText
                 variant="title"
-                weight="semibold"
+                weight={titleWeight}
                 style={{ textAlign: 'center' }}
                 accessibilityRole="header"
               >
@@ -167,35 +171,22 @@ export function InventoryScanResultSheet({
                   {t('mobile.inventory.unit')}: {card.unit}
                 </AppText>
               </View>
-            </View>
+              </View>
+            </InventoryBoardCard>
 
-            {/* Stock */}
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <StatCell
-                label={t('mobile.inventory.onHand')}
-                value={`${formatQty(card.onHand)} ${card.unit}`}
-              />
-              <StatCell
-                label={t('mobile.inventory.reservedLabel')}
-                value={`${formatQty(card.reservedQty)} ${card.unit}`}
-              />
-              <StatCell
-                label={t('mobile.inventory.available')}
-                value={`${formatQty(card.freeQty)} ${card.unit}`}
-              />
-            </View>
+            <InventoryQtyStrip
+              onHand={card.onHand}
+              reserved={card.reservedQty}
+              available={card.freeQty}
+              emphasizeAvailable
+            />
 
             {/* Warehouses */}
             {card.balances.length > 0 ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <AppText variant="caption" color="muted" weight="semibold">
-                  {t('mobile.inventory.warehousesSection')}
-                </AppText>
+              <InventoryBoardCard
+                title={t('mobile.inventory.warehousesSection')}
+                titleWeight={titleWeight}
+              >
                 {card.balances.map((row, idx) => (
                   <View
                     key={`${row.warehouseId}-${row.locationId ?? idx}`}
@@ -204,7 +195,7 @@ export function InventoryScanResultSheet({
                       justifyContent: 'space-between',
                       alignItems: 'flex-start',
                       paddingVertical: theme.spacing.xs,
-                      borderBottomWidth: 1,
+                      borderBottomWidth: idx === card.balances.length - 1 ? 0 : 1,
                       borderBottomColor: colors.border,
                     }}
                   >
@@ -214,20 +205,20 @@ export function InventoryScanResultSheet({
                         binLabel={row.locationName}
                       />
                     </View>
-                    <AppText variant="body" weight="semibold" dir="ltr">
+                    <AppText variant="body" weight={titleWeight} dir="ltr">
                       {row.quantityLabel}
                     </AppText>
                   </View>
                 ))}
-              </View>
+              </InventoryBoardCard>
             ) : null}
 
             {/* Incoming */}
             {canReceive ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <AppText variant="caption" color="muted" weight="semibold">
-                  {t('mobile.inventory.incoming')}
-                </AppText>
+              <InventoryBoardCard
+                title={t('mobile.inventory.incoming')}
+                titleWeight={titleWeight}
+              >
                 {receipts.length === 0 ? (
                   <AppText variant="caption" color="muted">
                     {t('mobile.inventory.noIncomingSupply')}
@@ -254,7 +245,7 @@ export function InventoryScanResultSheet({
                           backgroundColor: colors.surfaceSecondary,
                         }}
                       >
-                        <AppText variant="body" weight="semibold">
+                        <AppText variant="body" weight={titleWeight}>
                           {row.purchaseOrderNumber}
                         </AppText>
                         <AppText variant="caption" color="muted">
@@ -270,8 +261,9 @@ export function InventoryScanResultSheet({
                       return <View key={row.purchaseOrderId}>{body}</View>;
                     }
                     return (
-                      <Pressable
+                      <AnimatedPressable
                         key={row.purchaseOrderId}
+                        variant="card"
                         accessibilityRole="button"
                         onPress={() => {
                           void haptics.selection();
@@ -279,11 +271,11 @@ export function InventoryScanResultSheet({
                         }}
                       >
                         {body}
-                      </Pressable>
+                      </AnimatedPressable>
                     );
                   })
                 )}
-              </View>
+              </InventoryBoardCard>
             ) : null}
 
             {canReadPo && demand ? (
@@ -308,44 +300,12 @@ export function InventoryScanResultSheet({
               </View>
             ) : null}
 
-            {/* Actions */}
-            {(mutable && (canReceive || canIssue || canTransfer || canCount)) ||
-            onViewDetails ||
-            onQrCode ? (
+            {/* Warehouse ops stay in the scroll; Receive/Issue/QR pin above the footer. */}
+            {(mutable && (canTransfer || canCount)) || onViewDetails ? (
               <View style={{ gap: theme.spacing.md }}>
-                {mutable && (canReceive || canIssue) ? (
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      gap: theme.spacing.sm,
-                    }}
-                  >
-                    {canReceive && onReceive ? (
-                      <PrimaryAction
-                        label={t('mobile.inventory.receive')}
-                        icon="arrow-down-outline"
-                        accessibilityLabel={t('mobile.inventory.a11yReceive', {
-                          name: card.name,
-                        })}
-                        onPress={() => onReceive(found)}
-                      />
-                    ) : null}
-                    {canIssue && onIssue ? (
-                      <PrimaryAction
-                        label={t('mobile.inventory.issue')}
-                        icon="arrow-up-outline"
-                        accessibilityLabel={t('mobile.inventory.a11yIssue', {
-                          name: card.name,
-                        })}
-                        onPress={() => onIssue(found)}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
-
                 {mutable && (canTransfer || canCount) ? (
                   <View style={{ gap: theme.spacing.xs }}>
-                    <AppText variant="caption" color="muted" weight="semibold">
+                    <AppText variant="caption" color="muted" weight={titleWeight}>
                       {t('mobile.inventory.warehouseOps')}
                     </AppText>
                     {canTransfer && onTransfer ? (
@@ -371,38 +331,67 @@ export function InventoryScanResultSheet({
                   </View>
                 ) : null}
 
-                {onViewDetails || onQrCode ? (
+                {onViewDetails ? (
                   <View style={{ gap: theme.spacing.xs }}>
-                    <AppText variant="caption" color="muted" weight="semibold">
+                    <AppText variant="caption" color="muted" weight={titleWeight}>
                       {t('mobile.inventory.itemSection')}
                     </AppText>
-                    {onViewDetails ? (
-                      <ActionRow
-                        icon="document-text-outline"
-                        label={t('mobile.inventory.viewDetails')}
-                        chevron
-                        accessibilityLabel={t('mobile.inventory.a11yViewDetails', {
-                          name: card.name,
-                        })}
-                        onPress={() => onViewDetails(found)}
-                      />
-                    ) : null}
-                    {onQrCode ? (
-                      <ActionRow
-                        icon="qr-code-outline"
-                        label={t('mobile.inventory.qrCode')}
-                        chevron
-                        accessibilityLabel={t('mobile.inventory.a11yShowQr', {
-                          name: card.name,
-                        })}
-                        onPress={() => onQrCode(found)}
-                      />
-                    ) : null}
+                    <ActionRow
+                      icon="document-text-outline"
+                      label={t('mobile.inventory.viewDetails')}
+                      chevron
+                      accessibilityLabel={t('mobile.inventory.a11yViewDetails', {
+                        name: card.name,
+                      })}
+                      onPress={() => onViewDetails(found)}
+                    />
                   </View>
                 ) : null}
               </View>
             ) : null}
           </ScrollView>
+
+          {mutable && (canReceive || canIssue) ? (
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                gap: theme.spacing.sm,
+              }}
+            >
+              {canReceive && onReceive ? (
+                <PrimaryAction
+                  label={t('mobile.inventory.receive')}
+                  icon="arrow-down-outline"
+                  accessibilityLabel={t('mobile.inventory.a11yReceive', {
+                    name: card.name,
+                  })}
+                  onPress={() => onReceive(found)}
+                />
+              ) : null}
+              {canIssue && onIssue ? (
+                <PrimaryAction
+                  label={t('mobile.inventory.issue')}
+                  icon="arrow-up-outline"
+                  accessibilityLabel={t('mobile.inventory.a11yIssue', {
+                    name: card.name,
+                  })}
+                  onPress={() => onIssue(found)}
+                />
+              ) : null}
+            </View>
+          ) : null}
+
+          {onQrCode ? (
+            <ActionRow
+              icon="qr-code-outline"
+              label={t('mobile.inventory.qrCode')}
+              chevron
+              accessibilityLabel={t('mobile.inventory.a11yShowQr', {
+                name: card.name,
+              })}
+              onPress={() => onQrCode(found)}
+            />
+          ) : null}
 
           <InventorySheetFooter
             primaryLabel={t('mobile.inventory.scanAgain')}
@@ -413,32 +402,6 @@ export function InventoryScanResultSheet({
         </View>
       ) : null}
     </BottomSheet>
-  );
-}
-
-function StatCell({ label, value }: { label: string; value: string }) {
-  const { colors, theme } = useTheme();
-  return (
-    <View
-      style={{
-        flex: 1,
-        paddingVertical: theme.spacing.sm,
-        paddingHorizontal: theme.spacing.xs,
-        borderRadius: theme.radius.lg,
-        backgroundColor: colors.surfaceSecondary,
-        borderWidth: 1,
-        borderColor: colors.border,
-        alignItems: 'center',
-        gap: 2,
-      }}
-    >
-      <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
-        {label}
-      </AppText>
-      <AppText variant="body" weight="semibold" dir="ltr" style={{ textAlign: 'center' }}>
-        {value}
-      </AppText>
-    </View>
   );
 }
 
@@ -453,9 +416,12 @@ function PrimaryAction({
   onPress: () => void;
   accessibilityLabel: string;
 }) {
+  const { locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   return (
-    <Pressable
+    <AnimatedPressable
+      variant="button"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={() => {
@@ -464,10 +430,10 @@ function PrimaryAction({
       }}
       style={{
         flex: 1,
-        minHeight: 48,
-        borderRadius: theme.radius.xl,
+        minHeight: theme.sizes.touch.min,
+        borderRadius: theme.radius.full,
         backgroundColor: colors.brand,
-        flexDirection: 'row',
+        flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: theme.spacing.xs,
@@ -475,10 +441,10 @@ function PrimaryAction({
       }}
     >
       <Ionicons name={icon} size={18} color={colors.onBrand} />
-      <AppText variant="body" weight="semibold" style={{ color: colors.onBrand }}>
+      <AppText variant="label" weight={titleWeight} style={{ color: colors.onBrand }}>
         {label}
       </AppText>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -496,9 +462,11 @@ function ActionRow({
   accessibilityLabel: string;
 }) {
   const { colors, theme } = useTheme();
-  const { isRTL } = useLocale();
+  const { isRTL, locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   return (
-    <Pressable
+    <AnimatedPressable
+      variant="button"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={() => {
@@ -506,20 +474,21 @@ function ActionRow({
         onPress();
       }}
       style={{
-        minHeight: 44,
+        minHeight: theme.sizes.touch.min,
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         gap: theme.spacing.md,
-        paddingHorizontal: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
-        borderRadius: theme.radius.lg,
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: colors.borderStrong,
         backgroundColor: colors.surface,
+        overflow: 'hidden',
       }}
     >
       <Ionicons name={icon} size={20} color={colors.brand} />
-      <AppText variant="body" weight="medium" style={{ flex: 1 }}>
+      <AppText variant="body" weight={titleWeight} style={{ flex: 1 }}>
         {label}
       </AppText>
       {chevron ? (
@@ -529,6 +498,6 @@ function ActionRow({
           color={colors.textMuted}
         />
       ) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }

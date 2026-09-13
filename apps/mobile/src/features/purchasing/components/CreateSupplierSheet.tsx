@@ -10,7 +10,10 @@ import { useToast } from '@/components/feedback/Toast';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
+import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged, resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { useCreateSupplierMutation, useUpdateSupplierMutation } from '../query';
@@ -27,6 +30,8 @@ type Props = {
 };
 
 const empty = () => ({
+  name: '',
+  originalName: '',
   nameEn: '',
   nameAr: '',
   nameHe: '',
@@ -42,8 +47,11 @@ const empty = () => ({
   notes: '',
 });
 
-function formFromSupplier(supplier: Supplier) {
+function formFromSupplier(supplier: Supplier, locale: string) {
+  const name = localizedName(locale, supplier, supplier.name ?? '');
   return {
+    name,
+    originalName: name,
     nameEn: supplier.nameEn ?? '',
     nameAr: supplier.nameAr ?? '',
     nameHe: supplier.nameHe ?? '',
@@ -69,7 +77,7 @@ export function CreateSupplierSheet({
   mode = 'create',
   supplier = null,
 }: Props) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
@@ -85,9 +93,9 @@ export function CreateSupplierSheet({
       setForm(empty());
       return;
     }
-    if (mode === 'edit' && supplier) setForm(formFromSupplier(supplier));
+    if (mode === 'edit' && supplier) setForm(formFromSupplier(supplier, locale));
     else setForm(empty());
-  }, [open, mode, supplier?.id]);
+  }, [open, mode, supplier?.id, locale]);
 
   const set = <K extends keyof ReturnType<typeof empty>>(key: K, value: ReturnType<typeof empty>[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -98,15 +106,27 @@ export function CreateSupplierSheet({
   };
 
   const submit = async () => {
-    if (!form.nameEn.trim() && !form.nameAr.trim() && !form.nameHe.trim()) {
-      showToast({ variant: 'error', message: t('catalog.nameEn') });
+    if (!form.name.trim()) {
+      showToast({ variant: 'error', message: t('catalog.name') });
       return;
     }
+    const names = isEdit
+      ? await resolveTrilingualIfChanged({
+          typed: form.name,
+          locale,
+          original: form.originalName,
+          existing: {
+            nameEn: form.nameEn,
+            nameAr: form.nameAr,
+            nameHe: form.nameHe,
+          },
+        })
+      : await resolveTrilingualName(form.name, locale);
     const body = {
-      name: form.nameEn.trim() || form.nameAr.trim() || form.nameHe.trim(),
-      nameEn: form.nameEn.trim() || undefined,
-      nameAr: form.nameAr.trim() || undefined,
-      nameHe: form.nameHe.trim() || undefined,
+      name: names.nameEn || names.nameAr || names.nameHe,
+      nameEn: names.nameEn || undefined,
+      nameAr: names.nameAr || undefined,
+      nameHe: names.nameHe || undefined,
       companyName: form.companyName.trim() || undefined,
       phone: form.phone.trim() || undefined,
       whatsappPhone: form.whatsappPhone.trim() || undefined,
@@ -123,8 +143,7 @@ export function CreateSupplierSheet({
         const row = await updateMutation.mutateAsync({ id: supplier.id, body });
         void haptics.confirmLight();
         showToast({ variant: 'success', message: t('catalog.supplierUpdated') });
-        const name =
-          row.nameEn || row.nameAr || row.name || form.nameEn || form.nameAr || '—';
+        const name = row.nameEn || row.nameAr || row.name || form.name || '—';
         onUpdated?.({ id: row.id, name });
         dismiss();
         return;
@@ -132,8 +151,7 @@ export function CreateSupplierSheet({
       const row = await createMutation.mutateAsync(body);
       void haptics.confirmLight();
       showToast({ variant: 'success', message: t('catalog.supplierCreated') });
-      const name =
-        row.nameEn || row.nameAr || row.name || form.nameEn || form.nameAr || '—';
+      const name = row.nameEn || row.nameAr || row.name || form.name || '—';
       onCreated?.({ id: row.id, name });
       dismiss();
     } catch (err) {
@@ -160,20 +178,10 @@ export function CreateSupplierSheet({
           style={{ flex: 1, minHeight: 0 }}
           contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
         >
-          <TextField
-            label={t('catalog.nameEn')}
-            value={form.nameEn}
-            onChangeText={(v) => set('nameEn', v)}
-          />
-          <TextField
-            label={t('catalog.nameAr')}
-            value={form.nameAr}
-            onChangeText={(v) => set('nameAr', v)}
-          />
-          <TextField
-            label={t('catalog.nameHe')}
-            value={form.nameHe}
-            onChangeText={(v) => set('nameHe', v)}
+          <LocaleNameField
+            value={form.name}
+            onChange={(v) => set('name', v)}
+            label={t('catalog.name')}
           />
           <TextField
             label={t('catalog.company')}

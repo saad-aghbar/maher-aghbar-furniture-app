@@ -10,6 +10,8 @@ type Props = {
   onPrimary?: () => void;
   secondaryLabel?: string;
   onSecondary?: () => void;
+  tertiaryLabel?: string;
+  onTertiary?: () => void;
   loading?: boolean;
   disabled?: boolean;
   /** Keep the secondary (cancel) action tappable while the primary is busy. */
@@ -24,6 +26,8 @@ export function InventorySheetFooter({
   onPrimary,
   secondaryLabel,
   onSecondary,
+  tertiaryLabel,
+  onTertiary,
   loading,
   disabled,
   cancelWhileLoading,
@@ -38,6 +42,7 @@ export function InventorySheetFooter({
   const dark = colorScheme === 'dark';
   const showPrimary = Boolean(primaryLabel && onPrimary);
   const showSecondary = Boolean(onSecondary);
+  const showTertiary = Boolean(tertiaryLabel && onTertiary);
 
   return (
     <View
@@ -101,38 +106,69 @@ export function InventorySheetFooter({
       ) : null}
 
       {showSecondary ? (
-        <AnimatedPressable
-          variant="button"
-          accessibilityRole="button"
-          accessibilityLabel={cancelLabel}
+        <OutlinedFooterAction
+          label={cancelLabel}
           disabled={cancelBlocked}
-          onPress={() => {
-            void haptics.selection();
-            onSecondary?.();
-          }}
-          style={{
-            minHeight: theme.sizes.touch.min,
-            borderRadius: theme.radius.full,
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingHorizontal: theme.spacing.lg,
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            opacity: cancelBlocked ? 0.6 : 1,
-            ...orderBoardShadow(colorScheme),
-          }}
-        >
-          <AppText
-            variant="label"
-            weight={titleWeight}
-            style={{ color: colors.brand }}
-            align="center"
-          >
-            {cancelLabel}
-          </AppText>
-        </AnimatedPressable>
+          titleWeight={titleWeight}
+          onPress={() => onSecondary?.()}
+        />
+      ) : null}
+
+      {showTertiary ? (
+        <OutlinedFooterAction
+          label={tertiaryLabel!}
+          disabled={cancelBlocked}
+          titleWeight={titleWeight}
+          onPress={() => onTertiary?.()}
+        />
       ) : null}
     </View>
+  );
+}
+
+function OutlinedFooterAction({
+  label,
+  disabled,
+  titleWeight,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  titleWeight: 'medium' | 'semibold';
+  onPress: () => void;
+}) {
+  const { colors, theme, colorScheme } = useTheme();
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: theme.sizes.touch.min,
+        borderRadius: theme.radius.full,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: theme.spacing.lg,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        opacity: disabled ? 0.6 : 1,
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <AppText
+        variant="label"
+        weight={titleWeight}
+        style={{ color: colors.brand }}
+        align="center"
+      >
+        {label}
+      </AppText>
+    </AnimatedPressable>
   );
 }

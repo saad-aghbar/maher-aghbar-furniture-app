@@ -27,8 +27,10 @@ import {
   getInventoryItem,
   openInventoryLabelPdf,
   openInventoryQrLabelPdf,
+  openFabricLotQrLabelPdf,
   openRawMaterialsReportPdf,
   openWipKitQrLabelPdf,
+  openWarehouseLocationQrLabelPdf,
   type InventoryCategoryGroup,
   type InventoryItem,
   type WarehouseBinContents,
@@ -199,6 +201,7 @@ export function InventorySignatureHome({
   const canIssue = can(user, 'inventory.issue');
   const canEdit = can(user, 'inventory.adjust');
   const canLabelPdf = can(user, 'inventory.read');
+  const canPrintBin = can(user, 'inventory.read') || can(user, 'warehouse.read');
   const canEditCost = can(user, 'inventory.cost.read');
   const canRawReport = canOpenRawMaterialsReport(user);
   const canOpenWarehouses = canAny(user, [
@@ -247,17 +250,23 @@ export function InventorySignatureHome({
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [scanResult, setScanResult] = useState<InventoryItem | 'not-found' | null>(null);
   const [inspectBin, setInspectBin] = useState<WarehouseBinContents | null>(null);
+  const pendingBinPrintRef = useRef<WarehouseBinContents | null>(null);
   const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
   const pendingPrintRef = useRef<{
     id: string;
     sku: string;
-    kind?: 'item' | 'wip-kit';
+    kind?: 'item' | 'wip-kit' | 'lot';
   } | null>(null);
   const lotQrKindRef = useRef<{
     id: string;
     sku: string;
-    kind: 'item' | 'wip-kit';
+    kind: 'item' | 'wip-kit' | 'lot';
   } | null>(null);
+  const pendingAfterLotInspectRef = useRef<
+    | { type: 'qr'; lot: SemiFinishedLot }
+    | { type: 'print'; lot: SemiFinishedLot }
+    | null
+  >(null);
   /** Close Semi detail first — iOS freezes if QR/PDF opens while that Modal is still up. */
   const pendingAfterSemiDetailRef = useRef<
     | { type: 'qr'; kit: WipKitCard }
@@ -401,16 +410,42 @@ export function InventorySignatureHome({
     })();
   }
 
-  function openQrLabelPdf(item: InventoryItemCardModel | InventoryQrItem | { id: string; sku: string; kind?: 'item' | 'wip-kit' }) {
+  function openQrLabelPdf(item: InventoryItemCardModel | InventoryQrItem | { id: string; sku: string; kind?: 'item' | 'wip-kit' | 'lot' }) {
     void (async () => {
       const opts = await pickPdfOptions();
       if (!opts) return;
       try {
         if ('kind' in item && item.kind === 'wip-kit') {
           await openWipKitQrLabelPdf(item.id, item.sku, opts);
+        } else if ('kind' in item && item.kind === 'lot') {
+          await openFabricLotQrLabelPdf(item.id, item.sku, opts);
         } else {
           await openInventoryQrLabelPdf(item.id, item.sku, opts);
         }
+      } catch {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: toastCopy(
+            t('mobile.inventory.labelPdfFailedTitle'),
+            t('mobile.inventory.labelPdfFailedBody'),
+          ),
+        });
+      }
+    })();
+  }
+
+  function flushBinPrint() {
+    const bin = pendingBinPrintRef.current;
+    pendingBinPrintRef.current = null;
+    if (!bin) return;
+    const warehouseId = bin.warehouseId || bin.warehouse?.id;
+    if (!warehouseId) return;
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openWarehouseLocationQrLabelPdf(warehouseId, bin.id, bin.code, opts);
       } catch {
         void haptics.error();
         showToast({
@@ -428,7 +463,7 @@ export function InventorySignatureHome({
   function printLabelAfterQrCloses(item: {
     id: string;
     sku: string;
-    kind?: 'item' | 'wip-kit';
+    kind?: 'item' | 'wip-kit' | 'lot';
   }) {
     pendingPrintRef.current = { id: item.id, sku: item.sku, kind: item.kind ?? 'item' };
     setQrItem(null);
@@ -469,24 +504,57 @@ export function InventorySignatureHome({
     return lot.qrCode?.trim() || lot.wipKit?.qrCode?.trim() || null;
   }
 
-  function openLotQr(lot: SemiFinishedLot) {
+  function lotQrPrintTarget(
+    lot: SemiFinishedLot,
+  ): { id: string; sku: string; kind: 'wip-kit' | 'lot' } | null {
     const code = lotScanPayload(lot);
-    if (!code) return;
-    setInspectLot(null);
+    if (!code) return null;
+    if (lot.wipKit?.id) {
+      return { id: lot.wipKit.id, sku: lot.wipKit.qrCode || code, kind: 'wip-kit' };
+    }
+    return { id: lot.id, sku: code, kind: 'lot' };
+  }
+
+  function showLotQr(lot: SemiFinishedLot) {
+    const target = lotQrPrintTarget(lot);
+    if (!target) return;
     pendingPrintRef.current = null;
-    lotQrKindRef.current = lot.wipKit?.id
-      ? { id: lot.wipKit.id, sku: lot.wipKit.qrCode || code, kind: 'wip-kit' }
-      : { id: lot.inventoryItem.id, sku: lot.inventoryItem.sku, kind: 'item' };
+    lotQrKindRef.current = target;
     setQrItem({
-      id: lot.wipKit?.id ?? lot.inventoryItem.id,
-      sku: code,
+      id: target.id,
+      sku: target.sku,
       name: localizedName(locale, lot.inventoryItem),
-      scanCode: code,
-      category: 'SEMI_FINISHED',
+      scanCode: target.sku,
+      category: isFinishedScanLot(lot) ? 'FINISHED' : 'SEMI_FINISHED',
       unit: String(lot.quantity),
       imageUrl: lot.inventoryItem.product?.imageUrl ?? null,
-      itemClass: 'SEMI_FINISHED_GOOD',
+      itemClass: isFinishedScanLot(lot) ? 'FINISHED_GOOD' : 'SEMI_FINISHED_GOOD',
+      printKind: target.kind,
     });
+  }
+
+  function openLotQr(lot: SemiFinishedLot) {
+    pendingAfterLotInspectRef.current = { type: 'qr', lot };
+    setInspectLot(null);
+    setInspectFgLot(null);
+  }
+
+  function printLotQr(lot: SemiFinishedLot) {
+    pendingAfterLotInspectRef.current = { type: 'print', lot };
+    setInspectLot(null);
+    setInspectFgLot(null);
+  }
+
+  function flushAfterLotInspect() {
+    const next = pendingAfterLotInspectRef.current;
+    pendingAfterLotInspectRef.current = null;
+    if (!next) return;
+    if (next.type === 'qr') {
+      showLotQr(next.lot);
+      return;
+    }
+    const target = lotQrPrintTarget(next.lot);
+    if (target) openQrLabelPdf(target);
   }
 
   function openKitQr(kit: WipKitCard) {
@@ -521,6 +589,7 @@ export function InventorySignatureHome({
         unit: `${next.kit.pieces.length}/${next.kit.expectedPieceCount}`,
         imageUrl: next.kit.productionOrder.product?.imageUrl ?? null,
         itemClass: 'SEMI_FINISHED_GOOD',
+        printKind: 'wip-kit',
       });
       return;
     }
@@ -528,23 +597,6 @@ export function InventorySignatureHome({
       id: next.kit.id,
       sku: next.kit.qrCode,
       kind: 'wip-kit',
-    });
-  }
-
-  function printLotQr(lot: SemiFinishedLot) {
-    setInspectLot(null);
-    if (lot.wipKit?.id) {
-      openQrLabelPdf({
-        id: lot.wipKit.id,
-        sku: lot.wipKit.qrCode || lot.qrCode || lot.inventoryItem.sku,
-        kind: 'wip-kit',
-      });
-      return;
-    }
-    openQrLabelPdf({
-      id: lot.inventoryItem.id,
-      sku: lot.inventoryItem.sku,
-      kind: 'item',
     });
   }
 
@@ -1622,12 +1674,21 @@ export function InventorySignatureHome({
         open={Boolean(inspectBin)}
         bin={inspectBin}
         onClose={() => setInspectBin(null)}
+        onClosed={flushBinPrint}
         onScanAgain={() => {
           setInspectBin(null);
           requestAnimationFrame(() => {
             void runIdentifyScan();
           });
         }}
+        onPrintLabel={
+          inspectBin && canPrintBin
+            ? () => {
+                pendingBinPrintRef.current = inspectBin;
+                setInspectBin(null);
+              }
+            : undefined
+        }
         onViewItem={(inventoryItemId) => {
           setInspectBin(null);
           router.push(`/(app)/(admin)/inventory/items/${inventoryItemId}` as Href);
@@ -1693,19 +1754,21 @@ export function InventorySignatureHome({
         item={qrItem}
         onClose={() => {
           setQrItem(null);
+        }}
+        onClosed={() => {
+          flushPendingPrint();
           lotQrKindRef.current = null;
         }}
-        onClosed={flushPendingPrint}
         onPrint={
           qrItem
             ? () => {
                 const lotKind = lotQrKindRef.current;
                 lotQrKindRef.current = null;
-                if (lotKind) {
-                  printLabelAfterQrCloses(lotKind);
-                  return;
-                }
-                printLabelAfterQrCloses(qrItem);
+                printLabelAfterQrCloses({
+                  id: (lotKind ?? qrItem).id,
+                  sku: (lotKind ?? qrItem).sku,
+                  kind: lotKind?.kind ?? qrItem.printKind ?? 'item',
+                });
               }
             : undefined
         }
@@ -1725,6 +1788,7 @@ export function InventorySignatureHome({
         open={Boolean(inspectLot)}
         lot={inspectLot}
         onClose={() => setInspectLot(null)}
+        onClosed={flushAfterLotInspect}
         onShowQr={
           inspectLot && lotScanPayload(inspectLot)
             ? (lot) => openLotQr(lot)
@@ -1740,9 +1804,20 @@ export function InventorySignatureHome({
         open={Boolean(inspectFgLot)}
         lot={inspectFgLot}
         onClose={() => setInspectFgLot(null)}
+        onClosed={flushAfterLotInspect}
         canTransfer={canCreateTransfer}
         canCount={canCreateCount}
         canReport={canLabelPdf}
+        onShowQr={
+          inspectFgLot && lotScanPayload(inspectFgLot)
+            ? (lot) => openLotQr(lot)
+            : undefined
+        }
+        onPrintQr={
+          inspectFgLot && lotScanPayload(inspectFgLot)
+            ? (lot) => printLotQr(lot)
+            : undefined
+        }
         onTransfer={(lot) => {
           void getInventoryItem(lot.inventoryItem.id).then((item) => {
             setLifecycle('finished');

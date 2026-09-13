@@ -87,4 +87,32 @@ describe('selectOrderDetail', () => {
     expect(vm.endCustomerName).toBeNull();
     expect(vm.deliveries).toHaveLength(1);
   });
+
+  it('prefers sales-order line ids and snapshot images over RFQ items', () => {
+    const po = adminOrderDetailFixture.productionOrders?.[0];
+    const vm = selectOrderDetail(
+      {
+        ...adminOrderDetailFixture,
+        orderedItems: [
+          {
+            id: 'sol-custom',
+            productId: null,
+            productName: 'Corner bench',
+            quantity: 1,
+            imageUrl: 'https://example.com/custom.jpg',
+            manufacturingComplexity: 'CUSTOM',
+            variantLabel: null,
+          },
+        ],
+        productionOrders: po
+          ? [{ ...po, salesOrderLineId: 'sol-custom', status: 'READY' }]
+          : [],
+      },
+      'admin',
+    );
+    expect(vm.items[0]?.id).toBe('sol-custom');
+    expect(vm.items[0]?.imageUrl).toBe('https://example.com/custom.jpg');
+    expect(vm.items[0]?.productionStatus).toBe('READY');
+    expect(vm.items[0]?.manufacturingComplexity).toBe('CUSTOM');
+  });
 });

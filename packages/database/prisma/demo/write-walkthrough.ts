@@ -18,6 +18,7 @@ export const FLAGSHIP_PROJECT_NAMES = [
   'Qasr suite dining',
   'Noor club chair hold',
   'Rawnaq dining six',
+  'Golden factory path',
 ];
 
 function ymd(value: Date | string | null | undefined): string | null {

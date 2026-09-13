@@ -104,6 +104,7 @@ describe('Piece 2 order production setup', () => {
       fabricProcurement: {
         create: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       salesOrderLine: {
         findUnique: jest.fn().mockResolvedValue({ id: 'line-1', productId: 'p1' }),

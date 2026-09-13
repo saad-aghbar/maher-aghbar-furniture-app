@@ -12,6 +12,9 @@ describe('inventory low-stock purchase order', () => {
     expect(detail).not.toContain('purchasing/low-stock');
     expect(detail).toContain('const showOrderDock = canOrder');
     expect(detail).toContain('dockBody');
+    expect(detail).toContain('onCreatePo=');
+    expect(detail).toContain('onReceive=');
+    expect(detail).not.toContain('PrimaryButton');
   });
 
   it('reviews low stock on a dedicated inventory page', () => {

@@ -249,6 +249,7 @@ export type WorkerMyOrder = {
   myTaskCount: number;
   actionableCount: number;
   blockedCount: number;
+  assignedToMe?: boolean;
 };
 
 export type WorkerMySalesOrder = {

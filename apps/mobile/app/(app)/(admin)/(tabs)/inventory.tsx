@@ -7,7 +7,7 @@ export default function AdminInventory() {
   return (
     <PermissionGate
       user={user}
-      require={['inventory.read', 'inventory.count', 'inventory.receive', 'purchase-order.read']}
+      require={['inventory.read', 'inventory.count', 'inventory.receive']}
       mode="any"
     >
       <InventoryGroupsScreen />

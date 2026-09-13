@@ -285,16 +285,22 @@ export class CatalogController {
   ) {}
 
   @Post('catalog/translate-name')
-  @RequirePermissions('catalog.manage')
+  @RequirePermissions()
   async translateName(
-    @Body() body: { text?: string; kind?: 'name' | 'prose' },
+    @Body() body: { text?: string; kind?: 'name' | 'prose'; sourceLocale?: string },
   ) {
     const text = String(body?.text ?? '').trim();
-    if (body?.kind === 'prose') {
-      const nameEn = (await this.translation?.translateProse(text)) ?? '';
-      return { nameAr: text, nameEn, nameHe: '' };
+    const sourceLocale =
+      body?.sourceLocale === 'en' || body?.sourceLocale === 'he' || body?.sourceLocale === 'ar'
+        ? body.sourceLocale
+        : 'ar';
+    if (!this.translation) {
+      return { nameAr: text, nameEn: text, nameHe: text };
     }
-    return this.translation?.translateName(text) ?? { nameAr: text, nameEn: '', nameHe: '' };
+    if (body?.kind === 'prose') {
+      return this.translation.translateProseAll(text, sourceLocale);
+    }
+    return this.translation.translateName(text, sourceLocale);
   }
 
   // ── Categories ─────────────────────────────────────────────────────────────

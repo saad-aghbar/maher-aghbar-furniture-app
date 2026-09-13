@@ -27,14 +27,15 @@ describe('Worker sales-order items floor', () => {
     }
   });
 
-  it('opens items then the existing lane, skipping a single-item order', () => {
+  it('opens items then the existing lane, including a single-item order', () => {
     const card = read('components/WorkerSalesOrderCard.tsx');
+    const href = read('selectWorkerOrder.ts');
     const list = read('TasksListScreen.tsx');
     const items = read('WorkerSalesOrderItemsScreen.tsx');
     expect(list).toContain('WorkerSalesOrderCard');
-    expect(card).toContain('itemCount <= 1');
-    expect(card).toContain('/(app)/(employee)/lane/');
-    expect(card).toContain('/(app)/(employee)/orders/[salesOrderId]');
+    expect(card).toContain('workerSalesOrderHref');
+    expect(href).toContain('/(app)/(employee)/orders/');
+    expect(href).not.toContain('itemCount <= 1');
     expect(items).toContain('WorkerOrderCard');
   });
 });

@@ -1017,6 +1017,16 @@ export function TaskDetailScreen({
       });
     }
 
+    if (canRecordUsage && !readOnly && !isRecovery && !isQcGate) {
+      actions.push({
+        key: 'scan-material',
+        label: t('mobile.tasks.scanMaterialShort'),
+        icon: 'qr-code-outline',
+        onPress: () => materialsRef.current?.openScan(),
+        disabled: busy,
+      });
+    }
+
     const leftoverEligible =
       isProductionFloor &&
       Boolean(vm.canCarryOver) &&
@@ -1062,6 +1072,7 @@ export function TaskDetailScreen({
     busy,
     canComplete,
     canPerformQc,
+    canRecordUsage,
     canUpdate,
     completeMutation.isPending,
     finishedBurst,
@@ -1072,6 +1083,7 @@ export function TaskDetailScreen({
     isRecovery,
     offline,
     packagesAllConfirmed,
+    readOnly,
     recoveryBlocked,
     pauseMutation.isPending,
     qcBusy,

@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -16,6 +17,7 @@ import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useToast } from '@/components/feedback/Toast';
 import { listWarehouses, type Warehouse } from '@/features/inventory/api';
@@ -81,6 +83,8 @@ export type TaskMaterialsFloorHandle = {
   hasSelection: () => boolean;
   /** Persist current draft (selected + deselected zeros). */
   commit: () => Promise<void>;
+  /** Open the material QR scanner (dock + board share this). */
+  openScan: () => void;
 };
 
 type Props = {
@@ -199,6 +203,7 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
     const [pickerOpen, setPickerOpen] = useState(false);
     const [rawWarehouses, setRawWarehouses] = useState<DraftWarehouse[]>([]);
     const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+    const onScanRef = useRef<() => void>(() => {});
 
     const reload = useCallback(() => {
       if (!allowed) return;
@@ -279,6 +284,7 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
             })),
           );
         },
+        openScan: () => onScanRef.current(),
       }),
       [assertWarehouseSelection, lines, readOnly, taskId],
     );
@@ -791,6 +797,9 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
         setScanning(false);
       }
     }
+    onScanRef.current = () => {
+      void onScan();
+    };
 
     function warehousesForLine(line: DraftLine): DraftWarehouse[] {
       return line.warehouses.length > 0 ? line.warehouses : rawWarehouses;
@@ -936,13 +945,10 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
             borderBottomWidth: 1,
             borderBottomColor: colors.border,
             backgroundColor: colors.surfaceSecondary,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
         >
-          <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ gap: 2 }}>
             <AppText
               variant="caption"
               weight="semibold"
@@ -951,7 +957,6 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
                 letterSpacing: locale === 'ar' ? 0 : 0.6,
                 textTransform: locale === 'ar' ? 'none' : 'uppercase',
                 fontSize: 11,
-                flex: 1,
                 textAlign: isRTL ? 'right' : 'left',
               }}
             >
@@ -966,32 +971,16 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
             </AppText>
           </View>
           {canMutate ? (
-            <>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+              }}
+            >
           <AnimatedPressable
             variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.tasks.scanMaterial')}
-            disabled={scanning || loading}
-            onPress={() => void onScan()}
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: theme.spacing.sm + 2,
-              paddingVertical: 6,
-              borderRadius: theme.radius.full,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surface,
-            }}
-          >
-            <Ionicons name="qr-code-outline" size={14} color={colors.brand} />
-            <AppText variant="caption" weight="medium" style={{ color: colors.brand }}>
-              {scanning ? t('mobile.tasks.scanning') : t('mobile.tasks.scanMaterialShort')}
-            </AppText>
-          </AnimatedPressable>
-          <AnimatedPressable
-            variant="button"
+            testID="task-add-material"
             accessibilityRole="button"
             accessibilityLabel={t('mobile.tasks.addMaterial')}
             onPress={() => {
@@ -999,8 +988,8 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
               setPickerOpen(true);
             }}
             style={{
-              width: 48,
-              height: 48,
+              width: theme.sizes.touch.min,
+              height: theme.sizes.touch.min,
               borderRadius: theme.radius.lg,
               borderWidth: 1,
               borderColor: colors.borderStrong,
@@ -1011,11 +1000,24 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
           >
             <Ionicons name="add" size={20} color={colors.brand} />
           </AnimatedPressable>
-            </>
+            </View>
           ) : null}
         </View>
 
         <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
+          {canMutate ? (
+            <SecondaryButton
+              testID="task-scan-material"
+              label={scanning ? t('mobile.tasks.scanning') : t('mobile.tasks.scanMaterial')}
+              accessibilityLabel={t('mobile.tasks.scanMaterial')}
+              onPress={() => void onScan()}
+              loading={scanning}
+              disabled={loading}
+              leading={
+                <Ionicons name="qr-code-outline" size={18} color={colors.brand} />
+              }
+            />
+          ) : null}
           {canMutate ? (
             <AppText variant="caption" color="muted">
               {t('mobile.tasks.materialsFloorHint')}
@@ -1479,6 +1481,7 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
         existingLabel={t('mobile.tasks.materialAlreadyOnStage')}
         existingSkus={lines.map((line) => line.sku)}
         onRequestScan={() => {
+          setPickerOpen(false);
           void onScan();
         }}
         onPickExisting={(row) => {

@@ -32,7 +32,7 @@ export function SearchActionRow({ children, trailing, style }: Props) {
       ]}
     >
       <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
-      {trailing}
+      {trailing ? <View style={{ zIndex: 2 }}>{trailing}</View> : null}
     </View>
   );
 }

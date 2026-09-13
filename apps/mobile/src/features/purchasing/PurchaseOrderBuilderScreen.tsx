@@ -30,6 +30,7 @@ import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { resolveInventoryScan } from '@/features/inventory/resolveInventoryScan';
+import { purchasingScanMissKey } from '@/features/inventory/selectScanPresentation';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
@@ -269,7 +270,13 @@ export function PurchaseOrderBuilderScreen() {
       const resolved = await resolveInventoryScan(code);
       if (resolved.status !== 'FOUND') {
         void haptics.error();
-        showToast({ variant: 'error', message: t('mobile.purchasing.scanMaterialMiss') });
+        const missKey = purchasingScanMissKey(resolved);
+        showToast({
+          variant: 'error',
+          message: missKey
+            ? t(`mobile.inventory.${missKey}`)
+            : t('mobile.purchasing.scanMaterialMiss'),
+        });
         return;
       }
       openMaterial(toBuilderMaterial(resolved.item, locale));

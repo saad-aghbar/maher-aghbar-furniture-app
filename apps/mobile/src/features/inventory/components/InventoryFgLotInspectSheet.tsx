@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
@@ -11,18 +12,22 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { fgDeliveryStatusLabel } from '../fgFilters';
 import { locationPickerLabel } from '../pickDefaultLocation';
+import { InventorySheetFooter } from './InventorySheetFooter';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
   lot: FinishedLot | null;
   onClose: () => void;
+  onClosed?: () => void;
   canTransfer?: boolean;
   canCount?: boolean;
   canReport?: boolean;
   onTransfer?: (lot: FinishedLot) => void;
   onCount?: (lot: FinishedLot) => void;
   onReport?: (lot: FinishedLot) => void;
+  onShowQr?: (lot: FinishedLot) => void;
+  onPrintQr?: (lot: FinishedLot) => void;
 };
 
 function FactRow({
@@ -89,7 +94,7 @@ function ActionChip({
   onPress: () => void;
   primary?: boolean;
 }) {
-  const { isRTL } = useLocale();
+  const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
 
   return (
@@ -116,7 +121,7 @@ function ActionChip({
       }}
     >
       <Ionicons name={icon} size={16} color={primary ? colors.brand : colors.textSecondary} />
-      <AppText variant="caption" weight="semibold" color={primary ? 'brand' : 'secondary'} numberOfLines={2}>
+      <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color={primary ? 'brand' : 'secondary'} numberOfLines={2}>
         {label}
       </AppText>
     </AnimatedPressable>
@@ -125,18 +130,26 @@ function ActionChip({
 
 export function InventoryFgLotInspectSheet({
   open,
-  lot,
+  lot: lotProp,
   onClose,
+  onClosed,
   canTransfer = false,
   canCount = false,
   canReport = false,
   onTransfer,
   onCount,
   onReport,
+  onShowQr,
+  onPrintQr,
 }: Props) {
   const { t, locale, isRTL, formatDate, formatDateTime } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
+  // Keep the last lot mounted so BottomSheet can animate closed and fire onClosed
+  // (Show QR / Print). Returning null here skips that handoff.
+  const heldLot = useRef(lotProp);
+  if (lotProp) heldLot.current = lotProp;
+  const lot = lotProp ?? heldLot.current;
   if (!lot) return null;
 
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -166,12 +179,14 @@ export function InventoryFgLotInspectSheet({
     <BottomSheet
       open={open}
       onClose={onClose}
+      onClosed={onClosed}
       title={t('mobile.inventory.inspectFinishedLot')}
       fitContent
     >
       <ScrollView
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
+        style={{ maxHeight: 460 }}
         contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
       >
         <View
@@ -407,6 +422,18 @@ export function InventoryFgLotInspectSheet({
           ) : null}
         </View>
       </ScrollView>
+        {lot.qrCode?.trim() && onShowQr ? (
+          <InventorySheetFooter
+            primaryLabel={t('mobile.inventory.wipShowQr')}
+            onPrimary={() => onShowQr(lot)}
+            secondaryLabel={
+              onPrintQr ? t('mobile.inventory.printLabel') : t('mobile.inventory.cancel')
+            }
+            onSecondary={onPrintQr ? () => onPrintQr(lot) : onClose}
+            tertiaryLabel={onPrintQr ? t('mobile.inventory.cancel') : undefined}
+            onTertiary={onPrintQr ? onClose : undefined}
+          />
+        ) : null}
     </BottomSheet>
   );
 }

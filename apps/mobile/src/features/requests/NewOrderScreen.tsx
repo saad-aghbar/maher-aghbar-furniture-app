@@ -23,10 +23,7 @@ import {
 import {
   listCatalogColors,
   listCatalogFabrics,
-  listSpecOptionGroups,
-  listSpecOptionValues,
 } from '@/api/modules/catalog';
-import { listProductVariants } from '@/api/modules/catalogAdmin';
 import { uploadFile } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
@@ -39,7 +36,7 @@ import { PhoneField } from '@/components/forms/PhoneField';
 import { KeyboardAwareScreen } from '@/components/layout/KeyboardAwareScreen';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
-import { FadeIn, FormShake, ListItemEnter, SlideIn, haptics } from '@/motion';
+import { FadeIn, FormShake, ListItemEnter, SlideIn, AnimatedPressable, haptics } from '@/motion';
 import { dealerTokens, useTheme } from '@/theme';
 import { useBrowseProductQuery, useFavoriteProductsQuery, usePreviouslyOrderedQuery } from '@/features/catalog/query';
 import { useDealerFavorites } from '@/features/catalog/useDealerFavorites';
@@ -47,6 +44,8 @@ import { useAvailabilityQuery } from '@/features/scheduling/query';
 import type { AvailabilityRequest } from '@/api/modules/scheduling';
 import { catalogPickForOrderHref } from '@/features/catalog/catalogPickForOrder';
 import {
+  customItemHref,
+  customizeVariantHref,
   isCatalogOrderDeepLink,
   navigateToBasketReview,
   parseDeepLinkProductId,
@@ -64,13 +63,11 @@ import {
 } from './aiIntakeHumanState';
 import { LocationMapPicker } from './components/LocationMapPicker';
 import { NewOrderDeliveryAddressBlock } from './components/NewOrderDeliveryAddressBlock';
-import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor';
 import { NewOrderFloatingDock } from './components/NewOrderFloatingDock';
 import { NewOrderQtyStepper } from './components/NewOrderQtyStepper';
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { NewOrderStageRail } from './components/NewOrderStageRail';
 import { OrderBasketItemRail } from './components/OrderBasketItemRail';
-import { OrderLineSpecSheet } from './components/OrderLineSpecSheet';
 import { CropPreviewSheet } from './components/CropPreviewSheet';
 import { ReviewStep } from './components/ReviewStep';
 import { selectReviewBasketLine } from './selectReviewBasket';
@@ -174,7 +171,6 @@ export function NewOrderScreen() {
   const lines = orderBasket.lines;
   const setLines = orderBasket.setLines;
   const [activeLineId, setActiveLineId] = useState<string | null>(null);
-  const [specSheetOpen, setSpecSheetOpen] = useState(false);
   const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [priority, setPriority] = useState<RequestPriority>('NORMAL');
 
@@ -280,18 +276,6 @@ export function NewOrderScreen() {
   };
 
   const productQuery = useBrowseProductQuery(productId || undefined, Boolean(productId));
-  const specGroupsQuery = useQuery({
-    queryKey: queryKeys.catalog.specOptionGroups({ pageSize: 100 }),
-    queryFn: () => listSpecOptionGroups({ page: 1, pageSize: 100 }),
-    enabled: allowed,
-    staleTime: 60_000,
-  });
-  const specValuesQuery = useQuery({
-    queryKey: queryKeys.catalog.specOptionValues({ pageSize: 200 }),
-    queryFn: () => listSpecOptionValues({ page: 1, pageSize: 200 }),
-    enabled: allowed,
-    staleTime: 60_000,
-  });
   const fabricsQuery = useQuery({
     queryKey: queryKeys.catalog.fabrics(),
     queryFn: () => listCatalogFabrics(),
@@ -303,12 +287,6 @@ export function NewOrderScreen() {
     queryFn: () => listCatalogColors(),
     enabled: allowed,
     staleTime: 60_000,
-  });
-  const variantsQuery = useQuery({
-    queryKey: queryKeys.catalog.variants(productId, { includeInactive: false }),
-    queryFn: () => listProductVariants(productId, false),
-    enabled: allowed && Boolean(productId),
-    staleTime: 30_000,
   });
   const favorites = useDealerFavorites(user?.id);
   const orderedQuery = usePreviouslyOrderedQuery(Boolean(user?.customerId));
@@ -431,13 +409,18 @@ export function NewOrderScreen() {
     if (appliedCatalogKey.current === catalogDeepLinkKey) return;
     appliedCatalogKey.current = catalogDeepLinkKey;
     setLines((prev) => {
-      const next = applyCatalogProductToBasket(prev, {
-        productId: catalogProductId,
-        quantity: catalogQty,
-        variantId: catalogVariantId,
-        variantLabel: catalogVariantLabel,
-        variantSku: catalogVariantSku,
-      });
+      const next = applyCatalogProductToBasket(
+        prev,
+        {
+          productId: catalogProductId,
+          quantity: catalogQty,
+          variantId: catalogVariantId,
+          variantLabel: catalogVariantLabel,
+          variantSku: catalogVariantSku,
+          preferUpdate: true,
+        },
+        { preferUpdate: true },
+      );
       const added = next[next.length - 1];
       if (added) setActiveLineId(added.id);
       return next;
@@ -943,11 +926,43 @@ export function NewOrderScreen() {
     })();
   };
 
-  const buildBody = (): CreateRequestInput => {
+  const uploadBasketLinePhotos = async (
+    source: typeof lines,
+    requestId?: string,
+  ): Promise<typeof lines> => {
+    const next: typeof lines = [];
+    for (const line of source) {
+      if (!line.photoUris.length) {
+        next.push(line);
+        continue;
+      }
+      const ids = [...line.photoDocumentIds];
+      for (let i = ids.length; i < line.photoUris.length; i += 1) {
+        const uri = line.photoUris[i]!;
+        const uploaded = await uploadFile({
+          uri,
+          fileName: `line-photo-${i + 1}.jpg`,
+          mimeType: 'image/jpeg',
+          category: 'CUSTOMER_ATTACHMENT',
+          requestId,
+        });
+        ids.push(uploaded.document.id);
+      }
+      next.push({
+        ...line,
+        photoDocumentIds: ids,
+        primaryImageDocumentId: line.primaryImageDocumentId || ids[0] || '',
+      });
+    }
+    return next;
+  };
+
+  const buildBody = (sourceLines = lines): CreateRequestInput => {
     const untitled = t('mobile.newOrder.untitledModel');
     const seatLabel = t('mobile.newOrder.dimSeat');
-    const basket = lines.filter(lineHasProduct);
-    const items = (basket.length ? basket : [activeLine]).map((line) => {
+    const basket = sourceLines.filter(lineHasProduct);
+    const fallback = sourceLines[0] ?? activeLine;
+    const items = (basket.length ? basket : [fallback]).map((line) => {
       const custom = isCustomCatalogProduct(line.productId, line.customProductName);
       const item = lineToRequestItem(line, untitled, seatLabel);
       if (custom) {
@@ -999,7 +1014,9 @@ export function NewOrderScreen() {
     setBusy(true);
     setError(null);
     try {
-      const body = buildBody();
+      const hydrated = await uploadBasketLinePhotos(lines, draftSaved?.id);
+      setLines(hydrated);
+      const body = buildBody(hydrated);
       let created: { id: string; number: string };
       if (draftSaved?.id) {
         created = await updateRequest(draftSaved.id, body);
@@ -1042,7 +1059,9 @@ export function NewOrderScreen() {
     setBusy(true);
     setError(null);
     try {
-      const body = buildBody();
+      const hydrated = await uploadBasketLinePhotos(lines, draftSaved?.id);
+      setLines(hydrated);
+      const body = buildBody(hydrated);
       let created: { id: string; number: string };
 
       if (draftSaved?.id) {
@@ -1240,6 +1259,15 @@ export function NewOrderScreen() {
                       lines={basketLines}
                       activeId={activeLine.id}
                       onSelect={setActiveLineId}
+                      onOpenBasket={() => navigateToBasketReview(router)}
+                      onRemove={(id) => {
+                        const nextActive =
+                          activeLineId === id
+                            ? basketLines.find((line) => line.id !== id)?.id ?? null
+                            : activeLineId;
+                        orderBasket.removeLine(id);
+                        setActiveLineId(nextActive);
+                      }}
                     />
                     </ListItemEnter>
                   ) : (
@@ -1332,37 +1360,44 @@ export function NewOrderScreen() {
                         }))}
                       />
                     </View>
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth * 2,
-                        backgroundColor: colors.border,
-                      }}
-                    />
-                    <NewOrderDimensionsEditor value={dimensions} onChange={setDimensions} />
-                    <SecondaryButton
-                      label={t('mobile.newOrder.editLineSpec')}
+                    <AnimatedPressable
+                      variant="button"
+                      accessibilityRole="button"
+                      accessibilityLabel={t('mobile.newOrder.editItem')}
+                      testID="order-edit-item"
                       onPress={() => {
                         void haptics.selection();
-                        setSpecSheetOpen(true);
+                        if (!activeLine.productId.trim()) {
+                          router.push(customItemHref(activeLine.id));
+                          return;
+                        }
+                        router.push(
+                          customizeVariantHref(
+                            activeLine.productId,
+                            activeLine.variantId,
+                            Number(activeLine.quantity) || 1,
+                            { lineId: activeLine.id },
+                          ),
+                        );
                       }}
-                    />
-                    <View style={{ gap: theme.spacing.xs }}>
-                      <TextField
-                        label={t('mobile.newOrder.itemNotes')}
-                        value={activeLine.notes}
-                        onChangeText={(v) => patchActive({ notes: clampNotes(v, NOTES_MAX) })}
-                        placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
-                        multiline
-                        style={{ minHeight: 100, textAlignVertical: 'top' }}
-                      />
-                      <AppText
-                        variant="caption"
-                        color="muted"
-                        style={{ textAlign: isRTL ? 'left' : 'right' }}
-                      >
-                        {activeLine.notes.length}/{NOTES_MAX}
+                      style={{
+                        minHeight: theme.sizes.touch.min,
+                        borderRadius: theme.radius.xl,
+                        borderWidth: 1,
+                        borderColor: colors.brand,
+                        backgroundColor: colors.brandSoft,
+                        paddingHorizontal: theme.spacing.md,
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: theme.spacing.sm,
+                      }}
+                    >
+                      <Ionicons name="create-outline" size={16} color={colors.brand} />
+                      <AppText weight={titleWeight} color="brand">
+                        {t('mobile.newOrder.editItem')}
                       </AppText>
-                    </View>
+                    </AnimatedPressable>
                     {error && step === 1 ? (
                       <AppText variant="caption" color="error">
                         {error}
@@ -1724,19 +1759,6 @@ export function NewOrderScreen() {
           }}
         />
       </KeyboardAwareScreen>
-
-        <OrderLineSpecSheet
-          open={specSheetOpen}
-          onClose={() => setSpecSheetOpen(false)}
-          line={activeLine}
-          onChange={(next) => {
-            setLines((prev) => patchBasketLine(prev, next.id, next));
-            setActiveLineId(next.id);
-          }}
-          variants={variantsQuery.data ?? []}
-          groups={specGroupsQuery.data?.data ?? []}
-          values={specValuesQuery.data?.data ?? []}
-        />
 
         <ScanReviewScreen
           open={scanReviewOpen}

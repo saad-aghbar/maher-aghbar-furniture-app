@@ -35,6 +35,10 @@ export type OrderLineItemView = {
   finish: string | null;
   accessories: string | null;
   notes: string | null;
+  variantLabel: string | null;
+  manufacturingComplexity: string | null;
+  imageUrl: string | null;
+  productionStatus: string | null;
 };
 
 export type OrderCostMaterial = {
@@ -190,9 +194,22 @@ function fabricSummary(order: SalesOrderDetail): string | null {
 }
 
 function orderItems(order: SalesOrderDetail): SalesOrderLineItem[] {
-  const reqItems = order.customerRequest?.items;
-  if (reqItems?.length) return reqItems;
-  return order.orderedItems ?? [];
+  const ordered = order.orderedItems ?? [];
+  const reqItems = order.customerRequest?.items ?? [];
+  if (!ordered.length) return reqItems;
+  return ordered.map((item, i) => {
+    const req =
+      reqItems.find((row) => row.productId && row.productId === item.productId) ?? reqItems[i];
+    return {
+      ...(req ?? {}),
+      ...item,
+      id: item.id,
+      imageUrl: item.imageUrl ?? req?.imageUrl ?? null,
+      manufacturingComplexity:
+        item.manufacturingComplexity ?? req?.manufacturingComplexity ?? null,
+      variantLabel: item.variantLabel ?? req?.variantLabel ?? null,
+    };
+  });
 }
 
 function dim(item: SalesOrderLineItem): string | null {
@@ -203,22 +220,31 @@ function dim(item: SalesOrderLineItem): string | null {
 }
 
 function mapItems(order: SalesOrderDetail): OrderLineItemView[] {
-  return orderItems(order).map((item) => ({
-    id: item.id,
-    productId: item.productId ?? null,
-    productName: item.productName,
-    description: item.description ?? null,
-    quantity: toNumber(item.quantity),
-    dimensions: dim(item),
-    material: item.material ?? null,
-    fabricType: item.fabricType ?? null,
-    fabricColor: item.fabricColor ?? null,
-    woodType: item.woodType ?? null,
-    foamDensity: item.foamDensity ?? null,
-    finish: item.finish ?? null,
-    accessories: item.accessories ?? null,
-    notes: item.notes ?? null,
-  }));
+  return orderItems(order).map((item) => {
+    const po = (order.productionOrders ?? []).find(
+      (row) => row.salesOrderLineId && row.salesOrderLineId === item.id,
+    );
+    return {
+      id: item.id,
+      productId: item.productId ?? null,
+      productName: item.productName,
+      description: item.description ?? null,
+      quantity: toNumber(item.quantity),
+      dimensions: dim(item),
+      material: item.material ?? null,
+      fabricType: item.fabricType ?? null,
+      fabricColor: item.fabricColor ?? null,
+      woodType: item.woodType ?? null,
+      foamDensity: item.foamDensity ?? null,
+      finish: item.finish ?? null,
+      accessories: item.accessories ?? null,
+      notes: item.notes ?? null,
+      variantLabel: item.variantLabel ?? null,
+      manufacturingComplexity: item.manufacturingComplexity ?? null,
+      imageUrl: item.imageUrl ?? null,
+      productionStatus: po?.status ?? null,
+    };
+  });
 }
 
 function mapCostMaterialLines(

@@ -97,12 +97,18 @@ export {
 
 export type ProductionOrderStatus = 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED';
 
-export type ProductionTaskStatus =
-  | 'PENDING'
+/** Canonical production-task statuses — same set as Prisma `TaskStatus`. */
+export type TaskStatus =
+  | 'NOT_STARTED'
+  | 'READY'
   | 'IN_PROGRESS'
-  | 'ON_HOLD'
+  | 'PAUSED'
   | 'BLOCKED'
-  | 'COMPLETED';
+  | 'READY_FOR_INSPECTION'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export type ProductionTaskStatus = TaskStatus;
 
 export type QualityInspectionResult = 'PASS' | 'FAIL' | 'REWORK';
 
@@ -240,6 +246,9 @@ export {
   type OrderTypeSlug,
   type OrderTypeCounts,
 } from './manufacturing-complexity';
+
+export { lineVisualIdentity, lineVisualFromOrderSpec } from './line-visual-identity';
+export { isFactoryWorkStarted } from './workflow-assign-lock';
 
 export {
   resolveEffectiveVariant,

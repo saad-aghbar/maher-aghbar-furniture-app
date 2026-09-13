@@ -538,6 +538,7 @@ const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: strin
   'Noor club chair hold': { so: null, status: 'SENT' },
   'Noor banquettes 4 of 6 frames': { so: '*', status: 'IN_PRODUCTION' },
   'Rawnaq dining six': { so: '*', status: 'READY_FOR_PRODUCTION' },
+  'Golden factory path': { so: '*', status: 'READY_FOR_PRODUCTION' },
 };
 
 function isSyntheticProjectName(name: string): boolean {
@@ -885,6 +886,55 @@ async function assertPresentationReady(
     });
     if (!price) {
       fail(`${line.salesOrder.number}: missing dealer price for variant ${line.variantId}`);
+    }
+  }
+
+  const golden = await prisma.salesOrder.findFirst({
+    where: { projectName: 'Golden factory path', archivedAt: null },
+    include: {
+      lines: true,
+      productionOrders: { select: { id: true, salesOrderLineId: true, originType: true } },
+    },
+  });
+  if (!golden) {
+    fail('Golden factory path sales order missing');
+  } else {
+    if (golden.lines.length !== 4) {
+      fail(`Golden factory path: expected 4 lines, got ${golden.lines.length}`);
+    }
+    const kinds = golden.lines.map((l) => l.manufacturingComplexity).sort();
+    if (kinds.filter((k) => k === 'STANDARD').length < 2) {
+      fail('Golden factory path: expected two STANDARD lines (STD + named variant)');
+    }
+    if (!golden.lines.some((l) => l.manufacturingComplexity === 'MODIFIED')) {
+      fail('Golden factory path: missing MODIFIED line');
+    }
+    const custom = golden.lines.find((l) => l.manufacturingComplexity === 'CUSTOM');
+    if (!custom) {
+      fail('Golden factory path: missing CUSTOM line');
+    } else {
+      if (custom.productId) fail('Golden factory path: CUSTOM line must have null productId');
+      const spec =
+        custom.orderSpec && typeof custom.orderSpec === 'object' && !Array.isArray(custom.orderSpec)
+          ? (custom.orderSpec as { productImageRef?: string | null })
+          : null;
+      if (!isHttpImageUrl(spec?.productImageRef)) {
+        fail('Golden factory path: CUSTOM line snapshot missing photo');
+      }
+    }
+    for (const line of golden.lines) {
+      if (line.manufacturingComplexity !== 'CUSTOM' && !line.variantId) {
+        fail(`${golden.number}: catalog line missing variantId`);
+      }
+      if (!line.productionRequired) continue;
+      const pos = golden.productionOrders.filter(
+        (po) => po.salesOrderLineId === line.id && po.originType === 'SALES_ORDER',
+      );
+      if (pos.length !== 1) {
+        fail(
+          `${golden.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`,
+        );
+      }
     }
   }
 }

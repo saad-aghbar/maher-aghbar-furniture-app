@@ -443,9 +443,19 @@ export type CostOrderDossier = {
     id: string;
     description: string;
     sku: string | null;
+    variantLabel?: string | null;
+    manufacturingComplexity?: string | null;
+    imageUrl?: string | null;
     quantity: number;
     actualCost: number | null;
+    actualMaterial?: number | null;
+    actualFabric?: number | null;
+    actualLabor?: number | null;
+    plannedCost?: number | null;
+    waste?: number | null;
+    rework?: number | null;
     averageCostPerUnit: number | null;
+    note?: string | null;
   }>;
   materials?: {
     coverage: string;

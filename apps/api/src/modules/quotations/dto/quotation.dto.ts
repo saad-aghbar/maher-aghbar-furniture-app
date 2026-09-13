@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsEnum,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -29,6 +30,11 @@ export class ListQuotationsDto extends PaginationDto {
 }
 
 export class QuotationLineDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
@@ -142,6 +148,22 @@ export class QuotationLineDto {
   @IsOptional()
   @IsArray()
   customMeasurements?: unknown[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  lineSpec?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  photoDocumentIds?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  primaryImageDocumentId?: string;
 }
 
 export class CreateQuotationDto {

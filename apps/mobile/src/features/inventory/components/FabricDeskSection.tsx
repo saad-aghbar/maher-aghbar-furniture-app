@@ -5,6 +5,7 @@ import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
+import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { toastMessageForError } from '@/api/queryClient';
 import { allocateFabricFromStock, listFabricProcurements } from '@/api/modules/purchasing';
 import { listFabricHolding } from '@/api/modules/inventory';
@@ -165,6 +166,7 @@ export function FabricDeskSection({ q, enabled = true }: Props) {
         qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricLists() }),
         qc.invalidateQueries({ queryKey: [...queryKeys.inventory.all, 'fabric-holding'] }),
         qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
+        invalidateFactoryJourney(qc),
       ]);
       void haptics.confirmLight();
       showToast({ variant: 'success', message: t('mobile.purchasing.fabricAllocateSuccess') });

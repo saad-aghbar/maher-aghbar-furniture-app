@@ -128,6 +128,21 @@
   "searchSpecOptions": "Search options…",
   "noSpecOptionsMatch": "No options match.",
   "noSpecOption": "No option",
+  "addSpec": "Add spec",
+  "editSpec": "Edit spec",
+  "specsHint": "Only the specs this piece uses. Name them, categorize them, pin them.",
+  "noSpecs": "No specs pinned",
+  "noSpecsBody": "Add a category, then name the spec for this variant.",
+  "specCategory": "Category",
+  "newSpecCategory": "New category",
+  "newSpecCategoryHint": "Foam, wood, piping — whatever this piece needs.",
+  "specName": "Spec name",
+  "newSpecName": "Name this spec",
+  "newSpecNameHint": "Factory wording for this variant. Saved as its own library line.",
+  "pinSpec": "Pin spec",
+  "saveSpec": "Save spec",
+  "searchSpecCategories": "Search categories…",
+  "librarySpecs": "Library lines",
   "inputType": "Input type",
   "appliesTo": "Applies to",
   "sortOrder": "Sort order",
@@ -914,5 +929,5 @@
   "variantWorkflowHint": "Pick the workflow, then open production setup to set stage materials and times.",
   "workflowStageSummary": "{stages} stages · {minutes}",
   "stageTime": "Stage time",
-  "stageTimeHint": "Minutes per unit for this stage. Saved with the rest of the setup."
+  "stageTimeHint": "How long this stage takes on this variant."
 }

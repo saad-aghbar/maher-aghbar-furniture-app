@@ -42,6 +42,7 @@ export function CodeScannerProvider({ children }: { children: ReactNode }) {
   const qrSessionRef = useRef(0);
   const flushedRef = useRef(false);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reopeningRef = useRef(false);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current != null) {
@@ -99,6 +100,7 @@ export function CodeScannerProvider({ children }: { children: ReactNode }) {
       qrLog(qrSessionRef.current, 'camera modal visible');
       return;
     }
+    if (reopeningRef.current) return;
     if (!resolverRef.current || flushedRef.current) return;
 
     const sid = qrSessionRef.current;
@@ -130,9 +132,9 @@ export function CodeScannerProvider({ children }: { children: ReactNode }) {
     setTitle(options?.title);
     setHint(options?.hint);
     setSession((n) => n + 1);
-    setOpen(true);
     return new Promise<string | null>((resolve) => {
       resolverRef.current = resolve;
+      setOpen(true);
     });
   }, [clearWatchdog]);
 
@@ -144,28 +146,30 @@ export function CodeScannerProvider({ children }: { children: ReactNode }) {
   return (
     <CodeScannerContext.Provider value={value}>
       {children}
-      <Modal
-        visible={open}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => finish(null)}
-        onDismiss={() => {
-          qrLog(qrSessionRef.current, 'onDismiss fired');
-          flushResolve('onDismiss');
-        }}
-        statusBarTranslucent
-      >
-        <CodeScannerScreen
-          key={session}
-          title={title}
-          hint={hint}
-          onConfirm={(code) => {
-            qrLog(qrSessionRef.current, `code detected ${code}`);
-            finish(code);
+      {open ? (
+        <Modal
+          visible
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => finish(null)}
+          onDismiss={() => {
+            qrLog(qrSessionRef.current, 'onDismiss fired');
+            flushResolve('onDismiss');
           }}
-          onCancel={() => finish(null)}
-        />
-      </Modal>
+          statusBarTranslucent
+        >
+          <CodeScannerScreen
+            key={session}
+            title={title}
+            hint={hint}
+            onConfirm={(code) => {
+              qrLog(qrSessionRef.current, `code detected ${code}`);
+              finish(code);
+            }}
+            onCancel={() => finish(null)}
+          />
+        </Modal>
+      ) : null}
     </CodeScannerContext.Provider>
   );
 }

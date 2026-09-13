@@ -27,7 +27,10 @@ import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
+import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { haptics, useReducedMotion } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
@@ -71,6 +74,8 @@ export function AdminSettingsScreen() {
   const allowed = can(user, 'settings.manage');
 
   const [company, setCompany] = useState<CompanySettings | null>(null);
+  const [companyName, setCompanyName] = useState('');
+  const [originalCompanyName, setOriginalCompanyName] = useState('');
   const [integrations, setIntegrations] = useState<IntegrationsSettings | null>(null);
 
   const settingsQuery = useQuery({
@@ -90,14 +95,27 @@ export function AdminSettingsScreen() {
         lowStockAlertsEnabled: c.lowStockAlertsEnabled ?? true,
         autoReorderEnabled: c.autoReorderEnabled ?? true,
       });
+      const shown = localizedName(locale, c, '');
+      setCompanyName(shown);
+      setOriginalCompanyName(shown);
     }
     if (i) setIntegrations({ ...i });
-  }, [settingsQuery.data]);
+  }, [settingsQuery.data, locale]);
 
   const companyMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!company) throw new Error('missing company');
-      return patchCompanySettings(company);
+      const names = await resolveTrilingualIfChanged({
+        typed: companyName,
+        locale,
+        original: originalCompanyName,
+        existing: { nameEn: company.nameEn, nameAr: company.nameAr, nameHe: '' },
+      });
+      return patchCompanySettings({
+        ...company,
+        nameEn: names.nameEn,
+        nameAr: names.nameAr,
+      });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.settings.root() });
@@ -238,15 +256,10 @@ export function AdminSettingsScreen() {
               gap: theme.spacing.md,
             }}
           >
-            <TextField
-              label={t('catalog.nameAr')}
-              value={company.nameAr}
-              onChangeText={(v) => setCompany({ ...company, nameAr: v })}
-            />
-            <TextField
-              label={t('catalog.nameEn')}
-              value={company.nameEn}
-              onChangeText={(v) => setCompany({ ...company, nameEn: v })}
+            <LocaleNameField
+              value={companyName}
+              onChange={setCompanyName}
+              label={t('catalog.name')}
             />
             <PhoneField
               label={t('catalog.phone')}

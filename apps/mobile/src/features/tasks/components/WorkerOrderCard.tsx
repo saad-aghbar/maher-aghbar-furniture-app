@@ -18,8 +18,12 @@ export function WorkerOrderCard({ order, index = 0, animateEnter = true }: Props
       animateEnter={animateEnter}
       href={`/(app)/(employee)/lane/${order.id}` as Href}
       metaStage={{
-        label: t('mobile.tasks.cardRemaining'),
-        value: t('mobile.tasks.orderCardTasks', { count: order.myTaskCount }),
+        label: order.assignedToMe
+          ? t('mobile.tasks.cardRemaining')
+          : t('mobile.tasks.viewOnly'),
+        value: order.assignedToMe
+          ? t('mobile.tasks.orderCardTasks', { count: order.myTaskCount })
+          : t('mobile.tasks.viewOnly'),
       }}
       task={{
         id: order.id,

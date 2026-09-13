@@ -173,6 +173,7 @@ export function InventorySemiOrderScreen() {
         unit: 'pcs',
         imageUrl: null,
         itemClass: 'SEMI_FINISHED_GOOD',
+        printKind: 'wip-kit',
       });
       return;
     }

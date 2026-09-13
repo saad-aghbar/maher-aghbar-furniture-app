@@ -18,6 +18,7 @@ import {
   ReturnInventoryFate,
   ReturnResolution,
   SalesOrderStatus,
+  ManufacturingComplexity,
   StageInstanceStatus,
   TaskStatus,
   InvoiceStatus,
@@ -42,6 +43,9 @@ import { buildStageTaskInstructions } from '../stage-task-instructions';
 import { STANDARD_FURNITURE_WORKFLOW_CODE } from '../seed/workflow';
 import { VAT, lineTotals, money } from '../seed/util';
 import { addDays, ammanLocal, demoAsOf, demoWindowStart } from './clock';
+import { buildOrderLineSpecSnapshot } from '../../../../packages/types/src/manufacturing-complexity';
+import { MATERIAL_PHOTO_BY_SKU } from './material-photo-pool';
+import { buildDemoStories, storyLinesOf, type DemoStory, type DemoStoryLine, type StoryKind } from './stories';
 import {
   atOrBefore,
   isDemoStageInProgress,
@@ -63,14 +67,19 @@ import {
 } from './inventory-lifecycle';
 import { applyDemoMovement } from './stock';
 import { nextDoc, type SeqBag } from './seq';
-import { buildDemoStories, storyLinesOf, type DemoStory, type StoryKind } from './stories';
 import { seedDemoQuotationLifecycle } from './quotation-lifecycle';
 
-async function loadCompiledWorkflow(prisma: PrismaClient, productId: string, variantId?: string) {
-  const config = await prisma.productWorkflowConfiguration.findUnique({
-    where: { productId },
-    include: { workflow: true, stageOverrides: true },
-  });
+async function loadCompiledWorkflow(
+  prisma: PrismaClient,
+  productId?: string | null,
+  variantId?: string | null,
+) {
+  const config = productId
+    ? await prisma.productWorkflowConfiguration.findUnique({
+        where: { productId },
+        include: { workflow: true, stageOverrides: true },
+      })
+    : null;
   const workflow =
     config?.workflow ??
     (await prisma.productionWorkflow.findUnique({
@@ -117,7 +126,9 @@ async function loadCompiledWorkflow(prisma: PrismaClient, productId: string, var
     dependencyType: 'HARD' as const,
   }));
   const productEstimateMinutes: Record<string, number | null> = {};
-  const estimates = await prisma.productStageEstimate.findMany({ where: { productId } });
+  const estimates = productId
+    ? await prisma.productStageEstimate.findMany({ where: { productId } })
+    : [];
   const byStage = new Map<string, (typeof estimates)[number]>();
   for (const e of estimates) {
     if (e.variantId == null) byStage.set(e.stageDefinitionId, e);
@@ -218,6 +229,14 @@ function soStatusFor(kind: StoryKind): SalesOrderStatus {
       return SalesOrderStatus.IN_PRODUCTION;
   }
 }
+
+function lineComplexity(row: DemoStoryLine): ManufacturingComplexity {
+  if (row.custom || row.complexity === 'CUSTOM') return ManufacturingComplexity.CUSTOM;
+  if (row.complexity === 'MODIFIED') return ManufacturingComplexity.MODIFIED;
+  return ManufacturingComplexity.STANDARD;
+}
+
+const GOLDEN_CUSTOM_PHOTO = MATERIAL_PHOTO_BY_SKU['MAT-BOU-CRM']!;
 
 function poStatusFor(kind: StoryKind): ProductionOrderStatus {
   switch (kind) {
@@ -347,8 +366,8 @@ export async function seedDemoOrders(
   const pending: Array<{
     story: DemoStory;
     dealer: DealerRef;
-    product: ProductRef;
-    variant: VariantRef;
+    product: ProductRef | null;
+    variant: VariantRef | null;
     so: { id: string; number: string; priority: Priority };
     po: { id: string; number: string };
     line: { id: string; description: string; quantity: Prisma.Decimal; sortOrder: number };
@@ -383,6 +402,9 @@ export async function seedDemoOrders(
       throw new Error(`Story ${story.id} missing dealer ${story.dealer}`);
     }
     const resolvedLines = storyLinesOf(story).map((storyLine, sortOrder) => {
+      if (storyLine.custom) {
+        return { ...storyLine, product: null, variant: null, sortOrder };
+      }
       const product = productBySku.get(storyLine.sku);
       if (!product) throw new Error(`Story ${story.id} missing sku ${storyLine.sku}`);
       const variant = resolveVariant(storyLine.sku, storyLine.variantCode);
@@ -395,6 +417,16 @@ export async function seedDemoOrders(
     const requiredDelivery = presentationRequiredDelivery(story, createdAt, asOf);
     const priced = await Promise.all(
       resolvedLines.map(async (row) => {
+        if (!row.product || !row.variant) {
+          const unit = 4200;
+          const totals = lineTotals(row.qty, unit);
+          const mfg = unit * 0.45 * row.qty;
+          const specText =
+            [row.fabric, row.wood].filter(Boolean).join(' / ') ||
+            [story.fabric, story.wood].filter(Boolean).join(' / ') ||
+            null;
+          return { ...row, unit, totals, mfg, specText };
+        }
         const dealerPrice = await prisma.dealerPrice.findFirst({
           where: { customerId: dealer.id, productId: row.product.id, variantId: row.variant.id },
         });
@@ -439,16 +471,19 @@ export async function seedDemoOrders(
         updatedAt: createdAt,
         items: {
           create: priced.map((row) => ({
-            productId: row.product.id,
-            variantId: row.variant.id,
-            variantSku: row.variant.sku,
-            variantLabel: row.variant.nameAr || row.variant.nameEn,
-            productName: row.variant.nameEn,
+            productId: row.product?.id ?? null,
+            variantId: row.variant?.id ?? null,
+            variantSku: row.variant?.sku,
+            variantLabel: row.variant?.nameAr || row.variant?.nameEn,
+            productName: row.custom ? row.name || 'Custom piece' : row.variant?.nameEn,
             quantity: money(row.qty),
+            width: row.width != null ? money(row.width) : undefined,
             fabricType: row.fabric ?? story.fabric,
             fabricCode: (row.fabric ?? story.fabric) ? `FAB-${row.sku}` : undefined,
             woodType: row.wood ?? story.wood,
-            notes: story.notes,
+            notes: row.notes ?? story.notes,
+            manufacturingComplexity: lineComplexity(row),
+            photoDocumentIds: row.custom ? [GOLDEN_CUSTOM_PHOTO] : undefined,
             sortOrder: row.sortOrder,
           })),
         },
@@ -484,12 +519,22 @@ export async function seedDemoOrders(
         updatedAt: createdAt,
         lines: {
           create: priced.map((row) => ({
-            productId: row.product.id,
-            variantId: row.variant.id,
-            variantSku: row.variant.sku,
-            variantLabel: row.variant.nameAr || row.variant.nameEn,
-            description: row.variant.nameEn,
+            productId: row.product?.id ?? null,
+            variantId: row.variant?.id ?? null,
+            variantSku: row.variant?.sku,
+            variantLabel: row.variant?.nameAr || row.variant?.nameEn,
+            description: row.custom ? row.name || 'Custom piece' : row.variant?.nameEn ?? 'Item',
             quantity: money(row.qty),
+            width: row.width != null ? money(row.width) : undefined,
+            manufacturingComplexity: lineComplexity(row),
+            photoDocumentIds: row.custom ? [GOLDEN_CUSTOM_PHOTO] : undefined,
+            lineSpec: row.custom
+              ? ({
+                  productImageRef: GOLDEN_CUSTOM_PHOTO,
+                  productName: row.name || 'Custom piece',
+                  manufacturingComplexity: 'CUSTOM',
+                } as Prisma.InputJsonValue)
+              : undefined,
             unitPrice: money(row.unit),
             taxRate: VAT,
             subtotal: money(row.totals.subtotal),
@@ -539,21 +584,44 @@ export async function seedDemoOrders(
         createdAt,
         updatedAt: createdAt,
         lines: {
-          create: priced.map((row) => ({
-            productId: row.product.id,
-            variantId: row.variant.id,
-            variantSku: row.variant.sku,
-            variantLabel: row.variant.nameAr || row.variant.nameEn,
-            description: row.variant.nameEn,
-            specifications: row.specText,
-            quantity: money(row.qty),
-            unitPrice: money(row.unit),
-            taxRate: VAT,
-            lineTotal: money(row.totals.lineTotal),
-            productionRequired: true,
-            deliveryRequired: true,
-            sortOrder: row.sortOrder,
-          })),
+          create: priced.map((row) => {
+            const complexity = lineComplexity(row);
+            const displayName = row.custom
+              ? row.name || 'Custom piece'
+              : row.variant?.nameEn ?? 'Item';
+            return {
+              productId: row.product?.id ?? null,
+              variantId: row.variant?.id ?? null,
+              variantSku: row.variant?.sku,
+              variantLabel: row.variant?.nameAr || row.variant?.nameEn,
+              description: displayName,
+              specifications: row.specText,
+              quantity: money(row.qty),
+              unitPrice: money(row.unit),
+              taxRate: VAT,
+              lineTotal: money(row.totals.lineTotal),
+              productionRequired: true,
+              deliveryRequired: true,
+              manufacturingComplexity: complexity,
+              orderSpec: buildOrderLineSpecSnapshot({
+                productId: row.product?.id,
+                variantId: row.variant?.id,
+                variantSku: row.variant?.sku,
+                variantLabel: row.variant?.nameAr || row.variant?.nameEn,
+                variantCode: row.variant?.code,
+                modelSku: row.product?.sku,
+                productName: displayName,
+                productImageRef: row.custom ? GOLDEN_CUSTOM_PHOTO : undefined,
+                quantity: row.qty,
+                width: row.width,
+                fabricType: row.fabric ?? story.fabric,
+                woodType: row.wood ?? story.wood,
+                notes: row.notes ?? story.notes,
+                manufacturingComplexity: complexity,
+              }) as Prisma.InputJsonValue,
+              sortOrder: row.sortOrder,
+            };
+          }),
         },
       },
       include: { lines: true },
@@ -575,8 +643,8 @@ export async function seedDemoOrders(
     const lineQty = Number(line.quantity) || pricedLine.qty;
     const { workflowId, versionId, versionNumber, compiled } = await loadCompiledWorkflow(
       prisma,
-      product.id,
-      variant.id,
+      product?.id,
+      variant?.id,
     );
     const included = [...compiled.included].sort((a, b) => a.sortOrder - b.sortOrder);
     const codes = included.map((n) => n.stageCode);
@@ -597,10 +665,10 @@ export async function seedDemoOrders(
         salesOrderId: so.id,
         salesOrderLineId: line.id,
         customerId: dealer.id,
-        productId: product.id,
-        variantId: variant.id,
-        variantSku: variant.sku,
-        variantLabel: variant.nameAr || variant.nameEn,
+        productId: product?.id ?? null,
+        variantId: variant?.id ?? null,
+        variantSku: variant?.sku,
+        variantLabel: variant?.nameAr || variant?.nameEn,
         productDescription: line.description,
         quantity: line.quantity,
         specifications: line.specifications,
@@ -609,9 +677,9 @@ export async function seedDemoOrders(
         priority: so.priority,
         progressPercent: Math.round((done.size / Math.max(included.length, 1)) * 100),
         plannedStartDate: createdAt,
-        instructionsAr: variant.factoryNotesAr,
-        instructionsEn: variant.factoryNotesEn,
-        instructionsHe: variant.factoryNotesHe,
+        instructionsAr: variant?.factoryNotesAr ?? null,
+        instructionsEn: variant?.factoryNotesEn ?? null,
+        instructionsHe: variant?.factoryNotesHe ?? null,
         createdById: opts.adminId,
         createdAt,
         updatedAt: createdAt,
@@ -622,7 +690,7 @@ export async function seedDemoOrders(
 
     const released =
       story.kind !== 'draft' && story.kind !== 'proposed' && story.kind !== 'not_started';
-    if (released) {
+    if (released && product && variant) {
       const profile = await prisma.productProductionProfile.findFirst({
         where: { productId: product.id, variantId: variant.id },
       });
@@ -655,20 +723,22 @@ export async function seedDemoOrders(
     await prisma.salesOrderLineSetup.upsert({
       where: { salesOrderLineId: line.id },
       update: {
-        instructionsAr: variant.factoryNotesAr,
-        instructionsEn: variant.factoryNotesEn,
-        instructionsHe: variant.factoryNotesHe,
-        factoryNotes: variant.factoryNotesAr,
+        instructionsAr: variant?.factoryNotesAr ?? null,
+        instructionsEn: variant?.factoryNotesEn ?? null,
+        instructionsHe: variant?.factoryNotesHe ?? null,
+        factoryNotes: variant?.factoryNotesAr ?? null,
       },
       create: {
         productionSetupId: productionSetup.id,
         salesOrderLineId: line.id,
         status: released ? 'READY' : 'NEEDS_REVIEW',
-        manufacturingName: variant.nameAr || variant.nameEn,
-        factoryNotes: variant.factoryNotesAr,
-        instructionsAr: variant.factoryNotesAr,
-        instructionsEn: variant.factoryNotesEn,
-        instructionsHe: variant.factoryNotesHe,
+        manufacturingName:
+          pricedLine.name || variant?.nameAr || variant?.nameEn || line.description,
+        manufacturingComplexity: lineComplexity(pricedLine),
+        factoryNotes: variant?.factoryNotesAr ?? null,
+        instructionsAr: variant?.factoryNotesAr ?? null,
+        instructionsEn: variant?.factoryNotesEn ?? null,
+        instructionsHe: variant?.factoryNotesHe ?? null,
       },
     });
 
@@ -691,9 +761,15 @@ export async function seedDemoOrders(
       estimatedMinutes: number;
     }> = [];
     const demoSnapNodes: DemoSnapNodeRow[] = [];
-    const productOutputs = await loadProductInventoryOutputs(prisma, product.id, variant.id);
-    const productInputs = await loadProductInventoryInputs(prisma, product.id, variant.id);
-    const productMaterialInputs = await loadProductMaterialInputs(prisma, product.id, variant.id);
+    const productOutputs = product
+      ? await loadProductInventoryOutputs(prisma, product.id, variant?.id)
+      : [];
+    const productInputs = product
+      ? await loadProductInventoryInputs(prisma, product.id, variant?.id)
+      : [];
+    const productMaterialInputs = product
+      ? await loadProductMaterialInputs(prisma, product.id, variant?.id)
+      : [];
 
     for (const n of included) {
       const completed = done.has(n.stageCode);
@@ -766,9 +842,9 @@ export async function seedDemoOrders(
           consumeInventoryItemIds:
             consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
           defaultWarehouseId: resolved.warehouseId ?? undefined,
-          instructionsAr: variant.factoryNotesAr,
-          instructionsEn: variant.factoryNotesEn,
-          instructionsHe: variant.factoryNotesHe,
+          instructionsAr: variant?.factoryNotesAr ?? null,
+          instructionsEn: variant?.factoryNotesEn ?? null,
+          instructionsHe: variant?.factoryNotesHe ?? null,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,
@@ -1092,7 +1168,7 @@ export async function seedDemoOrders(
       const prepTask = taskRows.find((t) => t.stageCode === 'MATERIAL_PREP');
       const alloc = result.allocations.find((a) => a.productionTaskId === prepTask?.id);
       const at = alloc?.plannedStart ?? createdAt;
-      for (const bom of variant.bom) {
+      for (const bom of variant?.bom ?? []) {
         const item = itemsBySku.get(bom.sku);
         if (!item) continue;
         const qty = bom.qty * (Number(line.quantity) || story.qty);
@@ -1300,7 +1376,7 @@ export async function seedDemoOrders(
               number: await nextDoc(prisma, 'return_request', opts.counters),
               customerId: dealer.id,
               salesOrderId: so.id,
-              productDesc: product.nameEn,
+              productDesc: product?.nameEn ?? line.description,
               quantity: money(Math.min(story.returnInfo.qty, story.qty)),
               reason: story.returnInfo.reason,
               description: 'Dealer return from delivered order.',

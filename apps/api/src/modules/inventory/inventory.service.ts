@@ -348,6 +348,7 @@ export class InventoryService {
       sku?: string;
       nameAr: string;
       nameEn: string;
+      nameHe?: string;
       unit?: string;
       category?: string;
       minStock?: number;
@@ -392,6 +393,7 @@ export class InventoryService {
       sku,
       nameAr: dto.nameAr.trim(),
       nameEn: dto.nameEn.trim(),
+      nameHe: dto.nameHe?.trim() || undefined,
       unit: dto.unit?.trim() || 'pcs',
       category: (dto.category as never) || undefined,
       itemClass: classified.itemClass as never,
@@ -451,6 +453,7 @@ export class InventoryService {
     dto: Partial<{
       nameAr: string;
       nameEn: string;
+      nameHe: string | null;
       unit: string;
       category: string;
       minStock: number;
@@ -490,6 +493,7 @@ export class InventoryService {
       data: {
         ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr.trim() } : {}),
         ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn.trim() } : {}),
+        ...(dto.nameHe !== undefined ? { nameHe: dto.nameHe?.trim() || null } : {}),
         ...(dto.unit !== undefined ? { unit: dto.unit.trim() } : {}),
         ...(dto.category !== undefined ? { category: dto.category as never } : {}),
         ...(dto.minStock !== undefined ? { minStock: roundMoney(dto.minStock) } : {}),

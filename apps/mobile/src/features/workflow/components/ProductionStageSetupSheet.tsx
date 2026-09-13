@@ -7,6 +7,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 import {
   locationsForWarehouse,
@@ -15,6 +16,7 @@ import {
 import { pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
@@ -26,6 +28,7 @@ import {
   terminalSetupMode,
 } from '../productionSetupBehavior';
 import { StageToggleRow } from './StageEditorFields';
+import { StageTimeClock } from './StageTimeClock';
 
 type Props = {
   open: boolean;
@@ -88,10 +91,16 @@ type Props = {
 
 type PieceDraft = {
   key: string;
+  name: string;
+  originalName: string;
   nameEn: string;
   nameAr: string;
   nameHe: string;
 };
+
+function emptyPiece(key: string): PieceDraft {
+  return { key, name: '', originalName: '', nameEn: '', nameAr: '', nameHe: '' };
+}
 
 /** Nested radio row — same language as StageToggleRow inside Takes/Makes boards. */
 function ChoiceCard({
@@ -239,6 +248,8 @@ function resizePieceDrafts(rows: PieceDraft[], count: number): PieceDraft[] {
       ...rows,
       ...Array.from({ length: n - rows.length }, (_, i) => ({
         key: `pack-${Date.now()}-${rows.length + i}`,
+        name: '',
+        originalName: '',
         nameEn: '',
         nameAr: '',
         nameHe: '',
@@ -351,22 +362,22 @@ export function ProductionStageSetupSheet({
   const [consumeRaw, setConsumeRaw] = useState(false);
   const [consumeSemi, setConsumeSemi] = useState(false);
   const [produce, setProduce] = useState(coerceSetupProduceKind('none'));
+  const [kitName, setKitName] = useState('');
+  const [originalKitName, setOriginalKitName] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [nameHe, setNameHe] = useState('');
   const [qty, setQty] = useState('1');
   const [packPieces, setPackPieces] = useState('1');
-  const [pieces, setPieces] = useState<PieceDraft[]>([
-    { key: 'p0', nameEn: '', nameAr: '', nameHe: '' },
-  ]);
+  const [pieces, setPieces] = useState<PieceDraft[]>([emptyPiece('p0')]);
+  const [saving, setSaving] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [locationId, setLocationId] = useState('');
   const [consumeIds, setConsumeIds] = useState<string[]>([]);
   const [materialInputs, setMaterialInputs] = useState<Array<{ sku: string; qtyPerUnit: number }>>(
     [],
   );
-  const [minutesPerUnit, setMinutesPerUnit] = useState('0');
-  const [setupMinutes, setSetupMinutes] = useState('0');
+  const [durationMinutes, setDurationMinutes] = useState(0);
 
   const setupMode = terminalSetupMode(stage?.stageCode);
   const isPackaging = setupMode === 'packaging';
@@ -397,6 +408,17 @@ export function ProductionStageSetupSheet({
             stage.behavior === 'USES_SEMI_FINISHED' ||
             stage.behavior === 'USES_AND_PRODUCES');
     setConsumeSemi(wantSemi);
+    const shownKit = localizedName(
+      locale,
+      {
+        nameEn: stage.output?.nameEn,
+        nameAr: stage.output?.nameAr,
+        nameHe: stage.output?.nameHe,
+      },
+      '',
+    );
+    setKitName(shownKit);
+    setOriginalKitName(shownKit);
     setNameEn(stage.output?.nameEn ?? '');
     setNameAr(stage.output?.nameAr ?? '');
     setNameHe(stage.output?.nameHe ?? '');
@@ -411,13 +433,18 @@ export function ProductionStageSetupSheet({
     );
     setPackPieces(String(packCount));
     const seeded = labels.length
-      ? labels.map((row, i) => ({
-          key: `p${i}-${row.nameEn || i}`,
-          nameEn: row.nameEn ?? '',
-          nameAr: row.nameAr ?? '',
-          nameHe: row.nameHe ?? '',
-        }))
-      : [{ key: 'p0', nameEn: '', nameAr: '', nameHe: '' }];
+      ? labels.map((row, i) => {
+          const shown = localizedName(locale, row, '');
+          return {
+            key: `p${i}-${row.nameEn || i}`,
+            name: shown,
+            originalName: shown,
+            nameEn: row.nameEn ?? '',
+            nameAr: row.nameAr ?? '',
+            nameHe: row.nameHe ?? '',
+          };
+        })
+      : [emptyPiece('p0')];
     setPieces(resizePieceDrafts(seeded, packCount));
     setWarehouseId(stage.output?.defaultWarehouseId ?? '');
     const allowedIds = new Set((stage.upstreamOutputs ?? []).map((o) => o.id));
@@ -458,11 +485,13 @@ export function ProductionStageSetupSheet({
         })
         .filter((row) => row.qtyPerUnit > 0),
     );
-    setMinutesPerUnit(String(stage.minutesPerUnit ?? 0));
-    setSetupMinutes(String(stage.setupMinutes ?? 0));
+    setDurationMinutes(
+      Math.max(0, Number(stage.minutesPerUnit) || 0) +
+        Math.max(0, Number(stage.setupMinutes) || 0),
+    );
     // Re-init only when opening / switching stage — not when sibling array identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
-  }, [open, stage?.workflowNodeId]);
+  }, [open, stage?.workflowNodeId, locale]);
 
   const upstream = stage?.upstreamOutputs ?? [];
   const canTakeSemi = upstream.length > 0;
@@ -859,19 +888,8 @@ export function ProductionStageSetupSheet({
             title={t('catalog.stageTime')}
             hint={t('catalog.stageTimeHint')}
           />
-          <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
-            <TextField
-              label={t('catalog.minutesPerUnit')}
-              value={minutesPerUnit}
-              onChangeText={setMinutesPerUnit}
-              keyboardType="decimal-pad"
-            />
-            <TextField
-              label={t('catalog.setupMinutes')}
-              value={setupMinutes}
-              onChangeText={setSetupMinutes}
-              keyboardType="decimal-pad"
-            />
+          <View style={{ padding: theme.spacing.md }}>
+            <StageTimeClock totalMinutes={durationMinutes} onChange={setDurationMinutes} />
           </View>
         </View>
 
@@ -1272,20 +1290,10 @@ export function ProductionStageSetupSheet({
                   >
                     {t('production.setup.kitNameHint')}
                   </AppText>
-                  <TextField
-                    label={t('production.setup.outputNameEn')}
-                    value={nameEn}
-                    onChangeText={setNameEn}
-                  />
-                  <TextField
-                    label={t('production.setup.outputNameAr')}
-                    value={nameAr}
-                    onChangeText={setNameAr}
-                  />
-                  <TextField
-                    label={t('production.setup.outputNameHe')}
-                    value={nameHe}
-                    onChangeText={setNameHe}
+                  <LocaleNameField
+                    value={kitName}
+                    onChange={setKitName}
+                    label={t('catalog.name')}
                   />
                   <TextField
                     label={t('production.setup.outputQty')}
@@ -1355,42 +1363,21 @@ export function ProductionStageSetupSheet({
                           </Pressable>
                         ) : null}
                       </View>
-                      <TextField
-                        label={t('production.setup.pieceNameEn')}
-                        value={piece.nameEn}
-                        onChangeText={(v) =>
+                      <LocaleNameField
+                        value={piece.name}
+                        onChange={(v) =>
                           setPieces((rows) =>
-                            rows.map((r) => (r.key === piece.key ? { ...r, nameEn: v } : r)),
+                            rows.map((r) => (r.key === piece.key ? { ...r, name: v } : r)),
                           )
                         }
-                      />
-                      <TextField
-                        label={t('production.setup.pieceNameAr')}
-                        value={piece.nameAr}
-                        onChangeText={(v) =>
-                          setPieces((rows) =>
-                            rows.map((r) => (r.key === piece.key ? { ...r, nameAr: v } : r)),
-                          )
-                        }
-                      />
-                      <TextField
-                        label={t('production.setup.pieceNameHe')}
-                        value={piece.nameHe}
-                        onChangeText={(v) =>
-                          setPieces((rows) =>
-                            rows.map((r) => (r.key === piece.key ? { ...r, nameHe: v } : r)),
-                          )
-                        }
+                        label={t('catalog.name')}
                       />
                     </View>
                   ))}
                   <Pressable
                     onPress={() => {
                       void haptics.selection();
-                      setPieces((rows) => [
-                        ...rows,
-                        { key: `p${Date.now()}`, nameEn: '', nameAr: '', nameHe: '' },
-                      ]);
+                      setPieces((rows) => [...rows, emptyPiece(`p${Date.now()}`)]);
                     }}
                     style={{
                       minHeight: 44,
@@ -1487,33 +1474,15 @@ export function ProductionStageSetupSheet({
                     <AppText variant="caption" weight="semibold">
                       {t('production.setup.packPieceN', { n: String(index + 1) })}
                     </AppText>
-                    <TextField
-                      label={t('production.setup.pieceNameEn')}
-                      value={piece.nameEn}
-                      onChangeText={(v) =>
+                    <LocaleNameField
+                      value={piece.name}
+                      onChange={(v) =>
                         setPieces((rows) =>
-                          rows.map((r) => (r.key === piece.key ? { ...r, nameEn: v } : r)),
+                          rows.map((r) => (r.key === piece.key ? { ...r, name: v } : r)),
                         )
                       }
+                      label={t('catalog.name')}
                       placeholder={t('production.setup.packPieceNamePlaceholder')}
-                    />
-                    <TextField
-                      label={t('production.setup.pieceNameAr')}
-                      value={piece.nameAr}
-                      onChangeText={(v) =>
-                        setPieces((rows) =>
-                          rows.map((r) => (r.key === piece.key ? { ...r, nameAr: v } : r)),
-                        )
-                      }
-                    />
-                    <TextField
-                      label={t('production.setup.pieceNameHe')}
-                      value={piece.nameHe}
-                      onChangeText={(v) =>
-                        setPieces((rows) =>
-                          rows.map((r) => (r.key === piece.key ? { ...r, nameHe: v } : r)),
-                        )
-                      }
                     />
                   </View>
                 ))}
@@ -1599,7 +1568,13 @@ export function ProductionStageSetupSheet({
         >
           <PrimaryButton
             label={t('mobile.production.workflow.setupSave')}
+            loading={saving}
+            disabled={saving}
             onPress={() => {
+              void (async () => {
+              if (!stage || saving) return;
+              setSaving(true);
+              try {
               const mode = terminalSetupMode(stage.stageCode);
               const nextProduce = coerceSetupProduceKind(produce, stage.stageCode);
               const nextConsumeRaw =
@@ -1616,21 +1591,48 @@ export function ProductionStageSetupSheet({
                 produce: nextProduce,
               });
               const packCount = Math.max(1, Math.floor(Number(packPieces) || 1));
+              const kitNames =
+                nextProduce === 'finished'
+                  ? {
+                      nameEn: product?.nameEn ?? nameEn,
+                      nameAr: product?.nameAr ?? nameAr,
+                      nameHe: product?.nameHe ?? nameHe,
+                    }
+                  : await resolveTrilingualIfChanged({
+                      typed: kitName,
+                      locale,
+                      original: originalKitName,
+                      existing: { nameEn, nameAr, nameHe },
+                    });
+              const resolvePiece = async (p: PieceDraft) => {
+                if (!p.name.trim()) {
+                  return { nameEn: '', nameAr: '', nameHe: null as string | null };
+                }
+                const names = await resolveTrilingualIfChanged({
+                  typed: p.name,
+                  locale,
+                  original: p.originalName,
+                  existing: {
+                    nameEn: p.nameEn,
+                    nameAr: p.nameAr,
+                    nameHe: p.nameHe,
+                  },
+                });
+                return {
+                  nameEn: names.nameEn,
+                  nameAr: names.nameAr,
+                  nameHe: names.nameHe || null,
+                };
+              };
               const pieceLabels =
                 nextProduce === 'semi'
-                  ? pieces
-                      .filter((p) => p.nameEn.trim())
-                      .map((p) => ({
-                        nameEn: p.nameEn.trim(),
-                        nameAr: p.nameAr.trim() || p.nameEn.trim(),
-                        nameHe: p.nameHe.trim() || null,
-                      }))
+                  ? (
+                      await Promise.all(
+                        pieces.filter((p) => p.name.trim()).map((p) => resolvePiece(p)),
+                      )
+                    )
                   : nextProduce === 'finished'
-                    ? pieces.slice(0, packCount).map((p) => ({
-                        nameEn: p.nameEn.trim(),
-                        nameAr: p.nameAr.trim() || p.nameEn.trim(),
-                        nameHe: p.nameHe.trim() || null,
-                      }))
+                    ? await Promise.all(pieces.slice(0, packCount).map((p) => resolvePiece(p)))
                     : null;
               const namedPackLabels =
                 nextProduce === 'finished'
@@ -1692,8 +1694,8 @@ export function ProductionStageSetupSheet({
                   : [];
               onSave({
                 ...stage,
-                minutesPerUnit: Math.max(0, Number(minutesPerUnit) || 0),
-                setupMinutes: Math.max(0, Number(setupMinutes) || 0),
+                minutesPerUnit: durationMinutes,
+                setupMinutes: 0,
                 behavior: nextBehavior,
                 consumesRawMaterials: nextConsumeRaw || nextBehavior === 'USES_MATERIALS',
                 consumesSemiFinished: effectiveSemi,
@@ -1703,18 +1705,9 @@ export function ProductionStageSetupSheet({
                 output: setupProduces(nextBehavior)
                   ? {
                       id: stage.output?.id ?? null,
-                      nameEn:
-                        nextProduce === 'finished'
-                          ? product?.nameEn ?? nameEn
-                          : nameEn,
-                      nameAr:
-                        nextProduce === 'finished'
-                          ? product?.nameAr ?? nameAr
-                          : nameAr,
-                      nameHe:
-                        nextProduce === 'finished'
-                          ? product?.nameHe ?? nameHe
-                          : nameHe,
+                      nameEn: kitNames.nameEn,
+                      nameAr: kitNames.nameAr,
+                      nameHe: kitNames.nameHe,
                       qtyPerUnit: Number(qty) || 1,
                       expectedPieceCount:
                         nextProduce === 'finished'
@@ -1726,6 +1719,10 @@ export function ProductionStageSetupSheet({
                     }
                   : null,
               });
+              } finally {
+                setSaving(false);
+              }
+              })();
             }}
           />
         </View>

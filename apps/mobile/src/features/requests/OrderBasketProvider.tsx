@@ -114,7 +114,7 @@ export function OrderBasketProvider({ children }: { children: ReactNode }) {
   const addFromCatalog = useCallback((pick: CatalogBasketPick, unique = false) => {
     let addedId = '';
     setLinesState((prev) => {
-      if (unique) {
+      if (unique && !pick.preferUpdate) {
         const match = prev.find(
           (line) =>
             line.productId === pick.productId &&
@@ -125,8 +125,15 @@ export function OrderBasketProvider({ children }: { children: ReactNode }) {
           return prev;
         }
       }
-      const next = applyCatalogProductToBasket(prev, pick);
-      addedId = next[next.length - 1]?.id ?? '';
+      const next = applyCatalogProductToBasket(prev, pick, {
+        preferUpdate: pick.preferUpdate,
+      });
+      const same = next.find(
+        (line) =>
+          line.productId === pick.productId &&
+          (line.variantId || '') === (pick.variantId || ''),
+      );
+      addedId = same?.id ?? next[next.length - 1]?.id ?? '';
       return next;
     });
     return addedId;

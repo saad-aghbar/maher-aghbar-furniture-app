@@ -23,6 +23,7 @@ import {
   weekRangeFromYmd,
   factoryWeekDates,
   filterScheduleCards,
+  groupSchedulingCardsBySalesOrder,
   type AdminScheduleCardModel,
 } from '../selectAdminScheduling';
 
@@ -608,5 +609,49 @@ describe('schedule cache invalidation', () => {
     expect(serialized.some((key) => key.includes('planSetup') || key.includes('plan-setup'))).toBe(true);
     expect(serialized.some((key) => key.includes('scheduling'))).toBe(true);
     expect(serialized.some((key) => key.includes('po-59'))).toBe(true);
+  });
+});
+
+describe('groupSchedulingCardsBySalesOrder', () => {
+  it('stacks production cards under the sales order', () => {
+    const groups = groupSchedulingCardsBySalesOrder([
+      orderCard({
+        id: 'po-a',
+        productionOrderId: 'po-a',
+        salesOrderId: 'so-1',
+        salesOrderNumber: 'SO-26',
+      }),
+      orderCard({
+        id: 'po-b',
+        productionOrderId: 'po-b',
+        salesOrderId: 'so-1',
+        salesOrderNumber: 'SO-26',
+      }),
+      orderCard({
+        id: 'po-c',
+        productionOrderId: 'po-c',
+        salesOrderId: 'so-2',
+        salesOrderNumber: 'SO-27',
+      }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.salesOrderNumber).toBe('SO-26');
+    expect(groups[0]?.cards.map((c) => c.productionOrderId)).toEqual(['po-a', 'po-b']);
+    expect(groups[1]?.salesOrderNumber).toBe('SO-27');
+    expect(groups[1]?.cards).toHaveLength(1);
+  });
+
+  it('keeps orphan production orders in their own group', () => {
+    const groups = groupSchedulingCardsBySalesOrder([
+      orderCard({ id: 'po-x', productionOrderId: 'po-x' }),
+      orderCard({
+        id: 'po-y',
+        productionOrderId: 'po-y',
+        salesOrderId: 'so-9',
+        salesOrderNumber: 'SO-9',
+      }),
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(['po:po-x', 'so-9']);
+    expect(groups[0]?.cards[0]?.productionOrderId).toBe('po-x');
   });
 });

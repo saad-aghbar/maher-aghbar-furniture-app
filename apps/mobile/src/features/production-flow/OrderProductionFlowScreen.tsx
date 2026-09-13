@@ -33,7 +33,7 @@ type Props = {
 };
 
 /**
- * Items-first production flow: list each PO, or skip straight to the only item.
+ * Items-first production flow: always list each PO, then open one workflow.
  */
 export function OrderProductionFlowScreen({
   role,
@@ -64,11 +64,7 @@ export function OrderProductionFlowScreen({
         role={role}
         source="production-order"
         id={targetPoId}
-        backFallback={
-          selectedProductionOrderId && items.length !== 1
-            ? listHref
-            : orderBackFallback
-        }
+        backFallback={selectedProductionOrderId ? listHref : orderBackFallback}
       />
     );
   }

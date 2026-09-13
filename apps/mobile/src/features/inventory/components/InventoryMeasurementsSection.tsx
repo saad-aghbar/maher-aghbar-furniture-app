@@ -5,15 +5,17 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
-import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import {
   MeasurementFloorRow,
   displayMeasurementUnit,
 } from '@/features/catalog/components/MeasurementFloorRow';
 import { MeasurementValuePanel } from '@/features/catalog/components/MeasurementValueSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryCustomMeasurement } from '../api';
@@ -24,7 +26,15 @@ function strNum(v: string): number | null {
 }
 
 function emptyDraft() {
-  return { nameEn: '', nameAr: '', value: '', unit: 'cm' };
+  return {
+    name: '',
+    originalName: '',
+    nameEn: '',
+    nameAr: '',
+    nameHe: '',
+    value: '',
+    unit: 'cm',
+  };
 }
 
 type Draft = ReturnType<typeof emptyDraft>;
@@ -34,8 +44,9 @@ export function useInventoryMeasurementEditor(
   onChange: (rows: InventoryCustomMeasurement[]) => void,
   hostOpen = true,
 ) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { showToast } = useToast();
+  const [saving, setSaving] = useState(false);
   const [measureSheet, setMeasureSheet] = useState(false);
   const [measureValueSheet, setMeasureValueSheet] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -67,8 +78,11 @@ export function useInventoryMeasurementEditor(
   const openEdit = (index: number, row: InventoryCustomMeasurement) => {
     void haptics.selection();
     setDraft({
+      name: localizedName(locale, row, ''),
+      originalName: localizedName(locale, row, ''),
       nameEn: row.nameEn,
       nameAr: row.nameAr,
+      nameHe: row.nameHe ?? '',
       value: row.value != null ? String(row.value) : '',
       unit: displayMeasurementUnit(row.unit),
     });
@@ -77,32 +91,45 @@ export function useInventoryMeasurementEditor(
     setMeasureSheet(true);
   };
 
-  const save = () => {
-    if (!draft.nameEn.trim() || !draft.nameAr.trim()) {
+  const save = async () => {
+    if (!draft.name.trim()) {
       void haptics.error();
       showToast({
         variant: 'error',
-        message: label(
-          'catalog.measurementNamesRequired',
-          'English and Arabic names are required.',
-        ),
+        message: label('catalog.namesRequired', 'Name is required.'),
       });
       return;
     }
-    const next: InventoryCustomMeasurement = {
-      ...(editingIndex != null ? measurements[editingIndex] : {}),
-      nameEn: draft.nameEn.trim(),
-      nameAr: draft.nameAr.trim(),
-      value: strNum(draft.value),
-      unit: draft.unit.trim() || 'cm',
-    };
-    onChange(
-      editingIndex != null
-        ? measurements.map((row, i) => (i === editingIndex ? next : row))
-        : [...measurements, next],
-    );
-    void haptics.confirmLight();
-    close();
+    setSaving(true);
+    try {
+      const names = await resolveTrilingualIfChanged({
+        typed: draft.name,
+        locale,
+        original: draft.originalName,
+        existing: {
+          nameEn: draft.nameEn,
+          nameAr: draft.nameAr,
+          nameHe: draft.nameHe,
+        },
+      });
+      const next: InventoryCustomMeasurement = {
+        ...(editingIndex != null ? measurements[editingIndex] : {}),
+        nameEn: names.nameEn,
+        nameAr: names.nameAr,
+        nameHe: names.nameHe || null,
+        value: strNum(draft.value),
+        unit: draft.unit.trim() || 'cm',
+      };
+      onChange(
+        editingIndex != null
+          ? measurements.map((row, i) => (i === editingIndex ? next : row))
+          : [...measurements, next],
+      );
+      void haptics.confirmLight();
+      close();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return {
@@ -119,6 +146,7 @@ export function useInventoryMeasurementEditor(
     draft,
     setDraft,
     save,
+    saving,
   };
 }
 
@@ -222,7 +250,8 @@ type SheetProps = {
   editingIndex: number | null;
   draft: Draft;
   setDraft: (update: Draft | ((prev: Draft) => Draft)) => void;
-  save: () => void;
+  save: () => void | Promise<void>;
+  saving?: boolean;
 };
 
 /** Overlay sibling of Add/Edit item — never nest this inside the host sheet. */
@@ -235,6 +264,7 @@ export function InventoryMeasurementEditorSheet({
   draft,
   setDraft,
   save,
+  saving = false,
 }: SheetProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -272,15 +302,9 @@ export function InventoryMeasurementEditorSheet({
         />
       ) : (
         <View style={{ gap: theme.spacing.md }}>
-          <TextField
-            label={t('catalog.measurementNameEn')}
-            value={draft.nameEn}
-            onChangeText={(v) => setDraft((m) => ({ ...m, nameEn: v }))}
-          />
-          <TextField
-            label={t('catalog.measurementNameAr')}
-            value={draft.nameAr}
-            onChangeText={(v) => setDraft((m) => ({ ...m, nameAr: v }))}
+          <LocaleNameField
+            value={draft.name}
+            onChange={(v) => setDraft((m) => ({ ...m, name: v }))}
           />
           <View style={{ gap: theme.spacing.sm }}>
             <QtyStepperField
@@ -355,7 +379,9 @@ export function InventoryMeasurementEditorSheet({
                 ? t('common.save')
                 : label('catalog.addMeasurement', 'Add measurement')
             }
-            onPress={save}
+            onPress={() => void save()}
+            loading={saving}
+            disabled={saving}
             style={{ borderRadius: theme.radius.xl }}
           />
         </View>

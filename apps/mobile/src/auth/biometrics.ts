@@ -9,7 +9,6 @@ export type BiometricKind = 'face' | 'touchId' | 'fingerprint' | 'generic';
 
 export type BiometricCredentials = {
   username: string;
-  password: string;
 };
 
 export async function isBiometricUnlockEnabled(): Promise<boolean> {
@@ -90,14 +89,9 @@ export function parseBiometricCredentials(
 ): BiometricCredentials | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { username?: unknown; password?: unknown };
-    if (
-      typeof parsed.username === 'string' &&
-      typeof parsed.password === 'string' &&
-      parsed.username.trim().length > 0 &&
-      parsed.password.length > 0
-    ) {
-      return { username: parsed.username.trim(), password: parsed.password };
+    const parsed = JSON.parse(raw) as { username?: unknown };
+    if (typeof parsed.username === 'string' && parsed.username.trim().length > 0) {
+      return { username: parsed.username.trim() };
     }
   } catch {
     return null;
@@ -105,21 +99,20 @@ export function parseBiometricCredentials(
   return null;
 }
 
-export async function saveBiometricCredentials(
-  username: string,
-  password: string,
-): Promise<void> {
-  const creds = parseBiometricCredentials(
-    JSON.stringify({ username: username.trim(), password }),
-  );
-  if (!creds) return;
-  await SecureStore.setItemAsync(BIOMETRIC_CREDS_KEY, JSON.stringify(creds));
+export async function saveBiometricCredentials(username: string): Promise<void> {
+  const trimmed = username.trim();
+  if (!trimmed) return;
+  await SecureStore.setItemAsync(BIOMETRIC_CREDS_KEY, JSON.stringify({ username: trimmed }));
 }
 
 export async function getBiometricCredentials(): Promise<BiometricCredentials | null> {
   try {
     const raw = await SecureStore.getItemAsync(BIOMETRIC_CREDS_KEY);
-    return parseBiometricCredentials(raw);
+    const creds = parseBiometricCredentials(raw);
+    if (creds && raw?.includes('"password"')) {
+      await saveBiometricCredentials(creds.username);
+    }
+    return creds;
   } catch {
     return null;
   }

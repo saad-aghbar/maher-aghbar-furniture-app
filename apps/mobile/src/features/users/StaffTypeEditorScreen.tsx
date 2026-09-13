@@ -14,7 +14,9 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
@@ -33,9 +35,13 @@ import { localizedPermissionGroupName, localizedPermissionName } from './permiss
 type Props = { id: string };
 
 type FormState = {
+  name: string;
+  originalName: string;
   nameEn: string;
   nameAr: string;
   nameHe: string;
+  description: string;
+  originalDescription: string;
   descriptionEn: string;
   descriptionAr: string;
   descriptionHe: string;
@@ -43,17 +49,18 @@ type FormState = {
 };
 
 const empty = (): FormState => ({
+  name: '',
+  originalName: '',
   nameEn: '',
   nameAr: '',
   nameHe: '',
+  description: '',
+  originalDescription: '',
   descriptionEn: '',
   descriptionAr: '',
   descriptionHe: '',
   permissionCodes: [],
 });
-
-const ltrField = { writingDirection: 'ltr' as const, textAlign: 'left' as const };
-const rtlField = { writingDirection: 'rtl' as const, textAlign: 'right' as const };
 
 /**
  * Mobile staff-type editor — names plus grouped assignable permissions.
@@ -76,29 +83,44 @@ export function StaffTypeEditorScreen({ id }: Props) {
 
   useEffect(() => {
     if (!detailQuery.data) return;
+    const row = detailQuery.data;
+    const shownName = localizedName(locale, row, '');
+    const shownDescription = localizedName(
+      locale,
+      {
+        nameEn: row.descriptionEn,
+        nameAr: row.descriptionAr,
+        nameHe: row.descriptionHe,
+      },
+      '',
+    );
     setForm({
-      nameEn: detailQuery.data.nameEn || '',
-      nameAr: detailQuery.data.nameAr || '',
-      nameHe: detailQuery.data.nameHe || '',
-      descriptionEn: detailQuery.data.descriptionEn || '',
-      descriptionAr: detailQuery.data.descriptionAr || '',
-      descriptionHe: detailQuery.data.descriptionHe || '',
-      permissionCodes: (detailQuery.data.permissions ?? []).map((p) => p.permission.code),
+      name: shownName,
+      originalName: shownName,
+      nameEn: row.nameEn || '',
+      nameAr: row.nameAr || '',
+      nameHe: row.nameHe || '',
+      description: shownDescription,
+      originalDescription: shownDescription,
+      descriptionEn: row.descriptionEn || '',
+      descriptionAr: row.descriptionAr || '',
+      descriptionHe: row.descriptionHe || '',
+      permissionCodes: (row.permissions ?? []).map((p) => p.permission.code),
     } satisfies FormState);
-  }, [detailQuery.data]);
+  }, [detailQuery.data, locale]);
 
   const readOnly = Boolean(!isNew && detailQuery.data?.isSystem);
   const saving = createMutation.isPending || updateMutation.isPending;
-  const canSave = !readOnly && Boolean(form.nameEn.trim() && form.nameAr.trim());
+  const canSave = !readOnly && Boolean(form.name.trim());
   const leadPad = leadSize + theme.spacing.sm;
   const trailPad = (!readOnly ? leadSize + theme.spacing['2xl'] : leadSize) + theme.spacing.sm;
-  const named = detailQuery.data ?? (form.nameEn ? form : null);
+  const named = detailQuery.data ?? (form.name ? form : null);
   const headerTitle = isNew
     ? t('users.newStaffType')
     : localizedName(
         locale,
         named,
-        form.nameEn || (readOnly ? t('users.view') : t('users.editStaffType')),
+        form.name || (readOnly ? t('users.view') : t('users.editStaffType')),
       );
   const descriptionMinHeight = theme.sizes.touch.min;
 
@@ -122,17 +144,36 @@ export function StaffTypeEditorScreen({ id }: Props) {
   const onSubmit = async () => {
     setError(null);
     if (readOnly) return;
-    if (!form.nameEn.trim() || !form.nameAr.trim()) {
-      setError(t('validation.nameRequired'));
+    if (!form.name.trim()) {
+      setError(t('catalog.namesRequired'));
       return;
     }
+    const names = await resolveTrilingualIfChanged({
+      typed: form.name,
+      locale,
+      original: form.originalName,
+      existing: { nameEn: form.nameEn, nameAr: form.nameAr, nameHe: form.nameHe },
+    });
+    const descriptions = form.description.trim()
+      ? await resolveTrilingualIfChanged({
+          typed: form.description,
+          locale,
+          original: form.originalDescription,
+          existing: {
+            nameEn: form.descriptionEn,
+            nameAr: form.descriptionAr,
+            nameHe: form.descriptionHe,
+          },
+          kind: 'prose',
+        })
+      : { nameEn: '', nameAr: '', nameHe: '' };
     const body = {
-      nameEn: form.nameEn.trim(),
-      nameAr: form.nameAr.trim(),
-      nameHe: form.nameHe.trim() || undefined,
-      descriptionEn: form.descriptionEn.trim() || undefined,
-      descriptionAr: form.descriptionAr.trim() || undefined,
-      descriptionHe: form.descriptionHe.trim() || undefined,
+      nameEn: names.nameEn,
+      nameAr: names.nameAr,
+      nameHe: names.nameHe || undefined,
+      descriptionEn: descriptions.nameEn.trim() || undefined,
+      descriptionAr: descriptions.nameAr.trim() || undefined,
+      descriptionHe: descriptions.nameHe.trim() || undefined,
       permissionCodes: expandPermissionDependencies(form.permissionCodes),
     };
     try {
@@ -241,53 +282,19 @@ export function StaffTypeEditorScreen({ id }: Props) {
           titleWeight={titleWeight}
           uppercase={false}
         >
-          <TextField
-            label={t('users.nameEn')}
-            value={form.nameEn}
+          <LocaleNameField
+            value={form.name}
+            onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+            label={t('users.name')}
             editable={!readOnly}
-            style={ltrField}
-            onChangeText={(v) => setForm((f) => ({ ...f, nameEn: v }))}
           />
-          <TextField
-            label={t('users.nameAr')}
-            value={form.nameAr}
-            editable={!readOnly}
-            style={rtlField}
-            onChangeText={(v) => setForm((f) => ({ ...f, nameAr: v }))}
-          />
-          <TextField
-            label={`${t('users.nameHe')} (${t('users.optional')})`}
-            value={form.nameHe}
-            editable={!readOnly}
-            style={rtlField}
-            onChangeText={(v) => setForm((f) => ({ ...f, nameHe: v }))}
-          />
-          <TextField
-            label={`${t('users.descriptionEn')} (${t('users.optional')})`}
-            value={form.descriptionEn}
+          <LocaleNameField
+            value={form.description}
+            onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+            label={t('catalog.description')}
             editable={!readOnly}
             multiline
             growMinHeight={descriptionMinHeight}
-            style={ltrField}
-            onChangeText={(v) => setForm((f) => ({ ...f, descriptionEn: v }))}
-          />
-          <TextField
-            label={`${t('users.descriptionAr')} (${t('users.optional')})`}
-            value={form.descriptionAr}
-            editable={!readOnly}
-            multiline
-            growMinHeight={descriptionMinHeight}
-            style={rtlField}
-            onChangeText={(v) => setForm((f) => ({ ...f, descriptionAr: v }))}
-          />
-          <TextField
-            label={`${t('users.descriptionHe')} (${t('users.optional')})`}
-            value={form.descriptionHe}
-            editable={!readOnly}
-            multiline
-            growMinHeight={descriptionMinHeight}
-            style={rtlField}
-            onChangeText={(v) => setForm((f) => ({ ...f, descriptionHe: v }))}
           />
         </UserFormSection>
 

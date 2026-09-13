@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { BrandMark } from '@/components/BrandMark';
+import { BrandQrCode } from '@/components/branding/BrandQrCode';
 import { PriorityBadge } from '@/components/badges/PriorityBadge';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
@@ -240,6 +241,7 @@ export const richDemoRenderers: Record<string, (ctx: LabRenderContext) => ReactN
   'shared.app-header': () => <AppHeader title="App header" />,
   'shared.back-button': () => <BackButton onPress={() => undefined} />,
   'shared.brand-mark': () => <BrandMark />,
+  'shared.brand-qr-code': () => <BrandQrCode value="MAT-BOU-CRM" size={168} />,
   'shared.product-thumb': () => <ProductThumb uri={null} size={72} />,
   'shared.bottom-sheet': SharedBottomSheetDemo,
   'shared.confirmation-sheet': SharedConfirmationSheetDemo,

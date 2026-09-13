@@ -35,6 +35,7 @@ export type InventoryItemCardModel = {
   name: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string | null;
   sku: string;
   scanCode: string | null;
   category: string;
@@ -200,6 +201,7 @@ export function selectInventoryItemCard(
     name: localizedName(item, locale),
     nameEn: item.nameEn,
     nameAr: item.nameAr,
+    nameHe: item.nameHe ?? null,
     sku: item.sku,
     scanCode: item.scanCode?.trim() || null,
     category: item.category,

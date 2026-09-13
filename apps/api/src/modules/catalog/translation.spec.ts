@@ -40,4 +40,26 @@ describe('TranslationService', () => {
     const service = new TranslationService(mockTranslate());
     expect(await service.fillEnglishProse('لف بسيط', '')).toBe('EN لف بسيط');
   });
+
+  it('keeps an English source in nameEn instead of stuffing it into nameAr', async () => {
+    const service = new TranslationService(mockTranslate());
+    expect(await service.translateName('Beech lumber', 'en')).toEqual({
+      nameAr: 'Beech lumber',
+      nameEn: 'Beech lumber',
+      nameHe: 'HE Beech lumber',
+    });
+  });
+
+  it('fills every locale for prose from a Hebrew source', async () => {
+    const service = new TranslationService(
+      mockTranslate({
+        translate: async (text, _from, to) => `${to}:${text}`,
+      }),
+    );
+    expect(await service.translateProseAll('כיסא', 'he')).toEqual({
+      nameAr: 'ar:כיסא',
+      nameEn: 'en:כיסא',
+      nameHe: 'כיסא',
+    });
+  });
 });

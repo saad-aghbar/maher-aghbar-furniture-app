@@ -177,6 +177,7 @@ export function InventorySemiOrderDetailSheet({
       <ScrollView
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
+        style={{ maxHeight: 460 }}
         contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}
       >
         <View
@@ -491,6 +492,7 @@ export function InventorySemiOrderDetailSheet({
             </View>
           </View>
         ) : null}
+      </ScrollView>
 
         <InventorySheetFooter
           primaryLabel={t('mobile.inventory.wipShowQr')}
@@ -499,8 +501,9 @@ export function InventorySemiOrderDetailSheet({
             onPrintQr ? t('mobile.inventory.wipPrintKitLabel') : t('mobile.inventory.cancel')
           }
           onSecondary={onPrintQr ? () => onPrintQr(kit) : onClose}
+          tertiaryLabel={onPrintQr ? t('mobile.inventory.cancel') : undefined}
+          onTertiary={onPrintQr ? onClose : undefined}
         />
-      </ScrollView>
       <ImageViewer
         open={viewerIndex != null && photoUris.length > 0}
         uris={photoUris}

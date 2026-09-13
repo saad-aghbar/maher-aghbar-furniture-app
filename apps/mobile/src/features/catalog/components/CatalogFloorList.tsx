@@ -10,6 +10,8 @@ export const FLOOR_ROW_ESTIMATE = {
   measurement: 84,
   seller: 92,
   bom: 152,
+  workflow: 88,
+  spec: 108,
 } as const;
 
 const FLOOR_LIST_VISIBLE_ROWS = 3;

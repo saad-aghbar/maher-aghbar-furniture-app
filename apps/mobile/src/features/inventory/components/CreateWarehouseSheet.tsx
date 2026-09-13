@@ -4,9 +4,10 @@ import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
-import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Warehouse, WarehouseType } from '../api';
@@ -31,17 +32,17 @@ export function CreateWarehouseSheet({
   onCreated,
   defaultType = 'RAW_MATERIALS',
 }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { theme } = useTheme();
   const { showToast } = useToast();
   const createMutation = useCreateWarehouseMutation();
 
-  const [nameEn, setNameEn] = useState('');
-  const [nameAr, setNameAr] = useState('');
+  const [name, setName] = useState('');
   const [type, setType] = useState<WarehouseType>('RAW_MATERIALS');
   const [typeSheet, setTypeSheet] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
 
   const label = (key: string, fallback: string) => {
     const value = t(key);
@@ -50,32 +51,30 @@ export function CreateWarehouseSheet({
 
   useEffect(() => {
     if (!open) return;
-    setNameEn('');
-    setNameAr('');
+    setName('');
     setType(defaultType);
     setTypeSheet(false);
     setIsDefault(false);
     setError(null);
   }, [open, defaultType]);
 
-  function submit() {
-    if (!nameEn.trim() || !nameAr.trim()) {
-      setError(
-        label(
-          'mobile.inventory.createWarehouseRequired',
-          'English and Arabic names are required.',
-        ),
-      );
+  async function submit() {
+    if (!name.trim()) {
+      setError(label('catalog.namesRequired', 'Name is required.'));
       return;
     }
     setError(null);
-    createMutation.mutate(
-      {
-        nameEn: nameEn.trim(),
-        nameAr: nameAr.trim(),
-        type,
-        isDefault,
-      },
+    setTranslating(true);
+    try {
+      const names = await resolveTrilingualName(name, locale);
+      createMutation.mutate(
+        {
+          nameEn: names.nameEn,
+          nameAr: names.nameAr,
+          nameHe: names.nameHe || undefined,
+          type,
+          isDefault,
+        },
       {
         onSuccess: (row) => {
           void haptics.confirmMedium();
@@ -99,6 +98,9 @@ export function CreateWarehouseSheet({
         },
       },
     );
+    } finally {
+      setTranslating(false);
+    }
   }
 
   return (
@@ -122,16 +124,7 @@ export function CreateWarehouseSheet({
               {error}
             </AppText>
           ) : null}
-          <TextField
-            label={t('mobile.inventory.nameEn')}
-            value={nameEn}
-            onChangeText={setNameEn}
-          />
-          <TextField
-            label={t('mobile.inventory.nameAr')}
-            value={nameAr}
-            onChangeText={setNameAr}
-          />
+          <LocaleNameField value={name} onChange={setName} />
           <InventoryPickerRow
             label={label('mobile.inventory.warehouseType', 'Warehouse type')}
             value={label(`mobile.inventory.warehouseTypes.${type}`, type)}
@@ -155,8 +148,8 @@ export function CreateWarehouseSheet({
             primaryLabel={t('mobile.inventory.saveItem')}
             onPrimary={submit}
             onSecondary={onClose}
-            loading={createMutation.isPending}
-            disabled={createMutation.isPending}
+            loading={createMutation.isPending || translating}
+            disabled={createMutation.isPending || translating}
           />
         </View>
       </BottomSheet>

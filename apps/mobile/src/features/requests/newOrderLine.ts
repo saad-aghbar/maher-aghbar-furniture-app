@@ -7,6 +7,9 @@ import type { NewOrderCustomMeasurement } from './newOrderMeasurements';
 import { parseDimNumber, toRequestCustomMeasurements } from './newOrderMeasurements';
 import { clampOrderQuantity } from './newOrderProductKind';
 
+/** Dealer-named spec on a modified catalog line — not a library SpecOptionValue. */
+export const DEALER_NAMED_SPEC_GROUP = 'DEALER_SPEC';
+
 export type NewOrderLineOption = {
   specOptionValueId: string;
   groupId?: string;
@@ -17,6 +20,10 @@ export type NewOrderLineOption = {
   qty?: number;
   note?: string;
 };
+
+export function isNamedDealerSpec(opt: NewOrderLineOption): boolean {
+  return !String(opt.specOptionValueId ?? '').trim() || opt.groupCode === DEALER_NAMED_SPEC_GROUP;
+}
 
 export type NewOrderLine = {
   id: string;
@@ -41,6 +48,12 @@ export type NewOrderLine = {
   orientation: string;
   options: NewOrderLineOption[];
   notes: string;
+  photoUris: string[];
+  photoDocumentIds: string[];
+  primaryImageDocumentId: string;
+  imageUrl: string;
+  dealerPrice: string;
+  modifiedByDealer: boolean;
 };
 
 export function newOrderLineId(): string {
@@ -71,6 +84,12 @@ export function emptyOrderLine(partial: Partial<NewOrderLine> = {}): NewOrderLin
     orientation: '',
     options: [],
     notes: '',
+    photoUris: [],
+    photoDocumentIds: [],
+    primaryImageDocumentId: '',
+    imageUrl: '',
+    dealerPrice: '',
+    modifiedByDealer: false,
     ...partial,
   };
 }
@@ -125,7 +144,13 @@ export function normalizeOrderLine(raw: unknown, index: number): NewOrderLine | 
       }))
     : [emptyDealerFabricRow()];
   const options = Array.isArray(row.options)
-    ? (row.options as NewOrderLineOption[]).filter((opt) => opt?.specOptionValueId)
+    ? (row.options as NewOrderLineOption[]).filter(
+        (opt) =>
+          Boolean(opt?.specOptionValueId) ||
+          Boolean(opt?.nameEn) ||
+          Boolean(opt?.nameAr) ||
+          Boolean(opt?.note),
+      )
     : [];
   return emptyOrderLine({
     id: String(row.id ?? `line-${index}`),
@@ -151,6 +176,15 @@ export function normalizeOrderLine(raw: unknown, index: number): NewOrderLine | 
     accessories: String(row.accessories ?? ''),
     options,
     notes: String(row.notes ?? ''),
+    photoUris: Array.isArray(row.photoUris)
+      ? (row.photoUris as string[]).filter((uri) => String(uri ?? '').trim())
+      : [],
+    photoDocumentIds: Array.isArray(row.photoDocumentIds)
+      ? (row.photoDocumentIds as string[]).filter((id) => String(id ?? '').trim())
+      : [],
+    imageUrl: String(row.imageUrl ?? ''),
+    dealerPrice: String(row.dealerPrice ?? ''),
+    modifiedByDealer: Boolean(row.modifiedByDealer),
   });
 }
 
@@ -210,16 +244,25 @@ export function lineToRequestItem(
     seatLabel,
   );
   const options = line.options
-    .filter((opt) => opt.specOptionValueId)
-    .map((opt) => ({
-      specOptionValueId: opt.specOptionValueId,
-      groupCode: opt.groupCode,
-      code: opt.code,
-      nameEn: opt.nameEn,
-      nameAr: opt.nameAr,
-      qty: opt.qty,
-      note: opt.note,
-    }));
+    .filter(
+      (opt) =>
+        Boolean(String(opt.specOptionValueId ?? '').trim()) ||
+        Boolean(opt.nameEn) ||
+        Boolean(opt.nameAr) ||
+        Boolean(opt.note),
+    )
+    .map((opt) => {
+      const specOptionValueId = String(opt.specOptionValueId ?? '').trim();
+      return {
+        ...(specOptionValueId ? { specOptionValueId } : {}),
+        groupCode: opt.groupCode,
+        code: opt.code,
+        nameEn: opt.nameEn,
+        nameAr: opt.nameAr,
+        qty: opt.qty,
+        note: opt.note,
+      };
+    });
   return {
     productId: line.productId.trim() || undefined,
     productName: line.customProductName.trim() || untitled,
@@ -243,5 +286,9 @@ export function lineToRequestItem(
     orientation:
       line.orientation.trim() && line.orientation !== 'NONE' ? line.orientation.trim() : undefined,
     options: options.length ? options : undefined,
+    photoDocumentIds: line.photoDocumentIds.filter(Boolean).length
+      ? line.photoDocumentIds.filter(Boolean)
+      : undefined,
+    primaryImageDocumentId: line.primaryImageDocumentId.trim() || undefined,
   };
 }

@@ -18,7 +18,8 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
-import { TextField } from '@/components/forms/TextField';
+import { LocaleNameField } from './BilingualNameField';
+import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -59,9 +60,7 @@ function categoryCodeFromName(name: string): string {
 }
 
 const emptyCreate = () => ({
-  nameEn: '',
-  nameAr: '',
-  nameHe: '',
+  name: '',
 });
 
 /**
@@ -185,16 +184,15 @@ export function CategoryPickerSheet({
   const listMax = sheetHeight - (requireConfirm || allowCreate ? 300 : 210);
 
   const createMutation = useMutation({
-    mutationFn: () => {
-      const nameEn = createForm.nameEn.trim();
-      const nameAr = createForm.nameAr.trim();
+    mutationFn: async () => {
+      const names = await resolveTrilingualName(createForm.name, locale);
       const code =
-        categoryCodeFromName(nameEn) || categoryCodeFromName(nameAr);
+        categoryCodeFromName(names.nameEn) || categoryCodeFromName(names.nameAr);
       return createProductCategory({
         code,
-        nameEn,
-        nameAr,
-        nameHe: createForm.nameHe.trim() || undefined,
+        nameEn: names.nameEn,
+        nameAr: names.nameAr,
+        nameHe: names.nameHe || undefined,
       });
     },
     onSuccess: async (row) => {
@@ -246,20 +244,9 @@ export function CategoryPickerSheet({
 
         {creating ? (
           <Animated.View entering={enter(1)} style={{ gap: theme.spacing.md }}>
-            <TextField
-              label={t('catalog.nameEn')}
-              value={createForm.nameEn}
-              onChangeText={(v) => setCreate('nameEn', v)}
-            />
-            <TextField
-              label={t('catalog.nameAr')}
-              value={createForm.nameAr}
-              onChangeText={(v) => setCreate('nameAr', v)}
-            />
-            <TextField
-              label={t('catalog.nameHe')}
-              value={createForm.nameHe}
-              onChangeText={(v) => setCreate('nameHe', v)}
+            <LocaleNameField
+              value={createForm.name}
+              onChange={(v) => setCreate('name', v)}
             />
             {createError ? (
               <AppText variant="caption" color="error">
@@ -271,7 +258,7 @@ export function CategoryPickerSheet({
               loading={createMutation.isPending}
               disabled={createMutation.isPending}
               onPress={() => {
-                if (!createForm.nameEn.trim() || !createForm.nameAr.trim()) {
+                if (!createForm.name.trim()) {
                   void haptics.error();
                   showToast({ variant: 'error', message: namesRequiredMsg });
                   setCreateError(namesRequiredMsg);

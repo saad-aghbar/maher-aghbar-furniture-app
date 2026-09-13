@@ -18,6 +18,7 @@ export type WorkerOrderCardModel = {
   myTaskCount: number;
   actionableCount: number;
   blockedCount: number;
+  assignedToMe: boolean;
 };
 
 export type WorkerSalesOrderCardModel = WorkerOrderCardModel & {
@@ -51,6 +52,7 @@ export function selectWorkerOrderCard(order: WorkerMyOrder, locale: Locale): Wor
     myTaskCount: order.myTaskCount,
     actionableCount: order.actionableCount,
     blockedCount: order.blockedCount,
+    assignedToMe: order.assignedToMe !== false,
   };
 }
 
@@ -102,17 +104,15 @@ export function selectWorkerSalesOrderCard(
     myTaskCount: order.myTaskCount,
     actionableCount: order.actionableCount,
     blockedCount: order.blockedCount,
+    assignedToMe: items.some((item) => item.assignedToMe),
     items,
   };
 }
 
 export function workerSalesOrderHref(
-  order: Pick<WorkerSalesOrderCardModel, 'itemCount' | 'laneId' | 'id'>,
+  order: Pick<WorkerSalesOrderCardModel, 'id'>,
   extras?: { segment?: string; q?: string },
 ): string {
-  if (order.itemCount <= 1) {
-    return `/(app)/(employee)/lane/${order.laneId}`;
-  }
   const qs = new URLSearchParams();
   if (extras?.segment) qs.set('segment', extras.segment);
   const needle = extras?.q?.trim();

@@ -1,6 +1,6 @@
 import { View } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
 import { AppText } from '@/components/AppText';
+import { BrandQrCode } from '@/components/branding/BrandQrCode';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -12,6 +12,7 @@ import {
 } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { InventoryBoardCard } from './InventoryBoardCard';
 
 export type InventoryQrItem = {
   id: string;
@@ -23,6 +24,8 @@ export type InventoryQrItem = {
   imageUrl: string | null;
   itemClass?: string | null;
   materialType?: string | null;
+  /** Which /qr-label URL Print must hit. Kits/lots must not fall back to the catalog SKU. */
+  printKind?: 'item' | 'wip-kit' | 'lot';
 };
 
 export function qrItemFromCard(card: InventoryItemCardModel): InventoryQrItem {
@@ -57,12 +60,13 @@ type Props = {
  * Sized to content — not a tall fixed sheet with empty stretch.
  */
 export function InventoryQrSheet({ open, item, onClose, onClosed, onPrint }: Props) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
   const payload = item?.scanCode?.trim() || '';
   const materialTypeLabel = formatInventoryMaterialType(item?.materialType, t);
   const meta = [item?.sku, materialTypeLabel, item?.unit].filter(Boolean).join(' · ');
   const qrSize = 168;
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <BottomSheet
@@ -75,23 +79,25 @@ export function InventoryQrSheet({ open, item, onClose, onClosed, onPrint }: Pro
     >
       {item ? (
         <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.xs }}>
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: theme.spacing.sm,
-            }}
-          >
-            <InventorySkuThumb uri={item.imageUrl} size={48} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <AppText variant="body" weight="semibold" numberOfLines={2}>
-                {item.name}
-              </AppText>
-              <AppText variant="caption" color="muted" dir="ltr" numberOfLines={1}>
-                {meta}
-              </AppText>
+          <InventoryBoardCard>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <InventorySkuThumb uri={item.imageUrl} size={48} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <AppText variant="body" weight={titleWeight} numberOfLines={2}>
+                  {item.name}
+                </AppText>
+                <AppText variant="caption" color="muted" dir="ltr" numberOfLines={1}>
+                  {meta}
+                </AppText>
+              </View>
             </View>
-          </View>
+          </InventoryBoardCard>
 
           {payload ? (
             <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
@@ -104,12 +110,7 @@ export function InventoryQrSheet({ open, item, onClose, onClosed, onPrint }: Pro
                   borderColor: colors.border,
                 }}
               >
-                <QRCode
-                  value={payload}
-                  size={qrSize}
-                  backgroundColor="#FFFFFF"
-                  color="#1A1A1A"
-                />
+                <BrandQrCode value={payload} size={qrSize} />
               </View>
               <View
                 style={{
@@ -119,7 +120,13 @@ export function InventoryQrSheet({ open, item, onClose, onClosed, onPrint }: Pro
                   backgroundColor: colors.surfaceSecondary,
                 }}
               >
-                <AppText variant="caption" weight="medium" dir="ltr" color="secondary">
+                <AppText
+                  variant="caption"
+                  weight="medium"
+                  dir="ltr"
+                  color="secondary"
+                  testID="qr-payload-caption"
+                >
                   {payload}
                 </AppText>
               </View>

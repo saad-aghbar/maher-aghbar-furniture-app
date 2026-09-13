@@ -37,6 +37,10 @@ import {
   previewOrderSetupLineSeedFromCatalog,
   seedOrderSetupLineFromCatalog,
 } from '@/api/modules/sales-orders';
+import {
+  fetchProductionProblems,
+  type ProductionProblemStatus,
+} from '@/api/modules/production';
 import { invalidateAfterCatalogSeed } from '@/features/sales-orders/catalogTemplateSheet';
 
 export function useProductionSummaryQuery(
@@ -406,5 +410,17 @@ export function useBlockTaskMutation(orderId: string) {
         reason: args.reason,
       }),
     onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useProductionProblemsQuery(
+  status: ProductionProblemStatus,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.production.problems(status),
+    queryFn: () => fetchProductionProblems(status),
+    enabled,
+    staleTime: 15_000,
   });
 }

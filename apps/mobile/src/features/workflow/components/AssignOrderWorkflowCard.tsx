@@ -1,20 +1,18 @@
-import { useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { useState } from 'react';
+import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
+import type { WorkflowScope } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
-import { TextField } from '@/components/forms/TextField';
+import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { WorkflowScope } from '@/api/modules/workflow';
 import { useAssignOrderWorkflowMutation, useWorkflowsQuery } from '@/features/workflow/query';
-import { workflowScopeLabelKey } from '@/features/workflow/workflowScope';
-import { WorkflowFloorBoard, WorkflowFloorRow } from './WorkflowFloorList';
+import { WorkflowPickDesk } from './WorkflowPickDesk';
 
 type Props = {
   productionOrderId: string;
@@ -26,90 +24,40 @@ export function AssignOrderWorkflowCard({ productionOrderId, preferredScope }: P
   const { theme } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
-  const [query, setQuery] = useState('');
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const workflowsQuery = useWorkflowsQuery(true);
   const assignMutation = useAssignOrderWorkflowMutation(productionOrderId);
 
-  const filtered = useMemo(() => {
-    const rows = (workflowsQuery.data ?? [])
-      .filter((wf) => Boolean(wf.activeVersion))
-      .sort((a, b) => {
-        if (!preferredScope) return 0;
-        const aMatch = (a.scope ?? 'STANDARD') === preferredScope ? 0 : 1;
-        const bMatch = (b.scope ?? 'STANDARD') === preferredScope ? 0 : 1;
-        return aMatch - bMatch;
-      });
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((wf) => {
-      const name = localizedName(locale, wf, wf.code).toLowerCase();
-      return name.includes(q) || wf.code.toLowerCase().includes(q);
-    });
-  }, [locale, preferredScope, query, workflowsQuery.data]);
-
   return (
-    <View style={{ gap: theme.spacing.md }}>
-      <AppText variant="body" weight="semibold">
+    <MoreBoard
+      style={{
+        padding: theme.spacing.lg,
+        gap: theme.spacing.md,
+      }}
+    >
+      <AppText variant="body" weight={titleWeight}>
         {t('mobile.production.workflow.needsWorkflowTitle')}
       </AppText>
       <AppText variant="caption" color="muted">
         {t('mobile.production.workflow.needsWorkflowBody')}
       </AppText>
 
-      <TextField
-        value={query}
-        onChangeText={setQuery}
-        placeholder={t('mobile.production.workflow.searchWorkflows')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        clearButtonMode="while-editing"
+      <WorkflowPickDesk
+        embedded
+        workflows={workflowsQuery.data ?? []}
+        selectedId={selectedId}
+        preferredScope={preferredScope}
+        initialScope={preferredScope ?? null}
+        loading={workflowsQuery.isLoading}
+        onSelect={setSelectedId}
       />
-
-      <ScrollView
-        style={{ maxHeight: 260 }}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-      >
-        <WorkflowFloorBoard
-          title={t('mobile.production.workflow.title')}
-          count={filtered.length}
-        >
-          {filtered.map((wf) => {
-            const active = selectedId === wf.id;
-            return (
-              <WorkflowFloorRow
-                key={wf.id}
-                label={localizedName(locale, wf, wf.code)}
-                meta={[
-                  t(workflowScopeLabelKey(wf.scope)),
-                  wf.activeVersion
-                    ? t('mobile.production.workflow.cardMeta', {
-                        version: wf.activeVersion.versionNumber,
-                        stages: wf.activeVersion._count?.nodes ?? 0,
-                      })
-                    : t('mobile.production.workflow.draftVersion'),
-                ].join(' · ')}
-                active={active}
-                showChevron={false}
-                onPress={() => {
-                  void haptics.selection();
-                  setSelectedId(wf.id);
-                }}
-              />
-            );
-          })}
-          {!workflowsQuery.isLoading && filtered.length === 0 ? (
-            <AppText color="muted">{t('mobile.production.workflow.noWorkflowMatches')}</AppText>
-          ) : null}
-        </WorkflowFloorBoard>
-      </ScrollView>
 
       <PrimaryButton
         label={t('mobile.production.workflow.assignWorkflow')}
         loading={assignMutation.isPending}
         disabled={!selectedId || assignMutation.isPending}
+        haptic="selection"
         style={{ borderRadius: theme.radius.xl }}
         onPress={() => {
           if (!selectedId) return;
@@ -140,12 +88,12 @@ export function AssignOrderWorkflowCard({ productionOrderId, preferredScope }: P
           void haptics.selection();
           router.push('/(app)/(admin)/production/workflow' as Href);
         }}
-        style={{ alignItems: 'center', paddingVertical: theme.spacing.sm }}
+        style={{ alignItems: 'center', paddingVertical: theme.spacing.sm, minHeight: theme.sizes.touch.min }}
       >
-        <AppText variant="body" weight="semibold" color="brand">
+        <AppText variant="body" weight={titleWeight} color="brand">
           {t('mobile.production.workflow.createWorkflowThenAssign')}
         </AppText>
       </AnimatedPressable>
-    </View>
+    </MoreBoard>
   );
 }

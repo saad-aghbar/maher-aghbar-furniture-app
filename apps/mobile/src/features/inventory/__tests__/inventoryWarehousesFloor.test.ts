@@ -25,6 +25,11 @@ describe('inventory warehouses desk', () => {
     expect(src).toContain("copy=\"bin\"");
     expect(src).toContain('InventoryIdentityBoard');
     expect(src).toContain('openWarehouseLocationQrLabelPdf');
+    expect(src).toContain('queueBinPrint');
+    expect(src).toContain('flushPendingBinPrint');
+    expect(src).toContain('onClosed={flushPendingBinPrint}');
+    expect(src).not.toContain('void printBin(inspectLoc)');
+    expect(src).not.toContain('void printBin(qrLoc)');
     expect(src).toContain('deactivateBin');
     expect(src).not.toContain('DeskCard');
     expect(src).not.toContain('SurfaceCard');

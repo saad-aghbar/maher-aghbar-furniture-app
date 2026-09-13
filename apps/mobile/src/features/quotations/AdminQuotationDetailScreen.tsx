@@ -3,7 +3,7 @@ import { Image, Linking, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName, presentQuotationStatus } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
@@ -19,6 +19,7 @@ import {
   type QuotationLine,
 } from '@/api/modules/quotations';
 import { queryKeys } from '@/api/queryKeys';
+import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
@@ -51,6 +52,7 @@ import {
   quotationQtyLabel,
   sellingPriceMissing,
 } from '@/features/quotations/presentAdminQuotation';
+import { quotationDraftSaveLines } from '@/features/requests/factoryLineDesk';
 
 type Props = {
   quotationId: string;
@@ -282,7 +284,7 @@ export function AdminQuotationDetailScreen({
     void queryClient.invalidateQueries({ queryKey: queryKeys.quotations.detail(quotationId) });
     void queryClient.invalidateQueries({ queryKey: queryKeys.quotations.all });
     void queryClient.invalidateQueries({ queryKey: queryKeys.requests.all });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
+    void invalidateFactoryJourney(queryClient);
   };
 
   const actionError = (err: unknown, fallback: string) => {
@@ -301,21 +303,7 @@ export function AdminQuotationDetailScreen({
         customerNotes: customerNotes.trim() || undefined,
         expirationDate: expirationDate.trim() || undefined,
         offeredDeliveryDate: offeredDeliveryDate.trim() || undefined,
-        lines: draftLines.map(({ unitPrice, line }) => ({
-          description: line.description,
-          quantity: Number(line.quantity) || 0,
-          unitPrice: Number(unitPrice) || 0,
-          unit: line.unit ?? undefined,
-          productId: line.productId ?? undefined,
-          material: line.material ?? undefined,
-          fabric: line.fabric ?? undefined,
-          color: line.color ?? undefined,
-          taxRate: line.taxRate != null ? Number(line.taxRate) : 0.16,
-          width: line.width != null ? Number(line.width) : undefined,
-          height: line.height != null ? Number(line.height) : undefined,
-          depth: line.depth != null ? Number(line.depth) : undefined,
-          manufacturingComplexity: quotationComplexity(line.manufacturingComplexity),
-        })),
+        lines: quotationDraftSaveLines(draftLines),
       }),
     onSuccess: () => {
       void haptics.confirmMedium();
@@ -824,6 +812,15 @@ export function AdminQuotationDetailScreen({
                               {boardMoney(locale, line.referenceUnitPrice)}
                             </AppText>
                           ) : null}
+                          <SecondaryButton
+                            label={t('mobile.adminQuotation.editLine')}
+                            onPress={() => {
+                              void haptics.selection();
+                              router.push(
+                                `/(app)/(admin)/quotations/${quotationId}/lines/${row.id}` as Href,
+                              );
+                            }}
+                          />
                         </View>
                       ) : (
                         <View style={{ minWidth: '40%', gap: 2 }}>

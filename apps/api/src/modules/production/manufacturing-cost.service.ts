@@ -20,6 +20,20 @@ function money(n: number): number {
   return Number(roundMoney(n));
 }
 
+/** Planned BOM rows belong to the sales-order line, never the production-order id. */
+export function plannedRequirementLineId(
+  row: {
+    salesOrderLineId?: string | null;
+    lineSetup?: { salesOrderLineId?: string | null } | null;
+  },
+  _productionOrderId?: string,
+): string | null {
+  const fromRow = row.salesOrderLineId?.trim();
+  if (fromRow) return fromRow;
+  const fromSetup = row.lineSetup?.salesOrderLineId?.trim();
+  return fromSetup || null;
+}
+
 function addMoneyNullable(a: number | null, b: number | null): number | null {
   if (a == null && b == null) return null;
   return money((a ?? 0) + (b ?? 0));
@@ -865,6 +879,7 @@ export class ManufacturingCostService {
         displayName: true,
         category: true,
         expectedQty: true,
+        lineSetup: { select: { salesOrderLineId: true } },
         inventoryItem: { select: { sku: true, nameEn: true, category: true } },
       },
     });
@@ -874,8 +889,9 @@ export class ManufacturingCostService {
         if (!sku) return null;
         const expected = m.expectedQty == null ? null : Number(m.expectedQty);
         if (expected == null) return null;
+        const salesOrderLineId = plannedRequirementLineId(m, productionOrderId) ?? '';
         return {
-          salesOrderLineId: productionOrderId,
+          salesOrderLineId,
           sku,
           displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
           category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,

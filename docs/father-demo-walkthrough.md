@@ -24,8 +24,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Live production + hybrid material usage.** Oasis L-sectional mid-flow (carpentry done → SEMI frames exist). Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates. **Inventory:** SEMI lots for this PO; carpentry task has seeded expected/actual usage (equal + return/scrap on a second line).
 
 - Dealer: Oasis Living (`CUS-0102`)
-- Sales order: **SO-2026-00049** (IN_PRODUCTION)
-- Production: **PO-2026-00066** (IN_PROGRESS)
+- Sales order: **SO-2026-00050** (IN_PRODUCTION)
+- Production: **PO-2026-00071** (IN_PROGRESS)
 - Dates: requested 2026-09-23 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 3. Nile blank production start
@@ -33,8 +33,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Just entered production — empty floor.** Sales order and PO are in production, but nothing has started: first stage READY, **0%** progress, no material issues, no WIP kits, no usage. Use Admin Orders → In production → this SO, then Production hub Materials / WIP / Tasks to see what is still missing and walk production setup yourself.
 
 - Dealer: Nile Interiors (`CUS-0101`)
-- Sales order: **SO-2026-00065** (IN_PRODUCTION)
-- Production: **PO-2026-00089** (IN_PROGRESS)
+- Sales order: **SO-2026-00066** (IN_PRODUCTION)
+- Production: **PO-2026-00093** (IN_PROGRESS)
 - Dates: requested 2026-10-11 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 4. Abdali hotel banquettes
@@ -54,8 +54,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Warehouse scan (identify only).** Inventory → Scan → `MAT-ITAL-VEL`. Photo + 0 on hand + inbound fabric purchase PO (24 m, sequential `PORD-…`). Stop before Confirm receive — or `pnpm demo:reset` after a mutation demo.
 
 - Dealer: Cedar House Amman (`CUS-0104`)
-- Sales order: **SO-2026-00053** (WAITING_FOR_MATERIALS)
-- Production: **PO-2026-00072** (WAITING_FOR_MATERIALS)
+- Sales order: **SO-2026-00054** (WAITING_FOR_MATERIALS)
+- Production: **PO-2026-00076** (WAITING_FOR_MATERIALS)
 - Dates: requested 2026-10-07 · suggested 2026-10-07 · committed — · factory earliest 2026-10-07 · planned — · actual —
 
 ### 6. Diwan wingback frame gate
@@ -63,8 +63,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **WIP at-risk.** Materials prepped; carpentry frames (SEMI lots) not produced yet. Scheduling NEEDS_REVIEW with WIP_NOT_READY — matches missing SEMI, not a status-only flag. **Inventory:** 0 SEMI lots for this PO.
 
 - Dealer: Diwan Seating (`CUS-0108`)
-- Sales order: **SO-2026-00051** (IN_PRODUCTION)
-- Production: **PO-2026-00069** (IN_PROGRESS)
+- Sales order: **SO-2026-00052** (IN_PRODUCTION)
+- Production: **PO-2026-00073** (IN_PROGRESS)
 - Dates: requested 2026-10-04 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 7. Noor banquettes 4 of 6 frames
@@ -72,8 +72,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Partial quantity.** Order qty 6; carpentry completedQty 4; SEMI lot qty 4. Remaining 2 frames still open — status never claims 6 physical frames.
 
 - Dealer: Noor Furnishings (`CUS-0109`)
-- Sales order: **SO-2026-00048** (IN_PRODUCTION)
-- Production: **PO-2026-00065** (IN_PROGRESS)
+- Sales order: **SO-2026-00049** (IN_PRODUCTION)
+- Production: **PO-2026-00069** (IN_PROGRESS)
 - Dates: requested 2026-10-07 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 8. Jabal contract dining
@@ -90,8 +90,8 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered. **Inventory:** no deliverable FIN for this PO.
 
 - Dealer: Oasis Living (`CUS-0102`)
-- Sales order: **SO-2026-00043** (IN_PRODUCTION)
-- Production: **PO-2026-00059** (ON_HOLD)
+- Sales order: **SO-2026-00044** (IN_PRODUCTION)
+- Production: **PO-2026-00063** (ON_HOLD)
 - Dates: requested 2026-09-27 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 10. Nile loveseat recovered
@@ -121,16 +121,16 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Schedule awaiting approval.** Proposed plan — dealer Schedule shows Requested / Expected · not confirmed, not a fake confirmed date.
 
 - Dealer: Qasr Suites (`CUS-0106`)
-- Sales order: **SO-2026-00063** (READY_FOR_PRODUCTION)
-- Production: **PO-2026-00086** (READY)
+- Sales order: **SO-2026-00064** (READY_FOR_PRODUCTION)
+- Production: **PO-2026-00090** (READY)
 - Dates: requested 2026-10-08 · suggested 2026-10-08 · committed — · factory earliest 2026-10-08 · planned — · actual —
 
 ### 13. Noor club chair hold
 
 **Dealer accept still pending.** Quote is SENT. Noor has not accepted — **اعتماد** (internal Approve) already happened at the factory; **قبول** (dealer Accept) has not. **No sales order** and no production.
 
-- Quotation: **Q-2026-00062** v1 (SENT)
-- RFQ: **RFQ-2026-00062**
+- Quotation: **Q-2026-00063** v1 (SENT)
+- RFQ: **RFQ-2026-00063**
 - Sales order: **none** — dealer has not accepted (قبول) yet.
 
 ### 14. Rawnaq dining six
@@ -138,16 +138,25 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 **Confirmed, not started.** READY_FOR_PRODUCTION with no started floor tasks.
 
 - Dealer: Rawnaq Showroom (`CUS-0107`)
-- Sales order: **SO-2026-00059** (READY_FOR_PRODUCTION)
-- Production: **PO-2026-00080** (READY)
+- Sales order: **SO-2026-00060** (READY_FOR_PRODUCTION)
+- Production: **PO-2026-00084** (READY)
 - Dates: requested 2026-10-05 · suggested 2026-10-05 · committed — · factory earliest 2026-10-05 · planned — · actual —
+
+### 15. Golden factory path
+
+
+
+- Dealer: Nile Interiors (`CUS-0101`)
+- Sales order: **SO-2026-00026** (READY_FOR_PRODUCTION)
+- Production: **PO-2026-00036** (READY)
+- Dates: requested 2026-09-18 · suggested 2026-09-17 · committed — · factory earliest 2026-09-17 · planned — · actual —
 
 ## Commercial quotations (اعتماد vs قبول)
 
 Internal **Approve** (AR **اعتماد**) is a send gate only — it never writes `ACCEPTED`, never creates a sales order, and never starts production. Dealer **Accept** (AR **قبول**) is the only commercial acceptance. Admin/Sales have no Accept button and `quotation.accept` is dealer-only. Quotations live under **Orders** / Account Places / portal `/quotations` — **Schedule / الجدول is unchanged**.
 
-- **Noor** quote **Q-2026-00062** v1 is `SENT` with **no sales order**. Log in as `noor` to Accept.
-- **Oasis** revised quote **Q-2026-00074** v2 ACCEPTED by `oasis`; v1 CANCELLED; SO SO-2026-00067 (DRAFT).
+- **Noor** quote **Q-2026-00063** v1 is `SENT` with **no sales order**. Log in as `noor` to Accept.
+- **Oasis** revised quote **Q-2026-00075** v2 ACCEPTED by `oasis`; v1 CANCELLED; SO SO-2026-00068 (DRAFT).
 
 ## Dealer Schedule
 
@@ -157,8 +166,8 @@ Same sales order must agree on Requested / Suggested / Committed / Planned deliv
 
 - **Nile** SO-2026-00006 — delivered chrome on the actual day (2026-09-06).
 - **Balqis** SO-2026-00022 / DLV-2026-00010 — ready; planned logistics 2026-09-13. Calendar marker is the truck day, not production suggested.
-- **Qasr** SO-2026-00063 — unconfirmed. Copy is Requested / Expected · not confirmed.
-- **Cedar** SO-2026-00053 / **Jabal** SO-2026-00025 — Cedar is unconfirmed (no committed date). Jabal is delayed: calendar stays on committed 2026-09-05; no current expected (factory earliest available is stale); copy is Delayed · Schedule being updated.
+- **Qasr** SO-2026-00064 — unconfirmed. Copy is Requested / Expected · not confirmed.
+- **Cedar** SO-2026-00054 / **Jabal** SO-2026-00025 — Cedar is unconfirmed (no committed date). Jabal is delayed: calendar stays on committed 2026-09-05; no current expected (factory earliest available is stale); copy is Delayed · Schedule being updated.
 - Isolation: `oasis` must not see Nile sales orders.
 - Arabic pass: nav **الجدول**; requested labels are not **مؤكد**.
 - Do not invent extra demo orders for this walkthrough.

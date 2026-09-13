@@ -125,11 +125,19 @@ export class FabricProcurementService {
   }
 
   async list(
-    query: { q?: string; state?: string; salesOrderId?: string; productionOrderId?: string; supplierId?: string },
+    query: {
+      q?: string;
+      state?: string;
+      salesOrderId?: string;
+      salesOrderLineId?: string;
+      productionOrderId?: string;
+      supplierId?: string;
+    },
     user?: AuthUser,
   ) {
     const where: Prisma.FabricProcurementWhereInput = {};
     if (query.salesOrderId) where.salesOrderId = query.salesOrderId;
+    if (query.salesOrderLineId) where.salesOrderLineId = query.salesOrderLineId;
     if (query.productionOrderId) where.productionOrderId = query.productionOrderId;
     if (query.supplierId) where.supplierId = query.supplierId;
     if (query.state && query.state !== 'ALL') {
@@ -759,12 +767,14 @@ export class FabricProcurementService {
   async assessForProductionOrder(productionOrderId: string): Promise<FabricReadinessResult[]> {
     const po = await this.prisma.productionOrder.findUnique({
       where: { id: productionOrderId },
-      select: { salesOrderId: true, id: true },
+      select: { salesOrderId: true, salesOrderLineId: true, id: true },
     });
     if (!po) return [];
-    const items = po.salesOrderId
-      ? await this.list({ salesOrderId: po.salesOrderId })
-      : await this.list({ productionOrderId: po.id });
+    const items = po.salesOrderLineId
+      ? await this.list({ salesOrderLineId: po.salesOrderLineId })
+      : po.id
+        ? await this.list({ productionOrderId: po.id })
+        : [];
     return items.map((i) => i.readiness);
   }
 

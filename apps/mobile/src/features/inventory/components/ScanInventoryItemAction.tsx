@@ -5,12 +5,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItem } from '../api';
 import { qrLog } from '../qrSessionLog';
@@ -18,6 +18,7 @@ import {
   isInventoryItemSelectable,
   resolveInventoryScan,
 } from '../resolveInventoryScan';
+import { selectSelectScanMode } from '../selectScanPresentation';
 import {
   InventoryScanSelectInline,
   type InlineScanSelectMode,
@@ -47,6 +48,11 @@ type Props = {
 type PendingResult = {
   mode: InlineScanSelectMode;
   item: InventoryItem | null;
+  fabric?: {
+    code: string;
+    label: string | null;
+    orderNumber: string | null;
+  } | null;
 };
 
 /**
@@ -70,7 +76,7 @@ export const ScanInventoryItemAction = forwardRef<
   },
   ref,
 ) {
-  const { t } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { openScanner } = useCodeScanner();
   const [pending, setPending] = useState<PendingResult | null>(null);
@@ -84,10 +90,17 @@ export const ScanInventoryItemAction = forwardRef<
 
   const clearPending = useCallback(() => setPending(null), []);
 
-  const present = useCallback((mode: InlineScanSelectMode, item: InventoryItem | null) => {
-    qrLog(0, `confirmation presented mode=${mode}`);
-    setPending({ mode, item });
-  }, []);
+  const present = useCallback(
+    (
+      mode: InlineScanSelectMode,
+      item: InventoryItem | null,
+      fabric?: PendingResult['fabric'],
+    ) => {
+      qrLog(0, `confirmation presented mode=${mode}`);
+      setPending({ mode, item, fabric: fabric ?? null });
+    },
+    [],
+  );
 
   const runScan = useCallback(async () => {
     if (disabled || identifying) return;
@@ -109,22 +122,27 @@ export const ScanInventoryItemAction = forwardRef<
     qrLog(0, `inventory lookup started code=${code}`);
     try {
       const resolved = await resolveInventoryScan(code);
-      if (resolved.status === 'NOT_FOUND') {
-        void haptics.error();
-        qrLog(0, 'lookup NOT_FOUND');
-        present('not-found', null);
-        return;
-      }
-      if (resolved.status === 'ERROR') {
-        void haptics.error();
-        qrLog(0, 'lookup ERROR');
-        present('error', null);
-        return;
-      }
-      // SELECT is for catalog materials — kit/lot identity is Identify-only.
-      if (resolved.status !== 'FOUND') {
+      const selectMode = selectSelectScanMode(resolved);
+      if (selectMode !== 'item') {
         void haptics.error();
         qrLog(0, `lookup ${resolved.status} — not a selectable inventory item`);
+        if (selectMode === 'order-fabric' && resolved.status === 'ORDER_FABRIC') {
+          present('order-fabric', null, {
+            code: resolved.lot.qrCode ?? code,
+            label:
+              resolved.lot.fabricProcurement?.label ??
+              resolved.lot.inventoryItem.nameEn ??
+              null,
+            orderNumber:
+              resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+          });
+          return;
+        }
+        present(selectMode, null);
+        return;
+      }
+      if (resolved.status !== 'FOUND') {
+        void haptics.error();
         present('not-found', null);
         return;
       }
@@ -154,7 +172,8 @@ export const ScanInventoryItemAction = forwardRef<
   return (
     <View style={{ gap: theme.spacing.sm }}>
       {showTrigger && !pending ? (
-        <Pressable
+        <AnimatedPressable
+          variant="button"
           accessibilityRole="button"
           accessibilityLabel={t('mobile.inventory.scanQr')}
           disabled={disabled || identifying}
@@ -165,7 +184,7 @@ export const ScanInventoryItemAction = forwardRef<
           style={
             compact
               ? {
-                  flexDirection: 'row',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   alignItems: 'center',
                   gap: theme.spacing.xs,
                   opacity: disabled || identifying ? 0.5 : 1,
@@ -173,11 +192,11 @@ export const ScanInventoryItemAction = forwardRef<
               : {
                   minHeight: theme.sizes.touch.min,
                   paddingHorizontal: theme.spacing.md,
-                  borderRadius: theme.radius.xl,
+                  borderRadius: theme.radius.full,
                   borderWidth: 1,
                   borderColor: colors.brand,
                   backgroundColor: colors.brandSoft,
-                  flexDirection: 'row',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: theme.spacing.sm,
@@ -190,10 +209,14 @@ export const ScanInventoryItemAction = forwardRef<
           ) : (
             <Ionicons name="qr-code-outline" size={18} color={colors.brand} />
           )}
-          <AppText variant="label" weight="semibold" color="brand">
+          <AppText
+            variant="label"
+            weight={locale === 'ar' ? 'medium' : 'semibold'}
+            color="brand"
+          >
             {identifying ? t('mobile.inventory.identifyingItem') : t('mobile.inventory.scanQr')}
           </AppText>
-        </Pressable>
+        </AnimatedPressable>
       ) : null}
 
       {identifying && !pending ? (
@@ -206,6 +229,7 @@ export const ScanInventoryItemAction = forwardRef<
         <InventoryScanSelectInline
           mode={pending.mode}
           item={pending.item}
+          fabric={pending.fabric}
           onCancel={clearPending}
           onScanAgain={() => {
             clearPending();

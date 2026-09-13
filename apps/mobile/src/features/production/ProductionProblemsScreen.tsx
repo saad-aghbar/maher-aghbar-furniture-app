@@ -1,22 +1,21 @@
 import { useState } from 'react';
 import { RefreshControl, ScrollView, useWindowDimensions, View } from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRouter, type Href } from 'expo-router';
 import { queryKeys } from '@/api/queryKeys';
 import {
-  fetchProductionProblems,
   resolveTaskBlocker,
   type ProductionProblemStatus,
 } from '@/api/modules/production';
 import { uploadFile } from '@/api/modules/uploads';
 import { AppText } from '@/components/AppText';
-import { BackButton } from '@/components/BackButton';
-import { StatusBadge } from '@/components/badges/StatusBadge';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { EmptyState } from '@/components/feedback/EmptyState';
+import { ErrorState } from '@/components/feedback/ErrorState';
+import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
-import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
 import { VoicePlaybackButton, VoiceRecorderBar } from '@/features/tasks/components/VoiceNoteControls';
 import {
@@ -29,18 +28,34 @@ import {
   voiceUploadToastMessage,
 } from '@/features/tasks/report-problem-sheet';
 import { useToast } from '@/components/feedback/Toast';
+import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
-import { useSmartBack } from '@/navigation/useSmartBack';
+import { ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { Href } from 'expo-router';
+import { ProductionListSkeleton } from './components/ProductionSkeleton';
+import { ProductionProblemTicket } from './components/ProductionProblemTicket';
+import { ProductionProblemsTouchBar } from './components/ProductionProblemsTouchBar';
+import { useProductionProblemsQuery } from './query';
+
+const BACK: Href = '/(app)/(admin)/(tabs)/production';
+
+function emptyCopy(
+  status: ProductionProblemStatus,
+  t: (key: string) => string,
+): string {
+  if (status === 'open') return t('mobile.tasks.problemsEmptyOpen');
+  if (status === 'answered') return t('mobile.tasks.problemsEmptyAnswered');
+  return t('mobile.tasks.problemsEmptyAll');
+}
 
 export function ProductionProblemsScreen() {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { height: windowH } = useWindowDimensions();
-  const onBack = useSmartBack('/(app)/(admin)/(tabs)/production' as Href);
+  const { showOfflineBanner } = useNetwork();
+  const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const leadSize = theme.sizes.touch.min;
   const qc = useQueryClient();
   const { showToast } = useToast();
   const [status, setStatus] = useState<ProductionProblemStatus>('open');
@@ -51,11 +66,10 @@ export function ProductionProblemsScreen() {
   const [answerPhotoUris, setAnswerPhotoUris] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [answerHostYield, setAnswerHostYield] = useState(false);
-  const query = useQuery({
-    queryKey: queryKeys.production.problems(status),
-    queryFn: () => fetchProductionProblems(status),
-  });
+  const query = useProductionProblemsQuery(status);
+  const openQuery = useProductionProblemsQuery('open');
   const rows = query.data?.data ?? [];
+  const openCount = openQuery.data?.data.length ?? 0;
   const answering = rows.find((r) => r.id === answerId) ?? null;
   const sheetHeight = reportProblemSheetHeight(windowH);
 
@@ -109,136 +123,93 @@ export function ProductionProblemsScreen() {
         contentContainerStyle={{ paddingBottom: theme.spacing['3xl'], gap: theme.spacing.md }}
         refreshControl={
           <RefreshControl
-            refreshing={Boolean(query.isRefetching)}
-            onRefresh={() => void query.refetch()}
+            refreshing={Boolean(query.isRefetching || openQuery.isRefetching)}
+            onRefresh={() => {
+              void query.refetch();
+              void openQuery.refetch();
+            }}
             tintColor={colors.brand}
           />
         }
       >
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <BackButton onPress={onBack} />
-          <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-            <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-              {t('mobile.tasks.problemsEyebrow')}
-            </AppText>
-            <AppText variant="largeTitle" weight={titleWeight}>
+        {showOfflineBanner ? <OfflineBanner /> : null}
+
+        <View style={{ gap: theme.spacing.xs }}>
+          <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                ...(isRTL ? { right: 0 } : { left: 0 }),
+                zIndex: 1,
+                justifyContent: 'center',
+              }}
+            >
+              <ScreenBackLead fallback={BACK} />
+            </View>
+            <AppText
+              variant="largeTitle"
+              weight={titleWeight}
+              align="center"
+              numberOfLines={2}
+              style={{
+                paddingHorizontal: leadSize + theme.spacing.sm,
+                fontSize: 26,
+                lineHeight: 32,
+              }}
+            >
               {t('mobile.tasks.problemsTitle')}
             </AppText>
           </View>
+          <AppText variant="caption" color="muted" align="center">
+            {t('mobile.tasks.problemsEyebrow')}
+          </AppText>
         </View>
 
-        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-          {(['open', 'answered', 'all'] as const).map((opt) => {
-            const active = status === opt;
-            return (
-              <AnimatedPressable
-                key={opt}
-                variant="button"
-                onPress={() => {
-                  void haptics.selection();
-                  setStatus(opt);
-                }}
-                style={{
-                  flex: 1,
-                  minHeight: 40,
-                  borderRadius: theme.radius.lg,
-                  borderWidth: 1,
-                  borderColor: active ? colors.brand : colors.border,
-                  backgroundColor: active ? colors.brandSoft : colors.surface,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <AppText variant="caption" weight={titleWeight}>
-                  {opt === 'open'
-                    ? t('mobile.tasks.problemsStatusOpen')
-                    : opt === 'answered'
-                      ? t('mobile.tasks.problemsStatusAnswered')
-                      : t('mobile.tasks.problemsStatusAll')}
-                </AppText>
-              </AnimatedPressable>
-            );
-          })}
-        </View>
+        <ProductionProblemsTouchBar
+          value={status}
+          onChange={setStatus}
+          openCount={openQuery.data ? openCount : undefined}
+        />
 
-        {rows.length === 0 ? (
-          <EmptyState title={t('mobile.tasks.problemsTitle')} description={t('mobile.tasks.emptyBody')} />
+        {query.isError && !query.data ? (
+          <ErrorState
+            title={t('production.problemsLoadError')}
+            description={t('mobile.tasks.errorBody')}
+            retryLabel={t('mobile.tasks.retry')}
+            onRetry={() => void query.refetch()}
+          />
+        ) : query.isPending && !query.data ? (
+          <ProductionListSkeleton />
+        ) : rows.length === 0 ? (
+          <DealerEmptyPanel icon="warning-outline" text={emptyCopy(status, t)} />
         ) : (
-          rows.map((row, index) => {
-            const answered = Boolean(row.resolution);
-            const rail =
-              row.category === 'MATERIAL_MISSING' ||
-              row.category === 'MATERIAL_DEFECT' ||
-              row.category === 'SAFETY'
-                ? colors.error
-                : answered
-                  ? colors.brand
-                  : colors.warning;
-            return (
-              <ListItemEnter key={row.id} index={index}>
-                <DealerBoard
-                  title={row.order?.number ?? row.task.name}
-                  titleWeight={titleWeight}
-                  accentColor={rail}
-                  trailing={
-                    <StatusBadge
-                      status={answered ? 'RESOLVED' : 'OPEN'}
-                      label={
-                        answered
-                          ? t('mobile.tasks.problemsStatusAnswered')
-                          : t('mobile.tasks.problemsStatusOpen')
+          rows.map((row, index) => (
+            <ListItemEnter key={row.id} index={index}>
+              <ProductionProblemTicket
+                row={row}
+                onOpenOrder={
+                  row.order?.id
+                    ? () => {
+                        router.push(`/(app)/(admin)/production/${row.order!.id}` as Href);
                       }
-                      variant={answered ? 'success' : 'error'}
-                      dot
-                    />
-                  }
-                >
-                  <AppText variant="caption" color="secondary">
-                    {t(`mobile.tasks.blocker.${row.category}` as never)}
-                  </AppText>
-                  <AppText variant="body">{row.reason}</AppText>
-                  <VoicePlaybackButton documentId={row.voiceDocumentId} />
-                  <ProblemPhotoGallery
-                    documentIds={row.photoDocumentIds}
-                    title={t('mobile.tasks.workerProblemPhotos')}
-                  />
-                  <AppText variant="caption" color="muted" style={{ writingDirection: 'ltr' }}>
-                    {row.elapsedMinutes}m · {row.worker?.name ?? ''}
-                  </AppText>
-                  {answered ? (
-                    <View style={{ gap: 4 }}>
-                      <AppText variant="caption" color="secondary">
-                        {row.resolution}
-                      </AppText>
-                      <VoicePlaybackButton documentId={row.resolutionVoiceDocumentId} />
-                      <ProblemPhotoGallery
-                        documentIds={row.resolutionPhotoDocumentIds}
-                        title={t('mobile.tasks.answerPhotos')}
-                      />
-                    </View>
-                  ) : (
-                    <PrimaryButton
-                      label={t('mobile.tasks.answerProblem')}
-                      onPress={() => {
-                        void haptics.selection();
+                    : undefined
+                }
+                onAnswer={
+                  row.resolution
+                    ? undefined
+                    : () => {
                         setAnswerId(row.id);
                         setAnswerTaskId(row.taskId);
                         setResolution('');
                         setAnswerUri(null);
                         setAnswerPhotoUris([]);
-                      }}
-                    />
-                  )}
-                </DealerBoard>
-              </ListItemEnter>
-            );
-          })
+                      }
+                }
+              />
+            </ListItemEnter>
+          ))
         )}
       </ScrollView>
 

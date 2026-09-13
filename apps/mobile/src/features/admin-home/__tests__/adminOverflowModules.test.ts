@@ -57,6 +57,12 @@ describe('filterAdminOverflowModules', () => {
     expect(moreKeys.filter((k) => k === 'reports')).toEqual(['reports']);
   });
 
+  it('shows reports when staff has inventory.cost.read', () => {
+    const user = withPerms('inventory.cost.read');
+    const more = filterAdminOverflowModules(user, 'more');
+    expect(more.some((m) => m.key === 'reports')).toBe(true);
+  });
+
   it('shows reports when staff has any report permission', () => {
     const user = withPerms('report.sales.read');
     const more = filterAdminOverflowModules(user, 'more');

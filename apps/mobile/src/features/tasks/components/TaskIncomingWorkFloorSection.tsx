@@ -33,9 +33,14 @@ import {
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { AppText } from '@/components/AppText';
 import { CodeField } from '@/components/forms/CodeField';
+import {
+  classifyIncomingWipScan,
+  matchedEligibleKit,
+} from '../classifyIncomingWipScan';
 import { TextField } from '@/components/forms/TextField';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useToast } from '@/components/feedback/Toast';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -47,6 +52,10 @@ export type TaskIncomingFloorHandle = {
   /** Open receive sheet for first eligible line (dock CTA). */
   openReceive: () => void;
   openDiscrepancy: () => void;
+  /** DEV / worker QR path — same openScanner as the receive-sheet CodeField. */
+  openScan: () => void;
+  /** Apply a scanned code (dock / CodeField). */
+  applyScan: (code: string) => void;
   /** Latest availability snapshot. */
   getAvailability: () => {
     required: boolean;
@@ -178,8 +187,9 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
     const { t, locale, isRTL } = useLocale();
     const { colors, theme, colorScheme } = useTheme();
     const { showToast } = useToast();
+    const { openScanner } = useCodeScanner();
     const queryClient = useQueryClient();
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [lines, setLines] = useState<WipIncomingLine[]>([]);
     const [lanes, setLanes] = useState<WipIncomingLane[]>([]);
     const [whereHints, setWhereHints] = useState<WipWhereHint[]>([]);
@@ -198,6 +208,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
     const [discCategory, setDiscCategory] =
       useState<WipDiscrepancyCategory>('MISSING_COMPONENT');
     const [discNotes, setDiscNotes] = useState('');
+    const [scanning, setScanning] = useState(false);
 
     const reload = useCallback(async () => {
       if (!enabled) return;
@@ -286,6 +297,55 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
       [readOnly, taskId],
     );
 
+    const kitRowsForScan = useMemo(
+      () => [
+        ...eligible.map((kit) => ({ kitId: kit.kitId, qrCode: kit.qrCode })),
+        ...lines.map((line) => ({ kitId: line.kitId ?? undefined, qrCode: line.qrCode })),
+      ],
+      [eligible, lines],
+    );
+
+    const applyIncomingScan = useCallback(
+      (code: string) => {
+        setScanCode(code);
+        const kind = classifyIncomingWipScan(code, kitRowsForScan);
+        if (kind === 'match') {
+          const kit = matchedEligibleKit(code, kitRowsForScan);
+          if (kit?.kitId) setSelectedKitId(kit.kitId);
+          setScanConfirm(t('mobile.tasks.incomingQrIdentified'));
+          void haptics.selection();
+          showToast({ variant: 'success', message: t('mobile.tasks.incomingQrIdentified') });
+          return kind;
+        }
+        setScanConfirm(null);
+        void haptics.error();
+        const message =
+          kind === 'raw'
+            ? t('mobile.tasks.incomingQrIsRaw')
+            : kind === 'wrong_kit'
+              ? t('mobile.tasks.incomingQrWrongOrder')
+              : t('mobile.tasks.incomingQrUnknown');
+        showToast({ variant: 'error', message });
+        return kind;
+      },
+      [kitRowsForScan, showToast, t],
+    );
+
+    async function onScanIncoming() {
+      if (readOnly) return;
+      setScanning(true);
+      try {
+        const code = await openScanner({
+          title: t('mobile.tasks.incomingReceiveTitle'),
+          hint: t('mobile.tasks.incomingReceiveSoftHint'),
+        });
+        if (!code?.trim()) return;
+        applyIncomingScan(code.trim());
+      } finally {
+        setScanning(false);
+      }
+    }
+
     useImperativeHandle(
       ref,
       () => ({
@@ -302,6 +362,12 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
         openDiscrepancy: () => {
           if (readOnly) return;
           setDiscrepancyOpen(true);
+        },
+        openScan: () => {
+          void onScanIncoming();
+        },
+        applyScan: (code: string) => {
+          applyIncomingScan(code);
         },
         getAvailability: () => ({ required, allReceived, lines }),
       }),
@@ -624,6 +690,24 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
           );
         })}
 
+        {!readOnly && (required || Boolean(firstReceivable)) ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <SecondaryButton
+              testID="task-scan-incoming"
+              label={scanning ? t('mobile.tasks.scanning') : t('mobile.tasks.incomingScanOptional')}
+              accessibilityLabel={t('mobile.tasks.incomingScanOptional')}
+              onPress={() => void onScanIncoming()}
+              loading={scanning}
+              leading={<Ionicons name="qr-code-outline" size={18} color={colors.brand} />}
+            />
+            {scanConfirm ? (
+              <AppText variant="bodySecondary" style={{ color: colors.success }}>
+                {scanConfirm}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
+
         <BottomSheet
           open={receiveOpen}
           onClose={() => setReceiveOpen(false)}
@@ -821,9 +905,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                   setScanConfirm(null);
                 }}
                 onScanned={(code) => {
-                  setScanCode(code);
-                  setScanConfirm(t('mobile.tasks.incomingQrIdentified'));
-                  void haptics.selection();
+                  applyIncomingScan(code);
                 }}
                 autoCapitalize="characters"
                 placeholder="WIP-PO-…"

@@ -20,8 +20,9 @@ describe('Product variant floor', () => {
     'AdminVariantDetailScreen.tsx',
     'components/CreateProductSheet.tsx',
     'components/CreateVariantSheet.tsx',
-    'components/VariantOptionGroupsBoard.tsx',
-    'components/BilingualNameField.tsx',
+    'components/VariantSpecsBoard.tsx',
+    'components/SpecFloorRow.tsx',
+    'components/VariantSpecEditSheet.tsx',
     'components/CatalogSectionBoard.tsx',
     'components/CatalogBasketButton.tsx',
   ];
@@ -30,13 +31,15 @@ describe('Product variant floor', () => {
     for (const file of files) {
       const source = read(file);
       assertFloor(source);
-      expect(source).toMatch(/MoreBoard|orderBoardShadow|AnimatedPressable|BottomSheet/);
+      expect(source).toMatch(
+        /MoreBoard|orderBoardShadow|AnimatedPressable|BottomSheet|CatalogSectionBoard/,
+      );
     }
   });
 
   it('has no catch-all spec text box', () => {
     const editor = read('AdminVariantDetailScreen.tsx');
-    expect(editor).toContain('VariantOptionGroupsBoard');
+    expect(editor).toContain('VariantSpecsBoard');
     expect(editor).toContain('factoryNotesAr');
     expect(editor).not.toMatch(/catch-all|free.?text box/i);
   });
@@ -49,6 +52,7 @@ describe('Product variant floor', () => {
     expect(editor).toContain('SellerPriceFloorRow');
     expect(editor).toContain('CatalogFloorEmpty');
     expect(editor).toContain('CappedNestedScroll');
+    expect(editor).toContain('WorkflowPickDesk');
     expect(editor).not.toContain('VariantCompositionBoard');
     expect(editor).not.toContain('VariantIncludedItemsBoard');
     expect(editor).not.toContain('VariantStageNotesBoard');

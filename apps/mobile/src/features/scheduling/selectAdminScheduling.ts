@@ -317,6 +317,8 @@ export type AdminScheduleCardModel = {
   missingMaterial?: string | null;
   stageAtCapacity?: string | null;
   productId?: string | null;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
 };
 
 function asLocale(locale: string): Locale {
@@ -362,6 +364,8 @@ function toScheduleCard(order: ScheduleOrderCard, locale: string): AdminSchedule
     committedCompletionDate: order.committedCompletionDate ?? null,
     productionDeadline: order.productionDeadline ?? null,
     deliveryBufferWorkingDays: order.deliveryBufferWorkingDays ?? null,
+    salesOrderId: order.salesOrderId ?? null,
+    salesOrderNumber: order.salesOrderNumber ?? null,
   };
 }
 
@@ -430,6 +434,8 @@ export function selectAtRiskCards(
     missingMaterial: order.missingMaterial ?? null,
     stageAtCapacity: order.stageAtCapacity ?? null,
     productId: order.productId ?? null,
+    salesOrderId: order.salesOrderId ?? null,
+    salesOrderNumber: order.salesOrderNumber ?? null,
     requiredDeliveryDate: order.requestedDeliveryDate ?? order.requiredDeliveryDate,
     suggestedDeliveryDate: order.suggestedDeliveryDate,
     committedDeliveryDate: order.committedDeliveryDate ?? null,
@@ -596,10 +602,53 @@ export function filterScheduleCards(
       card.priority,
       card.reason,
       card.promiseState,
+      card.salesOrderNumber,
     ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
     return haystack.includes(q);
   });
+}
+
+export type SchedulingSalesOrderGroup<T> = {
+  key: string;
+  salesOrderId: string | null;
+  salesOrderNumber: string | null;
+  cards: T[];
+};
+
+type SchedulingGroupIdentity = {
+  id?: string;
+  productionOrderId?: string;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
+};
+
+/** Stack PO tickets under their sales order. Orphan POs stay in their own group. */
+export function groupSchedulingCardsBySalesOrder<T extends SchedulingGroupIdentity>(
+  cards: T[],
+): SchedulingSalesOrderGroup<T>[] {
+  const groups: SchedulingSalesOrderGroup<T>[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const card of cards) {
+    const soId = card.salesOrderId?.trim() || '';
+    const key = soId || `po:${card.productionOrderId ?? card.id ?? String(groups.length)}`;
+    const idx = indexByKey.get(key);
+    if (idx == null) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        key,
+        salesOrderId: soId || null,
+        salesOrderNumber: card.salesOrderNumber ?? null,
+        cards: [card],
+      });
+      continue;
+    }
+    groups[idx]!.cards.push(card);
+    if (!groups[idx]!.salesOrderNumber && card.salesOrderNumber) {
+      groups[idx]!.salesOrderNumber = card.salesOrderNumber;
+    }
+  }
+  return groups;
 }
