@@ -21,11 +21,11 @@ export type ProductRef = {
 };
 
 const CATEGORIES = [
-  { code: 'SOFA', nameEn: 'Sofas', nameAr: 'كنب' },
-  { code: 'CHAIR', nameEn: 'Chairs', nameAr: 'كراسي' },
-  { code: 'BED', nameEn: 'Beds', nameAr: 'أسرّة' },
-  { code: 'TABLE', nameEn: 'Tables', nameAr: 'طاولات' },
-  { code: 'CUSTOM', nameEn: 'Custom', nameAr: 'تفصيل' },
+  { code: 'SOFA', nameEn: 'Sofas', nameAr: 'كنب', nameHe: 'ספות' },
+  { code: 'CHAIR', nameEn: 'Chairs', nameAr: 'كراسي', nameHe: 'כיסאות' },
+  { code: 'BED', nameEn: 'Beds', nameAr: 'أسرّة', nameHe: 'מיטות' },
+  { code: 'TABLE', nameEn: 'Tables', nameAr: 'طاولات', nameHe: 'שולחנות' },
+  { code: 'CUSTOM', nameEn: 'Custom', nameAr: 'تفصيل', nameHe: 'התאמה אישית' },
 ];
 
 const PRODUCTS: Array<{
@@ -79,31 +79,31 @@ const PRODUCTS: Array<{
 ];
 
 const FABRICS = [
-  { code: 'FAB-VEL-SAND', nameEn: 'Velvet Sand', nameAr: 'مخمل رملي', color: 'Sand' },
-  { code: 'FAB-VEL-NAVY', nameEn: 'Velvet Navy', nameAr: 'مخمل كحلي', color: 'Navy' },
-  { code: 'FAB-LIN-NAT', nameEn: 'Linen Natural', nameAr: 'كتان طبيعي', color: 'Natural' },
-  { code: 'FAB-LIN-OLV', nameEn: 'Linen Olive', nameAr: 'كتان زيتوني', color: 'Olive' },
-  { code: 'FAB-BOU-CRM', nameEn: 'Boucle Cream', nameAr: 'بوكليه كريمي', color: 'Cream' },
-  { code: 'FAB-LEA-BRN', nameEn: 'Leatherette Brown', nameAr: 'جلد صناعي بني', color: 'Brown' },
-  { code: 'FAB-LEA-BLK', nameEn: 'Leatherette Black', nameAr: 'جلد صناعي أسود', color: 'Black' },
-  { code: 'FAB-CHE-GRY', nameEn: 'Chenille Grey', nameAr: 'شنيل رمادي', color: 'Grey' },
+  { code: 'FAB-VEL-SAND', nameEn: 'Velvet Sand', nameAr: 'مخمل رملي', nameHe: 'קטיפה חול', color: 'Sand' },
+  { code: 'FAB-VEL-NAVY', nameEn: 'Velvet Navy', nameAr: 'مخمل كحلي', nameHe: 'קטיפה כחול', color: 'Navy' },
+  { code: 'FAB-LIN-NAT', nameEn: 'Linen Natural', nameAr: 'كتان طبيعي', nameHe: 'פשתן טבעי', color: 'Natural' },
+  { code: 'FAB-LIN-OLV', nameEn: 'Linen Olive', nameAr: 'كتان زيتوني', nameHe: 'פשתן זית', color: 'Olive' },
+  { code: 'FAB-BOU-CRM', nameEn: 'Boucle Cream', nameAr: 'بوكليه كريمي', nameHe: 'בוקלה קרם', color: 'Cream' },
+  { code: 'FAB-LEA-BRN', nameEn: 'Leatherette Brown', nameAr: 'جلد صناعي بني', nameHe: 'דמוי עור חום', color: 'Brown' },
+  { code: 'FAB-LEA-BLK', nameEn: 'Leatherette Black', nameAr: 'جلد صناعي أسود', nameHe: 'דמוי עור שחור', color: 'Black' },
+  { code: 'FAB-CHE-GRY', nameEn: 'Chenille Grey', nameAr: 'شنيل رمادي', nameHe: 'שניל אפור', color: 'Grey' },
 ];
 
 const COLORS = [
-  { code: 'CLR-WAL', nameEn: 'Walnut', nameAr: 'جوز', hex: '#5C4033' },
-  { code: 'CLR-OAK', nameEn: 'Natural Oak', nameAr: 'سنديان طبيعي', hex: '#C4A35A' },
-  { code: 'CLR-EBONY', nameEn: 'Ebony', nameAr: 'أبنوس', hex: '#1C1C1C' },
-  { code: 'CLR-WHT', nameEn: 'Painted White', nameAr: 'أبيض مطلي', hex: '#F5F1EA' },
-  { code: 'CLR-GRY', nameEn: 'Warm Grey', nameAr: 'رمادي دافئ', hex: '#8A857C' },
-  { code: 'CLR-TEAK', nameEn: 'Teak', nameAr: 'تيك', hex: '#B8860B' },
-  { code: 'CLR-GOLD', nameEn: 'Gold', nameAr: 'ذهبي', hex: '#C9A227' },
+  { code: 'CLR-WAL', nameEn: 'Walnut', nameAr: 'جوز', nameHe: 'אגוז', hex: '#5C4033' },
+  { code: 'CLR-OAK', nameEn: 'Natural Oak', nameAr: 'سنديان طبيعي', nameHe: 'אלון טבעי', hex: '#C4A35A' },
+  { code: 'CLR-EBONY', nameEn: 'Ebony', nameAr: 'أبنوس', nameHe: 'אבוני', hex: '#1C1C1C' },
+  { code: 'CLR-WHT', nameEn: 'Painted White', nameAr: 'أبيض مطلي', nameHe: 'לבן צבוע', hex: '#F5F1EA' },
+  { code: 'CLR-GRY', nameEn: 'Warm Grey', nameAr: 'رمادي دافئ', nameHe: 'אפור חם', hex: '#8A857C' },
+  { code: 'CLR-TEAK', nameEn: 'Teak', nameAr: 'تيك', nameHe: 'טיק', hex: '#B8860B' },
+  { code: 'CLR-GOLD', nameEn: 'Gold', nameAr: 'ذهبي', nameHe: 'זהב', hex: '#C9A227' },
 ];
 
 export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
   const catByCode: Record<string, string> = {};
   for (const c of CATEGORIES) {
     const row = await prisma.productCategory.create({
-      data: { code: c.code, nameEn: c.nameEn, nameAr: c.nameAr },
+      data: { code: c.code, nameEn: c.nameEn, nameAr: c.nameAr, nameHe: c.nameHe },
     });
     catByCode[c.code] = row.id;
   }
@@ -153,6 +153,7 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
         code: f.code,
         nameEn: f.nameEn,
         nameAr: f.nameAr,
+        nameHe: f.nameHe,
         color: f.color,
         isActive: true,
       },
@@ -160,7 +161,7 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
   }
   for (const c of COLORS) {
     await prisma.colorReference.create({
-      data: { code: c.code, nameEn: c.nameEn, nameAr: c.nameAr, hex: c.hex },
+      data: { code: c.code, nameEn: c.nameEn, nameAr: c.nameAr, nameHe: c.nameHe, hex: c.hex },
     });
   }
 

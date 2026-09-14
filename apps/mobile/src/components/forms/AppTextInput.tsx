@@ -4,7 +4,7 @@ import { getActiveLocale } from '@/i18n';
 import { applyAppTypeface } from '@/theme/fonts';
 
 /**
- * App TextInput with the locale typeface (KO Sans / Rubik).
+ * App TextInput with the locale typeface (IBM Plex).
  */
 export const AppTextInput = forwardRef<TextInput, TextInputProps>(
   function AppTextInput({ style, ...props }, ref) {

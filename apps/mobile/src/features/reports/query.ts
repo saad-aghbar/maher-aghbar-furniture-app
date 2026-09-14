@@ -2,9 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
 import {
   getCostCoverage,
+  getCostCoverageIssues,
+  getCostCustomWork,
+  getCostInventoryItem,
+  getCostInventoryItems,
+  getCostInventoryFlow,
+  getCostInventorySummary,
+  getCostMoney,
   getCostOrders,
   getCostOrderDossier,
   getCostProducts,
+  getCostProductProfile,
+  getCostVariantProfile,
   getCostReturnDossier,
   getCostReturns,
   getDashboardReport,
@@ -17,8 +26,33 @@ import {
   type ReportsPeriodQuery,
 } from '@/api/modules/reports';
 import type { CostFilterState } from './costFilters';
-import { costFilterQueryKey } from './costFilters';
+import { costFilterQueryKey, costQueryFromFilter } from './costFilters';
+import type { CostDateBasis } from './reportsPeriod';
 import type { ReportsDateRange } from './selectReports';
+
+export function costDeskQuery(
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  filter: CostFilterState,
+  extra: Partial<ReportsPeriodQuery> = {},
+): ReportsPeriodQuery {
+  return {
+    from: range.from,
+    to: range.to,
+    dateBasis,
+    ...costQueryFromFilter(filter),
+    ...extra,
+  };
+}
+
+export function reportsQueryStamp(
+  range: ReportsDateRange,
+  dateBasis: string,
+  filter: CostFilterState,
+  extra = '',
+) {
+  return `${range.from}|${range.to}|${dateBasis}|${costFilterQueryKey(filter)}|${extra}`;
+}
 
 function withFilter(range: ReportsDateRange, filter: CostFilterState): ReportsPeriodQuery {
   return {
@@ -69,14 +103,30 @@ export function useFinancialReportQuery(enabled: boolean) {
   });
 }
 
+export function useCostMoneyQuery(
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  filter: CostFilterState,
+  enabled: boolean,
+) {
+  const q = costDeskQuery(range, dateBasis, filter);
+  return useQuery({
+    queryKey: queryKeys.reports.costMoney(reportsQueryStamp(range, dateBasis, filter)),
+    queryFn: () => getCostMoney(q),
+    enabled,
+  });
+}
+
 export function useCostOrdersQuery(
   range: ReportsDateRange,
   filter: CostFilterState,
   enabled: boolean,
+  extra: Partial<ReportsPeriodQuery> = {},
+  dateBasis: CostDateBasis = 'delivered',
 ) {
-  const q = withFilter(range, filter);
+  const q = { ...costDeskQuery(range, dateBasis, filter, extra), page: extra.page ?? 1, pageSize: extra.pageSize ?? 25 };
   return useQuery({
-    queryKey: queryKeys.reports.costOrders(`${range.from}|${range.to}|${costFilterQueryKey(filter)}`),
+    queryKey: queryKeys.reports.costOrders(reportsQueryStamp(range, dateBasis, filter, extra.q ?? '')),
     queryFn: () => getCostOrders(q),
     enabled,
   });
@@ -86,11 +136,59 @@ export function useCostProductsQuery(
   range: ReportsDateRange,
   filter: CostFilterState,
   enabled: boolean,
+  extra: Partial<ReportsPeriodQuery> = {},
+  dateBasis: CostDateBasis = 'delivered',
 ) {
-  const q = withFilter(range, filter);
+  const q = costDeskQuery(range, dateBasis, filter, extra);
   return useQuery({
-    queryKey: queryKeys.reports.costProducts(`${range.from}|${range.to}|${costFilterQueryKey(filter)}`),
+    queryKey: queryKeys.reports.costProducts(reportsQueryStamp(range, dateBasis, filter, extra.q ?? '')),
     queryFn: () => getCostProducts(q),
+    enabled,
+  });
+}
+
+export function useCostProductProfileQuery(
+  productId: string | undefined,
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  enabled: boolean,
+) {
+  const q = { from: range.from, to: range.to, dateBasis };
+  return useQuery({
+    queryKey: queryKeys.reports.costProductProfile(productId ?? '', `${range.from}|${range.to}|${dateBasis}`),
+    queryFn: () => getCostProductProfile(productId!, q),
+    enabled: Boolean(productId) && enabled,
+  });
+}
+
+export function useCostVariantProfileQuery(
+  productId: string | undefined,
+  variantId: string | undefined,
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  enabled: boolean,
+) {
+  const q = { from: range.from, to: range.to, dateBasis };
+  return useQuery({
+    queryKey: queryKeys.reports.costVariantProfile(
+      productId ?? '',
+      variantId ?? '',
+      `${range.from}|${range.to}|${dateBasis}`,
+    ),
+    queryFn: () => getCostVariantProfile(productId!, variantId!, q),
+    enabled: Boolean(productId && variantId) && enabled,
+  });
+}
+
+export function useCostCustomWorkQuery(
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  enabled: boolean,
+) {
+  const q = { from: range.from, to: range.to, dateBasis };
+  return useQuery({
+    queryKey: queryKeys.reports.costCustomWork(`${range.from}|${range.to}|${dateBasis}`),
+    queryFn: () => getCostCustomWork(q),
     enabled,
   });
 }
@@ -99,20 +197,83 @@ export function useCostReturnsQuery(
   range: ReportsDateRange,
   filter: CostFilterState,
   enabled: boolean,
+  extra: Partial<ReportsPeriodQuery> = {},
 ) {
-  const q = withFilter(range, filter);
+  const q = costDeskQuery(range, 'activity', filter, extra);
   return useQuery({
-    queryKey: queryKeys.reports.costReturns(`${range.from}|${range.to}|${costFilterQueryKey(filter)}`),
+    queryKey: queryKeys.reports.costReturns(reportsQueryStamp(range, 'activity', filter, extra.q ?? '')),
     queryFn: () => getCostReturns(q),
     enabled,
   });
 }
 
-export function useCostCoverageQuery(enabled: boolean) {
+export function useCostCoverageQuery(
+  enabled: boolean,
+  range?: ReportsDateRange,
+  dateBasis: CostDateBasis = 'delivered',
+) {
+  const q = range ? { from: range.from, to: range.to, dateBasis } : {};
   return useQuery({
-    queryKey: queryKeys.reports.costCoverage(),
-    queryFn: getCostCoverage,
+    queryKey: queryKeys.reports.costCoverage(
+      range ? `${range.from}|${range.to}|${dateBasis}` : 'all',
+    ),
+    queryFn: () => getCostCoverage(q),
     enabled,
+  });
+}
+
+export function useCostCoverageIssuesQuery(
+  type: string | undefined,
+  range: ReportsDateRange,
+  dateBasis: CostDateBasis,
+  enabled: boolean,
+) {
+  const q = { from: range.from, to: range.to, dateBasis, type };
+  return useQuery({
+    queryKey: queryKeys.reports.costCoverageIssues(`${type}|${range.from}|${range.to}|${dateBasis}`),
+    queryFn: () => getCostCoverageIssues(q),
+    enabled: Boolean(type) && enabled,
+  });
+}
+
+export function useCostInventorySummaryQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.reports.costInventorySummary(),
+    queryFn: getCostInventorySummary,
+    enabled,
+  });
+}
+
+export function useCostInventoryFlowQuery(range: ReportsDateRange, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.reports.costInventoryFlow(`${range.from}|${range.to}`),
+    queryFn: () => getCostInventoryFlow({ from: range.from, to: range.to }),
+    enabled,
+  });
+}
+
+export function useCostInventoryItemsQuery(
+  filter: CostFilterState,
+  enabled: boolean,
+  extra: Partial<ReportsPeriodQuery> = {},
+) {
+  const q = { ...costQueryFromFilter(filter), ...extra };
+  return useQuery({
+    queryKey: queryKeys.reports.costInventoryItems(`${costFilterQueryKey(filter)}|${extra.q ?? ''}`),
+    queryFn: () => getCostInventoryItems(q),
+    enabled,
+  });
+}
+
+export function useCostInventoryItemQuery(
+  id: string | undefined,
+  range: ReportsDateRange,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.reports.costInventoryItem(id ?? '', `${range.from}|${range.to}`),
+    queryFn: () => getCostInventoryItem(id!, { from: range.from, to: range.to }),
+    enabled: Boolean(id) && enabled,
   });
 }
 

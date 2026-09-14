@@ -189,25 +189,6 @@ function buildForLane(
           value: input.deliveryDateLabel,
         });
       }
-      const readyBits = [
-        setupOk ? null : t('mobile.orders.journey.planSectionSpec'),
-        materialsOk ? null : t('mobile.orders.journey.planSectionMaterials'),
-        missing === 0 ? null : t('mobile.orders.journey.planSectionWorkers'),
-      ].filter(Boolean);
-      facts.push({
-        key: 'readiness',
-        value:
-          blockers.length === 0
-            ? t('mobile.orders.journey.planNoBlockers')
-            : t('mobile.orders.journey.planReadyOf', {
-                ready: 5 - Math.min(5, blockers.length),
-                total: 5,
-              }),
-        tone: blockers.length ? 'warning' : 'brand',
-      });
-      if (readyBits.length && blockers.length === 0) {
-        /* noop */
-      }
       return {
         lane: 'preparing',
         statusLine: t('mobile.orders.lifecycle.preparing'),

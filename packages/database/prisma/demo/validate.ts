@@ -12,6 +12,11 @@ import {
 } from '../seed/workflow';
 import { demoAsOf } from './clock';
 import { CEDAR_VELVET_SKU, MATERIAL_PHOTO_BY_SKU, isHttpImageUrl } from './material-photo-pool';
+import { COST_UAT } from './cost-performance-uat';
+import { assembleActualProduction, saleValueFromCommercial } from '../../../../apps/api/src/modules/reports/production-cost';
+import { summarizeLaborEntries } from '../../../../apps/api/src/modules/production/labor-costing';
+import { marginFrom } from '../../../../apps/api/src/modules/reports/order-cost-ledger';
+import { isInventoryConsumption } from '../../../../apps/api/src/modules/reports/inventory-economics';
 
 export class DemoValidationError extends Error {
   constructor(readonly failures: string[]) {
@@ -583,7 +588,11 @@ async function assertPresentationReady(
       fail(`${d.number}: missing deliveryDate (status ${d.status})`);
       continue;
     }
-    if (d.status === 'DELIVERED' && d.deliveryDate.getTime() > asOf.getTime()) {
+    if (
+      d.status === 'DELIVERED' &&
+      d.deliveryDate.getTime() > asOf.getTime() &&
+      !d.number.startsWith('DLV-COST-')
+    ) {
       fail(`${d.number}: DELIVERED after DEMO_AS_OF (${d.deliveryDate.toISOString()})`);
     }
     if (d.status === 'PLANNED' && d.deliveryDate.getTime() < asOf.getTime()) {
@@ -937,4 +946,156 @@ async function assertPresentationReady(
       }
     }
   }
+
+  await validateCostPerformanceWorld(prisma, fail);
+}
+
+async function validateCostPerformanceWorld(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+) {
+  const rates = await prisma.laborRate.findMany();
+  const unpriced = await prisma.user.findUnique({ where: { username: COST_UAT.unpricedUser } });
+  if (!unpriced) fail('cost.unpriced worker missing');
+  else {
+    const rate = await prisma.laborRate.findFirst({ where: { userId: unpriced.id } });
+    if (rate) fail('cost.unpriced worker must not have a labor rate');
+  }
+
+  async function mixFor(number: string) {
+    const order = await prisma.salesOrder.findUnique({
+      where: { number },
+      include: {
+        lines: true,
+        invoices: { where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } } },
+        deliveries: true,
+        productionOrders: {
+          where: { archivedAt: null, originType: 'SALES_ORDER' },
+          include: {
+            tasks: { select: { id: true, isRework: true, stageDefinitionId: true } },
+          },
+        },
+      },
+    });
+    if (!order) {
+      fail(`${number}: missing`);
+      return null;
+    }
+    const poIds = order.productionOrders.map((po) => po.id);
+    const taskIds = order.productionOrders.flatMap((po) => po.tasks.map((t) => t.id));
+    const txs = await prisma.inventoryTransaction.findMany({
+      where: {
+        OR: [{ productionOrderId: { in: poIds } }, { salesOrderId: order.id, type: { in: ['PRODUCTION_ISSUE', 'PRODUCTION_RETURN', 'SCRAP', 'DAMAGE'] } }],
+      },
+      include: { inventoryItem: { select: { category: true, materialGroup: true } } },
+    });
+    const reworkByTask = new Map(order.productionOrders.flatMap((po) => po.tasks.map((t) => [t.id, t.isRework] as const)));
+    const entries = await prisma.taskTimeEntry.findMany({ where: { taskId: { in: taskIds } } });
+    const labor = summarizeLaborEntries({
+      rates,
+      tasks: order.productionOrders.flatMap((po) => po.tasks),
+      entries,
+    });
+    const mix = assembleActualProduction({
+      labor,
+      txs: txs.map((tx) => ({
+        type: tx.type,
+        quantity: tx.quantity,
+        unitCost: tx.unitCost,
+        category: tx.inventoryItem.category,
+        materialGroup: tx.inventoryItem.materialGroup,
+        isRework: tx.productionTaskId ? Boolean(reworkByTask.get(tx.productionTaskId)) : false,
+        productionTaskId: tx.productionTaskId,
+      })),
+    });
+    const sale = saleValueFromCommercial({
+      invoiceSubtotal: order.invoices[0]?.subtotal,
+      lineTotalsSum: order.lines.reduce((sum, line) => sum + Number(line.lineTotal), 0),
+      orderSubtotal: order.subtotal,
+    });
+    const margin = marginFrom(sale, mix.total, mix.complete);
+    return { order, mix, sale, margin, labor };
+  }
+
+  const golden = await mixFor(COST_UAT.golden);
+  if (golden) {
+    if (golden.mix.total !== 294) fail(`${COST_UAT.golden}: actual ${golden.mix.total} ≠ 294`);
+    if (golden.sale !== 630) fail(`${COST_UAT.golden}: sale ${golden.sale} ≠ 630`);
+    if (golden.margin.grossMargin !== 336) fail(`${COST_UAT.golden}: margin ${golden.margin.grossMargin} ≠ 336`);
+    if (!golden.mix.complete) fail(`${COST_UAT.golden}: expected complete coverage`);
+    const custom = golden.order.lines.find((l) => l.manufacturingComplexity === 'CUSTOM');
+    if (!custom || custom.productId) fail(`${COST_UAT.golden}: CUSTOM line must have null productId`);
+    if (!golden.order.deliveries.some((d) => d.status === 'DELIVERED' && d.actualDeliveredAt)) {
+      fail(`${COST_UAT.golden}: missing delivered actualDeliveredAt`);
+    }
+  }
+
+  const walkthrough = await prisma.salesOrder.findFirst({
+    where: { projectName: 'Golden factory path', archivedAt: null },
+    select: { number: true, status: true },
+  });
+  if (walkthrough?.status === 'DELIVERED' || walkthrough?.status === 'COMPLETED') {
+    fail(`${walkthrough.number}: Nile walkthrough must stay incomplete`);
+  }
+
+  const low = await mixFor(COST_UAT.low);
+  if (low) {
+    if (!low.mix.complete) fail(`${COST_UAT.low}: expected complete costing`);
+    if (!(low.margin.grossMargin != null && low.margin.grossMargin > 0 && (low.margin.marginPct ?? 0) < 20)) {
+      fail(`${COST_UAT.low}: expected low positive margin, got ${low.margin.grossMargin} / ${low.margin.marginPct}%`);
+    }
+  }
+
+  const loss = await mixFor(COST_UAT.loss);
+  if (loss && !(loss.margin.grossMargin != null && loss.margin.grossMargin < 0)) {
+    fail(`${COST_UAT.loss}: expected negative margin, got ${loss.margin.grossMargin}`);
+  }
+
+  const partial = await mixFor(COST_UAT.partial);
+  if (partial) {
+    if (partial.mix.complete) fail(`${COST_UAT.partial}: expected incomplete costing`);
+    if (!partial.mix.laborTimeKnown || partial.mix.laborCostPriced) {
+      fail(`${COST_UAT.partial}: expected timed labor with missing rate`);
+    }
+    if (partial.mix.labor === 0) fail(`${COST_UAT.partial}: missing labor rate must not become 0`);
+  }
+
+  const unused = await mixFor(COST_UAT.unused);
+  if (unused) {
+    const txs = await prisma.inventoryTransaction.findMany({
+      where: { salesOrderId: unused.order.id, type: { in: ['PRODUCTION_ISSUE', 'PRODUCTION_RETURN'] } },
+    });
+    const issued = txs.filter((t) => t.type === 'PRODUCTION_ISSUE').reduce((s, t) => s + Math.abs(Number(t.quantity)), 0);
+    const returned = txs.filter((t) => t.type === 'PRODUCTION_RETURN').reduce((s, t) => s + Math.abs(Number(t.quantity)), 0);
+    if (issued !== 10 || returned !== 2) fail(`${COST_UAT.unused}: expected issue 10 return 2, got ${issued}/${returned}`);
+  }
+
+  const transfers = await prisma.inventoryTransaction.findMany({ where: { type: 'WAREHOUSE_TRANSFER' } });
+  if (transfers.length < 2) fail('COST warehouse transfer txs missing');
+  for (const tx of transfers) {
+    if (isInventoryConsumption(tx.type)) fail(`${tx.number}: transfer counted as consumption`);
+  }
+
+  const recovery = await prisma.returnRequest.findUnique({
+    where: { number: COST_UAT.recovery },
+    include: { pieces: { include: { recoveryLines: true } } },
+  });
+  if (!recovery) fail(`${COST_UAT.recovery}: missing`);
+  else {
+    const recovered = recovery.pieces.flatMap((p) => p.recoveryLines).filter((l) => l.outcome === 'RECOVER_TO_INVENTORY' && l.postedAt);
+    if (!recovered.length) fail(`${COST_UAT.recovery}: recovered value rows missing`);
+  }
+
+  const gap = await prisma.inventoryItem.findUnique({ where: { sku: COST_UAT.gapSku } });
+  if (!gap || Number(gap.standardCost) > 0) fail(`${COST_UAT.gapSku}: valuation gap SKU missing or priced`);
+
+  const semi = await prisma.inventoryItem.findUnique({ where: { sku: COST_UAT.semiSku } });
+  if (!semi || Number(semi.standardCost) !== 80) fail(`${COST_UAT.semiSku}: priced SEMI frame missing`);
+  const fin = await prisma.inventoryItem.findUnique({ where: { sku: COST_UAT.finSku } });
+  if (!fin || Number(fin.standardCost) !== 220) fail(`${COST_UAT.finSku}: priced FIN sofa missing`);
+
+  const customAgg = await prisma.salesOrderLine.findMany({
+    where: { salesOrder: { number: { startsWith: 'SO-COST-CUSTOM' } } },
+  });
+  if (customAgg.some((l) => l.productId)) fail('Cost custom lines must stay outside catalog products');
 }

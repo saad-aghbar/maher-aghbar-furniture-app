@@ -210,7 +210,7 @@ export function MaterialPickerSheet({
 
   function itemName(item: InventoryItem): string {
     if (locale === 'ar') return item.nameAr || item.nameEn || item.sku;
-    if (locale === 'he') return item.nameEn || item.nameAr || item.sku;
+    if (locale === 'he') return item.nameHe || item.nameEn || item.nameAr || item.sku;
     return item.nameEn || item.nameAr || item.sku;
   }
 

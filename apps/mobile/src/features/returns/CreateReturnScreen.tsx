@@ -555,12 +555,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
 
         {/* Photos */}
         <FloorSection
-          title={(() => {
-            const v = t('catalog.uploadReasonPhoto');
-            return v === 'catalog.uploadReasonPhoto'
-              ? t('mobile.returns.reasonPhoto')
-              : v;
-          })()}
+          title={t('catalog.uploadReasonPhoto')}
           count={reasonPhotos.length}
         >
           <ReturnPhotoBoard
@@ -575,12 +570,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
         </FloorSection>
 
         <FloorSection
-          title={(() => {
-            const v = t('catalog.uploadIssuePhoto');
-            return v === 'catalog.uploadIssuePhoto'
-              ? t('mobile.returns.damagePhoto')
-              : v;
-          })()}
+          title={t('catalog.uploadIssuePhoto')}
           count={issuePhotos.length}
         >
           <ReturnPhotoBoard

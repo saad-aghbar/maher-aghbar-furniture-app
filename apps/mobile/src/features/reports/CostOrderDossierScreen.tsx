@@ -15,6 +15,8 @@ import { useTheme } from '@/theme';
 import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { CostPressableRow } from './components/CostPressableRow';
 import { CostNotConfiguredSlot } from './components/CostNotConfiguredSlot';
+import { useCostFloorScrollPad } from './costFloorScroll';
+import { coverageLabelKey, provenanceLabelKey } from './costFormat';
 import { useCostOrderDossierQuery } from './query';
 
 const BACK_FALLBACK = '/(app)/(admin)/reports' as Href;
@@ -27,6 +29,7 @@ export function CostOrderDossierScreen({ id }: Props) {
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const query = useCostOrderDossierQuery(id);
+  const scrollPad = useCostFloorScrollPad();
 
   const money = (value: number | null | undefined) =>
     value == null ? '—' : formatCurrency(locale, value);
@@ -63,6 +66,12 @@ export function CostOrderDossierScreen({ id }: Props) {
         <ErrorState title={t('common.loadFailed')} onRetry={() => void query.refetch()} />
       ) : null}
 
+      <ScrollView
+        style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: scrollPad, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
       {query.isLoading && !query.data ? (
         <DealerBoard title={t('accounting.orderCostDossier')} titleWeight={titleWeight}>
           <ActivityIndicator color={colors.brand} />
@@ -70,10 +79,7 @@ export function CostOrderDossierScreen({ id }: Props) {
       ) : null}
 
       {query.data ? (
-        <ScrollView
-          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+        <>
           <ListItemEnter index={0}>
             <DealerBoard title={query.data.number} titleWeight={titleWeight}>
               <View style={{ gap: theme.spacing.sm }}>
@@ -90,19 +96,28 @@ export function CostOrderDossierScreen({ id }: Props) {
                   {t('accounting.saleValue')}: {money(query.data.summary.saleValue)}
                 </AppText>
                 <AppText dir="ltr">
+                  {t('mobile.reports.invoiced')}: {money(query.data.summary.invoiced)}
+                </AppText>
+                <AppText dir="ltr">
+                  {t('mobile.reports.collected')}: {money(query.data.summary.collected)}
+                </AppText>
+                <AppText dir="ltr">
                   {t('accounting.plannedCost')}: {money(query.data.summary.plannedCost)}
                 </AppText>
                 <AppText dir="ltr">
-                  {t('accounting.actualCost')}: {money(query.data.summary.actualProductionCost)}
+                  {t('mobile.reports.actualProduction')}: {money(query.data.summary.actualProductionCost)}
                 </AppText>
                 <AppText dir="ltr">
                   {t('accounting.variance')}: {money(query.data.summary.variance)}
                 </AppText>
                 <AppText dir="ltr">
-                  {t('accounting.grossMargin')}: {money(query.data.summary.grossMargin)}
+                  {t('accounting.grossMargin')}:{' '}
+                  {query.data.summary.marginIncomplete
+                    ? t('mobile.reports.marginIncomplete')
+                    : money(query.data.summary.grossMargin)}
                 </AppText>
                 <AppText>
-                  {t('accounting.coverage')}: {query.data.summary.coverage}
+                  {t('accounting.coverage')}: {t(coverageLabelKey(query.data.summary.coverage, query.data.summary.marginIncomplete))}
                 </AppText>
               </View>
             </DealerBoard>
@@ -149,11 +164,19 @@ export function CostOrderDossierScreen({ id }: Props) {
                         </AppText>
                       ) : null}
                       <AppText dir="ltr">
+                        {t('accounting.saleValue')}: {money(line.saleValue)}
+                      </AppText>
+                      <AppText dir="ltr">
                         {t('accounting.plannedCost')}: {money(line.plannedCost)}
                       </AppText>
                       <AppText dir="ltr">
-                        {t('accounting.actualCost')}: {money(line.actualCost)}
+                        {t('mobile.reports.actualProduction')}: {money(line.actualCost)}
                       </AppText>
+                      {line.quantity > 1 ? (
+                        <AppText dir="ltr">
+                          {t('mobile.reports.averagePerUnit')}: {money(line.averageCostPerUnit)}
+                        </AppText>
+                      ) : null}
                       <AppText dir="ltr">
                         {t('mobile.reports.materials')}: {money(line.actualMaterial)}
                       </AppText>
@@ -162,6 +185,12 @@ export function CostOrderDossierScreen({ id }: Props) {
                       </AppText>
                       <AppText dir="ltr">
                         {t('accounting.laborCost')}: {money(line.actualLabor)}
+                      </AppText>
+                      <AppText dir="ltr">
+                        {t('mobile.reports.mix.waste')}: {money(line.waste)}
+                      </AppText>
+                      <AppText dir="ltr">
+                        {t('mobile.reports.mix.rework')}: {money(line.rework)}
                       </AppText>
                       {line.note ? (
                         <AppText variant="caption" color="muted">
@@ -217,7 +246,10 @@ export function CostOrderDossierScreen({ id }: Props) {
               <View style={{ gap: theme.spacing.sm }}>
                 <AppText>
                   {t('accounting.workerEffort')}:{' '}
-                  {(query.data.time.workerEffortMinutes / 60).toFixed(1)} h
+                  {(
+                    (query.data.time.labor.timedMinutes || query.data.time.workerEffortMinutes) / 60
+                  ).toFixed(1)}{' '}
+                  h
                 </AppText>
                 <AppText>
                   {t('accounting.wallClock')}:{' '}
@@ -225,7 +257,10 @@ export function CostOrderDossierScreen({ id }: Props) {
                     ? '—'
                     : `${(query.data.time.wallClockMinutes / 60).toFixed(1)} h`}
                 </AppText>
-                {(query.data.time.byStage ?? []).map((stage) => (
+                {(query.data.time.byStage ?? []).map((stage) => {
+                  const minutes = Number(stage.minutes);
+                  const hours = Number.isFinite(minutes) ? (minutes / 60).toFixed(1) : null;
+                  return (
                   <CostPressableRow
                     key={stage.stageCode ?? 'stage'}
                     accessibilityLabel={stage.stageCode ?? t('mobile.reports.timeByStage')}
@@ -233,10 +268,11 @@ export function CostOrderDossierScreen({ id }: Props) {
                   >
                     <AppText weight={titleWeight}>{stage.stageCode ?? '—'}</AppText>
                     <AppText variant="caption" dir="ltr">
-                      {(stage.minutes / 60).toFixed(1)} h
+                      {hours == null ? '—' : `${hours} h`}
                     </AppText>
                   </CostPressableRow>
-                ))}
+                  );
+                })}
               </View>
             </DealerBoard>
           </ListItemEnter>
@@ -259,10 +295,10 @@ export function CostOrderDossierScreen({ id }: Props) {
                     <CostPressableRow
                       key={row.userId}
                       testID={`cost-labor-worker-${row.userId}`}
-                      accessibilityLabel={row.userId}
+                      accessibilityLabel={row.name || row.userId}
                       onPress={() => router.push('/(app)/(admin)/users' as Href)}
                     >
-                      <AppText weight={titleWeight}>{row.userId}</AppText>
+                      <AppText weight={titleWeight}>{row.name || row.userId}</AppText>
                       <AppText variant="caption" dir="ltr">
                         {row.actual == null ? t('mobile.reports.notConfigured') : money(row.actual)}
                         {row.minutes ? ` · ${(row.minutes / 60).toFixed(1)} h` : ''}
@@ -316,11 +352,7 @@ export function CostOrderDossierScreen({ id }: Props) {
                         {tx.number} · {tx.sku}
                       </AppText>
                       <AppText variant="caption" dir="ltr">
-                        {(() => {
-                          const key = `mobile.inventory.txType.${tx.type}`;
-                          const label = t(key);
-                          return `${label === key ? tx.type : label} · ${money(tx.unitCost)}`;
-                        })()}
+                        {t(provenanceLabelKey(tx.type))} · {money(tx.unitCost)}
                       </AppText>
                     </CostPressableRow>
                   ))}
@@ -345,10 +377,17 @@ export function CostOrderDossierScreen({ id }: Props) {
               <AppText dir="ltr">
                 {t('accounting.disposedValue')}: {money(query.data.lifetime.disposedValue)}
               </AppText>
+              <AppText dir="ltr">
+                {t('accounting.lifetimeCost')}: {money(query.data.lifetime.lifetimeCost)}
+              </AppText>
+              <AppText variant="caption" color="muted">
+                {t('mobile.reports.recoveredNotNetted')}
+              </AppText>
             </DealerBoard>
           </ListItemEnter>
-        </ScrollView>
+        </>
       ) : null}
+      </ScrollView>
     </AppScreen>
   );
 }

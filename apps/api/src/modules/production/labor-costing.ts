@@ -8,18 +8,21 @@ function money(n: number): number {
 }
 
 export type LaborTimeEntry = {
+  id?: string;
   taskId: string;
   userId: string;
   minutes?: number | null;
   startedAt?: Date | null;
   endedAt?: Date | null;
   at?: Date | null;
+  isRework?: boolean;
 };
 
 export type LaborTaskRef = {
   id: string;
   stageDefinitionId?: string | null;
   stageCode?: string | null;
+  isRework?: boolean;
 };
 
 export type LaborStageEstimate = DurationEstimateInput & {
@@ -125,7 +128,7 @@ export function rollupLaborCost(input: {
     }
   }
 
-  if (!actualAny && !estimatedAny) {
+  if (!actualAny && !estimatedAny && stageMinutes.size === 0 && workerMinutes.size === 0) {
     return {
       estimated: null,
       actual: null,
@@ -151,5 +154,83 @@ export function rollupLaborCost(input: {
       minutes: row.minutes,
       actual: row.any ? money(row.actual) : null,
     })),
+  };
+}
+
+export type LaborMoneySummary = {
+  actual: number | null;
+  pricedMinutes: number;
+  unpricedMinutes: number;
+  timedMinutes: number;
+  reworkActual: number | null;
+  reworkMinutes: number;
+};
+
+function uniqueEntries(entries: LaborTimeEntry[]): LaborTimeEntry[] {
+  const seen = new Set<string>();
+  const out: LaborTimeEntry[] = [];
+  for (const entry of entries) {
+    const key = entry.id || `${entry.taskId}:${entry.userId}:${entry.startedAt?.toISOString?.() ?? ''}:${entry.minutes ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Actual labor money from posted time entries only — never ProductionTask.actualMinutes.
+ * Missing dated rate stays unpriced; today's rate is never applied to old hours without a matching row.
+ */
+export function summarizeLaborEntries(input: {
+  entries: LaborTimeEntry[];
+  tasks: LaborTaskRef[];
+  rates: LaborRateRow[];
+  now?: Date;
+}): LaborMoneySummary {
+  const now = input.now ?? new Date();
+  const taskById = new Map(input.tasks.map((task) => [task.id, task]));
+  let pricedMinutes = 0;
+  let unpricedMinutes = 0;
+  let pricedMoney = 0;
+  let pricedAny = false;
+  let reworkMinutes = 0;
+  let reworkMoney = 0;
+  let reworkAny = false;
+
+  for (const entry of uniqueEntries(input.entries)) {
+    const minutes = entryMinutes(entry);
+    if (!(minutes > 0)) continue;
+    const task = taskById.get(entry.taskId);
+    const at = entry.endedAt ?? entry.at ?? now;
+    const rate = input.rates.length
+      ? resolveHourlyRate(input.rates, at, {
+          userId: entry.userId,
+          stageDefinitionId: task?.stageDefinitionId,
+        })
+      : null;
+    const cost = laborMoneyFromMinutes(minutes, rate);
+    const isRework = entry.isRework === true || task?.isRework === true;
+    if (isRework) reworkMinutes += minutes;
+    if (cost != null) {
+      pricedMinutes += minutes;
+      pricedMoney += cost;
+      pricedAny = true;
+      if (isRework) {
+        reworkMoney += cost;
+        reworkAny = true;
+      }
+    } else {
+      unpricedMinutes += minutes;
+    }
+  }
+
+  return {
+    actual: pricedAny ? money(pricedMoney) : null,
+    pricedMinutes,
+    unpricedMinutes,
+    timedMinutes: pricedMinutes + unpricedMinutes,
+    reworkActual: reworkAny ? money(reworkMoney) : null,
+    reworkMinutes,
   };
 }

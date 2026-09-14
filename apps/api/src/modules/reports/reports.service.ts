@@ -27,6 +27,7 @@ import { ymdInTimezone } from '../scheduling/domain/factory-replan';
 import { paymentUnallocated, money as dealerMoney } from '../payments/dealer-finance';
 import { productionBoardBucketCountWhere } from '../production/production-board-buckets';
 import { productionOriginWhere, type ProductionOriginFilter } from '../production/production-origin';
+import { countUniqueBoardKeys } from '../production/production-board-groups';
 import { managementReturnTileWheres, pendingReturnsWhere } from './return-counts';
 import {
   buildFactoryFlow,
@@ -35,6 +36,7 @@ import {
   endOfLocalDay,
   MGMT_HREF,
   mgmtAttention,
+  mgmtEvent,
   mgmtTile,
   startOfLocalDay,
   startOfMonth,
@@ -1740,9 +1742,30 @@ export class ReportsService {
     };
   }
 
-  async productionSummary(origin?: ProductionOriginFilter) {
+  async productionSummary(
+    origin?: ProductionOriginFilter,
+    opts?: { complexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM'; customerId?: string },
+  ) {
     const now = new Date();
     const originWhere = productionOriginWhere(origin);
+    const extra: Prisma.ProductionOrderWhereInput[] = [];
+    if (
+      opts?.complexity === 'STANDARD' ||
+      opts?.complexity === 'MODIFIED' ||
+      opts?.complexity === 'CUSTOM'
+    ) {
+      extra.push({
+        salesOrderLine: { manufacturingComplexity: opts.complexity },
+      });
+    }
+    if (opts?.customerId) {
+      extra.push({
+        OR: [
+          { customerId: opts.customerId },
+          { salesOrder: { customerId: opts.customerId } },
+        ],
+      });
+    }
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
     const startOfWeek = new Date(now);
@@ -1754,8 +1777,19 @@ export class ReportsService {
       archivedAt: null,
       status: ProductionOrderStatus.COMPLETED,
     } as const;
-    const scoped = (where: Prisma.ProductionOrderWhereInput): Prisma.ProductionOrderWhereInput =>
-      originWhere ? { AND: [where, originWhere] } : where;
+    const scoped = (where: Prisma.ProductionOrderWhereInput): Prisma.ProductionOrderWhereInput => {
+      const parts: Prisma.ProductionOrderWhereInput[] = [where];
+      if (originWhere) parts.push(originWhere);
+      parts.push(...extra);
+      return parts.length === 1 ? where : { AND: parts };
+    };
+    const countBoards = async (where: Prisma.ProductionOrderWhereInput) => {
+      const rows = await this.prisma.productionOrder.findMany({
+        where: scoped(where),
+        select: { id: true, salesOrderId: true, originType: true },
+      });
+      return countUniqueBoardKeys(rows);
+    };
 
     const [
       completedToday,
@@ -1781,37 +1815,23 @@ export class ReportsService {
         where: scoped({ ...completedFilter, actualCompletionDate: { gte: startOfMonth } }),
       }),
       this.prisma.productionOrder.count({ where: scoped(completedFilter) }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('on_floor', now)),
-      }),
-      this.prisma.productionOrder.count({
-        where: scoped({
-          archivedAt: null,
-          requiredDeliveryDate: { lt: now },
-          status: {
-            notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
-          },
-        }),
+      countBoards(productionBoardBucketCountWhere('on_floor', now)),
+      countBoards({
+        archivedAt: null,
+        requiredDeliveryDate: { lt: now },
+        status: {
+          notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+        },
       }),
       this.prisma.productionOrder.aggregate({
         where: scoped(productionBoardBucketCountWhere('on_floor', now)),
         _avg: { progressPercent: true },
       }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('needs_setup', now)),
-      }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('ready_to_start', now)),
-      }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('on_floor', now)),
-      }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('blocked', now)),
-      }),
-      this.prisma.productionOrder.count({
-        where: scoped(productionBoardBucketCountWhere('inspection_packaging', now)),
-      }),
+      countBoards(productionBoardBucketCountWhere('needs_setup', now)),
+      countBoards(productionBoardBucketCountWhere('ready_to_start', now)),
+      countBoards(productionBoardBucketCountWhere('on_floor', now)),
+      countBoards(productionBoardBucketCountWhere('blocked', now)),
+      countBoards(productionBoardBucketCountWhere('inspection_packaging', now)),
     ]);
 
     const overallProgress = Math.round(Number(inProductionProgress._avg.progressPercent ?? 0));
@@ -3066,7 +3086,9 @@ export class ReportsService {
               id: true,
               number: true,
               outstandingAmount: true,
-              customer: { select: { id: true, name: true, nameEn: true } },
+              customer: {
+                select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true },
+              },
             },
           })
         : Promise.resolve([]),
@@ -3083,6 +3105,7 @@ export class ReportsService {
           name: true,
           actualCompletion: true,
           productionOrder: { select: { id: true, number: true } },
+          stageDefinition: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
         },
       }),
       this.prisma.qualityInspection.findMany({
@@ -3138,7 +3161,7 @@ export class ReportsService {
               number: true,
               amount: true,
               paymentDate: true,
-              customer: { select: { name: true, nameEn: true } },
+              customer: { select: { name: true, nameEn: true, nameAr: true, nameHe: true } },
             },
           })
         : Promise.resolve([]),
@@ -3213,7 +3236,9 @@ export class ReportsService {
           id: `late-${so.id}`,
           title: so.number,
           why: 'Past committed / required delivery — schedule marked late',
+          whyKey: 'lateDelivery',
           actionLabel: 'Review schedule',
+          actionKey: 'reviewSchedule',
           priority: 'critical',
           href: `/sales-orders/${so.id}`,
           filter: MGMT_HREF.overdueOrders.filter,
@@ -3226,7 +3251,9 @@ export class ReportsService {
           id: `qc-${qc.id}`,
           title: qc.productionOrder?.number ?? qc.number,
           why: 'Quality failed — open rework or blocked inspection',
+          whyKey: 'qualityFailed',
           actionLabel: 'Open quality',
+          actionKey: 'openQuality',
           priority: 'critical',
           href: `/quality/${qc.id}`,
           filter: MGMT_HREF.qualityFail.filter,
@@ -3242,7 +3269,9 @@ export class ReportsService {
           why: waiting
             ? 'Approved return — waiting for physical receipt'
             : 'Returned goods awaiting inspection / fate',
+          whyKey: waiting ? 'returnWaiting' : 'returnInspect',
           actionLabel: waiting ? 'Confirm returned' : 'Inspect return',
+          actionKey: waiting ? 'confirmReturned' : 'inspectReturn',
           priority: waiting ? 'high' : 'critical',
           href: `/returns?id=${ret.id}`,
           filter: waiting
@@ -3257,7 +3286,9 @@ export class ReportsService {
           id: `setup-${so.id}`,
           title: so.number,
           why: 'Production setup incomplete (SETUP_REQUIRED)',
+          whyKey: 'setupRequired',
           actionLabel: 'Continue setup',
+          actionKey: 'continueSetup',
           priority: 'high',
           href: `/sales-orders/${so.id}/production-setup`,
           filter: MGMT_HREF.setupRequired.filter,
@@ -3270,7 +3301,9 @@ export class ReportsService {
           id: `mat-${po.id}`,
           title: po.salesOrder?.number ?? po.number,
           why: 'Waiting for materials — production blocked',
+          whyKey: 'waitingMaterials',
           actionLabel: 'View materials',
+          actionKey: 'viewMaterials',
           priority: 'high',
           href: po.salesOrderId
             ? `/sales-orders/${po.salesOrderId}`
@@ -3286,7 +3319,16 @@ export class ReportsService {
           id: `fin-${inv.id}`,
           title: inv.number,
           why: `${name} has overdue balance ${Number(inv.outstandingAmount)}`,
+          whyKey: 'overdueBalance',
           actionLabel: 'Open statement',
+          actionKey: 'openStatement',
+          whyParams: {
+            name,
+            nameEn: inv.customer.nameEn,
+            nameAr: inv.customer.nameAr,
+            nameHe: inv.customer.nameHe,
+            amount: Number(inv.outstandingAmount),
+          },
           priority: 'high',
           href: `/customers/${inv.customer.id}`,
           filter: MGMT_HREF.overdueInvoices.filter,
@@ -3299,8 +3341,12 @@ export class ReportsService {
         mgmtAttention({
           id: 'raw-shortages',
           title: 'Raw shortages',
+          titleKey: 'rawShortages',
           why: `${rawShortages} raw items at or below min stock`,
+          whyKey: 'rawShortages',
           actionLabel: 'Open inventory',
+          actionKey: 'openInventory',
+          whyParams: { count: rawShortages },
           priority: 'normal',
           href: MGMT_HREF.rawShortages.href,
           filter: MGMT_HREF.rawShortages.filter,
@@ -3310,77 +3356,144 @@ export class ReportsService {
 
     const blocked: MgmtBlockedItem[] = blockedRows.map((po) => {
       const blocker = po.tasks[0]?.blockers[0];
-      const why =
-        po.status === ProductionOrderStatus.WAITING_FOR_MATERIALS
-          ? 'Waiting for materials'
-          : po.status === ProductionOrderStatus.ON_HOLD
-            ? 'Order on hold'
-            : blocker
-              ? `${blocker.category}: ${blocker.reason}`
-              : 'Open blocker on floor task';
+      if (po.status === ProductionOrderStatus.WAITING_FOR_MATERIALS) {
+        return {
+          id: po.id,
+          title: po.salesOrder?.number ?? po.number,
+          why: 'Waiting for materials',
+          whyKey: 'waitingMaterials',
+          href: `/production/${po.id}`,
+          filter: MGMT_HREF.productionBlocked.filter,
+        };
+      }
+      if (po.status === ProductionOrderStatus.ON_HOLD) {
+        return {
+          id: po.id,
+          title: po.salesOrder?.number ?? po.number,
+          why: 'Order on hold',
+          whyKey: 'orderOnHold',
+          href: `/production/${po.id}`,
+          filter: MGMT_HREF.productionBlocked.filter,
+        };
+      }
+      if (blocker) {
+        return {
+          id: po.id,
+          title: po.salesOrder?.number ?? po.number,
+          why: `${blocker.category}: ${blocker.reason}`,
+          whyKey: 'blocker',
+          whyParams: { category: blocker.category, reason: blocker.reason },
+          href: `/production/${po.id}`,
+          filter: MGMT_HREF.productionBlocked.filter,
+        };
+      }
       return {
         id: po.id,
         title: po.salesOrder?.number ?? po.number,
-        why,
+        why: 'Open blocker on floor task',
+        whyKey: 'openBlocker',
         href: `/production/${po.id}`,
         filter: MGMT_HREF.productionBlocked.filter,
       };
     });
 
-    const productionEvents: MgmtEvent[] = prodEvents.map((t) => ({
-      at: (t.actualCompletion ?? now).toISOString(),
-      label: `Completed ${t.name} on ${t.productionOrder.number}`,
-      href: `/production/${t.productionOrder.id}`,
-    }));
+    const productionEvents: MgmtEvent[] = prodEvents.map((task) => {
+      const stage = task.stageDefinition?.nameEn || task.name;
+      return mgmtEvent({
+        at: (task.actualCompletion ?? now).toISOString(),
+        label: `Completed ${stage} on ${task.productionOrder.number}`,
+        href: `/production/${task.productionOrder.id}`,
+        kind: 'taskCompleted',
+        params: {
+          stage,
+          stageCode: task.stageDefinition?.code,
+          stageEn: task.stageDefinition?.nameEn ?? task.name,
+          stageAr: task.stageDefinition?.nameAr,
+          stageHe: task.stageDefinition?.nameHe,
+          number: task.productionOrder.number,
+        },
+      });
+    });
 
     const activity: MgmtEvent[] = [];
     for (const e of deliveryEvents) {
-      activity.push({
-        at: (e.actualDeliveredAt ?? e.updatedAt).toISOString(),
-        label:
-          e.status === 'OUT_FOR_DELIVERY'
+      const departed = e.status === 'OUT_FOR_DELIVERY';
+      activity.push(
+        mgmtEvent({
+          at: (e.actualDeliveredAt ?? e.updatedAt).toISOString(),
+          label: departed
             ? `Truck departed ${e.number}`
             : `Delivery ${e.number} updated`,
-        href: `/deliveries/${e.id}`,
-      });
+          href: `/deliveries/${e.id}`,
+          kind: departed ? 'truckDeparted' : 'deliveryUpdated',
+          params: { number: e.number },
+        }),
+      );
     }
     for (const e of qcEvents) {
-      activity.push({
-        at: (e.inspectedAt ?? now).toISOString(),
-        label: `QC ${e.number}: ${e.result}`,
-        href: `/quality/${e.id}`,
-      });
+      activity.push(
+        mgmtEvent({
+          at: (e.inspectedAt ?? now).toISOString(),
+          label: `QC ${e.number}: ${e.result}`,
+          href: `/quality/${e.id}`,
+          kind: 'qc',
+          params: { number: e.number, result: e.result },
+        }),
+      );
     }
     for (const e of receiptEvents) {
-      activity.push({
-        at: e.createdAt.toISOString(),
-        label: `GRN ${e.number} for ${e.purchaseOrder?.number ?? 'PO'}`,
-        href: `/purchasing`,
-      });
+      const po = e.purchaseOrder?.number ?? 'PO';
+      activity.push(
+        mgmtEvent({
+          at: e.createdAt.toISOString(),
+          label: `GRN ${e.number} for ${po}`,
+          href: `/purchasing`,
+          kind: 'grn',
+          params: { number: e.number, po },
+        }),
+      );
     }
     for (const e of paymentEvents) {
       const name = e.customer?.nameEn || e.customer?.name || 'Dealer';
-      activity.push({
-        at: e.paymentDate.toISOString(),
-        label: `Payment ${e.number} from ${name}`,
-        href: `/payments`,
-      });
+      activity.push(
+        mgmtEvent({
+          at: e.paymentDate.toISOString(),
+          label: `Payment ${e.number} from ${name}`,
+          href: `/payments`,
+          kind: 'payment',
+          params: {
+            number: e.number,
+            name,
+            nameEn: e.customer?.nameEn,
+            nameAr: e.customer?.nameAr,
+            nameHe: e.customer?.nameHe,
+          },
+        }),
+      );
     }
     for (const e of finEvents) {
-      activity.push({
-        at: e.producedAt.toISOString(),
-        label: `Finished goods posted${e.productionOrder ? ` (${e.productionOrder.number})` : ''}`,
-        href: e.productionOrder
-          ? `/production/${e.productionOrder.id}`
-          : MGMT_HREF.finishedWaiting.href,
-      });
+      activity.push(
+        mgmtEvent({
+          at: e.producedAt.toISOString(),
+          label: `Finished goods posted${e.productionOrder ? ` (${e.productionOrder.number})` : ''}`,
+          href: e.productionOrder
+            ? `/production/${e.productionOrder.id}`
+            : MGMT_HREF.finishedWaiting.href,
+          kind: e.productionOrder ? 'finishedGoods' : 'finishedGoodsPlain',
+          params: e.productionOrder ? { number: e.productionOrder.number } : undefined,
+        }),
+      );
     }
     for (const e of returnEvents) {
-      activity.push({
-        at: e.updatedAt.toISOString(),
-        label: `Return ${e.number} → ${e.physicalStatus}`,
-        href: `/returns?id=${e.id}`,
-      });
+      activity.push(
+        mgmtEvent({
+          at: e.updatedAt.toISOString(),
+          label: `Return ${e.number} → ${e.physicalStatus}`,
+          href: `/returns?id=${e.id}`,
+          kind: 'returnStatus',
+          params: { number: e.number, status: e.physicalStatus },
+        }),
+      );
     }
     activity.sort((a, b) => b.at.localeCompare(a.at));
 

@@ -329,6 +329,7 @@
     "requiresInspectionHint": "فحص جودة قبل المرحلة التالية.",
     "requiresPhotosHint": "يرفق العمال صوراً عند الإنهاء.",
     "removeStage": "إزالة المرحلة",
+    "removeFromWorkflow": "إزالة من سير الإنتاج",
     "reconnectDependencies": "إعادة ربط المراحل السابقة",
     "invalidCycle": "هذه الروابط ستُكوّن حلقة في سير الإنتاج. مرحلة لاحقة لا يمكن أن تأتي قبل مرحلة أسبق — أفرغ «تبدأ بعد» أو «يؤدي إلى» وحاول مجددًا.",
     "unreachableStage": "بعض المراحل غير متصلة — اربطها بالمسار الرئيسي.",
@@ -737,5 +738,22 @@
   "usageFromWarehouse": "من {name}",
   "usageToWarehouse": "إلى {name}",
   "materialsBoardTitle": "المواد",
-  "materialsRemaining": "{remaining} من {bom} متبقية للمراحل الأخرى"
+  "materialsRemaining": "{remaining} من {bom} متبقية للمراحل الأخرى",
+  "deptCodes": {
+    "MGMT": "الإدارة",
+    "SALES": "المبيعات",
+    "PURCH": "المشتريات",
+    "WH": "المستودعات",
+    "PROD": "الإنتاج",
+    "CARP": "النجارة",
+    "PAINT": "الدهان",
+    "UPHOL": "التنجيد",
+    "ASM": "التجميع",
+    "QC": "الجودة",
+    "PACK": "التغليف",
+    "DEL": "التسليم",
+    "ACCT": "المحاسبة",
+    "CUTTING": "القص",
+    "ASSEMBLY": "التجميع"
+  }
 }

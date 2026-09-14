@@ -68,6 +68,13 @@ import {
   productionOriginLabel,
   productionOriginWhere,
 } from './production-origin';
+import {
+  assembleProductionBoards,
+  countUniqueBoardKeys,
+  orderedUniqueGroupKeys,
+  paginateGroupKeys,
+  splitBoardGroupKeys,
+} from './production-board-groups';
 
 @Injectable()
 export class ProductionService {
@@ -166,6 +173,7 @@ export class ProductionService {
     const now = new Date();
     const dayLens = await this.resolveDayLensFromQuery(query.onDate, query.dateMode, now);
     const where = await this.buildProductionListWhere(query, user, now, dayLens?.bounds ?? null, dayLens?.mode ?? null);
+    const groupBoards = query.group === 'boards';
 
     const taskSelect = {
       id: true,
@@ -205,29 +213,42 @@ export class ProductionService {
       },
     } as const;
 
-    const [totalItems, data] = await this.prisma.$transaction([
-      this.prisma.productionOrder.count({ where }),
-      this.prisma.productionOrder.findMany({
-        where,
-        include: {
-          salesOrder: {
+    const listInclude = {
+      salesOrder: {
+        select: {
+          id: true,
+          number: true,
+          externalOrderNumber: true,
+          customerId: true,
+          customer: {
             select: {
               id: true,
-              number: true,
-              externalOrderNumber: true,
-              customerId: true,
-              customer: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true,
-                  nameAr: true,
-                  nameEn: true,
-                  nameHe: true,
-                },
-              },
+              code: true,
+              name: true,
+              nameAr: true,
+              nameEn: true,
+              nameHe: true,
             },
           },
+        },
+      },
+      product: {
+        select: {
+          id: true,
+          sku: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+          imageUrl: true,
+        },
+      },
+      salesOrderLine: {
+        select: {
+          id: true,
+          description: true,
+          quantity: true,
+          sortOrder: true,
+          manufacturingComplexity: true,
           product: {
             select: {
               id: true,
@@ -238,42 +259,134 @@ export class ProductionService {
               imageUrl: true,
             },
           },
-          salesOrderLine: {
-            select: {
-              description: true,
-              product: {
-                select: {
-                  id: true,
-                  sku: true,
-                  nameEn: true,
-                  nameAr: true,
-                  nameHe: true,
-                  imageUrl: true,
-                },
-              },
-            },
-          },
-          returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
-          // Lightweight stage refs for currentStage only — not a stages UI payload
-          stages: {
-            include: { stageDefinition: true },
-            orderBy: { stageDefinition: { sortOrder: 'asc' } },
-          },
-          tasks: {
-            where: { status: { not: 'CANCELLED' } },
-            select: taskSelect,
-          },
-          _count: {
-            select: {
-              schedules: true,
-            },
-          },
         },
-        orderBy: [{ priority: 'desc' }, { requiredDeliveryDate: 'asc' }, { createdAt: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-    ]);
+      },
+      returnRequest: { select: PRODUCTION_RETURN_REQUEST_SELECT },
+      // Lightweight stage refs for currentStage only — not a stages UI payload
+      stages: {
+        include: { stageDefinition: true },
+        orderBy: { stageDefinition: { sortOrder: 'asc' } },
+      },
+      tasks: {
+        where: { status: { not: 'CANCELLED' } },
+        select: taskSelect,
+      },
+      _count: {
+        select: {
+          schedules: true,
+        },
+      },
+    } as const;
+
+    const listOrderBy = [
+      { priority: 'desc' as const },
+      { requiredDeliveryDate: 'asc' as const },
+      { createdAt: 'desc' as const },
+    ];
+
+    type ListTaskRow = {
+      id: string;
+      status: string;
+      number: string;
+      name: string;
+      plannedStart: Date | string | null;
+      plannedCompletion: Date | string | null;
+      estimatedMinutes: number | null;
+      assignedEmployee: { firstName: string; lastName: string } | null;
+      stageDefinition?: {
+        code?: string | null;
+        nameEn?: string | null;
+        nameAr?: string | null;
+        nameHe?: string | null;
+        responsibleDepartment?: string | null;
+      } | null;
+    };
+    type ListRow = {
+      id: string;
+      salesOrderId?: string | null;
+      originType?: string | null;
+      currentStageCode?: string | null;
+      status: string;
+      requiredDeliveryDate?: Date | string | null;
+      plannedStartDate?: Date | string | null;
+      customerId?: string | null;
+      productDescription?: string | null;
+      progressPercent?: number | null;
+      createdAt?: Date | string;
+      product?: { nameEn?: string | null; nameAr?: string | null; imageUrl?: string | null } | null;
+      salesOrder?: { customer?: unknown } | null;
+      salesOrderLine?: {
+        sortOrder?: number | null;
+        manufacturingComplexity?: string | null;
+        description?: string | null;
+        product?: { nameEn?: string | null; nameAr?: string | null; imageUrl?: string | null } | null;
+      } | null;
+      stages: Array<{
+        status: string;
+        stageDefinition?: {
+          code?: string;
+          nameEn?: string;
+          nameAr?: string | null;
+          nameHe?: string | null;
+        } | null;
+      }>;
+      tasks: ListTaskRow[];
+      _count?: { schedules?: number };
+    };
+
+    let totalItems = 0;
+    let data: ListRow[] = [];
+    let matchIds: Set<string> | null = null;
+    let pageKeys: string[] = [];
+
+    if (groupBoards) {
+      const matches = await this.prisma.productionOrder.findMany({
+        where,
+        select: { id: true, salesOrderId: true, originType: true },
+        orderBy: listOrderBy,
+      });
+      const keys = orderedUniqueGroupKeys(matches);
+      totalItems = keys.length;
+      pageKeys = paginateGroupKeys(keys, query.page, query.pageSize);
+      matchIds = new Set(matches.map((row) => row.id));
+      const { salesOrderIds, orphanPoIds } = splitBoardGroupKeys(pageKeys);
+      if (pageKeys.length === 0) {
+        data = [];
+      } else {
+        const siblingOr: Prisma.ProductionOrderWhereInput[] = [];
+        if (salesOrderIds.length) {
+          siblingOr.push({
+            salesOrderId: { in: salesOrderIds },
+            originType: 'SALES_ORDER',
+          });
+        }
+        if (orphanPoIds.length) {
+          siblingOr.push({ id: { in: orphanPoIds } });
+        }
+        data = (await this.prisma.productionOrder.findMany({
+          where: {
+            archivedAt: null,
+            ...customerScopeFilter(user),
+            ...(siblingOr.length === 1 ? siblingOr[0]! : { OR: siblingOr }),
+          },
+          include: listInclude,
+          orderBy: listOrderBy,
+        })) as unknown as ListRow[];
+      }
+    } else {
+      const [count, rows] = await this.prisma.$transaction([
+        this.prisma.productionOrder.count({ where }),
+        this.prisma.productionOrder.findMany({
+          where,
+          include: listInclude,
+          orderBy: listOrderBy,
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
+      ]);
+      totalItems = count;
+      data = rows as unknown as ListRow[];
+    }
 
     const orphanCustomerIds = [
       ...new Set(
@@ -383,19 +496,26 @@ export class ProductionService {
             estimatedMinutes: t.estimatedMinutes,
             status: t.status,
           }));
-        dayLensPayload = {
-          mode: 'planned',
-          onDate: dayLens.bounds.onDate,
-          timezone: dayLens.bounds.timezone,
-          plannedTasks,
-        };
+        dayLensPayload =
+          plannedTasks.length > 0
+            ? {
+                mode: 'planned',
+                onDate: dayLens.bounds.onDate,
+                timezone: dayLens.bounds.timezone,
+                plannedTasks,
+              }
+            : null;
       } else if (dayLens?.bounds && dayLens.mode === 'actual') {
-        dayLensPayload = {
-          mode: 'actual',
-          onDate: dayLens.bounds.onDate,
-          timezone: dayLens.bounds.timezone,
-          events: actualEventsByOrder.get(row.id) ?? [],
-        };
+        const events = actualEventsByOrder.get(row.id) ?? [];
+        dayLensPayload =
+          events.length > 0
+            ? {
+                mode: 'actual',
+                onDate: dayLens.bounds.onDate,
+                timezone: dayLens.bounds.timezone,
+                events,
+              }
+            : null;
       }
 
       return {
@@ -406,6 +526,8 @@ export class ProductionService {
         imageUrl,
         isLate,
         readiness,
+        matched: matchIds ? matchIds.has(row.id) : true,
+        manufacturingComplexity: row.salesOrderLine?.manufacturingComplexity ?? null,
         dayLens: dayLensPayload,
         currentStage: def
           ? {
@@ -425,19 +547,36 @@ export class ProductionService {
       };
     });
 
+    const payloadMeta = {
+      ...paginatedMeta(query.page, query.pageSize, totalItems),
+      ...(dayLens
+        ? {
+            onDate: dayLens.bounds.onDate,
+            dateMode: dayLens.mode,
+            timezone: dayLens.bounds.timezone,
+            factoryTodayYmd: dayLens.bounds.factoryTodayYmd,
+          }
+        : {}),
+    };
+
+    if (groupBoards) {
+      const boards = assembleProductionBoards(pageKeys, enriched).map((board) => ({
+        ...board,
+        items: [...board.items].sort((a, b) => {
+          const sa = a.salesOrderLine?.sortOrder ?? 0;
+          const sb = b.salesOrderLine?.sortOrder ?? 0;
+          if (sa !== sb) return sa - sb;
+          const ca = new Date(String(a.createdAt ?? 0)).getTime();
+          const cb = new Date(String(b.createdAt ?? 0)).getTime();
+          return ca - cb;
+        }),
+      }));
+      return { data: boards, meta: payloadMeta };
+    }
+
     return {
       data: enriched,
-      meta: {
-        ...paginatedMeta(query.page, query.pageSize, totalItems),
-        ...(dayLens
-          ? {
-              onDate: dayLens.bounds.onDate,
-              dateMode: dayLens.mode,
-              timezone: dayLens.bounds.timezone,
-              factoryTodayYmd: dayLens.bounds.factoryTodayYmd,
-            }
-          : {}),
-      },
+      meta: payloadMeta,
     };
   }
 
@@ -454,6 +593,7 @@ export class ProductionService {
       customerId?: string;
       origin?: 'normal' | 'returned';
       dayFocus?: 'late_missed' | 'at_risk';
+      complexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
     },
     user?: AuthUser,
   ) {
@@ -480,6 +620,7 @@ export class ProductionService {
         bucket: query.bucket,
         customerId: query.customerId,
         origin: query.origin,
+        complexity: query.complexity,
       } as ListProductionOrdersDto,
       user,
       now,
@@ -495,6 +636,7 @@ export class ProductionService {
         customerId: query.customerId,
         origin: query.origin,
         dayFocus: query.dayFocus,
+        complexity: query.complexity,
       } as ListProductionOrdersDto,
       user,
       now,
@@ -519,28 +661,36 @@ export class ProductionService {
       'inspection_packaging',
     ] as const satisfies readonly ProductionBoardBucketKey[];
 
+    const boardIdentitySelect = {
+      id: true,
+      salesOrderId: true,
+      originType: true,
+    } as const;
+
     const [
-      plannedOrders,
+      plannedRows,
       plannedTasks,
-      actualOrders,
+      actualRows,
       plannedTaskRows,
-      lateMissed,
+      lateMissedRows,
       lateMissedTasks,
-      atRisk,
-      needsSetup,
-      readyToStart,
-      onFloor,
-      blocked,
-      inspectionPackaging,
+      atRiskRows,
+      ...boardRowSets
     ] = await this.prisma.$transaction([
-      this.prisma.productionOrder.count({ where: plannedWhere }),
+      this.prisma.productionOrder.findMany({
+        where: plannedWhere,
+        select: boardIdentitySelect,
+      }),
       this.prisma.productionTask.count({
         where: {
           ...plannedTaskWhere,
           productionOrder: plannedWhere,
         },
       }),
-      this.prisma.productionOrder.count({ where: actualWhere }),
+      this.prisma.productionOrder.findMany({
+        where: actualWhere,
+        select: boardIdentitySelect,
+      }),
       this.prisma.productionTask.findMany({
         where: {
           ...plannedTaskWhere,
@@ -559,10 +709,11 @@ export class ProductionService {
           },
         },
       }),
-      this.prisma.productionOrder.count({
+      this.prisma.productionOrder.findMany({
         where: {
           AND: [plannedWhere, productionDayLensLateMissedWhere(bounds, now)],
         },
+        select: boardIdentitySelect,
       }),
       this.prisma.productionTask.count({
         where: {
@@ -570,19 +721,29 @@ export class ProductionService {
           productionOrder: plannedWhere,
         },
       }),
-      this.prisma.productionOrder.count({
+      this.prisma.productionOrder.findMany({
         where: {
           AND: [plannedWhere, productionDayLensAtRiskWhere(now)],
         },
+        select: boardIdentitySelect,
       }),
       ...boardKeys.map((key) =>
-        this.prisma.productionOrder.count({
+        this.prisma.productionOrder.findMany({
           where: {
             AND: [boardBase, productionBoardBucketWhere(key, now)],
           },
+          select: boardIdentitySelect,
         }),
       ),
     ]);
+
+    const plannedOrders = countUniqueBoardKeys(plannedRows);
+    const actualOrders = countUniqueBoardKeys(actualRows);
+    const lateMissed = countUniqueBoardKeys(lateMissedRows);
+    const atRisk = countUniqueBoardKeys(atRiskRows);
+    const [needsSetup, readyToStart, onFloor, blocked, inspectionPackaging] = boardKeys.map(
+      (_, i) => countUniqueBoardKeys(boardRowSets[i] ?? []),
+    );
 
     const [actualStarts, actualCompletions] = await this.prisma.$transaction([
       this.prisma.productionTask.count({
@@ -716,6 +877,15 @@ export class ProductionService {
           { product: { sku: { contains: q, mode: 'insensitive' } } },
           { salesOrder: { externalOrderNumber: { contains: q, mode: 'insensitive' } } },
         ],
+      });
+    }
+    if (
+      query.complexity === 'STANDARD' ||
+      query.complexity === 'MODIFIED' ||
+      query.complexity === 'CUSTOM'
+    ) {
+      and.push({
+        salesOrderLine: { manufacturingComplexity: query.complexity },
       });
     }
 

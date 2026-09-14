@@ -1,5 +1,6 @@
 'use client';
 
+import { useMgmtCopy } from '@/lib/mgmtCopy';
 import { Link } from '@/i18n/navigation';
 import {
   sectionTileSum,
@@ -130,6 +131,7 @@ function AttentionList({
   cards: MgmtAttentionCard[];
   allClearLabel: string;
 }) {
+  const copy = useMgmtCopy();
   if (!cards.length) {
     return (
       <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-2 text-sm font-medium text-[var(--maher-success)]">
@@ -145,7 +147,7 @@ function AttentionList({
         <AttentionChip
           key={card.id}
           href={tileLink(card.href, card.filter)}
-          label={`${card.title}: ${card.why}`}
+          label={`${copy.attentionTitle(card)}: ${copy.attentionWhy(card)}`}
           value={i + 1}
           tone={card.priority === 'critical' ? 'error' : card.priority === 'high' ? 'warning' : 'info'}
           icon={<AlertTriangle className="h-4 w-4" />}
@@ -161,6 +163,7 @@ function FactoryFlowStrip({
 }: {
   steps: ManagementSummary['factoryFlow'];
 }) {
+  const copy = useMgmtCopy();
   if (!steps.length) return null;
   const total = steps.reduce((s, x) => s + x.count, 0) || 1;
   return (
@@ -181,7 +184,9 @@ function FactoryFlowStrip({
             <span className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
               {i + 1}
             </span>
-            <p className="text-xs font-medium text-text-secondary">{step.label}</p>
+            <p className="text-xs font-medium text-text-secondary">
+              {copy.flowLabel(step.key, step.label)}
+            </p>
             <p className="text-xl font-semibold tabular-nums text-text-primary">
               <span dir="ltr">{step.count}</span>
             </p>
@@ -199,9 +204,10 @@ function ActivityList({
   items,
   emptyLabel,
 }: {
-  items: Array<{ at: string; label: string; href?: string }>;
+  items: Array<{ at: string; label: string; href?: string; kind?: string; params?: MgmtAttentionCard['whyParams'] }>;
   emptyLabel: string;
 }) {
+  const copy = useMgmtCopy();
   if (!items.length) {
     return (
       <div className="rounded-[var(--maher-radius-xl)] border border-dashed border-border bg-surface-muted/50 px-5 py-8 text-center">
@@ -215,7 +221,7 @@ function ActivityList({
         const body = (
           <div className="flex items-start justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-text-primary">{item.label}</p>
+              <p className="text-sm font-medium text-text-primary">{copy.eventLabel(item)}</p>
               <p className="mt-0.5 text-xs text-text-tertiary" dir="ltr">
                 {new Date(item.at).toLocaleString(undefined, {
                   month: 'short',
@@ -272,6 +278,7 @@ export function ManagementDashboard({
 }) {
   const tCommon = useTranslations('common');
   const tNav = useTranslations('navigation');
+  const copy = useMgmtCopy();
   const currency = tCommon('currency');
 
   const labelFor = (tile: MgmtTile) => tileLabel(tCommon, tile.key);
@@ -378,11 +385,11 @@ export function ManagementDashboard({
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold text-text-primary">{card.title}</p>
+                  <p className="font-semibold text-text-primary">{copy.attentionTitle(card)}</p>
                   <ArrowUpRight className="h-4 w-4 shrink-0 text-brand" />
                 </div>
-                <p className="mt-1 text-sm text-text-secondary">{card.why}</p>
-                <p className="mt-2 text-xs font-semibold text-brand">{card.actionLabel}</p>
+                <p className="mt-1 text-sm text-text-secondary">{copy.attentionWhy(card)}</p>
+                <p className="mt-2 text-xs font-semibold text-brand">{copy.attentionAction(card)}</p>
               </Link>
             ))}
           </div>
@@ -444,7 +451,7 @@ export function ManagementDashboard({
                     >
                       <span>
                         <span className="font-medium text-text-primary">{row.title}</span>
-                        <span className="mt-0.5 block text-text-secondary">{row.why}</span>
+                        <span className="mt-0.5 block text-text-secondary">{copy.blockedWhy(row)}</span>
                       </span>
                       <ArrowRight className="h-4 w-4 shrink-0 text-brand rtl:rotate-180" />
                     </Link>

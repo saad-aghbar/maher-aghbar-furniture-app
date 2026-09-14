@@ -1,3 +1,4 @@
+import { localizedName } from '@maher/i18n';
 import type { InventoryCategoryGroup, InventoryItem, InventoryTransaction } from './api';
 import { locationPickerLabel } from './pickDefaultLocation';
 
@@ -5,14 +6,6 @@ function toNumber(value: number | string | null | undefined): number {
   if (value == null || value === '') return 0;
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-function localizedName(
-  item: { nameEn: string; nameAr: string },
-  locale: string,
-): string {
-  if (locale === 'ar') return item.nameAr || item.nameEn;
-  return item.nameEn || item.nameAr;
 }
 
 const ACCESSORY_CATEGORIES = new Set([
@@ -103,11 +96,7 @@ function warehouseLabel(
   b: NonNullable<InventoryItem['balances']>[number],
   locale: string,
 ): string {
-  const wh =
-    locale === 'ar'
-      ? b.warehouse?.nameAr || b.warehouse?.nameEn || b.warehouse?.code
-      : b.warehouse?.nameEn || b.warehouse?.nameAr || b.warehouse?.code;
-  return wh || '—';
+  return localizedName(locale, b.warehouse, b.warehouse?.code ?? '—');
 }
 
 /** One row per warehouse — balances are unique on item + warehouse + location. */
@@ -198,7 +187,7 @@ export function selectInventoryItemCard(
 
   return {
     id: item.id,
-    name: localizedName(item, locale),
+    name: localizedName(locale, item, item.sku),
     nameEn: item.nameEn,
     nameAr: item.nameAr,
     nameHe: item.nameHe ?? null,
@@ -266,16 +255,11 @@ export function selectInventoryTransaction(
   const qty = toNumber(tx.quantity);
   const hasCost =
     tx.unitCost !== undefined && tx.unitCost !== null && String(tx.unitCost) !== '';
-  const wh =
-    locale === 'ar'
-      ? tx.warehouse?.nameAr || tx.warehouse?.nameEn || tx.warehouse?.code
-      : tx.warehouse?.nameEn || tx.warehouse?.nameAr || tx.warehouse?.code;
-
   return {
     id: tx.id,
     type: tx.type,
     quantityLabel: `${qty > 0 ? '+' : ''}${formatQty(qty)} ${unit}`,
-    warehouseName: wh || '—',
+    warehouseName: localizedName(locale, tx.warehouse, tx.warehouse?.code ?? '—'),
     notes: tx.notes ?? null,
     createdAt: tx.createdAt,
     showCost: hasCost,
@@ -341,6 +325,14 @@ export function inventoryItemLifecycleEyebrow(
   if (upper === 'RAW_MATERIAL' || upper === 'RAW_MATERIALS' || upper === 'RAW') {
     return t('mobile.inventory.lifecycle.materials');
   }
+
+  if (upper === 'FINISHED_OUTBOUND' || upper === 'FINISHED_GOOD_OUTBOUND') {
+    return t('mobile.inventory.lifecycle.finishedOutbound');
+  }
+
+  const statusKey = `statuses.${upper}`;
+  const fromStatus = t(statusKey);
+  if (fromStatus !== statusKey) return fromStatus;
 
   if (/^(RAW|SEMI|FIN)(-\d+)?$/i.test(raw)) return null;
 

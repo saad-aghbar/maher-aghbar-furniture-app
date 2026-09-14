@@ -3,6 +3,7 @@ import { AppText } from '@/components/AppText';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import type { FactoryDayResponse } from '@/api/modules/scheduling';
+import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
@@ -95,7 +96,7 @@ export function FactoryDayWorkspace({ day, onOpenStage, onAdjustHours }: Props) 
             const booked = stage.allocatedMinutes ?? stage.bookedMinutes ?? 0;
             const available = stage.availableMinutes ?? stage.capacityMinutes ?? 0;
             const pct = available > 0 ? Math.round((booked / available) * 100) : 0;
-            const name = locale === 'ar' ? stage.nameAr ?? stage.nameEn : stage.nameEn;
+            const name = localizedName(locale, stage, stage.code ?? '');
             return (
               <ListItemEnter key={stage.stageDefinitionId ?? stage.code} index={index}>
                 <AnimatedPressable
@@ -129,7 +130,7 @@ export function FactoryDayWorkspace({ day, onOpenStage, onAdjustHours }: Props) 
                       })}
                     </AppText>
                   </View>
-                  <AppText weight={titleWeight} style={{ color: colors.brand }}>
+                  <AppText weight={titleWeight} style={{ color: colors.brand }} dir="ltr">
                     {`${pct}%`}
                   </AppText>
                 </AnimatedPressable>
@@ -152,7 +153,7 @@ export function FactoryDayWorkspace({ day, onOpenStage, onAdjustHours }: Props) 
             {day.unscheduledDemand.stages.slice(0, 4).map((row) => (
               <AppText key={row.code ?? row.nameEn ?? 'x'} variant="body">
                 {t('mobile.adminScheduling.unscheduledDemand.row', {
-                  stage: row.nameEn ?? row.code ?? '',
+                  stage: localizedName(locale, row, row.code ?? ''),
                   hours: minutesLabel(row.minutes),
                 })}
               </AppText>

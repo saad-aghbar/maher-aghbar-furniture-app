@@ -158,6 +158,7 @@ export class WarehousesController {
               { code: { contains: query.q, mode: 'insensitive' } },
               { nameEn: { contains: query.q, mode: 'insensitive' } },
               { nameAr: { contains: query.q, mode: 'insensitive' } },
+              { nameHe: { contains: query.q, mode: 'insensitive' } },
             ],
           }
         : {}),

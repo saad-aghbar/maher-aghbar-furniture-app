@@ -52,11 +52,6 @@ export function useInventoryMeasurementEditor(
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   const close = () => {
     setMeasureValueSheet(false);
     setEditingIndex(null);
@@ -96,7 +91,7 @@ export function useInventoryMeasurementEditor(
       void haptics.error();
       showToast({
         variant: 'error',
-        message: label('catalog.namesRequired', 'Name is required.'),
+        message: t('catalog.namesRequired'),
       });
       return;
     }
@@ -168,11 +163,6 @@ export function InventoryMeasurementsList({
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   return (
     <View style={{ gap: theme.spacing.sm }}>
       <View
@@ -183,12 +173,12 @@ export function InventoryMeasurementsList({
         }}
       >
         <AppText variant="label" weight={titleWeight}>
-          {label('mobile.inventory.measurements', 'Measurements')}
+          {t('mobile.inventory.measurements')}
         </AppText>
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
-          accessibilityLabel={label('catalog.addMeasurement', 'Add measurement')}
+          accessibilityLabel={t('catalog.addMeasurement')}
           onPress={onAdd}
           style={{
             paddingHorizontal: theme.spacing.md,
@@ -200,7 +190,7 @@ export function InventoryMeasurementsList({
           }}
         >
           <AppText variant="caption" weight="semibold" color="brand">
-            + {label('catalog.addMeasurement', 'Add')}
+            + {t('catalog.addMeasurement')}
           </AppText>
         </AnimatedPressable>
       </View>
@@ -211,10 +201,7 @@ export function InventoryMeasurementsList({
           color="muted"
           style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
-          {label(
-            'mobile.inventory.noMeasurements',
-            'No measurements yet. Add custom sizes for this material.',
-          )}
+          {t('mobile.inventory.noMeasurements')}
         </AppText>
       ) : (
         <View style={{ gap: theme.spacing.sm }}>
@@ -269,21 +256,16 @@ export function InventoryMeasurementEditorSheet({
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
       title={
         measureValueSheet
-          ? label('catalog.pickMeasurementValue', 'Choose value')
+          ? t('catalog.pickMeasurementValue')
           : editingIndex != null
             ? t('common.edit')
-            : label('catalog.addMeasurement', 'Add measurement')
+            : t('catalog.addMeasurement')
       }
       fitContent
       maxHeight={560}
@@ -345,7 +327,7 @@ export function InventoryMeasurementEditorSheet({
               <AnimatedPressable
                 variant="button"
                 accessibilityRole="button"
-                accessibilityLabel={label('catalog.pickMeasurementValue', 'Choose value')}
+                accessibilityLabel={t('catalog.pickMeasurementValue')}
                 onPress={() => {
                   void haptics.selection();
                   setMeasureValueSheet(true);
@@ -368,7 +350,7 @@ export function InventoryMeasurementEditorSheet({
               >
                 <Ionicons name="options-outline" size={18} color={colors.brand} />
                 <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-                  {label('catalog.pickValue', 'Pick')}
+                  {t('catalog.pickValue')}
                 </AppText>
               </AnimatedPressable>
             </View>
@@ -377,7 +359,7 @@ export function InventoryMeasurementEditorSheet({
             label={
               editingIndex != null
                 ? t('common.save')
-                : label('catalog.addMeasurement', 'Add measurement')
+                : t('catalog.addMeasurement')
             }
             onPress={() => void save()}
             loading={saving}

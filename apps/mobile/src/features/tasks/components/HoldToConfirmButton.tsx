@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { AnimatedPressable, haptics } from '@/motion';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { getButtonContainerStyle, getButtonLabelStyle } from '@/components/buttons/buttonStyles';
 
@@ -41,6 +42,7 @@ export function HoldToConfirmButton({
   accessibilityLabel,
 }: HoldToConfirmButtonProps) {
   const { colors, theme } = useTheme();
+  const { t } = useLocale();
   const progress = useSharedValue(0);
   const [holding, setHolding] = useState(false);
   const confirmed = useRef(false);
@@ -86,7 +88,7 @@ export function HoldToConfirmButton({
       variant="button"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityHint={holdLabel ?? `Hold to confirm`}
+      accessibilityHint={holdLabel ?? t('common.holdToConfirm')}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       disabled={isDisabled}
       onPressIn={onPressIn}

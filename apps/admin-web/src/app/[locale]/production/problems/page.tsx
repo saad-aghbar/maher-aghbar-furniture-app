@@ -2,6 +2,7 @@
 
 import { VoiceNotePlayer } from '@/components/production/voice-note-player';
 import { apiFetch } from '@/lib/api-client';
+import { useMgmtCopy } from '@/lib/mgmtCopy';
 import { EmptyState, ErrorState, PageHero, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -22,6 +23,8 @@ type ProblemRow = {
 
 export default function ProductionProblemsPage() {
   const t = useTranslations('production');
+  const tMobile = useTranslations('mobile');
+  const copy = useMgmtCopy();
   const query = useQuery({
     queryKey: ['production-problems'],
     queryFn: () => apiFetch<{ data: ProblemRow[] }>('/production/problems?status=all'),
@@ -48,8 +51,18 @@ export default function ProductionProblemsPage() {
                   label={row.resolution ? t('problemsAnswered') : t('problemsOpen')}
                 />
               </div>
-              <p className="text-sm text-[var(--text-secondary)]">{row.category}</p>
-              <p>{row.reason}</p>
+              <p className="text-sm text-[var(--text-secondary)]">
+                {(() => {
+                  const key = `tasks.blocker.${row.category}`;
+                  try {
+                    const labeled = tMobile(key as never);
+                    return typeof labeled === 'string' && labeled !== key ? labeled : row.category;
+                  } catch {
+                    return row.category;
+                  }
+                })()}
+              </p>
+              <p>{copy.floorNote(row.reason)}</p>
               <VoiceNotePlayer documentId={row.voiceDocumentId} label={t('problemsVoice')} />
               {row.resolution ? <p className="text-sm">{row.resolution}</p> : null}
               <VoiceNotePlayer

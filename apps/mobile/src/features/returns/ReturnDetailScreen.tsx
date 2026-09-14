@@ -134,11 +134,6 @@ export function ReturnDetailScreen({
   const cancelMutation = useCancelReturnMutation(returnId);
   const cancelPieceMutation = useCancelReturnPieceMutation(returnId);
 
-  const label = (key: string, fallback: string) => {
-    const v = t(key);
-    return v === key ? fallback : v;
-  };
-
   if (!canRead) {
     return (
       <AppScreen backFallback={resolvedBack}>
@@ -195,12 +190,7 @@ export function ReturnDetailScreen({
     receivedForDecision &&
     pieces.some((piece) => canDecidePiece(piece));
 
-  const lifecycleLabel = (() => {
-    const v = t(card.lifecycleLabelKey);
-    return v === card.lifecycleLabelKey
-      ? card.lifecyclePhase.replace(/_/g, ' ')
-      : v;
-  })();
+  const lifecycleLabel = t(card.lifecycleLabelKey);
   const reasonLabel = (() => {
     const fromCatalog = t(card.reasonLabelKey);
     if (fromCatalog && fromCatalog !== card.reasonLabelKey) return fromCatalog;
@@ -215,11 +205,7 @@ export function ReturnDetailScreen({
       needsInfo: card.needsInfo,
     }),
   );
-  const physicalRaw = t(returnPhysicalLabelKey(card.physicalStatus));
-  const physicalLabel =
-    physicalRaw === returnPhysicalLabelKey(card.physicalStatus)
-      ? card.physicalStatus.replace(/_/g, ' ')
-      : physicalRaw;
+  const physicalLabel = t(returnPhysicalLabelKey(card.physicalStatus));
 
   return (
     <AppScreen edges={{ top: true, bottom: false }}>
@@ -285,7 +271,7 @@ export function ReturnDetailScreen({
                 fontSize: 10,
               }}
             >
-              {label('navigation.returns', 'Returns')}
+              {t('navigation.returns')}
             </AppText>
           </View>
 
@@ -406,7 +392,7 @@ export function ReturnDetailScreen({
               textAlign: isRTL ? 'right' : 'left',
             }}
           >
-            {label('mobile.returns.nextAction', 'Next action')}
+            {t('mobile.returns.nextAction')}
           </AppText>
           <AppText
             variant="body"
@@ -452,7 +438,7 @@ export function ReturnDetailScreen({
                 weight="semibold"
                 style={{ color: '#fff', fontSize: 10 }}
               >
-                {label('catalog.productPhoto', 'Catalog')}
+                {t('catalog.productPhoto')}
               </AppText>
             </View>
           </View>
@@ -471,7 +457,7 @@ export function ReturnDetailScreen({
                 textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              {label('mobile.returns.item', 'Details')}
+              {t('mobile.returns.item')}
             </AppText>
           </View>
           <View
@@ -483,24 +469,24 @@ export function ReturnDetailScreen({
             }}
           >
             <FactChip
-              label={label('mobile.returns.reason', 'Reason')}
+              label={t('mobile.returns.reason')}
               value={reasonLabel}
               emphasize
               isRTL={isRTL}
             />
             <FactChip
-              label={label('mobile.returns.quantity', 'Qty')}
+              label={t('mobile.returns.quantity')}
               value={card.quantityLabel}
               ltr
               isRTL={isRTL}
             />
             <FactChip
-              label={label('mobile.returns.physicalState', 'Physical')}
+              label={t('mobile.returns.physicalState')}
               value={physicalLabel}
               isRTL={isRTL}
             />
             <FactChip
-              label={label('mobile.returns.resolutionState', 'Resolution')}
+              label={t('mobile.returns.resolutionState')}
               value={lifecycleLabel}
               isRTL={isRTL}
             />
@@ -521,7 +507,7 @@ export function ReturnDetailScreen({
             ) : null}
             {card.salesOrderNumber ? (
               <FactChip
-                label={label('mobile.returns.order', 'Order')}
+                label={t('mobile.returns.order')}
                 value={card.salesOrderNumber}
                 ltr
                 isRTL={isRTL}
@@ -532,7 +518,7 @@ export function ReturnDetailScreen({
                 label={
                   dealerFacing
                     ? t('mobile.dealerAccount.yourOrderNumber')
-                    : label('sales.dealerOrderNumber', 'Dealer order #')
+                    : t('sales.dealerOrderNumber')
                 }
                 value={card.dealerOrderNumber}
                 ltr
@@ -691,18 +677,18 @@ export function ReturnDetailScreen({
 
         {card.reasonPhotoUrls.length ? (
           <ReturnPhotoGallery
-            title={label('catalog.reasonPhoto', 'Reason')}
+            title={t('catalog.reasonPhoto')}
             uris={card.reasonPhotoUrls}
-            emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
+            emptyLabel={t('catalog.noReturnPhoto')}
             icon="document-text-outline"
           />
         ) : null}
 
         {card.issuePhotoUrls.length ? (
           <ReturnPhotoGallery
-            title={label('catalog.issuePhoto', 'Damage')}
+            title={t('catalog.issuePhoto')}
             uris={card.issuePhotoUrls}
-            emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
+            emptyLabel={t('catalog.noReturnPhoto')}
             icon="alert-circle-outline"
           />
         ) : null}
@@ -728,7 +714,7 @@ export function ReturnDetailScreen({
                   textAlign: isRTL ? 'right' : 'left',
                 }}
               >
-                {label('mobile.returns.notes', 'Notes')}
+                {t('mobile.returns.notes')}
               </AppText>
               <AppText
                 weight="semibold"

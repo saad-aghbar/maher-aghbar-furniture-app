@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Image, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
+import { useLocale } from '@/i18n';
 
 type ProductThumbProps = {
   uri?: string | null;
@@ -26,6 +27,7 @@ export function ProductThumb({
   width,
 }: ProductThumbProps) {
   const { colors, theme } = useTheme();
+  const { t } = useLocale();
   const [failed, setFailed] = useState(false);
   const r = radius ?? theme.radius.md;
   const showImage = Boolean(uri?.trim()) && !failed;
@@ -68,7 +70,7 @@ export function ProductThumb({
             justifyContent: 'center',
             backgroundColor: colors.brandSoft,
           }}
-          accessibilityLabel="Product image unavailable"
+          accessibilityLabel={t('catalog.productImageUnavailable')}
         >
           <Ionicons name="cube-outline" size={Math.min(28, size * 0.36)} color={colors.brand} />
         </View>

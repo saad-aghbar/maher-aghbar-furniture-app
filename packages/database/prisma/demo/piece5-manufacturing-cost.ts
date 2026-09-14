@@ -106,6 +106,7 @@ export async function seedPiece5ManufacturingCostExamples(
         sku: 'P5-ZERO-COST',
         nameEn: 'Piece5 uncosted trim',
         nameAr: 'تقليم بدون تكلفة P5',
+        nameHe: 'קישוט P5 ללא עלות',
         category: InventoryCategory.OTHER,
         itemClass: InventoryItemClass.RAW_MATERIAL,
         unit: 'pcs',

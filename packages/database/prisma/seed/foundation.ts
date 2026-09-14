@@ -108,24 +108,25 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
 
   await prisma.branch.upsert({
     where: { code: 'AMMAN' },
-    update: {},
+    update: { nameAr: 'عمّان', nameEn: 'Amman', nameHe: 'עמאן' },
     create: {
       code: 'AMMAN',
       nameAr: 'عمّان',
       nameEn: 'Amman',
+      nameHe: 'עמאן',
       isDefault: true,
     },
   });
 
   const warehouses = [
-    { code: 'RAW', nameAr: 'مستودع المواد الخام', nameEn: 'Raw Materials', type: 'RAW_MATERIALS' as const, isDefault: true },
-    { code: 'SEMI', nameAr: 'مستودع المنتجات نصف المصنّعة', nameEn: 'Semi-Finished', type: 'SEMI_FINISHED' as const, isDefault: true },
-    { code: 'FIN', nameAr: 'مستودع المنتجات الجاهزة', nameEn: 'Finished Goods', type: 'FINISHED_GOODS' as const, isDefault: true },
+    { code: 'RAW', nameAr: 'مستودع المواد الخام', nameEn: 'Raw Materials', nameHe: 'חומרי גלם', type: 'RAW_MATERIALS' as const, isDefault: true },
+    { code: 'SEMI', nameAr: 'مستودع المنتجات نصف المصنّعة', nameEn: 'Semi-Finished', nameHe: 'חצי מוגמר', type: 'SEMI_FINISHED' as const, isDefault: true },
+    { code: 'FIN', nameAr: 'مستودع المنتجات الجاهزة', nameEn: 'Finished Goods', nameHe: 'מוצרים מוגמרים', type: 'FINISHED_GOODS' as const, isDefault: true },
   ];
   for (const wh of warehouses) {
     const row = await prisma.warehouse.upsert({
       where: { code: wh.code },
-      update: { type: wh.type, isDefault: wh.isDefault, nameAr: wh.nameAr, nameEn: wh.nameEn, isActive: true },
+      update: { type: wh.type, isDefault: wh.isDefault, nameAr: wh.nameAr, nameEn: wh.nameEn, nameHe: wh.nameHe, isActive: true },
       create: wh,
     });
     await ensureDefaultWarehouseBin(prisma, { id: row.id, code: row.code });
@@ -145,24 +146,24 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
   });
 
   const departments = [
-    { code: 'MGMT', nameAr: 'الإدارة', nameEn: 'Management' },
-    { code: 'SALES', nameAr: 'المبيعات', nameEn: 'Sales' },
-    { code: 'PURCH', nameAr: 'المشتريات', nameEn: 'Purchasing' },
-    { code: 'WH', nameAr: 'المستودعات', nameEn: 'Warehouse' },
-    { code: 'PROD', nameAr: 'الإنتاج', nameEn: 'Production' },
-    { code: 'CARP', nameAr: 'النجارة', nameEn: 'Carpentry' },
-    { code: 'PAINT', nameAr: 'الدهان', nameEn: 'Painting' },
-    { code: 'UPHOL', nameAr: 'التنجيد', nameEn: 'Upholstery' },
-    { code: 'ASM', nameAr: 'التجميع', nameEn: 'Assembly' },
-    { code: 'QC', nameAr: 'الجودة', nameEn: 'Quality' },
-    { code: 'PACK', nameAr: 'التغليف', nameEn: 'Packaging' },
-    { code: 'DEL', nameAr: 'التسليم', nameEn: 'Delivery' },
-    { code: 'ACCT', nameAr: 'المحاسبة', nameEn: 'Accounting' },
+    { code: 'MGMT', nameAr: 'الإدارة', nameEn: 'Management', nameHe: 'הנהלה' },
+    { code: 'SALES', nameAr: 'المبيعات', nameEn: 'Sales', nameHe: 'מכירות' },
+    { code: 'PURCH', nameAr: 'المشتريات', nameEn: 'Purchasing', nameHe: 'רכש' },
+    { code: 'WH', nameAr: 'المستودعات', nameEn: 'Warehouse', nameHe: 'מחסן' },
+    { code: 'PROD', nameAr: 'الإنتاج', nameEn: 'Production', nameHe: 'ייצור' },
+    { code: 'CARP', nameAr: 'النجارة', nameEn: 'Carpentry', nameHe: 'נגרות' },
+    { code: 'PAINT', nameAr: 'الدهان', nameEn: 'Painting', nameHe: 'צביעה' },
+    { code: 'UPHOL', nameAr: 'التنجيد', nameEn: 'Upholstery', nameHe: 'ריפוד' },
+    { code: 'ASM', nameAr: 'التجميع', nameEn: 'Assembly', nameHe: 'הרכבה' },
+    { code: 'QC', nameAr: 'الجودة', nameEn: 'Quality', nameHe: 'איכות' },
+    { code: 'PACK', nameAr: 'التغليف', nameEn: 'Packaging', nameHe: 'אריזה' },
+    { code: 'DEL', nameAr: 'التسليم', nameEn: 'Delivery', nameHe: 'משלוח' },
+    { code: 'ACCT', nameAr: 'المحاسبة', nameEn: 'Accounting', nameHe: 'הנהלת חשבונות' },
   ];
   for (const dept of departments) {
     await prisma.department.upsert({
       where: { code: dept.code },
-      update: { nameAr: dept.nameAr, nameEn: dept.nameEn },
+      update: { nameAr: dept.nameAr, nameEn: dept.nameEn, nameHe: dept.nameHe },
       create: dept,
     });
   }

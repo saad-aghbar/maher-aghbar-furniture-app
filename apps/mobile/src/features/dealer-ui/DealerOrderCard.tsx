@@ -125,7 +125,7 @@ export function DealerOrderCard({
                 justifyContent: 'space-between',
               }}
             >
-              <AppText variant="caption" color="secondary" style={{ flex: 1 }}>
+              <AppText variant="caption" color="secondary" style={{ flex: 1 }} dir="ltr">
                 {progressLabel ?? `${pct}%`}
               </AppText>
               <AppText variant="caption" weight="semibold" style={{ color: colors.brand }} dir="ltr">

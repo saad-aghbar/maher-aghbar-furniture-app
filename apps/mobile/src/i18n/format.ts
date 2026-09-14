@@ -225,7 +225,7 @@ export function formatIdentifier(locale: Locale, id: string): string {
 
 export function formatPercent(locale: Locale, value: number): string {
   const n = toWesternNumberSeparators(toLatinDigits(String(Math.round(value))));
-  // ASCII `%` — KO Sans has no Arabic percent glyph, so `٪` did not paint.
+  // ASCII `%` — every Plex family ships the percent glyph.
   return maybeRtlIsolate(locale, `${n}%`);
 }
 

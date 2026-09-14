@@ -17,6 +17,7 @@ const MATERIALS: Array<{
   sku: string;
   nameEn: string;
   nameAr: string;
+  nameHe: string;
   category: InventoryCategory;
   unit: string;
   reorder: number;
@@ -25,18 +26,19 @@ const MATERIALS: Array<{
   /** Optional accessory photo (HTTPS) for demos */
   imageUrl?: string;
 }> = [
-  { sku: 'MAT-BEECH', nameEn: 'Beech lumber', nameAr: 'خشب زان', category: InventoryCategory.WOOD, unit: 'm', reorder: 40, opening: 220, unitCost: 11.5 },
-  { sku: 'MAT-OAK', nameEn: 'Oak boards', nameAr: 'ألواح سنديان', category: InventoryCategory.WOOD, unit: 'm', reorder: 30, opening: 160, unitCost: 18 },
-  { sku: 'MAT-PLY', nameEn: 'Plywood 18mm', nameAr: 'أبلكاش 18مم', category: InventoryCategory.WOOD, unit: 'sheet', reorder: 50, opening: 180, unitCost: 14 },
-  { sku: 'MAT-MDF', nameEn: 'MDF 16mm', nameAr: 'MDF 16مم', category: InventoryCategory.WOOD, unit: 'sheet', reorder: 40, opening: 140, unitCost: 9.5 },
-  { sku: 'MAT-FOAM-HD', nameEn: 'HD foam block', nameAr: 'إسفنج عالي الكثافة', category: InventoryCategory.FOAM, unit: 'block', reorder: 20, opening: 85, unitCost: 92 },
-  { sku: 'MAT-FOAM-MD', nameEn: 'MD foam sheet', nameAr: 'إسفنج متوسط', category: InventoryCategory.FOAM, unit: 'sheet', reorder: 25, opening: 70, unitCost: 48 },
-  { sku: 'MAT-FAB-ROLL', nameEn: 'Upholstery fabric roll', nameAr: 'رول قماش تنجيد', category: InventoryCategory.FABRIC, unit: 'm', reorder: 80, opening: 28, unitCost: 6.5 },
-  { sku: 'MAT-VEL-ROLL', nameEn: 'Velvet fabric roll', nameAr: 'رول مخمل', category: InventoryCategory.FABRIC, unit: 'm', reorder: 40, opening: 95, unitCost: 12 },
+  { sku: 'MAT-BEECH', nameEn: 'Beech lumber', nameAr: 'خشب زان', nameHe: 'עץ אשור', category: InventoryCategory.WOOD, unit: 'm', reorder: 40, opening: 220, unitCost: 11.5 },
+  { sku: 'MAT-OAK', nameEn: 'Oak boards', nameAr: 'ألواح سنديان', nameHe: 'לוחות אלון', category: InventoryCategory.WOOD, unit: 'm', reorder: 30, opening: 160, unitCost: 18 },
+  { sku: 'MAT-PLY', nameEn: 'Plywood 18mm', nameAr: 'أبلكاش 18مم', nameHe: 'דיקט 18 מ״מ', category: InventoryCategory.WOOD, unit: 'sheet', reorder: 50, opening: 180, unitCost: 14 },
+  { sku: 'MAT-MDF', nameEn: 'MDF 16mm', nameAr: 'MDF 16مم', nameHe: 'MDF 16 מ״מ', category: InventoryCategory.WOOD, unit: 'sheet', reorder: 40, opening: 140, unitCost: 9.5 },
+  { sku: 'MAT-FOAM-HD', nameEn: 'HD foam block', nameAr: 'إسفنج عالي الكثافة', nameHe: 'ספוג צפיפות גבוהה', category: InventoryCategory.FOAM, unit: 'block', reorder: 20, opening: 85, unitCost: 92 },
+  { sku: 'MAT-FOAM-MD', nameEn: 'MD foam sheet', nameAr: 'إسفنج متوسط', nameHe: 'ספוג בינוני', category: InventoryCategory.FOAM, unit: 'sheet', reorder: 25, opening: 70, unitCost: 48 },
+  { sku: 'MAT-FAB-ROLL', nameEn: 'Upholstery fabric roll', nameAr: 'رول قماش تنجيد', nameHe: 'גליל בד ריפוד', category: InventoryCategory.FABRIC, unit: 'm', reorder: 80, opening: 28, unitCost: 6.5 },
+  { sku: 'MAT-VEL-ROLL', nameEn: 'Velvet fabric roll', nameAr: 'رول مخمل', nameHe: 'גליל קטיפה', category: InventoryCategory.FABRIC, unit: 'm', reorder: 40, opening: 95, unitCost: 12 },
   {
     sku: 'MAT-HW-KIT',
     nameEn: 'Hardware kit standard',
     nameAr: 'طقم معدات قياسي',
+    nameHe: 'ערכה חומרה',
     category: InventoryCategory.METAL_ACCESSORY,
     unit: 'kit',
     reorder: 30,
@@ -45,12 +47,12 @@ const MATERIALS: Array<{
     imageUrl:
       'https://images.unsplash.com/photo-1597484662317-9bd7bdda2907?auto=format&fit=crop&w=800&h=600&q=80',
   },
-  { sku: 'MAT-GLUE', nameEn: 'Wood glue industrial', nameAr: 'صمغ خشب صناعي', category: InventoryCategory.ADHESIVE, unit: 'L', reorder: 20, opening: 60, unitCost: 4.2 },
-  { sku: 'MAT-LACQ', nameEn: 'Lacquer clear', nameAr: 'لاكيه شفاف', category: InventoryCategory.PAINT, unit: 'L', reorder: 15, opening: 48, unitCost: 7.8 },
-  { sku: 'MAT-STAIN-WAL', nameEn: 'Walnut stain', nameAr: 'صبغة جوز', category: InventoryCategory.PAINT, unit: 'L', reorder: 10, opening: 32, unitCost: 9.1 },
-  { sku: 'MAT-FOIL', nameEn: 'Protective wrap', nameAr: 'تغليف واقي', category: InventoryCategory.PACKAGING, unit: 'roll', reorder: 20, opening: 55, unitCost: 3.5 },
-  { sku: 'MAT-CARTON', nameEn: 'Carton crate blank', nameAr: 'كرتون تغليف', category: InventoryCategory.PACKAGING, unit: 'pcs', reorder: 40, opening: 200, unitCost: 2.1 },
-  { sku: 'FG-SAMPLE-SOF', nameEn: 'Showroom sample sofa', nameAr: 'عينة كنبة صالة عرض', category: InventoryCategory.FINISHED, unit: 'pcs', reorder: 1, opening: 2, unitCost: 420 },
+  { sku: 'MAT-GLUE', nameEn: 'Wood glue industrial', nameAr: 'صمغ خشب صناعي', nameHe: 'דבק עץ', category: InventoryCategory.ADHESIVE, unit: 'L', reorder: 20, opening: 60, unitCost: 4.2 },
+  { sku: 'MAT-LACQ', nameEn: 'Lacquer clear', nameAr: 'لاكيه شفاف', nameHe: 'לכה שקופה', category: InventoryCategory.PAINT, unit: 'L', reorder: 15, opening: 48, unitCost: 7.8 },
+  { sku: 'MAT-STAIN-WAL', nameEn: 'Walnut stain', nameAr: 'صبغة جوز', nameHe: 'צבע אגוז', category: InventoryCategory.PAINT, unit: 'L', reorder: 10, opening: 32, unitCost: 9.1 },
+  { sku: 'MAT-FOIL', nameEn: 'Protective wrap', nameAr: 'تغليف واقي', nameHe: 'ניילון מגן', category: InventoryCategory.PACKAGING, unit: 'roll', reorder: 20, opening: 55, unitCost: 3.5 },
+  { sku: 'MAT-CARTON', nameEn: 'Carton crate blank', nameAr: 'كرتون تغليف', nameHe: 'קרטון אריזה', category: InventoryCategory.PACKAGING, unit: 'pcs', reorder: 40, opening: 200, unitCost: 2.1 },
+  { sku: 'FG-SAMPLE-SOF', nameEn: 'Showroom sample sofa', nameAr: 'عينة كنبة صالة عرض', nameHe: 'ספת דוגמה לתצוגה', category: InventoryCategory.FINISHED, unit: 'pcs', reorder: 1, opening: 2, unitCost: 420 },
 ];
 
 export async function seedInventory(prisma: PrismaClient, adminId: string) {
@@ -88,6 +90,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
         sku: m.sku,
         nameEn: m.nameEn,
         nameAr: m.nameAr,
+        nameHe: m.nameHe,
         category: m.category,
         unit: m.unit,
         minStock: money(m.reorder),
@@ -100,6 +103,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
         sku: m.sku,
         nameEn: m.nameEn,
         nameAr: m.nameAr,
+        nameHe: m.nameHe,
         category: m.category,
         unit: m.unit,
         minStock: money(m.reorder),

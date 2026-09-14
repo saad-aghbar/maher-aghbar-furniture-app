@@ -78,11 +78,6 @@ export function CreateProductSheet({
   const sheetHeight = Math.min(Math.round(height * 0.92), 820);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   const [form, setForm] = useState(() => emptyForm(initialCategoryId));
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -138,7 +133,7 @@ export function CreateProductSheet({
       await queryClient.invalidateQueries({ queryKey: queryKeys.catalog.adminDetails() });
       showToast({
         variant: 'success',
-        message: label('catalog.productCreated', 'Product created.'),
+        message: t('catalog.productCreated'),
       });
       reset();
       onClose();
@@ -146,14 +141,14 @@ export function CreateProductSheet({
     },
     onError: (err) => {
       void haptics.error();
-      setError(isApiError(err) ? toastMessageForError(err) : label('catalog.namesRequired', 'Fill required fields.'));
+      setError(isApiError(err) ? toastMessageForError(err) : t('catalog.namesRequired'));
     },
   });
 
   const onSubmit = async () => {
     setError(null);
     if (!form.name.trim()) {
-      setError(label('catalog.namesRequired', 'Name is required.'));
+      setError(t('catalog.namesRequired'));
       return;
     }
     const names = await resolveTrilingualName(form.name, locale);
@@ -218,7 +213,7 @@ export function CreateProductSheet({
         void haptics.error();
         showToast({
           variant: 'error',
-          message: label('catalog.productPhotoUploadError', 'Couldn’t upload photo.'),
+          message: t('catalog.productPhotoUploadError'),
         });
       } finally {
         setPhotoUploading(false);
@@ -247,7 +242,7 @@ export function CreateProductSheet({
         void haptics.error();
         showToast({
           variant: 'error',
-          message: label('catalog.productPhotoUploadError', 'Couldn’t upload photo.'),
+          message: t('catalog.productPhotoUploadError'),
         });
       } finally {
         setPhotoUploading(false);
@@ -264,7 +259,7 @@ export function CreateProductSheet({
       <BottomSheet
         open={open}
         onClose={closeAll}
-        title={label('catalog.addProduct', 'Add product')}
+        title={t('catalog.addProduct')}
         sheetHeight={sheetHeight}
       >
         <View style={{ flex: 1, gap: theme.spacing.md }}>
@@ -281,7 +276,7 @@ export function CreateProductSheet({
           >
             <DealerFormSection
               icon="images-outline"
-              label={label('catalog.changeProductPhoto', 'Product photos')}
+              label={t('catalog.changeProductPhoto')}
               titleWeight={titleWeight}
             >
               <ProductGalleryBoard
@@ -296,7 +291,7 @@ export function CreateProductSheet({
 
             <DealerFormSection
               icon="cube-outline"
-              label={label('catalog.product', 'Product')}
+              label={t('catalog.product')}
               titleWeight={titleWeight}
             >
               <LocaleNameField
@@ -386,7 +381,7 @@ export function CreateProductSheet({
           </ScrollView>
 
           <DealerFormFooter
-            confirmLabel={label('catalog.addProduct', 'Add product')}
+            confirmLabel={t('catalog.addProduct')}
             onConfirm={onSubmit}
             onCancel={closeAll}
             loading={createMutation.isPending}

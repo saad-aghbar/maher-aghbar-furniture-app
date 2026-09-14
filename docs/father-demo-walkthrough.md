@@ -14,7 +14,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 
 - Dealer: Nile Interiors (`CUS-0101`)
 - Sales order: **SO-2026-00006** (DELIVERED)
-- Production: **PO-2026-00009** (COMPLETED)
+- Production: **PO-2026-00010** (COMPLETED)
 - Delivery: **DLV-2026-00003** (DELIVERED, 2026-09-06)
 - Invoice: **INV-2026-00003** (PAID, outstanding 0 ILS)
 - Dates: requested 2026-09-06 · suggested 2026-09-06 · committed 2026-09-06 · factory earliest 2026-09-06 · planned — · actual 2026-09-06
@@ -25,7 +25,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00050** (IN_PRODUCTION)
-- Production: **PO-2026-00071** (IN_PROGRESS)
+- Production: **PO-2026-00070** (IN_PROGRESS)
 - Dates: requested 2026-09-23 · suggested 2026-09-12 · committed — · factory earliest 2026-09-12 · planned — · actual —
 
 ### 3. Nile blank production start

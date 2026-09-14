@@ -20,28 +20,41 @@ export async function applyDemoMovement(
     itemId: string;
     warehouseId: string;
     quantity: number;
-    unitCost?: number;
+    unitCost?: number | null;
     userId: string;
     at: Date;
     notes?: string;
     referenceType?: string;
     referenceId?: string;
+    productionOrderId?: string;
+    productionTaskId?: string;
+    salesOrderId?: string;
+    locationId?: string;
+    /** When set, skip the inbound/outbound type table and use this sign. */
+    outbound?: boolean;
     counters: SeqBag;
     reservedDelta?: number;
     onOrderDelta?: number;
   },
 ) {
-  const outbound: InventoryTxType[] = [
+  const outboundTypes: InventoryTxType[] = [
     InventoryTxType.PRODUCTION_ISSUE,
     InventoryTxType.DELIVERY_ISSUE,
     InventoryTxType.DAMAGE,
     InventoryTxType.SCRAP,
     InventoryTxType.SEMI_FINISHED_ISSUE,
   ];
-  const signed = outbound.includes(opts.type) ? -Math.abs(opts.quantity) : Math.abs(opts.quantity);
+  const signed =
+    opts.outbound === true
+      ? -Math.abs(opts.quantity)
+      : opts.outbound === false
+        ? Math.abs(opts.quantity)
+        : outboundTypes.includes(opts.type)
+          ? -Math.abs(opts.quantity)
+          : Math.abs(opts.quantity);
   const number = await nextDoc(prisma, 'invtx', opts.counters);
 
-  const locationId = await defaultBinIdForWarehouse(prisma, opts.warehouseId);
+  const locationId = opts.locationId ?? (await defaultBinIdForWarehouse(prisma, opts.warehouseId));
   await prisma.inventoryTransaction.create({
     data: {
       number,
@@ -50,10 +63,13 @@ export async function applyDemoMovement(
       warehouseId: opts.warehouseId,
       locationId,
       quantity: money(signed),
-      unitCost: opts.unitCost != null ? money(opts.unitCost) : undefined,
+      unitCost: opts.unitCost != null && opts.unitCost > 0 ? money(opts.unitCost) : undefined,
       notes: opts.notes,
       referenceType: opts.referenceType,
       referenceId: opts.referenceId,
+      productionOrderId: opts.productionOrderId,
+      productionTaskId: opts.productionTaskId,
+      salesOrderId: opts.salesOrderId,
       createdById: opts.userId,
       createdAt: opts.at,
     },
@@ -89,14 +105,14 @@ export async function applyDemoMovement(
 }
 
 const SUPPLIERS = [
-  { code: 'SUP-TIMBER', nameEn: 'Zarqa Timber Yard', nameAr: 'ساحة أخشاب الزرقاء', phone: '+96253990001', email: 'sales@zarqa-timber.jo', skus: ['MAT-BEECH', 'MAT-OAK', 'MAT-PLY', 'MAT-MDF', 'MAT-PINE'] },
-  { code: 'SUP-FOAM', nameEn: 'Jordan Foam Industries', nameAr: 'صناعات الإسفنج الأردنية', phone: '+96265551002', email: 'orders@jo-foam.jo', skus: ['MAT-FOAM-HD', 'MAT-FOAM-MD', 'MAT-FOAM-LD', 'MAT-FOAM-HR'] },
-  { code: 'SUP-FABRIC', nameEn: 'Abdali Textile Mill', nameAr: 'مصنع أقمشة العبدلي', phone: '+96265661003', email: 'b2b@abdali-textile.jo', skus: ['MAT-VEL-SAND', 'MAT-VEL-NAVY', 'MAT-LIN-NAT', 'MAT-BOU-CRM'] },
-  { code: 'SUP-HW', nameEn: 'Sahab Hardware Co', nameAr: 'شركة سحاب للمعدات', phone: '+96264001004', email: 'desk@sahab-hw.jo', skus: ['MAT-HW-KIT', 'MAT-HW-SCREW', 'MAT-SPRING', 'MAT-MECH-RECL'] },
-  { code: 'SUP-FINISH', nameEn: 'Marka Coatings', nameAr: 'دهانات ماركا', phone: '+96264881005', email: 'sales@marka-coatings.jo', skus: ['MAT-LACQ', 'MAT-STAIN-WAL', 'MAT-PRIMER'] },
-  { code: 'SUP-PACK', nameEn: 'East Pack Packaging', nameAr: 'إيست باك للتغليف', phone: '+96265111006', email: 'ops@eastpack.jo', skus: ['MAT-FOIL', 'MAT-CARTON', 'MAT-CORNER'] },
-  { code: 'SUP-SPRING', nameEn: 'Irbid Spring Works', nameAr: 'أعمال النوابض إربد', phone: '+96227221007', email: 'sales@irbid-spring.jo', skus: ['MAT-SPRING', 'MAT-CASTER'] },
-  { code: 'SUP-ADH', nameEn: 'Aqaba Adhesives', nameAr: 'لواصق العقبة', phone: '+96232001008', email: 'orders@aqaba-adh.jo', skus: ['MAT-GLUE', 'MAT-SPRAY-ADH'] },
+  { code: 'SUP-TIMBER', nameEn: 'Zarqa Timber Yard', nameAr: 'ساحة أخشاب الزرقاء', nameHe: 'חצר עץ זרקא', phone: '+96253990001', email: 'sales@zarqa-timber.jo', skus: ['MAT-BEECH', 'MAT-OAK', 'MAT-PLY', 'MAT-MDF', 'MAT-PINE'] },
+  { code: 'SUP-FOAM', nameEn: 'Jordan Foam Industries', nameAr: 'صناعات الإسفنج الأردنية', nameHe: 'תעשיות ספוג ירדן', phone: '+96265551002', email: 'orders@jo-foam.jo', skus: ['MAT-FOAM-HD', 'MAT-FOAM-MD', 'MAT-FOAM-LD', 'MAT-FOAM-HR'] },
+  { code: 'SUP-FABRIC', nameEn: 'Abdali Textile Mill', nameAr: 'مصنع أقمشة العبدلي', nameHe: 'מפעל טקסטיל עבדלי', phone: '+96265661003', email: 'b2b@abdali-textile.jo', skus: ['MAT-VEL-SAND', 'MAT-VEL-NAVY', 'MAT-LIN-NAT', 'MAT-BOU-CRM'] },
+  { code: 'SUP-HW', nameEn: 'Sahab Hardware Co', nameAr: 'شركة سحاب للمعدات', nameHe: 'סחאב לחומרה', phone: '+96264001004', email: 'desk@sahab-hw.jo', skus: ['MAT-HW-KIT', 'MAT-HW-SCREW', 'MAT-SPRING', 'MAT-MECH-RECL'] },
+  { code: 'SUP-FINISH', nameEn: 'Marka Coatings', nameAr: 'دهانات ماركا', nameHe: 'מרקה לציפויים', phone: '+96264881005', email: 'sales@marka-coatings.jo', skus: ['MAT-LACQ', 'MAT-STAIN-WAL', 'MAT-PRIMER'] },
+  { code: 'SUP-PACK', nameEn: 'East Pack Packaging', nameAr: 'إيست باك للتغليف', nameHe: 'איסט פק לאריזה', phone: '+96265111006', email: 'ops@eastpack.jo', skus: ['MAT-FOIL', 'MAT-CARTON', 'MAT-CORNER'] },
+  { code: 'SUP-SPRING', nameEn: 'Irbid Spring Works', nameAr: 'أعمال النوابض إربد', nameHe: 'עבודות קפיצים אירביד', phone: '+96227221007', email: 'sales@irbid-spring.jo', skus: ['MAT-SPRING', 'MAT-CASTER'] },
+  { code: 'SUP-ADH', nameEn: 'Aqaba Adhesives', nameAr: 'لواصق العقبة', nameHe: 'דבקים עקבה', phone: '+96232001008', email: 'orders@aqaba-adh.jo', skus: ['MAT-GLUE', 'MAT-SPRAY-ADH'] },
 ];
 
 export async function seedDemoStock(
@@ -150,6 +166,7 @@ export async function seedDemoStock(
         name: s.nameEn,
         nameEn: s.nameEn,
         nameAr: s.nameAr,
+        nameHe: s.nameHe,
         phone: s.phone,
         email: s.email,
         paymentTermsDays: 30,

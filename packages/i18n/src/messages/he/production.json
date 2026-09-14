@@ -329,6 +329,7 @@
     "requiresInspectionHint": "בדיקת איכות לפני השלב הבא.",
     "requiresPhotosHint": "העובדים מצרפים תמונות בסיום.",
     "removeStage": "הסר שלב",
+    "removeFromWorkflow": "הסר מהתהליך",
     "reconnectDependencies": "חבר מחדש תלויות",
     "invalidCycle": "החיבורים האלה ייצרו מעגל בתהליך. שלב מאוחר לא יכול גם לרוץ לפני שלב מוקדם — נקו את «רץ אחרי» או «מוביל אל» ונסו שוב.",
     "unreachableStage": "שלבים מסוימים לא מחוברים — חבר אותם למסלול הראשי.",
@@ -737,5 +738,22 @@
   "usageFromWarehouse": "מ־{name}",
   "usageToWarehouse": "אל {name}",
   "materialsBoardTitle": "חומרים",
-  "materialsRemaining": "{remaining} מתוך {bom} נותרו לשלבים אחרים"
+  "materialsRemaining": "{remaining} מתוך {bom} נותרו לשלבים אחרים",
+  "deptCodes": {
+    "MGMT": "הנהלה",
+    "SALES": "מכירות",
+    "PURCH": "רכש",
+    "WH": "מחסן",
+    "PROD": "ייצור",
+    "CARP": "נגרות",
+    "PAINT": "צביעה",
+    "UPHOL": "ריפוד",
+    "ASM": "הרכבה",
+    "QC": "איכות",
+    "PACK": "אריזה",
+    "DEL": "משלוח",
+    "ACCT": "הנהלת חשבונות",
+    "CUTTING": "חיתוך",
+    "ASSEMBLY": "הרכבה"
+  }
 }

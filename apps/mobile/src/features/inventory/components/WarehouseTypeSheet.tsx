@@ -26,16 +26,11 @@ export function WarehouseTypeSheet({ open, selected, onClose, onSelect }: Props)
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
-      title={label('mobile.inventory.pickWarehouseType', 'Warehouse type')}
+      title={t('mobile.inventory.pickWarehouseType')}
       fitContent
       overlay
     >
@@ -45,10 +40,7 @@ export function WarehouseTypeSheet({ open, selected, onClose, onSelect }: Props)
           color="muted"
           style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
-          {label(
-            'mobile.inventory.pickWarehouseTypeHint',
-            'Raw materials, semi-finished, or finished goods.',
-          )}
+          {t('mobile.inventory.pickWarehouseTypeHint')}
         </AppText>
         {WAREHOUSE_TYPES.map((type) => {
           const active = type === selected;
@@ -96,7 +88,7 @@ export function WarehouseTypeSheet({ open, selected, onClose, onSelect }: Props)
                 weight={titleWeight}
                 style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
               >
-                {label(`mobile.inventory.warehouseTypes.${type}`, type)}
+                {t(`mobile.inventory.warehouseTypes.${type}`)}
               </AppText>
               {active ? (
                 <Ionicons name="checkmark" size={18} color={colors.brand} />

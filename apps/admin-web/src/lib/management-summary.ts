@@ -7,6 +7,8 @@ export type MgmtTile = {
   filter: string;
 };
 
+export type MgmtCopyParams = Record<string, string | number | boolean | null | undefined>;
+
 export type MgmtAttentionCard = {
   id: string;
   title: string;
@@ -15,12 +17,18 @@ export type MgmtAttentionCard = {
   priority: 'critical' | 'high' | 'normal';
   href: string;
   filter: string;
+  titleKey?: string;
+  whyKey?: string;
+  actionKey?: string;
+  whyParams?: MgmtCopyParams;
 };
 
 export type MgmtActivityItem = {
   at: string;
   label: string;
   href?: string;
+  kind?: string;
+  params?: MgmtCopyParams;
 };
 
 export type MgmtFactoryFlowStep = {
@@ -49,7 +57,15 @@ export type ManagementSummary = {
     dueToday: MgmtTile;
     events: MgmtActivityItem[];
   };
-  blocked: Array<{ id: string; title: string; why: string; href: string; filter: string }>;
+  blocked: Array<{
+    id: string;
+    title: string;
+    why: string;
+    href: string;
+    filter: string;
+    whyKey?: string;
+    whyParams?: MgmtCopyParams;
+  }>;
   workers: {
     workingToday: number;
     assigned: number;

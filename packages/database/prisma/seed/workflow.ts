@@ -27,6 +27,8 @@ export const STAGE_LIBRARY_NAME_HE: Record<string, string> = {
   PACKAGING: 'אריזה',
   DELIVERY: 'אספקה',
   DISMANTLE_RECOVER: 'פירוק ושחזור',
+  PAINTING_2: 'צביעה',
+  PAINTING_3: 'צביעה',
 };
 
 export const RETURN_RECOVERY_WORKFLOW_CODE = 'RETURN_RECOVERY';

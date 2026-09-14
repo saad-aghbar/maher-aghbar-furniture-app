@@ -11,6 +11,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryWarehouseOption } from './InventoryWarehousePickerControl';
+import { warehouseDisplayName } from '../warehouseDesk';
 
 /** Shared section card for inventory filter sheets (Orders aesthetic). */
 export function InventoryFilterSection({
@@ -270,11 +271,6 @@ export function InventoryFilterSheetFooter({
       </AnimatedPressable>
     </View>
   );
-}
-
-function warehouseDisplayName(w: InventoryWarehouseOption, locale: string): string {
-  if (locale === 'ar') return w.nameAr || w.nameEn || w.code;
-  return w.nameEn || w.nameAr || w.code;
 }
 
 /**

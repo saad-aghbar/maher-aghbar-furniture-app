@@ -95,12 +95,13 @@ export function WorkflowStageRowActions({
   disabled?: boolean;
 }) {
   const { colors } = useTheme();
+  const { t } = useLocale();
 
   return (
     <AnimatedPressable
       variant="button"
       accessibilityRole="button"
-      accessibilityLabel="Remove from workflow"
+      accessibilityLabel={t('production.workflow.removeFromWorkflow')}
       disabled={disabled}
       onPress={() => {
         void haptics.selection();

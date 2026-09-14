@@ -1,12 +1,11 @@
+import { localizedName } from '@maher/i18n';
 import type { Warehouse, WarehouseBinContents, WarehouseDesk, WarehouseDeskLocation } from './api';
 
 export function warehouseDisplayName(
-  warehouse: Pick<Warehouse, 'code' | 'nameEn' | 'nameAr'>,
+  warehouse: Pick<Warehouse, 'code' | 'nameEn' | 'nameAr'> & { nameHe?: string | null },
   locale: string,
 ): string {
-  return locale === 'ar'
-    ? warehouse.nameAr || warehouse.nameEn || warehouse.code
-    : warehouse.nameEn || warehouse.nameAr || warehouse.code;
+  return localizedName(locale, warehouse, warehouse.code);
 }
 
 export function warehouseTypeKey(type?: string | null): string {
@@ -39,6 +38,7 @@ export function deskLocationToBinContents(
       code: warehouse.code,
       nameEn: warehouse.nameEn,
       nameAr: warehouse.nameAr,
+      nameHe: warehouse.nameHe,
       type: warehouse.type,
     },
     contents: loc.contents ?? [],

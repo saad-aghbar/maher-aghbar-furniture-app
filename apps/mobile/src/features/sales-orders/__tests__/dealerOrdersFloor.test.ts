@@ -42,6 +42,9 @@ describe('dealer orders floor', () => {
     const header = read('components/OrdersDaySectionHeader.tsx');
     expect(card).toContain('OrderStationStub');
     expect(card).toContain('ProductThumb');
+    expect(card).toContain('OrderBasketBoard');
+    expect(card).toContain('orderBasketItemHref');
+    expect(card).not.toContain('itemStrip');
     expect(card).toContain('selectOrderStationStub');
     expect(stub).toContain('ORDER_STATION_CAPTION_KEY');
     expect(header).toContain('surfaceSecondary');

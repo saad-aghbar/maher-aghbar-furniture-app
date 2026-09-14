@@ -206,6 +206,7 @@ function toStream(
     actionHint: o.actionHint,
     productionReadinessSummary: o.productionReadinessSummary,
     manufacturingKind: o.manufacturingKind,
+    items: o.items,
     primaryProductionOrderId: o.primaryProductionOrderId,
     plannedStartDate: o.plannedStartDate,
     journeyLogistics: o.journeyLogistics,

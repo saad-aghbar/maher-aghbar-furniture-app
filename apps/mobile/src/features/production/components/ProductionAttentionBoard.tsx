@@ -1,3 +1,4 @@
+import { localizeFloorNote } from '@maher/i18n';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
@@ -65,7 +66,7 @@ export function ProductionAttentionBoard({
               : whyBase;
           const why =
             block.whyDetail && block.whyDetail !== withStage
-              ? `${withStage}\n${block.whyDetail}`
+              ? `${withStage}\n${localizeFloorNote(t, locale, block.whyDetail)}`
               : withStage;
           const next = translateOrFallback(t, block.nextKey);
 

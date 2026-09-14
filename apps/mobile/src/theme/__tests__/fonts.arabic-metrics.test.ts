@@ -10,29 +10,27 @@ describe('resolveArabicTextMetrics', () => {
     ).toBeUndefined();
   });
 
-  it('raises tight hero money line boxes used on invoice boards', () => {
+  it('raises only extremely tight hero money line boxes', () => {
     const next = resolveArabicTextMetrics('ar', {
       fontSize: 34,
-      lineHeight: 40,
+      lineHeight: 36,
     });
-    expect(next?.lineHeight).toBeGreaterThanOrEqual(Math.ceil(34 * 1.5));
-    expect(next?.paddingTop).toBeGreaterThanOrEqual(2);
+    expect(next?.lineHeight).toBeGreaterThanOrEqual(Math.ceil(34 * 1.2));
   });
 
-  it('still adds top padding when lineHeight already looks generous', () => {
+  it('leaves a normal 1.2+ line box alone', () => {
     const next = resolveArabicTextMetrics('ar', {
       fontSize: 11,
       lineHeight: 18,
     });
     expect(next?.lineHeight).toBeUndefined();
-    expect(next?.paddingTop).toBeGreaterThanOrEqual(2);
+    expect(next?.paddingTop).toBeUndefined();
   });
 
-  it('does not shrink an explicit larger paddingTop', () => {
+  it('does not inject paddingTop', () => {
     const next = resolveArabicTextMetrics('ar', {
       fontSize: 22,
       lineHeight: 40,
-      paddingTop: 12,
     });
     expect(next?.paddingTop).toBeUndefined();
   });

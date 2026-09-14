@@ -7,6 +7,11 @@ import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import {
+  mgmtAttentionAction,
+  mgmtAttentionTitle,
+  mgmtAttentionWhy,
+} from '@maher/i18n';
+import {
   AnimatedPressable,
   haptics,
   ListItemEnter,
@@ -172,20 +177,23 @@ function HealthyNote({ message }: { message: string }) {
 }
 
 function AttentionCard({ card, index }: { card: MgmtAttentionCard; index: number }) {
-  const { isRTL, locale } = useLocale();
+  const { isRTL, locale, t, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
   const hot = card.priority === 'critical' || card.priority === 'high';
   const ink = colorScheme === 'dark' ? '#1C1816' : '#2A2420';
   const gold = hot ? '#E8C98A' : '#D4C4A8';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const title = mgmtAttentionTitle(t, card);
+  const why = mgmtAttentionWhy(t, locale, card, { formatMoney: formatCurrency });
+  const action = mgmtAttentionAction(t, card);
 
   return (
     <ListItemEnter index={index}>
       <AnimatedPressable
         variant="card"
         accessibilityRole="button"
-        accessibilityLabel={`${card.title}. ${card.why}. ${card.actionLabel}`}
+        accessibilityLabel={`${title}. ${why}. ${action}`}
         onPress={() => {
           void haptics.confirmLight();
           router.push(mapMgmtHref(card.href, card.filter));
@@ -252,7 +260,7 @@ function AttentionCard({ card, index }: { card: MgmtAttentionCard; index: number
                 textTransform: 'uppercase',
               }}
             >
-              {card.title}
+              {title}
             </AppText>
             <AppText
               variant="body"
@@ -263,7 +271,7 @@ function AttentionCard({ card, index }: { card: MgmtAttentionCard; index: number
                 writingDirection: isRTL ? 'rtl' : 'ltr',
               }}
             >
-              {card.why}
+              {why}
             </AppText>
 
             <View
@@ -282,7 +290,7 @@ function AttentionCard({ card, index }: { card: MgmtAttentionCard; index: number
               }}
             >
               <AppText variant="label" weight="semibold" style={{ color: gold }}>
-                {card.actionLabel}
+                {action}
               </AppText>
               <Ionicons
                 name={isRTL ? 'arrow-back' : 'arrow-forward'}

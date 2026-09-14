@@ -130,6 +130,7 @@ describe('SalesOrdersService.list scope', () => {
         id: 'po1',
         number: 'PO-1',
         status: 'IN_PROGRESS',
+        salesOrderLineId: 'l1',
         currentStageCode: 'UPHOLSTERY',
         progressPercent: 55,
       },
@@ -182,6 +183,22 @@ describe('SalesOrdersService.list scope', () => {
     expect(row.manufacturingCost).toBe(400);
     expect(row.profit).toBe(600);
     expect(findMany.mock.calls[0][0].where.customerId).toBeUndefined();
+    expect(row.lineStrip).toEqual([
+      {
+        id: 'l1',
+        nameEn: 'Sofa',
+        nameAr: null,
+        nameHe: null,
+        description: 'Sofa',
+        sku: 'S1',
+        quantity: 1,
+        manufacturingComplexity: 'STANDARD',
+        imageUrl: null,
+      },
+    ]);
+    const pos = row.productionOrders as Array<Record<string, unknown>>;
+    expect(pos[0]?.salesOrderLineId).toBe('l1');
+    expect(pos[0]?.progressPercent).toBe(55);
   });
 
   it('applies sortBy and statusGroup', async () => {

@@ -1,4 +1,5 @@
 import type { LowStockDraftItem, LowStockDraftResponse } from '@/api/modules/purchasing';
+import { localizedName } from '@maher/i18n';
 import { locationPickerLabel, pickDefaultLocationId, warehouseBinLine } from '@/features/inventory/pickDefaultLocation';
 import { toggleIdInSet } from './purchasingToggle';
 import { isFabricCategory } from './orderBuilder';
@@ -119,6 +120,7 @@ export type LowStockWarehouseRef = {
   name?: string | null;
   nameEn?: string | null;
   nameAr?: string | null;
+  nameHe?: string | null;
   locations?: Array<{
     id: string;
     name?: string | null;
@@ -130,9 +132,11 @@ export type LowStockWarehouseRef = {
 
 function warehouseDisplayName(warehouse: LowStockWarehouseRef | undefined, locale: string): string {
   if (!warehouse) return '';
-  return locale === 'ar'
-    ? warehouse.nameAr || warehouse.nameEn || warehouse.name || warehouse.code || ''
-    : warehouse.nameEn || warehouse.nameAr || warehouse.name || warehouse.code || '';
+  return localizedName(
+    locale,
+    warehouse,
+    warehouse.name || warehouse.code || '',
+  );
 }
 
 export function applyLowStockDestinationNames(

@@ -1,4 +1,6 @@
 import { localizedName } from '@maher/i18n';
+import { translate } from '@/i18n/translate';
+import type { Locale } from '@maher/types';
 
 const MACHINE_CODE = /^[A-Z0-9]+(?:[_-][A-Z0-9]+)+$/;
 const ALL_CAPS_TOKEN = /^[A-Z0-9_]{4,}$/;
@@ -18,7 +20,10 @@ export function isMachineWorkflowCode(value: string): boolean {
 }
 
 /** SNAKE_CODE → "Snake code" — sentence case, never shouty. */
-export function humanizeWorkflowCode(code: string): string {
+export function humanizeWorkflowCode(code: string, locale: string = 'en'): string {
+  const key = `production.workflowNames.${code.trim()}`;
+  const translated = translate(locale as Locale, key);
+  if (translated !== key) return translated;
   const words = code
     .trim()
     .replace(/[_-]+/g, ' ')
@@ -52,7 +57,7 @@ export function workflowDisplayName(locale: string, row: NamedWorkflow): string 
     isMachineWorkflowCode(raw) ||
     (code && raw === code)
   ) {
-    return humanizeWorkflowCode(code || raw);
+    return humanizeWorkflowCode(code || raw, locale);
   }
   return toSentenceCaseName(raw);
 }

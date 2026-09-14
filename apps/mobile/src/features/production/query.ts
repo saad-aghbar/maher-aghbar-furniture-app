@@ -31,6 +31,7 @@ import {
   type ProductionPriority,
   type ProductionDateMode,
   type ProductionDayFocus,
+  type ProductionComplexityFilter,
 } from './api';
 import {
   patchOrderSetupLine,
@@ -46,10 +47,11 @@ import { invalidateAfterCatalogSeed } from '@/features/sales-orders/catalogTempl
 export function useProductionSummaryQuery(
   enabled: boolean,
   origin?: 'normal' | 'returned',
+  filters?: { complexity?: ProductionComplexityFilter; customerId?: string },
 ) {
   return useQuery({
-    queryKey: [...queryKeys.production.summary(), origin ?? null] as const,
-    queryFn: () => getProductionSummary(origin),
+    queryKey: [...queryKeys.production.summary(), origin ?? null, filters ?? null] as const,
+    queryFn: () => getProductionSummary(origin, filters),
     enabled,
     staleTime: 30_000,
   });
@@ -63,6 +65,7 @@ export function useProductionDaySummaryQuery(
     customerId?: string;
     origin?: 'normal' | 'returned';
     dayFocus?: ProductionDayFocus;
+    complexity?: ProductionComplexityFilter;
   },
   enabled: boolean,
 ) {
@@ -101,6 +104,7 @@ export function useProductionOrdersInfiniteQuery(
     dateMode?: ProductionDateMode;
     origin?: 'normal' | 'returned';
     dayFocus?: ProductionDayFocus;
+    complexity?: ProductionComplexityFilter;
   },
   enabled: boolean,
 ) {
@@ -117,6 +121,8 @@ export function useProductionOrdersInfiniteQuery(
         dateMode: filters.dateMode,
         origin: filters.origin,
         dayFocus: filters.dayFocus,
+        complexity: filters.complexity,
+        group: 'boards',
       }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,
@@ -127,11 +133,14 @@ export function useProductionOrdersInfiniteQuery(
   });
 }
 
-export function flattenProductionOrderPages(
+export function flattenProductionBoardPages(
   data: ReturnType<typeof useProductionOrdersInfiniteQuery>['data'],
 ) {
   return flattenPaginatedPages(data?.pages);
 }
+
+/** @deprecated use flattenProductionBoardPages — hub paginates commercial boards. */
+export const flattenProductionOrderPages = flattenProductionBoardPages;
 
 export function useProductionOrderQuery(id: string | undefined, enabled: boolean) {
   return useQuery({

@@ -1,14 +1,16 @@
 import { View } from 'react-native';
 import { SkeletonShimmer } from '@/motion';
+import { localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 /** Management-desk skeleton — never flash zero tiles. */
 export function AdminHomeSkeleton() {
   const { theme } = useTheme();
+  const { t, isRTL } = useLocale();
 
   return (
     <View
-      accessibilityLabel="Loading"
+      accessibilityLabel={t('common.loading')}
       accessibilityRole="progressbar"
       style={{ gap: theme.spacing.lg }}
     >
@@ -17,13 +19,13 @@ export function AdminHomeSkeleton() {
       <SkeletonShimmer height={96} width="100%" />
       <SkeletonShimmer height={96} width="94%" />
       <SkeletonShimmer height={14} width="22%" />
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+      <View style={{ flexDirection: localeRow(isRTL), gap: theme.spacing.sm }}>
         <SkeletonShimmer height={72} width={112} />
         <SkeletonShimmer height={72} width={112} />
         <SkeletonShimmer height={72} width={112} />
       </View>
       <SkeletonShimmer height={14} width="34%" />
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+      <View style={{ flexDirection: localeRow(isRTL), gap: theme.spacing.sm }}>
         <SkeletonShimmer height={64} width={108} />
         <SkeletonShimmer height={64} width={108} />
         <SkeletonShimmer height={64} width={108} />

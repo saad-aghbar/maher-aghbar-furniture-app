@@ -1,22 +1,22 @@
-import { rangeForPreset } from '../period';
+import { reportsPeriodRange } from '../selectReports';
 
-describe('rangeForPreset', () => {
+describe('reportsPeriodRange', () => {
   it('returns same day for today', () => {
-    const { from, to } = rangeForPreset('today');
+    const { from, to } = reportsPeriodRange('today', new Date(2026, 8, 14));
     expect(from).toBe(to);
-    expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(from).toBe('2026-09-14');
   });
 
   it('returns month starting on the 1st', () => {
-    const { from, to } = rangeForPreset('month');
-    expect(from.endsWith('-01')).toBe(true);
-    expect(from <= to).toBe(true);
+    const { from, to } = reportsPeriodRange('month', new Date(2026, 8, 14));
+    expect(from).toBe('2026-09-01');
+    expect(to).toBe('2026-09-14');
   });
 
-  it('returns week from Monday through today', () => {
-    const { from, to } = rangeForPreset('week');
-    expect(from <= to).toBe(true);
-    const fromDate = new Date(`${from}T00:00:00`);
-    expect(fromDate.getDay()).toBe(1);
+  it('returns week from Sunday through today', () => {
+    const wednesday = reportsPeriodRange('week', new Date(2026, 7, 12));
+    expect(wednesday).toEqual({ from: '2026-08-09', to: '2026-08-12' });
+    const fromDate = new Date(`${wednesday.from}T00:00:00`);
+    expect(fromDate.getDay()).toBe(0);
   });
 });

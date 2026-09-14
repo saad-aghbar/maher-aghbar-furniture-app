@@ -39,6 +39,7 @@ export type OrderLineItemView = {
   manufacturingComplexity: string | null;
   imageUrl: string | null;
   productionStatus: string | null;
+  productionProgressPercent: number | null;
 };
 
 export type OrderCostMaterial = {
@@ -243,6 +244,10 @@ function mapItems(order: SalesOrderDetail): OrderLineItemView[] {
       manufacturingComplexity: item.manufacturingComplexity ?? null,
       imageUrl: item.imageUrl ?? null,
       productionStatus: po?.status ?? null,
+      productionProgressPercent:
+        po?.progressPercent != null && Number.isFinite(Number(po.progressPercent))
+          ? Number(po.progressPercent)
+          : null,
     };
   });
 }

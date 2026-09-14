@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { mgmtEventLabel } from '@maher/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { mapMgmtHref } from '../../mapMgmtHref';
@@ -12,7 +13,7 @@ type Props = { events: MgmtEvent[] };
 
 /** Spine timeline — Activity board. */
 export function ActivityBoard({ events }: Props) {
-  const { formatDateTime, isRTL } = useLocale();
+  const { formatDateTime, isRTL, t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
 
@@ -67,7 +68,7 @@ export function ActivityBoard({ events }: Props) {
                 {when}
               </AppText>
               <AppText variant="bodySecondary" numberOfLines={2}>
-                {event.label}
+                {mgmtEventLabel(t, locale, event)}
               </AppText>
             </View>
             {event.href ? (

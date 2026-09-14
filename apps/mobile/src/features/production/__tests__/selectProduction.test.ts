@@ -1,6 +1,7 @@
 import {
   productionFloorStatusLabel,
   productionStartDueHint,
+  selectProductionBasketBoard,
   selectProductionCard,
   selectProductionDetail,
   selectProductionOrigin,
@@ -310,3 +311,121 @@ describe('dealer order detail keeps safe workflow stages', () => {
     expect(dealer.assignedWorkerName).toBeNull();
   });
 });
+
+describe('selectProductionBasketBoard', () => {
+  const nileItems: ProductionOrderListItem[] = [
+    {
+      ...listItem,
+      id: 'po-std',
+      number: 'PO-STD',
+      progressPercent: 40,
+      manufacturingComplexity: 'STANDARD',
+      matched: false,
+      salesOrder: { id: 'so-nile', number: 'SO-2026-00026' },
+      currentStage: { code: 'CUT', nameEn: 'Cutting' },
+    },
+    {
+      ...listItem,
+      id: 'po-mod',
+      number: 'PO-MOD',
+      progressPercent: 80,
+      manufacturingComplexity: 'MODIFIED',
+      matched: false,
+      salesOrder: { id: 'so-nile', number: 'SO-2026-00026' },
+      currentStage: { code: 'UPH', nameEn: 'Upholstery' },
+    },
+    {
+      ...listItem,
+      id: 'po-custom',
+      number: 'PO-CUS',
+      status: 'COMPLETED',
+      progressPercent: 100,
+      manufacturingComplexity: 'CUSTOM',
+      matched: true,
+      salesOrder: { id: 'so-nile', number: 'SO-2026-00026' },
+      currentStage: { code: 'PACK', nameEn: 'Packaging' },
+    },
+  ];
+
+  it('rolls up mean progress and keeps unmatched siblings visible', () => {
+    const board = selectProductionBasketBoard(
+      { id: 'so-nile', salesOrderId: 'so-nile', items: nileItems },
+      'en',
+    );
+    expect(board.number).toBe('SO-2026-00026');
+    expect(board.itemCount).toBe(3);
+    expect(board.progressPercent).toBe(73);
+    expect(board.doneCount).toBe(1);
+    expect(board.items.map((i) => i.complexity)).toEqual(['standard', 'modified', 'custom']);
+    expect(board.items.find((i) => i.id === 'po-custom')?.matched).toBe(true);
+    expect(board.items.filter((i) => i.matched)).toHaveLength(1);
+    expect(board.showStages).toBe(false);
+    expect(board.items.every((i) => i.showStages === false)).toBe(true);
+    expect(board.items[0]?.fact.kind).toBe('stage');
+    expect(board.items[0]?.fact.text).toContain('%');
+  });
+
+  it('does not highlight every row when the whole basket matched', () => {
+    const board = selectProductionBasketBoard(
+      {
+        id: 'so-nile',
+        salesOrderId: 'so-nile',
+        items: nileItems.map((item) => ({ ...item, matched: true })),
+      },
+      'en',
+    );
+    expect(board.items.every((item) => item.matched === false)).toBe(true);
+  });
+
+  it('uses one planned window on the day lens, never a task dump', () => {
+    const board = selectProductionBasketBoard(
+      {
+        id: 'so-nile',
+        salesOrderId: 'so-nile',
+        items: [
+          {
+            ...nileItems[1]!,
+            matched: true,
+            dayLens: {
+              mode: 'planned',
+              onDate: '2026-09-13',
+              timezone: 'Asia/Amman',
+              plannedTasks: [
+                {
+                  taskId: 't1',
+                  taskNumber: 'T-1',
+                  stageNameEn: 'Upholstery',
+                  workerName: 'Issa',
+                  plannedStart: '2026-09-13T07:00:00.000Z',
+                  plannedCompletion: '2026-09-13T11:00:00.000Z',
+                },
+                {
+                  taskId: 't2',
+                  taskNumber: 'T-2',
+                  stageNameEn: 'Sewing',
+                  workerName: 'Lina',
+                  plannedStart: '2026-09-13T12:00:00.000Z',
+                  plannedCompletion: '2026-09-13T15:00:00.000Z',
+                },
+              ],
+            },
+          },
+          {
+            ...nileItems[0]!,
+            matched: false,
+            dayLens: null,
+          },
+        ],
+      },
+      'en',
+      { dateScope: 'day' },
+    );
+    expect(board.items[0]?.fact.kind).toBe('planned');
+    expect(board.items[0]?.fact.text).toContain('Upholstery');
+    expect(board.items[0]?.fact.text).toContain('Issa');
+    expect(board.items[0]?.fact.text).not.toContain('Sewing');
+    expect(board.items[1]?.fact.kind).toBe('idle');
+    expect(board.items[1]?.fact.text).toBe('—');
+  });
+});
+

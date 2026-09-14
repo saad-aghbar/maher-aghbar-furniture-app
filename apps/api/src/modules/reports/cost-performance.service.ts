@@ -7,33 +7,60 @@ import { PrismaService } from '../../common/prisma.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { positiveUnitCost } from '../inventory/issue-unit-cost';
 import { applyReceiptPrices, coverageSummary, receiptPriceByItem } from '../inventory/cost-coverage';
-import { rollupLaborCost, type LaborCostBlock } from '../production/labor-costing';
+import { rollupLaborCost, summarizeLaborEntries } from '../production/labor-costing';
 import { ensureTaskTimeEntry } from '../tasks/ensure-time-entry';
 import { freezePlannedCostAtRelease } from '../production/planned-cost-snapshot';
 import {
   actualMaterialFromTransactions,
   averagePerUnit,
   marginFrom,
-  saleValueFromSubtotals,
   skuLedgerFromTransactions,
   costVariance,
 } from './order-cost-ledger';
 import { aggregateFactoryTime } from './order-time';
-import { deriveKeyedStats, deriveProductStats } from './product-cost-analytics';
+import { deriveKeyedStats, deriveProductStats, sortProductStats } from './product-cost-analytics';
 import {
   lifetimeCost,
   originBucket,
   recoveryOutcomeValue,
 } from './return-cost-rollup';
 import {
+  assembleActualProduction,
+  collectionFromInvoices,
+  saleValueFromCommercial,
+  type ClassifiedTx,
+} from './production-cost';
+import {
+  addFlowMoney,
+  classifyInventoryFlow,
+  consumptionFromFlow,
+  currentInventoryValue,
+  emptyFlowMoney,
+  rawGroupFromCategory,
+} from './inventory-economics';
+import {
   costOrdersWhere,
+  costProductsSearch,
   costReturnsWhere,
-  LABOR_NOT_CONFIGURED,
+  dateRange,
+  parseDateBasis,
 } from './cost-query';
 
 const ISSUE_TYPES: InventoryTxType[] = [
   InventoryTxType.PRODUCTION_ISSUE,
   InventoryTxType.PRODUCTION_RETURN,
+  InventoryTxType.SCRAP,
+  InventoryTxType.DAMAGE,
+];
+
+const ACTIVITY_TX_TYPES: InventoryTxType[] = [
+  ...ISSUE_TYPES,
+  InventoryTxType.PURCHASE_RECEIPT,
+  InventoryTxType.WAREHOUSE_TRANSFER,
+  InventoryTxType.SEMI_FINISHED_RECEIPT,
+  InventoryTxType.FINISHED_GOODS_RECEIPT,
+  InventoryTxType.INVENTORY_ADJUSTMENT,
+  InventoryTxType.CUSTOMER_RETURN,
 ];
 
 @Injectable()
@@ -49,11 +76,20 @@ export class CostPerformanceService {
   async listOrders(    query: {
       from?: string;
       to?: string;
+      dateBasis?: string;
       customerId?: string;
       productId?: string;
       variantId?: string;
       optionValueId?: string;
       status?: string;
+      q?: string;
+      complexity?: string;
+      delivered?: string;
+      hasReturn?: string | boolean;
+      hasRework?: string | boolean;
+      coverage?: string;
+      marginHealth?: string;
+      sort?: string;
       page?: number;
       pageSize?: number;
       user?: AuthUser;
@@ -62,14 +98,19 @@ export class CostPerformanceService {
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
     const where = costOrdersWhere(query);
+    const needsComputed =
+      Boolean(query.coverage || query.marginHealth) ||
+      ['highestCost', 'lowestMargin', 'highestMargin', 'longestTime', 'largestSale'].includes(
+        String(query.sort ?? ''),
+      );
 
     const [total, orders] = await Promise.all([
       this.prisma.salesOrder.count({ where }),
       this.prisma.salesOrder.findMany({
         where,
         orderBy: { orderDate: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: needsComputed ? 0 : (page - 1) * pageSize,
+        take: needsComputed ? 500 : pageSize,
         include: {
           customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
           lines: {
@@ -77,19 +118,23 @@ export class CostPerformanceService {
               id: true,
               description: true,
               quantity: true,
-              product: { select: { sku: true, nameEn: true, nameAr: true } },
+              lineTotal: true,
+              manufacturingComplexity: true,
+              variantLabel: true,
+              product: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true } },
             },
           },
           invoices: {
             where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
-            select: { subtotal: true },
-            take: 1,
+            select: { subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
             orderBy: { createdAt: 'desc' },
           },
+          returns: { select: { id: true } },
           productionOrders: {
             where: { archivedAt: null, originType: 'SALES_ORDER' },
             select: {
               id: true,
+              salesOrderLineId: true,
               quantity: true,
               actualStartDate: true,
               actualCompletionDate: true,
@@ -110,6 +155,67 @@ export class CostPerformanceService {
       }),
     ]);
 
+    const rows = await this.assembleOrderRows(orders);
+    const filtered = rows.filter((row) => {
+      if (query.coverage === 'full' && !row.complete) return false;
+      if (query.coverage === 'partial' && row.coverage !== 'PARTIAL') return false;
+      if (query.coverage === 'unpriced' && row.coverage !== 'UNPRICED') return false;
+      if (query.marginHealth === 'negative' && !(row.grossMargin != null && row.grossMargin < 0)) return false;
+      if (query.marginHealth === 'low' && !(row.marginPct != null && row.marginPct < 15)) return false;
+      if (query.marginHealth === 'healthy' && !(row.marginPct != null && row.marginPct >= 15)) return false;
+      return true;
+    });
+    const sorted = sortCostOrders(filtered, query.sort);
+    const pageRows = needsComputed
+      ? sorted.slice((page - 1) * pageSize, page * pageSize)
+      : sorted;
+    return { data: pageRows, meta: paginatedMeta(page, pageSize, needsComputed ? filtered.length : total) };
+  }
+
+  private async assembleOrderRows(
+    orders: Array<{
+      id: string;
+      number: string;
+      status: string;
+      orderDate: Date;
+      subtotal?: unknown;
+      manufacturingCost?: unknown;
+      plannedCostFrozenAt?: Date | null;
+      customer: { nameEn: string | null; nameAr: string | null; nameHe: string | null };
+      lines: Array<{
+        id: string;
+        description: string;
+        quantity: unknown;
+        lineTotal?: unknown;
+        manufacturingComplexity?: string | null;
+        variantLabel?: string | null;
+        product?: { sku: string; nameEn?: string | null; nameAr?: string | null } | null;
+      }>;
+      invoices: Array<{
+        subtotal: unknown;
+        paidAmount?: unknown;
+        outstandingAmount?: unknown;
+        status?: string;
+      }>;
+      returns?: Array<{ id: string }>;
+      productionOrders: Array<{
+        id: string;
+        salesOrderLineId?: string | null;
+        quantity: unknown;
+        actualStartDate: Date | null;
+        actualCompletionDate: Date | null;
+        plannedMaterialCost: unknown;
+        plannedCostFrozenAt: Date | null;
+        tasks: Array<{
+          id?: string;
+          actualMinutes: number | null;
+          isRework: boolean;
+          assignedEmployeeId: string | null;
+          stageDefinitionId: string | null;
+        }>;
+      }>;
+    }>,
+  ) {
     const poIds = orders.flatMap((o) => o.productionOrders.map((po) => po.id));
     const txs = poIds.length
       ? await this.prisma.inventoryTransaction.findMany({
@@ -122,8 +228,10 @@ export class CostPerformanceService {
             quantity: true,
             unitCost: true,
             productionOrderId: true,
+            productionTaskId: true,
             referenceType: true,
             referenceId: true,
+            inventoryItem: { select: { category: true, materialGroup: true } },
           },
         })
       : [];
@@ -137,9 +245,12 @@ export class CostPerformanceService {
       txsByPo.set(poId, list);
     }
 
-    const taskIds = orders
-      .flatMap((order) => order.productionOrders.flatMap((po) => po.tasks.map((task) => task.id)))
-      .filter(Boolean);
+    const taskById = new Map(
+      orders.flatMap((order) =>
+        order.productionOrders.flatMap((po) => po.tasks.map((task) => [task.id ?? '', task] as const)),
+      ),
+    );
+    const taskIds = [...taskById.keys()].filter(Boolean);
     const [rates, entries] = await Promise.all([
       typeof this.prisma.laborRate?.findMany === 'function'
         ? this.prisma.laborRate.findMany()
@@ -147,41 +258,57 @@ export class CostPerformanceService {
       taskIds.length && typeof this.prisma.taskTimeEntry?.findMany === 'function'
         ? this.prisma.taskTimeEntry.findMany({
             where: { taskId: { in: taskIds } },
-            select: { taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
+            select: { id: true, taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
           })
         : Promise.resolve([]),
     ]);
 
-    const data = orders.map((order) => {
-      const orderTxs = order.productionOrders.flatMap((po) => txsByPo.get(po.id) ?? []);
-      const ledger = actualMaterialFromTransactions(orderTxs);
-      const time = aggregateFactoryTime(
-        order.productionOrders.flatMap((po) => po.tasks),
-        {
-          start: earliest(order.productionOrders.map((po) => po.actualStartDate)),
-          end: latest(order.productionOrders.map((po) => po.actualCompletionDate)),
-        },
+    return orders.map((order) => {
+      const reworkByTask = new Map(
+        order.productionOrders.flatMap((po) => po.tasks.map((task) => [task.id, task.isRework] as const)),
       );
-      const saleValue = saleValueFromSubtotals(order.invoices[0]?.subtotal, order.subtotal);
+      const classified: ClassifiedTx[] = order.productionOrders.flatMap((po) =>
+        (txsByPo.get(po.id) ?? []).map((tx) => ({
+          type: String(tx.type),
+          quantity: tx.quantity,
+          unitCost: tx.unitCost,
+          category: tx.inventoryItem?.category,
+          materialGroup: tx.inventoryItem?.materialGroup,
+          isRework: tx.productionTaskId ? Boolean(reworkByTask.get(tx.productionTaskId)) : false,
+        })),
+      );
+      const orderTasks = order.productionOrders.flatMap((po) => po.tasks);
+      const labor = summarizeLaborEntries({
+        rates,
+        tasks: orderTasks
+          .filter((task) => task.id)
+          .map((task) => ({
+            id: task.id!,
+            stageDefinitionId: task.stageDefinitionId,
+            isRework: task.isRework,
+          })),
+        entries: entries.filter((entry) =>
+          order.productionOrders.some((po) => po.tasks.some((task) => task.id === entry.taskId)),
+        ),
+      });
+      const mix = assembleActualProduction({ txs: classified, labor });
+      const time = aggregateFactoryTime(order.productionOrders.flatMap((po) => po.tasks), {
+        start: earliest(order.productionOrders.map((po) => po.actualStartDate)),
+        end: latest(order.productionOrders.map((po) => po.actualCompletionDate)),
+      });
+      const lineTotals = order.lines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+      const saleValue = saleValueFromCommercial({
+        invoiceSubtotal: order.invoices[0]?.subtotal,
+        lineTotalsSum: lineTotals,
+        orderSubtotal: order.subtotal,
+      });
+      const cash = collectionFromInvoices(order.invoices);
       const planned = order.plannedCostFrozenAt
         ? positiveUnitCost(order.manufacturingCost)
         : order.productionOrders.some((po) => po.plannedCostFrozenAt)
           ? order.productionOrders.reduce((sum, po) => sum + (positiveUnitCost(po.plannedMaterialCost) ?? 0), 0) || null
           : positiveUnitCost(order.manufacturingCost);
-      const labor =
-        rollupLaborCost({
-          rates,
-          tasks: order.productionOrders.flatMap((po) =>
-            po.tasks.map((task) => ({
-              id: task.id,
-              stageDefinitionId: task.stageDefinitionId,
-            })),
-          ),
-          entries: entries.filter((entry) =>
-            order.productionOrders.some((po) => po.tasks.some((task) => task.id === entry.taskId)),
-          ),
-        })?.actual ?? LABOR_NOT_CONFIGURED;
-      const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost, labor);
+      const { grossMargin, marginPct, incomplete } = marginFrom(saleValue, mix.total, mix.complete);
       const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
       return {
         id: order.id,
@@ -190,26 +317,42 @@ export class CostPerformanceService {
         orderDate: order.orderDate,
         dealer: order.customer,
         productSummary: order.lines
-          .map((line) => line.product?.sku || line.description)
+          .map((line) => line.product?.sku || line.variantLabel || line.description)
           .filter(Boolean)
           .slice(0, 3)
           .join(' · '),
+        items: order.lines.length,
         quantity: qty,
-        actualCost: ledger.actualCost,
-        averageCostPerUnit: averagePerUnit(ledger.actualCost, qty),
+        actualCost: mix.total,
+        materials: mix.materials,
+        fabric: mix.fabric,
+        waste: mix.waste,
+        rework: mix.rework,
+        afterSaleCost: null as number | null,
+        averageCostPerUnit: averagePerUnit(mix.total, qty),
         saleValue,
+        invoiced: cash.invoiced,
+        collected: cash.collected,
+        outstanding: cash.outstanding,
         plannedCost: planned,
-        variance: costVariance(planned, ledger.actualCost),
+        variance: costVariance(planned, mix.total),
         grossMargin,
         marginPct,
-        coverage: ledger.coverage,
-        labor,
-        workerEffortMinutes: time.workerEffortMinutes,
+        marginIncomplete: incomplete,
+        complete: mix.complete,
+        coverage: mix.coverage,
+        coveragePct: mix.coveragePct,
+        labor: mix.labor,
+        laborTimeKnown: mix.laborTimeKnown,
+        laborCostPriced: mix.laborCostPriced,
+        fabricCoverage: mix.fabricCoverage,
+        laborCoverage: mix.laborCoverage,
+        workerEffortMinutes: labor.timedMinutes || time.workerEffortMinutes,
         wallClockMinutes: time.wallClockMinutes,
+        hasReturn: Boolean(order.returns?.length),
+        hasRework: order.productionOrders.some((po) => po.tasks.some((task) => task.isRework)),
       };
     });
-
-    return { data, meta: paginatedMeta(page, pageSize, total) };
   }
 
   async dossier(salesOrderId: string, user?: AuthUser) {
@@ -231,15 +374,15 @@ export class CostPerformanceService {
                 plannedMaterialCost: true,
                 plannedLaborCost: true,
                 plannedCostFrozenAt: true,
+                salesOrderLineId: true,
               },
             },
           },
         },
         invoices: {
           where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
-          select: { id: true, number: true, subtotal: true },
+          select: { id: true, number: true, subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
           orderBy: { createdAt: 'desc' },
-          take: 1,
         },
         productionOrders: {
           where: { archivedAt: null },
@@ -287,7 +430,7 @@ export class CostPerformanceService {
               { salesOrderId: order.id },
             ],
           },
-          include: { inventoryItem: { select: { sku: true, nameEn: true, nameAr: true, category: true } } },
+          include: { inventoryItem: { select: { sku: true, nameEn: true, nameAr: true, category: true, materialGroup: true } } },
           orderBy: { createdAt: 'asc' },
         })
       : [];
@@ -321,7 +464,13 @@ export class CostPerformanceService {
       },
     );
 
-    const saleValue = saleValueFromSubtotals(order.invoices[0]?.subtotal, order.subtotal);
+    const lineTotals = order.lines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+    const saleValue = saleValueFromCommercial({
+      invoiceSubtotal: order.invoices[0]?.subtotal,
+      lineTotalsSum: lineTotals,
+      orderSubtotal: order.subtotal,
+    });
+    const cash = collectionFromInvoices(order.invoices);
     const plannedFromPos = originalPos.reduce((sum, po) => {
       return (
         sum +
@@ -337,7 +486,33 @@ export class CostPerformanceService {
     const labor = await this.laborForTasks(
       originalPos.flatMap((po) => po.tasks),
     );
-    const { grossMargin, marginPct } = marginFrom(saleValue, ledger.actualCost, labor.total);
+    const classifiedOriginal: ClassifiedTx[] = originalTxs.map((tx) => ({
+      type: String(tx.type),
+      quantity: tx.quantity,
+      unitCost: tx.unitCost,
+      category: tx.inventoryItem?.category,
+      isRework: tx.productionTaskId
+        ? Boolean(originalPos.flatMap((po) => po.tasks).find((t) => t.id === tx.productionTaskId)?.isRework)
+        : false,
+    }));
+    const mix = assembleActualProduction({
+      txs: classifiedOriginal,
+      usages: originalPos.flatMap((po) => po.materialUsages).map((row) => ({
+        sku: row.sku,
+        scrapQty: Number(row.scrapQty),
+        unitCost: positiveUnitCost(row.unitCost),
+        isRework: row.task.isRework,
+      })),
+      labor: {
+        actual: labor.total,
+        pricedMinutes: labor.pricedMinutes,
+        unpricedMinutes: labor.unpricedMinutes,
+        timedMinutes: labor.timedMinutes,
+        reworkActual: labor.reworkActual,
+        reworkMinutes: labor.reworkMinutes,
+      },
+    });
+    const { grossMargin, marginPct, incomplete } = marginFrom(saleValue, mix.total, mix.complete);
 
     const usageEnrichment = originalPos.flatMap((po) => po.materialUsages).map((row) => ({
       sku: row.sku,
@@ -359,41 +534,11 @@ export class CostPerformanceService {
       return sum + row.extendedCost;
     }, 0);
 
-    const returnCost = await this.returnLifetime(order.id, returnPos, txs);
+    const returnCost = await this.returnLifetime(order.id, returnPos, txs, mix.total);
     const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
-    const laborByLineId = new Map<string, number | null>();
-    for (const line of order.lines) {
-      const linePoIds = new Set(
-        line.productionOrders.filter((po) => po.originType === 'SALES_ORDER').map((po) => po.id),
-      );
-      const lineTasks = originalPos
-        .filter((po) => linePoIds.has(po.id) || po.salesOrderLineId === line.id)
-        .flatMap((po) => po.tasks);
-      const lineLabor = await this.laborForTasks(lineTasks);
-      laborByLineId.set(line.id, lineLabor.total);
-    }
 
-    return {
-      id: order.id,
-      number: order.number,
-      status: order.status,
-      orderDate: order.orderDate,
-      dealer: order.customer,
-      summary: {
-        saleValue,
-        actualProductionCost: ledger.actualCost,
-        plannedCost: planned,
-        variance: costVariance(planned, ledger.actualCost),
-        plannedFrozenAt: order.plannedCostFrozenAt,
-        grossMargin,
-        marginPct,
-        coverage: ledger.coverage,
-        labor: labor.total,
-        quantity: qty,
-        averageCostPerUnit: averagePerUnit(ledger.actualCost, qty),
-        perPieceTracked: false,
-      },
-      lines: order.lines.map((line) => {
+    const lineBoards = [];
+    for (const line of order.lines) {
         const linePoIds = new Set(
           line.productionOrders.filter((po) => po.originType === 'SALES_ORDER').map((po) => po.id),
         );
@@ -401,18 +546,41 @@ export class CostPerformanceService {
           const poId = tx.productionOrderId || tx.referenceId;
           return poId != null && linePoIds.has(poId);
         });
-        const lineLedger = actualMaterialFromTransactions(lineTxs);
-        const fabricTxs = lineTxs.filter(
-          (tx) => String(tx.inventoryItem?.category ?? '').toUpperCase() === 'FABRIC',
-        );
-        const fabricLedger = actualMaterialFromTransactions(fabricTxs);
-        const scrapCost = lineTxs
-          .filter((tx) => String(tx.type) === 'SCRAP' || String(tx.type) === 'DAMAGE')
-          .reduce((sum, tx) => sum + (positiveUnitCost(tx.unitCost) ?? 0) * Number(tx.quantity ?? 0), 0);
-        const reworkMaterial = line.productionOrders
-          .flatMap((po) => originalPos.find((row) => row.id === po.id)?.materialUsages ?? [])
-          .filter((row) => row.task?.isRework)
-          .reduce((sum, row) => sum + (positiveUnitCost(row.extendedCost) ?? 0), 0);
+        const lineTasks = originalPos
+          .filter((po) => linePoIds.has(po.id) || po.salesOrderLineId === line.id)
+          .flatMap((po) => po.tasks);
+        const lineLabor = await this.laborForTasks(lineTasks);
+        const lineMix = assembleActualProduction({
+          txs: lineTxs.map((tx) => ({
+            type: String(tx.type),
+            quantity: tx.quantity,
+            unitCost: tx.unitCost,
+            category: tx.inventoryItem?.category,
+            materialGroup: tx.inventoryItem?.materialGroup,
+            isRework: tx.productionTaskId
+              ? Boolean(lineTasks.find((t) => t.id === tx.productionTaskId)?.isRework)
+              : false,
+          })),
+          usages: originalPos
+            .filter((po) => linePoIds.has(po.id))
+            .flatMap((po) => po.materialUsages)
+            .map((row) => ({
+              sku: row.sku,
+              scrapQty: Number(row.scrapQty),
+              unitCost: positiveUnitCost(row.unitCost),
+              isRework: row.task.isRework,
+            })),
+          labor: {
+            actual: lineLabor.total,
+            pricedMinutes: lineLabor.pricedMinutes,
+            unpricedMinutes: lineLabor.unpricedMinutes,
+            timedMinutes: lineLabor.timedMinutes,
+            reworkActual: lineLabor.reworkActual,
+            reworkMinutes: lineLabor.reworkMinutes,
+          },
+        });
+        const lineSale = saleValueFromCommercial({ lineTotalsSum: line.lineTotal });
+        const lineMargin = marginFrom(lineSale, lineMix.total, lineMix.complete);
         const lineQty = Number(line.quantity);
         const spec =
           line.orderSpec && typeof line.orderSpec === 'object' && !Array.isArray(line.orderSpec)
@@ -432,7 +600,7 @@ export class CostPerformanceService {
               (positiveUnitCost(po.plannedLaborCost) ?? 0),
             0,
           );
-        return {
+        lineBoards.push({
           id: line.id,
           description: line.description,
           sku: line.product?.sku ?? null,
@@ -444,45 +612,98 @@ export class CostPerformanceService {
             productImageUrl: line.product?.imageUrl ?? null,
           }),
           quantity: lineQty,
-          actualCost: lineLedger.actualCost,
-          actualMaterial: lineLedger.actualCost,
-          actualFabric: fabricLedger.actualCost,
-          actualLabor: laborByLineId.get(line.id) ?? null,
+          saleValue: lineSale,
+          actualCost: lineMix.total,
+          actualMaterial: lineMix.materials,
+          actualFabric: lineMix.fabric,
+          actualLabor: lineMix.labor,
           plannedCost: plannedMaterial > 0 ? plannedMaterial : null,
-          waste: scrapCost > 0 ? scrapCost : null,
-          rework: reworkMaterial > 0 ? reworkMaterial : null,
-          averageCostPerUnit: averagePerUnit(lineLedger.actualCost, lineQty),
+          waste: lineMix.waste,
+          rework: lineMix.rework,
+          complete: lineMix.complete,
+          coverage: lineMix.coverage,
+          coveragePct: lineMix.coveragePct,
+          margin: lineMargin.grossMargin,
+          marginPct: lineMargin.marginPct,
+          marginIncomplete: lineMargin.incomplete,
+          averageCostPerUnit: averagePerUnit(lineMix.total, lineQty),
           perPieceTracked: false,
           note:
             lineQty > 1
               ? 'Per-physical-piece cost is not tracked. Quantity, total, and average per unit only.'
               : null,
-        };
-      }),
+        });
+    }
+
+    return {
+      id: order.id,
+      number: order.number,
+      status: order.status,
+      orderDate: order.orderDate,
+      dealer: order.customer,
+      summary: {
+        saleValue,
+        invoiced: cash.invoiced,
+        collected: cash.collected,
+        outstanding: cash.outstanding,
+        actualProductionCost: mix.total,
+        materials: mix.materials,
+        fabric: mix.fabric,
+        waste: mix.waste,
+        rework: mix.rework,
+        plannedCost: planned,
+        variance: costVariance(planned, mix.total),
+        plannedFrozenAt: order.plannedCostFrozenAt,
+        grossMargin,
+        marginPct,
+        marginIncomplete: incomplete,
+        complete: mix.complete,
+        coverage: mix.coverage,
+        coveragePct: mix.coveragePct,
+        labor: mix.labor,
+        laborTimeKnown: mix.laborTimeKnown,
+        laborCostPriced: mix.laborCostPriced,
+        quantity: qty,
+        averageCostPerUnit: averagePerUnit(mix.total, qty),
+        perPieceTracked: false,
+      },
+      lines: lineBoards,
       materials: {
-        coverage: ledger.coverage,
+        coverage: mix.coverage,
         rows: materials,
         usage: usageEnrichment,
-        scrapCost: scrapCost > 0 ? scrapCost : null,
+        scrapCost: mix.waste,
         scrapAlreadyInTotal: true,
-        reworkMaterialCost: reworkMaterial > 0 ? reworkMaterial : null,
+        reworkMaterialCost: mix.rework,
       },
       time: {
         ...time,
+        workerEffortMinutes: labor.timedMinutes || time.workerEffortMinutes,
+        byStage: (labor.byStage?.length
+          ? labor.byStage.map((stage) => ({
+              stageCode: stage.stageCode,
+              minutes: stage.minutes,
+              workerEffortMinutes: stage.minutes,
+            }))
+          : time.byStage.map((stage) => ({
+              ...stage,
+              minutes: stage.workerEffortMinutes,
+            }))
+        ).filter((stage) => (stage.minutes ?? 0) > 0),
         labor,
       },
       waste: {
-        scrapCost: scrapCost > 0 ? scrapCost : null,
+        scrapCost: mix.waste,
         alreadyIncludedInActual: true,
       },
       rework: {
-        materialCost: reworkMaterial > 0 ? reworkMaterial : null,
+        materialCost: mix.rework,
         effortMinutes: time.reworkEffortMinutes,
       },
       lifetime: {
         ...returnCost,
-        originalProductionCost: ledger.actualCost,
-        lifetimeCost: lifetimeCost(ledger.actualCost, returnCost.afterSaleReturnCost),
+        originalProductionCost: mix.total,
+        lifetimeCost: lifetimeCost(mix.total, returnCost.afterSaleReturnCost),
       },
       returns: order.returns,
       provenance: {
@@ -518,18 +739,21 @@ export class CostPerformanceService {
     productId?: string;
     variantId?: string;
     status?: string;
+    q?: string;
+    sort?: string;
   }) {
     this.assertCostRead(query.user);
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
     const where = costReturnsWhere(query);
+    const needsComputed = ['highestCost', 'mostPieces'].includes(String(query.sort ?? ''));
     const [total, rows] = await Promise.all([
       this.prisma.returnRequest.count({ where }),
       this.prisma.returnRequest.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: needsComputed ? 0 : (page - 1) * pageSize,
+        take: needsComputed ? 500 : pageSize,
         select: {
           id: true,
           number: true,
@@ -541,7 +765,13 @@ export class CostPerformanceService {
       }),
     ]);
     const data = await Promise.all(rows.map((row) => this.returnRow(row.id)));
-    return { data, meta: paginatedMeta(page, pageSize, total) };
+    const sorted = [...data].sort((a, b) => {
+      if (query.sort === 'highestCost') return (b.returnGrossCost ?? -1) - (a.returnGrossCost ?? -1);
+      if (query.sort === 'mostPieces') return (b.pieceCount ?? 0) - (a.pieceCount ?? 0);
+      return 0;
+    });
+    const pageRows = needsComputed ? sorted.slice((page - 1) * pageSize, page * pageSize) : sorted;
+    return { data: pageRows, meta: paginatedMeta(page, pageSize, needsComputed ? data.length : total) };
   }
 
   async returnDossier(returnId: string, user?: AuthUser) {
@@ -558,7 +788,11 @@ export class CostPerformanceService {
       status?: string;
       from?: string;
       to?: string;
+      dateBasis?: string;
       customerId?: string;
+      q?: string;
+      complexity?: string;
+      sort?: string;
       page?: number;
       pageSize?: number;
     } = {},
@@ -566,16 +800,27 @@ export class CostPerformanceService {
     this.assertCostRead(user);
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const matchingProducts = query.q
+      ? await this.prisma.product.findMany({
+          where: costProductsSearch(query),
+          select: { id: true },
+        })
+      : null;
+    const allowedIds = matchingProducts ? new Set(matchingProducts.map((p) => p.id)) : null;
     const orders = await this.prisma.salesOrder.findMany({
-      where: costOrdersWhere(query),
+      where: costOrdersWhere({ ...query, q: undefined }),
       select: {
         id: true,
+        returns: { select: { id: true } },
         lines: {
           select: {
             productId: true,
             variantId: true,
             variantSku: true,
             variantLabel: true,
+            quantity: true,
+            lineTotal: true,
+            manufacturingComplexity: true,
             lineOptions: {
               select: {
                 specOptionValueId: true,
@@ -593,7 +838,15 @@ export class CostPerformanceService {
               where: { archivedAt: null, originType: 'SALES_ORDER' },
               select: {
                 id: true,
-                tasks: { select: { actualMinutes: true } },
+                tasks: {
+                  select: {
+                    id: true,
+                    actualMinutes: true,
+                    isRework: true,
+                    assignedEmployeeId: true,
+                    stageDefinitionId: true,
+                  },
+                },
               },
             },
           },
@@ -612,8 +865,10 @@ export class CostPerformanceService {
             quantity: true,
             unitCost: true,
             productionOrderId: true,
+            productionTaskId: true,
             referenceId: true,
             referenceType: true,
+            inventoryItem: { select: { category: true, materialGroup: true } },
           },
         })
       : [];
@@ -625,35 +880,84 @@ export class CostPerformanceService {
       list.push(tx);
       byPo.set(poId, list);
     }
+    const taskById = new Map(
+      orders.flatMap((order) =>
+        order.lines.flatMap((line) =>
+          line.productionOrders.flatMap((po) => po.tasks.map((task) => [task.id, task] as const)),
+        ),
+      ),
+    );
+    const taskIds = [...taskById.keys()].filter(Boolean);
+    const [rates, entries] = await Promise.all([
+      typeof this.prisma.laborRate?.findMany === 'function'
+        ? this.prisma.laborRate.findMany()
+        : Promise.resolve([]),
+      taskIds.length && typeof this.prisma.taskTimeEntry?.findMany === 'function'
+        ? this.prisma.taskTimeEntry.findMany({
+            where: { taskId: { in: taskIds } },
+            select: { id: true, taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
+          })
+        : Promise.resolve([]),
+    ]);
 
     const histories = orders.flatMap((order) =>
       order.lines
         .filter((line) => line.productId && (!query.productId || line.productId === query.productId))
+        .filter((line) => !allowedIds || allowedIds.has(line.productId!))
         .filter((line) => !query.variantId || line.variantId === query.variantId)
         .map((line) => {
+          const lineTasks = line.productionOrders.flatMap((po) => po.tasks);
+          const reworkByTask = new Map(lineTasks.map((task) => [task.id, task.isRework] as const));
           const lineTxs = line.productionOrders.flatMap((po) => byPo.get(po.id) ?? []);
-          const ledger = actualMaterialFromTransactions(lineTxs);
-          const minutes = line.productionOrders.reduce(
-            (sum, po) => sum + po.tasks.reduce((s, t) => s + (t.actualMinutes ?? 0), 0),
-            0,
-          );
+          const lineLabor = summarizeLaborEntries({
+            rates,
+            tasks: lineTasks
+              .filter((task) => task.id)
+              .map((task) => ({
+                id: task.id,
+                stageDefinitionId: task.stageDefinitionId,
+                isRework: task.isRework,
+              })),
+            entries: entries.filter((entry) => lineTasks.some((task) => task.id === entry.taskId)),
+          });
+          const mix = assembleActualProduction({
+            txs: lineTxs.map((tx) => ({
+              type: String(tx.type),
+              quantity: tx.quantity,
+              unitCost: tx.unitCost,
+              category: tx.inventoryItem?.category,
+              materialGroup: tx.inventoryItem?.materialGroup,
+              isRework: tx.productionTaskId ? Boolean(reworkByTask.get(tx.productionTaskId)) : false,
+            })),
+            labor: lineLabor,
+          });
           return {
             productId: line.productId!,
             variantId: line.variantId ?? null,
             variantSku: line.variantSku ?? null,
             variantLabel: line.variantLabel ?? null,
             options: line.lineOptions,
-            actualCost: ledger.actualCost,
-            workerEffortMinutes: minutes,
+            actualCost: mix.total,
+            saleValue: saleValueFromCommercial({ lineTotalsSum: line.lineTotal }),
+            quantity: Number(line.quantity) || 0,
+            materials: mix.materials,
+            fabric: mix.fabric,
+            labor: mix.labor,
+            workerEffortMinutes: lineLabor.timedMinutes || lineTasks.reduce((sum, t) => sum + (t.actualMinutes ?? 0), 0),
+            hasReturn: Boolean(order.returns?.length),
+            hasRework: lineTasks.some((task) => task.isRework),
           };
         }),
     );
-    const stats = deriveProductStats(histories);
-    const variantStats = deriveKeyedStats(
-      histories
-        .filter((row) => row.variantId)
-        .map((row) => ({ ...row, key: row.variantId! })),
-      (key) => ({ variantId: key }),
+    const stats = sortProductStats(deriveProductStats(histories), query.sort);
+    const variantStats = sortProductStats(
+      deriveKeyedStats(
+        histories
+          .filter((row) => row.variantId)
+          .map((row) => ({ ...row, key: row.variantId! })),
+        (key) => ({ variantId: key }),
+      ),
+      query.sort,
     );
     const optionHistories = histories.flatMap((row) =>
       (row.options ?? []).map((opt) => ({
@@ -671,7 +975,7 @@ export class CostPerformanceService {
     const pageRows = stats.slice((page - 1) * pageSize, page * pageSize);
     const products = await this.prisma.product.findMany({
       where: { id: { in: pageRows.map((s) => s.productId) } },
-      select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true },
+      select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
     const variantIds = variantStats.map((row) => row.variantId);
@@ -696,7 +1000,6 @@ export class CostPerformanceService {
     );
     return {
       derived: true,
-      labor: LABOR_NOT_CONFIGURED,
       data: pageRows.map((row) => ({
         ...row,
         product: byId.get(row.productId) ?? null,
@@ -719,25 +1022,647 @@ export class CostPerformanceService {
     };
   }
 
-  async costCoverage(user?: AuthUser) {
+  async costCoverage(user?: AuthUser, query: { from?: string; to?: string; dateBasis?: string } = {}) {
     this.assertCostRead(user);
     const items = await this.prisma.inventoryItem.findMany({
       where: { archivedAt: null },
-      select: { id: true, sku: true, nameEn: true, nameAr: true, standardCost: true, category: true },
+      select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, standardCost: true, category: true },
       orderBy: { sku: 'asc' },
     });
     const pricedItems = items.filter((item) => positiveUnitCost(item.standardCost) != null);
     const unpriced = items.filter((item) => positiveUnitCost(item.standardCost) == null);
+    const catalog = coverageSummary(items.length, pricedItems.length);
+
+    const where = costOrdersWhere({ ...query, dateBasis: query.dateBasis ?? 'delivered' });
+    const orders = await this.prisma.salesOrder.findMany({
+      where,
+      take: 500,
+      include: {
+        customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
+        lines: {
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            lineTotal: true,
+            manufacturingComplexity: true,
+            variantLabel: true,
+              product: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true } },
+            productionOrders: { where: { archivedAt: null, originType: 'SALES_ORDER' }, select: { id: true } },
+          },
+        },
+        invoices: {
+          where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+          select: { subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
+        },
+        returns: { select: { id: true } },
+        productionOrders: {
+          where: { archivedAt: null, originType: 'SALES_ORDER' },
+          select: {
+            id: true,
+            salesOrderLineId: true,
+            quantity: true,
+            actualStartDate: true,
+            actualCompletionDate: true,
+            plannedMaterialCost: true,
+            plannedCostFrozenAt: true,
+            tasks: {
+              select: {
+                id: true,
+                actualMinutes: true,
+                isRework: true,
+                assignedEmployeeId: true,
+                stageDefinitionId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const rows = await this.assembleOrderRows(orders);
+    const fully = rows.filter((row) => row.complete).length;
+    const partial = rows.filter((row) => row.coverage === 'PARTIAL').length;
+    const laborTimeKnown = rows.filter((row) => row.laborTimeKnown).length;
+    const laborPriced = rows.filter((row) => row.laborCostPriced).length;
+    const fabricTracked = rows.filter(
+      (row) => row.fabric != null || row.fabricCoverage === 'PARTIAL' || row.fabricCoverage === 'UNPRICED' || row.fabricCoverage === 'FINAL',
+    ).length;
+    const fabricFinal = rows.filter((row) => row.fabricCoverage === 'FINAL').length;
+    const unlinked = orders.flatMap((order) =>
+      order.lines.filter((line) => Number(line.quantity) > 0 && !line.productionOrders.length).map((line) => ({
+        id: line.id,
+        orderId: order.id,
+        number: order.number,
+        description: line.description,
+      })),
+    );
+    const unpricedIssueOrders = rows.filter((row) => row.coverage === 'UNPRICED').length;
+
     return {
-      ...coverageSummary(items.length, pricedItems.length),
+      ...catalog,
+      valuationCoveragePct: catalog.coveragePct,
+      ordersFullyCostedPct: rows.length ? Math.round((fully / rows.length) * 1000) / 10 : 0,
+      orderCount: rows.length,
+      fullyCostedOrders: fully,
+      partiallyCostedOrders: partial,
+      materialCoveragePct: avgPct(rows.map((row) => row.coveragePct)),
+      fabricCoveragePct: coverageRatio(fabricFinal, fabricTracked),
+      laborTimeCoveragePct: coverageRatio(laborTimeKnown, rows.length),
+      laborPriceCoveragePct: coverageRatio(laborPriced, laborTimeKnown),
+      laborTimeKnownOrders: laborTimeKnown,
+      laborCostPricedOrders: laborPriced,
       unpriced: unpriced.map((item) => ({
         id: item.id,
         sku: item.sku,
         nameEn: item.nameEn,
         nameAr: item.nameAr,
+        nameHe: item.nameHe,
         category: item.category,
       })),
+      unlinkedLines: unlinked.length,
+      unlinkedLineSamples: unlinked.slice(0, 25),
+      affected: {
+        incomplete_orders: Math.max(0, rows.length - fully),
+        partial,
+        labor_time: Math.max(0, rows.length - laborTimeKnown),
+        labor_price: Math.max(0, laborTimeKnown - laborPriced),
+        fabric: Math.max(0, fabricTracked - fabricFinal),
+        inventory_valuation: unpriced.length,
+        unpriced_skus: unpriced.length,
+        unpriced_issues: unpricedIssueOrders,
+        unlinked_lines: unlinked.length,
+      },
     };
+  }
+
+  async moneyDesk(query: {
+    user?: AuthUser;
+    from?: string;
+    to?: string;
+    dateBasis?: string;
+    customerId?: string;
+    productId?: string;
+    status?: string;
+    coverage?: string;
+  }) {
+    this.assertCostRead(query.user);
+    const where = costOrdersWhere({ ...query, dateBasis: query.dateBasis ?? 'delivered' });
+    const orders = await this.prisma.salesOrder.findMany({
+      where,
+      take: 500,
+      include: {
+        customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
+        lines: {
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            lineTotal: true,
+            manufacturingComplexity: true,
+            variantLabel: true,
+              product: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true } },
+          },
+        },
+        invoices: {
+          where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+          select: { subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
+        },
+        returns: { select: { id: true } },
+        productionOrders: {
+          where: { archivedAt: null, originType: 'SALES_ORDER' },
+          select: {
+            id: true,
+            salesOrderLineId: true,
+            quantity: true,
+            actualStartDate: true,
+            actualCompletionDate: true,
+            plannedMaterialCost: true,
+            plannedCostFrozenAt: true,
+            tasks: {
+              select: {
+                id: true,
+                actualMinutes: true,
+                isRework: true,
+                assignedEmployeeId: true,
+                stageDefinitionId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const rows = await this.assembleOrderRows(orders);
+    const filtered = rows.filter((row) => {
+      if (query.coverage === 'full' && !row.complete) return false;
+      if (query.coverage === 'partial' && row.coverage !== 'PARTIAL') return false;
+      if (query.coverage === 'unpriced' && row.coverage !== 'UNPRICED') return false;
+      return true;
+    });
+    const saleValue = sumNullable(filtered.map((row) => row.saleValue));
+    const actual = sumNullable(filtered.map((row) => row.actualCost));
+    const completeAll = filtered.length > 0 && filtered.every((row) => row.complete);
+    const margin = marginFrom(saleValue, actual, completeAll);
+    const mix = {
+      materials: sumNullable(filtered.map((row) => row.materials)),
+      fabric: sumNullable(filtered.map((row) => row.fabric)),
+      labor: sumNullable(filtered.map((row) => row.labor)),
+      waste: sumNullable(filtered.map((row) => row.waste)),
+      rework: sumNullable(filtered.map((row) => row.rework)),
+    };
+    const range = query.from || query.to ? { from: query.from, to: query.to } : {};
+    const activity = await this.factoryActivity({ ...range, user: query.user });
+    const inventory = await this.inventorySummary(query.user);
+    const afterSaleCost = await this.afterSaleCostInRange(query.from, query.to);
+    return {
+      dateBasis: parseDateBasis(query.dateBasis),
+      orderPerformance: {
+        orderCount: filtered.length,
+        empty: filtered.length === 0,
+        saleValue,
+        actualProductionCost: actual,
+        grossMargin: margin.grossMargin,
+        marginPct: margin.marginPct,
+        marginIncomplete: margin.incomplete,
+        complete: completeAll,
+        coveragePct: avgPct(filtered.map((row) => row.coveragePct)),
+        invoiced: sumNullable(filtered.map((row) => row.invoiced)),
+        collected: sumNullable(filtered.map((row) => row.collected)),
+        outstanding: sumNullable(filtered.map((row) => row.outstanding)),
+      },
+      costMix: mix,
+      factoryActivity: activity,
+      afterSaleCost,
+      purchaseInflow: activity.receipts,
+      inventoryValue: inventory.total,
+      inventoryCoveragePct: inventory.coveragePct,
+      inventoryLabel: 'CURRENT_INVENTORY_VALUE',
+      attention: {
+        negativeMargin: filtered.filter((row) => row.grossMargin != null && row.grossMargin < 0).length,
+        partiallyCosted: filtered.filter((row) => row.coverage === 'PARTIAL').length,
+        laborRateMissing: filtered.filter((row) => row.laborTimeKnown && !row.laborCostPriced).length,
+        hasReturn: filtered.filter((row) => row.hasReturn).length,
+      },
+    };
+  }
+
+  private async afterSaleCostInRange(from?: string, to?: string) {
+    const range = dateRange(from, to);
+    const pos = await this.prisma.productionOrder.findMany({
+      where: {
+        archivedAt: null,
+        originType: { in: ['RETURN_WORK', 'REPLACEMENT', 'RETURN_RECOVERY'] },
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: { id: true },
+    });
+    const ids = pos.map((po) => po.id);
+    if (!ids.length) return null;
+    const txs = await this.prisma.inventoryTransaction.findMany({
+      where: {
+        type: { in: ISSUE_TYPES },
+        OR: [{ productionOrderId: { in: ids } }, { referenceType: 'ProductionOrder', referenceId: { in: ids } }],
+      },
+      select: { type: true, quantity: true, unitCost: true },
+    });
+    return actualMaterialFromTransactions(txs).actualCost;
+  }
+
+  async factoryActivity(query: { from?: string; to?: string; user?: AuthUser }) {
+    const range = dateRange(query.from, query.to);
+    const txs = await this.prisma.inventoryTransaction.findMany({
+      where: {
+        type: { in: ACTIVITY_TX_TYPES },
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: { type: true, quantity: true, unitCost: true },
+    });
+    const flow = emptyFlowMoney();
+    for (const tx of txs) addFlowMoney(flow, String(tx.type), tx.quantity, tx.unitCost);
+    const labor = await this.listLaborActuals({ from: query.from, to: query.to, user: query.user });
+    return {
+      productionCostIncurred: consumptionFromFlow(flow),
+      receipts: flow.receipt,
+      issues: flow.productionIssue,
+      unusedReturns: flow.productionReturn,
+      wipOutput: flow.wipOutput,
+      finishedOutput: flow.finishedOutput,
+      scrap: flow.scrap,
+      workerHours: (labor.byWorker ?? []).reduce((sum, row) => sum + (row.minutes || 0), 0) / 60,
+      laborCost: labor.labor?.actual ?? null,
+      flow,
+    };
+  }
+
+  async inventorySummary(user?: AuthUser) {
+    this.assertCostRead(user);
+    const balances = await this.prisma.inventoryBalance.findMany({
+      include: {
+        inventoryItem: { select: { category: true, materialGroup: true, itemClass: true, standardCost: true } },
+        warehouse: { select: { id: true, code: true, type: true } },
+      },
+    });
+    const rows = balances.map((b) => ({
+      qty: b.availableQty,
+      unitCost: b.inventoryItem.standardCost,
+      itemClass: b.inventoryItem.itemClass,
+      group: rawGroupFromCategory(b.inventoryItem.category, b.inventoryItem.materialGroup),
+      warehouseType: b.warehouse.type,
+    }));
+    const total = currentInventoryValue(rows);
+    const byClass = {
+      RAW_MATERIAL: currentInventoryValue(rows.filter((r) => String(r.itemClass) === 'RAW_MATERIAL')),
+      SEMI_FINISHED_GOOD: currentInventoryValue(rows.filter((r) => String(r.itemClass) === 'SEMI_FINISHED_GOOD')),
+      FINISHED_GOOD: currentInventoryValue(rows.filter((r) => String(r.itemClass) === 'FINISHED_GOOD')),
+    };
+    const rawGroups = ['FABRIC', 'WOOD', 'FOAM', 'ACCESSORIES'].map((group) => ({
+      group,
+      ...currentInventoryValue(rows.filter((r) => r.group === group && String(r.itemClass) === 'RAW_MATERIAL')),
+    }));
+    return {
+      label: 'CURRENT_INVENTORY_VALUE',
+      total: total.value,
+      coveragePct: total.coveragePct,
+      byClass,
+      rawGroups,
+    };
+  }
+
+  async inventoryFlow(query: { user?: AuthUser; from?: string; to?: string }) {
+    this.assertCostRead(query.user);
+    return this.factoryActivity(query);
+  }
+
+  async inventoryItems(query: {
+    user?: AuthUser;
+    q?: string;
+    lifecycle?: string;
+    warehouseId?: string;
+    sort?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    this.assertCostRead(query.user);
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const term = query.q?.trim();
+    const where = {
+      archivedAt: null,
+      ...(query.lifecycle === 'RAW' ? { itemClass: 'RAW_MATERIAL' as const } : {}),
+      ...(query.lifecycle === 'SEMI' ? { itemClass: 'SEMI_FINISHED_GOOD' as const } : {}),
+      ...(query.lifecycle === 'FIN' ? { itemClass: 'FINISHED_GOOD' as const } : {}),
+      ...(query.warehouseId
+        ? { balances: { some: { warehouseId: query.warehouseId } } }
+        : {}),
+      ...(term
+        ? {
+            OR: [
+              { sku: { contains: term, mode: 'insensitive' as const } },
+              { nameEn: { contains: term, mode: 'insensitive' as const } },
+              { nameAr: { contains: term, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.inventoryItem.count({ where }),
+      this.prisma.inventoryItem.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { balances: { include: { warehouse: { select: { id: true, code: true } } } } },
+        orderBy: { sku: 'asc' },
+      }),
+    ]);
+    const data = items.map((item) => {
+      const qty = item.balances.reduce((sum, b) => sum + Number(b.availableQty), 0);
+      const valued = currentInventoryValue([{ qty, unitCost: item.standardCost }]);
+      return {
+        id: item.id,
+        sku: item.sku,
+        nameEn: item.nameEn,
+        nameAr: item.nameAr,
+        nameHe: item.nameHe,
+        itemClass: item.itemClass,
+        group: rawGroupFromCategory(item.category, item.materialGroup),
+        qty,
+        value: valued.value,
+        coveragePct: valued.coveragePct,
+      };
+    });
+    const sorted = [...data].sort((a, b) => {
+      if (query.sort === 'highestValue') return (b.value ?? -1) - (a.value ?? -1);
+      return 0;
+    });
+    return { data: sorted, meta: paginatedMeta(page, pageSize, total), label: 'CURRENT_INVENTORY_VALUE' };
+  }
+
+  async inventoryItemDetail(
+    id: string,
+    query: { user?: AuthUser; from?: string; to?: string; page?: number; pageSize?: number },
+  ) {
+    this.assertCostRead(query.user);
+    const item = await this.prisma.inventoryItem.findFirst({
+      where: { id, archivedAt: null },
+      include: { balances: { include: { warehouse: true } } },
+    });
+    if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
+    const qty = item.balances.reduce((sum, b) => sum + Number(b.availableQty), 0);
+    const valued = currentInventoryValue([{ qty, unitCost: item.standardCost }]);
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const range = dateRange(query.from, query.to);
+    const where = { inventoryItemId: id, ...(range ? { createdAt: range } : {}) };
+    const [total, txs] = await Promise.all([
+      this.prisma.inventoryTransaction.count({ where }),
+      this.prisma.inventoryTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { warehouse: { select: { code: true } } },
+      }),
+    ]);
+    const flow = emptyFlowMoney();
+    const periodTxs = await this.prisma.inventoryTransaction.findMany({
+      where,
+      select: { type: true, quantity: true, unitCost: true },
+    });
+    for (const tx of periodTxs) addFlowMoney(flow, String(tx.type), tx.quantity, tx.unitCost);
+    return {
+      id: item.id,
+      sku: item.sku,
+      nameEn: item.nameEn,
+      nameAr: item.nameAr,
+      group: rawGroupFromCategory(item.category, item.materialGroup),
+      qty,
+      value: valued.value,
+      costBasis: positiveUnitCost(item.standardCost),
+      label: 'CURRENT_INVENTORY_VALUE',
+      flow,
+      consumption: consumptionFromFlow(flow),
+      ledger: txs.map((tx) => ({
+        id: tx.id,
+        number: tx.number,
+        date: tx.createdAt,
+        type: tx.type,
+        flow: classifyInventoryFlow(String(tx.type)),
+        qty: Math.abs(Number(tx.quantity)),
+        unitCost: positiveUnitCost(tx.unitCost),
+        value:
+          positiveUnitCost(tx.unitCost) != null
+            ? Number((Math.abs(Number(tx.quantity)) * Number(positiveUnitCost(tx.unitCost))).toFixed(3))
+            : null,
+        warehouse: tx.warehouse?.code ?? null,
+        productionOrderId: tx.productionOrderId,
+        salesOrderId: tx.salesOrderId,
+      })),
+      meta: paginatedMeta(page, pageSize, total),
+    };
+  }
+
+  async coverageIssues(query: {
+    user?: AuthUser;
+    type?: string;
+    from?: string;
+    to?: string;
+    dateBasis?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    this.assertCostRead(query.user);
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const coverage = await this.costCoverage(query.user, query);
+    const type = query.type || 'incomplete_orders';
+    let records: Array<Record<string, unknown>> = [];
+    if (type === 'unpriced_skus' || type === 'inventory_valuation') {
+      records = coverage.unpriced;
+    } else if (type === 'unlinked_lines') {
+      records = coverage.unlinkedLineSamples;
+    } else if (type === 'unattributed_txs') {
+      const range = dateRange(query.from, query.to);
+      records =
+        typeof this.prisma.inventoryTransaction?.findMany === 'function'
+          ? await this.prisma.inventoryTransaction.findMany({
+              where: {
+                type: { in: ISSUE_TYPES },
+                productionOrderId: null,
+                salesOrderId: null,
+                ...(range ? { createdAt: range } : {}),
+              },
+              take: 200,
+              select: {
+                id: true,
+                number: true,
+                type: true,
+                createdAt: true,
+                inventoryItem: { select: { sku: true } },
+              },
+            }).then((rows) =>
+              rows.map((tx) => ({
+                id: tx.id,
+                number: tx.number,
+                sku: tx.inventoryItem?.sku,
+                type: tx.type,
+                description: tx.number,
+              })),
+            )
+          : [];
+    } else {
+      const where = costOrdersWhere({ ...query, dateBasis: query.dateBasis ?? 'delivered' });
+      const orders = await this.prisma.salesOrder.findMany({
+        where,
+        take: 500,
+        include: {
+          customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
+          lines: {
+            select: {
+              id: true,
+              description: true,
+              quantity: true,
+              lineTotal: true,
+              manufacturingComplexity: true,
+              variantLabel: true,
+              product: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true } },
+            },
+          },
+          invoices: {
+            where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+            select: { subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
+          },
+          returns: { select: { id: true } },
+          productionOrders: {
+            where: { archivedAt: null, originType: 'SALES_ORDER' },
+            select: {
+              id: true,
+              salesOrderLineId: true,
+              quantity: true,
+              actualStartDate: true,
+              actualCompletionDate: true,
+              plannedMaterialCost: true,
+              plannedCostFrozenAt: true,
+              tasks: {
+                select: {
+                  id: true,
+                  actualMinutes: true,
+                  isRework: true,
+                  assignedEmployeeId: true,
+                  stageDefinitionId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      const rows = await this.assembleOrderRows(orders);
+      if (type === 'labor_price') records = rows.filter((row) => row.laborTimeKnown && !row.laborCostPriced);
+      else if (type === 'labor_time') records = rows.filter((row) => !row.laborTimeKnown);
+      else if (type === 'partial') records = rows.filter((row) => row.coverage === 'PARTIAL');
+      else if (type === 'unpriced_issues') records = rows.filter((row) => row.coverage === 'UNPRICED');
+      else if (type === 'fabric') records = rows.filter((row) => row.fabricCoverage && row.fabricCoverage !== 'FINAL');
+      else records = rows.filter((row) => !row.complete);
+    }
+    return {
+      type,
+      total: records.length,
+      data: records.slice((page - 1) * pageSize, page * pageSize),
+      meta: paginatedMeta(page, pageSize, records.length),
+    };
+  }
+
+  async productProfile(productId: string, query: { user?: AuthUser; from?: string; to?: string; dateBasis?: string }) {
+    this.assertCostRead(query.user);
+    const analytics = await this.productAnalytics(query.user, { ...query, productId });
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId },
+      select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true, manufacturingCost: true },
+    });
+    if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    return { product, plannedBaseline: positiveUnitCost(product.manufacturingCost), ...analytics };
+  }
+
+  async variantProfile(
+    productId: string,
+    variantId: string,
+    query: { user?: AuthUser; from?: string; to?: string; dateBasis?: string },
+  ) {
+    this.assertCostRead(query.user);
+    const analytics = await this.productAnalytics(query.user, { ...query, productId, variantId });
+    const variant = await this.prisma.productVariant.findFirst({
+      where: { id: variantId, productId },
+      select: {
+        id: true,
+        sku: true,
+        nameEn: true,
+        nameAr: true,
+        nameHe: true,
+        manufacturingCost: true,
+      },
+    });
+    if (!variant) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Variant not found.' });
+    return {
+      variant,
+      plannedBaseline: positiveUnitCost(variant.manufacturingCost),
+      ...analytics,
+    };
+  }
+
+  async customWork(query: { user?: AuthUser; from?: string; to?: string; dateBasis?: string; page?: number; pageSize?: number }) {
+    this.assertCostRead(query.user);
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 25));
+    const where = {
+      ...costOrdersWhere(query),
+      lines: { some: { productId: null, manufacturingComplexity: 'CUSTOM' as const } },
+    };
+    const orders = await this.prisma.salesOrder.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
+        lines: {
+          where: { productId: null },
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            lineTotal: true,
+            manufacturingComplexity: true,
+            variantLabel: true,
+              product: { select: { sku: true, nameEn: true, nameAr: true, nameHe: true } },
+          },
+        },
+        invoices: {
+          where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+          select: { subtotal: true, paidAmount: true, outstandingAmount: true, status: true },
+        },
+        returns: { select: { id: true } },
+        productionOrders: {
+          where: { archivedAt: null, originType: 'SALES_ORDER' },
+          select: {
+            id: true,
+            salesOrderLineId: true,
+            quantity: true,
+            actualStartDate: true,
+            actualCompletionDate: true,
+            plannedMaterialCost: true,
+            plannedCostFrozenAt: true,
+            tasks: {
+              select: {
+                id: true,
+                actualMinutes: true,
+                isRework: true,
+                assignedEmployeeId: true,
+                stageDefinitionId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const data = await this.assembleOrderRows(orders);
+    return { data, meta: paginatedMeta(page, pageSize, data.length) };
   }
 
   async backfillPricesFromReceipts(user?: AuthUser) {
@@ -915,6 +1840,9 @@ export class CostPerformanceService {
       actualMinutes: number | null;
       assignedEmployeeId: string | null;
       stageDefinitionId: string | null;
+      stageCode?: string | null;
+      stageDefinition?: { code?: string | null } | null;
+      isRework?: boolean;
     }>,
   ) {
     const rates =
@@ -924,33 +1852,46 @@ export class CostPerformanceService {
       taskIds.length && typeof this.prisma.taskTimeEntry?.findMany === 'function'
         ? await this.prisma.taskTimeEntry.findMany({
             where: { taskId: { in: taskIds } },
-            select: { taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
+            select: { id: true, taskId: true, userId: true, minutes: true, startedAt: true, endedAt: true },
           })
         : [];
-    const block = rollupLaborCost({
-      rates,
-      tasks: tasks
-        .filter((task) => task.id)
-        .map((task) => ({
-          id: task.id!,
-          stageDefinitionId: task.stageDefinitionId,
-        })),
-      entries,
-    });
-    if (!rates.length) {
-      return {
-        enabled: false,
-        total: null as number | null,
-        note: 'Labor money is hidden until a rate model exists.',
-        byWorker: [] as LaborCostBlock['byWorker'],
-        byStage: [] as LaborCostBlock['byStage'],
-      };
-    }
+    const refs = tasks
+      .filter((task) => task.id)
+      .map((task) => ({
+        id: task.id!,
+        stageDefinitionId: task.stageDefinitionId,
+        stageCode: task.stageCode ?? task.stageDefinition?.code ?? null,
+        isRework: task.isRework,
+      }));
+    const summary = summarizeLaborEntries({ rates, tasks: refs, entries });
+    const block = rates.length ? rollupLaborCost({ rates, tasks: refs, entries }) : null;
+    const userIds = [...new Set(entries.map((entry) => entry.userId).filter(Boolean))];
+    const users =
+      userIds.length && typeof this.prisma.user?.findMany === 'function'
+        ? await this.prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const nameById = new Map(users.map((user) => [user.id, `${user.firstName} ${user.lastName}`.trim()]));
     return {
-      enabled: true,
-      total: block?.actual ?? null,
-      note: block?.actual == null ? 'No matching rate for the recorded time.' : null,
-      byWorker: block?.byWorker ?? [],
+      enabled: rates.length > 0,
+      total: summary.actual,
+      pricedMinutes: summary.pricedMinutes,
+      unpricedMinutes: summary.unpricedMinutes,
+      timedMinutes: summary.timedMinutes,
+      reworkActual: summary.reworkActual,
+      reworkMinutes: summary.reworkMinutes,
+      note:
+        summary.timedMinutes > 0 && summary.actual == null
+          ? 'Labor time known, cost not priced.'
+          : rates.length
+            ? null
+            : 'Labor money is hidden until a rate model exists.',
+      byWorker: (block?.byWorker ?? []).map((row) => ({
+        ...row,
+        name: nameById.get(row.userId) || row.userId,
+      })),
       byStage: block?.byStage ?? [],
     };
   }
@@ -995,14 +1936,15 @@ export class CostPerformanceService {
       },
     });
     const rates = await this.prisma.laborRate.findMany();
+    const usable = entries.filter((entry) => entry.task?.id);
     const block = rollupLaborCost({
       rates,
-      tasks: entries.map((entry) => ({
+      tasks: usable.map((entry) => ({
         id: entry.task.id,
         stageDefinitionId: entry.task.stageDefinitionId,
         stageCode: entry.task.stageDefinition?.code ?? null,
       })),
-      entries,
+      entries: usable,
     });
     return {
       labor: block,
@@ -1022,6 +1964,7 @@ export class CostPerformanceService {
       where: { id: returnId },
       include: {
         salesOrder: { select: { id: true, number: true } },
+        customer: { select: { nameEn: true, nameAr: true, nameHe: true } },
         pieces: {
           include: {
             linkedOrders: {
@@ -1119,6 +2062,27 @@ export class CostPerformanceService {
     const workCost = sumNullable(pieces.map((p) => p.workCost));
     const recoveredValue = sumNullable(pieces.map((p) => p.recoveredValue));
     const disposedValue = sumNullable(pieces.map((p) => p.disposedValue));
+    let originalProductionCost: number | null = null;
+    if (row.salesOrder?.id && typeof this.prisma.productionOrder?.findMany === 'function') {
+      const originalPos = await this.prisma.productionOrder.findMany({
+        where: { salesOrderId: row.salesOrder.id, archivedAt: null, originType: 'SALES_ORDER' },
+        select: { id: true },
+      });
+      const originalIds = originalPos.map((po) => po.id);
+      if (originalIds.length) {
+        const originalTxs = await this.prisma.inventoryTransaction.findMany({
+          where: {
+            type: { in: ISSUE_TYPES },
+            OR: [
+              { productionOrderId: { in: originalIds } },
+              { referenceType: 'ProductionOrder', referenceId: { in: originalIds } },
+            ],
+          },
+          select: { type: true, quantity: true, unitCost: true },
+        });
+        originalProductionCost = actualMaterialFromTransactions(originalTxs).actualCost;
+      }
+    }
 
     return {
       id: row.id,
@@ -1126,12 +2090,15 @@ export class CostPerformanceService {
       status: row.lifecycleState,
       createdAt: row.createdAt,
       salesOrder: row.salesOrder,
+      dealer: row.customer,
       variantId: row.variantId ?? null,
       pieceCount: row.pieces.length,
+      originalProductionCost,
       repairCost,
       replacementCost,
       recoveryCost,
       returnGrossCost: workCost,
+      lifetimeFactoryCost: lifetimeCost(originalProductionCost, workCost),
       recoveredValue,
       disposedValue,
       recoveredQty: pieces.reduce((sum, p) => sum + p.recoveredQty, 0),
@@ -1152,6 +2119,7 @@ export class CostPerformanceService {
       referenceType: string | null;
       referenceId: string | null;
     }>,
+    originalProductionCost: number | null,
   ) {
     const returnIds = new Set(returnPos.map((po) => po.id));
     const returnTxs = txs.filter((tx) => {
@@ -1165,9 +2133,9 @@ export class CostPerformanceService {
     });
     const outcomes = recoveryOutcomeValue(recoveries);
     return {
-      originalProductionCost: null as number | null,
+      originalProductionCost,
       afterSaleReturnCost: afterSale.actualCost,
-      lifetimeCost: lifetimeCost(null, afterSale.actualCost),
+      lifetimeCost: lifetimeCost(originalProductionCost, afterSale.actualCost),
       recoveredValue: outcomes.recoveredValue,
       disposedValue: outcomes.disposedValue,
       recoveredQty: outcomes.recoveredQty,
@@ -1208,4 +2176,34 @@ function uniqueById<T extends { id: string }>(rows: Array<T | null | undefined>)
     out.push(row);
   }
   return out;
+}
+
+function avgPct(values: Array<number | null | undefined>): number | null {
+  const present = values.filter((n): n is number => n != null && Number.isFinite(n));
+  if (!present.length) return null;
+  return Number((present.reduce((sum, n) => sum + n, 0) / present.length).toFixed(1));
+}
+
+function coverageRatio(costed: number, total: number): number | null {
+  if (!(total > 0)) return null;
+  return Math.round((costed / total) * 1000) / 10;
+}
+
+function sortCostOrders<T extends {
+  actualCost: number | null;
+  grossMargin: number | null;
+  workerEffortMinutes: number;
+  saleValue: number | null;
+  orderDate: Date;
+}>(rows: T[], sort?: string): T[] {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    if (sort === 'highestCost') return (b.actualCost ?? -Infinity) - (a.actualCost ?? -Infinity);
+    if (sort === 'lowestMargin') return (a.grossMargin ?? Infinity) - (b.grossMargin ?? Infinity);
+    if (sort === 'highestMargin') return (b.grossMargin ?? -Infinity) - (a.grossMargin ?? -Infinity);
+    if (sort === 'longestTime') return (b.workerEffortMinutes ?? 0) - (a.workerEffortMinutes ?? 0);
+    if (sort === 'largestSale') return (b.saleValue ?? -Infinity) - (a.saleValue ?? -Infinity);
+    return b.orderDate.getTime() - a.orderDate.getTime();
+  });
+  return copy;
 }

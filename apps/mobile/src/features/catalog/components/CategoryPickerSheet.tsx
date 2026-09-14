@@ -89,28 +89,9 @@ export function CategoryPickerSheet({
   const [createForm, setCreateForm] = useState(emptyCreate);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  /** Prefer i18n; fall back if Metro still has a stale @maher/i18n bundle. */
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
-  const createCategoryTitle = label(
-    'catalog.createCategory',
-    locale === 'ar' ? 'إنشاء فئة' : locale === 'he' ? 'צור קטגוריה' : 'Create category',
-  );
-  const namesRequiredMsg = label(
-    'catalog.namesRequired',
-    locale === 'ar'
-      ? 'الاسم بالإنجليزي والعربي مطلوبان.'
-      : locale === 'he'
-        ? 'שמות באנגלית ובערבית הם שדות חובה.'
-        : 'English and Arabic names are required.',
-  );
-  const categoryCreatedMsg = label(
-    'catalog.categoryCreated',
-    locale === 'ar' ? 'تم إنشاء الفئة.' : locale === 'he' ? 'הקטגוריה נוצרה.' : 'Category created.',
-  );
+  const createCategoryTitle = t('catalog.createCategory');
+  const namesRequiredMsg = t('catalog.namesRequired');
+  const categoryCreatedMsg = t('catalog.categoryCreated');
   const sheetHeight = Math.min(
     Math.round(height * (requireConfirm ? 0.7 : allowCreate ? 0.68 : 0.62)),
     requireConfirm ? 620 : 580,

@@ -6,6 +6,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, CountUp, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import { mgmtFlowLabel } from '@maher/i18n';
 import { useMgmtNav } from './boardShared';
 import type { MgmtFlowPhase } from '../../api';
 
@@ -13,7 +14,7 @@ type Props = { phases: MgmtFlowPhase[] };
 
 /** Connected phase journey — Factory flow board. */
 export function FactoryFlowBoard({ phases }: Props) {
-  const { isRTL } = useLocale();
+  const { isRTL, t } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const nav = useMgmtNav();
@@ -47,12 +48,13 @@ export function FactoryFlowBoard({ phases }: Props) {
           const Node = reduce || index > 2 ? View : Animated.View;
           const enter = reduce || index > 2 ? {} : { entering: softFadeDown(50 + index * 35) };
           const share = Math.round((phase.count / total) * 100);
+          const label = mgmtFlowLabel(t, phase.key, phase.label);
           return (
             <Node key={phase.key} {...enter}>
               <AnimatedPressable
                 variant="card"
                 accessibilityRole="button"
-                accessibilityLabel={`${phase.label} ${phase.count}`}
+                accessibilityLabel={`${label} ${phase.count}`}
                 onPress={() => nav(phase.href, phase.filter)}
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -85,7 +87,7 @@ export function FactoryFlowBoard({ phases }: Props) {
                 </View>
                 <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                   <AppText variant="label" weight="semibold" numberOfLines={1}>
-                    {phase.label}
+                    {label}
                   </AppText>
                   <View
                     style={{

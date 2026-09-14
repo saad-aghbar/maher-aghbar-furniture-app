@@ -230,6 +230,7 @@ describe('inventoryItemLifecycleEyebrow', () => {
     'mobile.inventory.lifecycle.finished': 'Finished',
     'mobile.inventory.lifecycle.semiFinished': 'Semi-finished',
     'mobile.inventory.lifecycle.materials': 'Materials',
+    'mobile.inventory.lifecycle.finishedOutbound': 'Finished / outbound',
   };
   const t = (key: string) => LABELS[key] ?? key;
 

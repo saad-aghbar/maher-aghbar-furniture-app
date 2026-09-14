@@ -28,6 +28,18 @@ class CostOrdersQueryDto extends PeriodReportQueryDto {
   @IsOptional() @IsUUID() variantId?: string;
   @IsOptional() @IsUUID() optionValueId?: string;
   @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() dateBasis?: string;
+  @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() complexity?: string;
+  @IsOptional() @IsString() delivered?: string;
+  @IsOptional() @IsString() hasReturn?: string;
+  @IsOptional() @IsString() hasRework?: string;
+  @IsOptional() @IsString() coverage?: string;
+  @IsOptional() @IsString() marginHealth?: string;
+  @IsOptional() @IsString() sort?: string;
+  @IsOptional() @IsString() lifecycle?: string;
+  @IsOptional() @IsUUID() warehouseId?: string;
+  @IsOptional() @IsString() type?: string;
   @IsOptional() @Type(() => Number) page?: number;
   @IsOptional() @Type(() => Number) pageSize?: number;
 }
@@ -130,9 +142,20 @@ export class ReportsController {
 
   @Get('production-summary')
   @RequirePermissions('production-order.read')
-  productionSummary(@Query('origin') origin?: string) {
+  productionSummary(
+    @Query('origin') origin?: string,
+    @Query('complexity') complexity?: string,
+    @Query('customerId') customerId?: string,
+  ) {
     const parsed = origin === 'normal' || origin === 'returned' ? origin : undefined;
-    return this.reports.productionSummary(parsed);
+    const complexityParsed =
+      complexity === 'STANDARD' || complexity === 'MODIFIED' || complexity === 'CUSTOM'
+        ? complexity
+        : undefined;
+    return this.reports.productionSummary(parsed, {
+      complexity: complexityParsed,
+      customerId: customerId?.trim() || undefined,
+    });
   }
 
   @Get('inventory')
@@ -266,6 +289,12 @@ export class ReportsController {
     res.send(csv);
   }
 
+  @Get('cost/money')
+  @RequirePermissions('inventory.cost.read')
+  costMoney(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.moneyDesk({ ...query, user });
+  }
+
   @Get('cost/orders')
   @RequirePermissions('inventory.cost.read')
   costOrders(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
@@ -290,16 +319,77 @@ export class ReportsController {
     return this.costPerformance.returnDossier(id, user);
   }
 
+  @Get('cost/custom-work')
+  @RequirePermissions('inventory.cost.read')
+  costCustomWork(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.customWork({ ...query, user });
+  }
+
+  @Get('cost/products/:productId/variants/:variantId')
+  @RequirePermissions('inventory.cost.read')
+  costVariantProfile(
+    @Param('productId') productId: string,
+    @Param('variantId') variantId: string,
+    @Query() query: CostOrdersQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.costPerformance.variantProfile(productId, variantId, { ...query, user });
+  }
+
+  @Get('cost/products/:productId')
+  @RequirePermissions('inventory.cost.read')
+  costProductProfile(
+    @Param('productId') productId: string,
+    @Query() query: CostOrdersQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.costPerformance.productProfile(productId, { ...query, user });
+  }
+
   @Get('cost/products')
   @RequirePermissions('inventory.cost.read')
   costProducts(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
     return this.costPerformance.productAnalytics(user, query);
   }
 
+  @Get('cost/inventory/summary')
+  @RequirePermissions('inventory.cost.read')
+  costInventorySummary(@CurrentUser() user: AuthUser) {
+    return this.costPerformance.inventorySummary(user);
+  }
+
+  @Get('cost/inventory/flow')
+  @RequirePermissions('inventory.cost.read')
+  costInventoryFlow(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.inventoryFlow({ ...query, user });
+  }
+
+  @Get('cost/inventory/items/:id')
+  @RequirePermissions('inventory.cost.read')
+  costInventoryItem(
+    @Param('id') id: string,
+    @Query() query: CostOrdersQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.costPerformance.inventoryItemDetail(id, { ...query, user });
+  }
+
+  @Get('cost/inventory/items')
+  @RequirePermissions('inventory.cost.read')
+  costInventoryItems(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.inventoryItems({ ...query, user });
+  }
+
+  @Get('cost/coverage/issues')
+  @RequirePermissions('inventory.cost.read')
+  costCoverageIssues(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.coverageIssues({ ...query, user });
+  }
+
   @Get('cost/coverage')
   @RequirePermissions('inventory.cost.read')
-  costCoverage(@CurrentUser() user: AuthUser) {
-    return this.costPerformance.costCoverage(user);
+  costCoverage(@Query() query: CostOrdersQueryDto, @CurrentUser() user: AuthUser) {
+    return this.costPerformance.costCoverage(user, query);
   }
 
   @Post('cost/coverage/backfill')

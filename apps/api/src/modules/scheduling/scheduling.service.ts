@@ -3039,7 +3039,7 @@ export class SchedulingService implements OnModuleInit {
           include: {
             productionTask: { select: { id: true; name: true; number: true; status: true; stageDefinitionId: true } };
             employee: { select: { id: true; firstName: true; lastName: true } };
-            department: { select: { id: true; code: true; nameEn: true; nameAr: true } };
+            department: { select: { id: true; code: true; nameEn: true; nameAr: true; nameHe: true } };
           };
         };
       };
@@ -3124,7 +3124,7 @@ export class SchedulingService implements OnModuleInit {
                 select: { id: true, name: true, number: true, status: true, stageDefinitionId: true },
               },
               employee: { select: { id: true, firstName: true, lastName: true } },
-              department: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+              department: { select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true } },
             },
             orderBy: { plannedStart: 'asc' },
           },
@@ -3742,10 +3742,10 @@ export class SchedulingService implements OnModuleInit {
             id: true,
             firstName: true,
             lastName: true,
-            department: { select: { code: true, nameEn: true, nameAr: true } },
+            department: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
           },
         },
-        department: { select: { code: true, nameEn: true, nameAr: true } },
+        department: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
       },
     });
 
@@ -6739,7 +6739,7 @@ export class SchedulingService implements OnModuleInit {
     const waiting = planning.filter(
       (o) => o.planningState === 'READY_TO_SCHEDULE' || o.planningState === 'PARTIALLY_SCHEDULED',
     );
-    const byStage = new Map<string, { stageDefinitionId: string | null; code: string | null; nameEn: string | null; minutes: number }>();
+    const byStage = new Map<string, { stageDefinitionId: string | null; code: string | null; nameEn: string | null; nameAr: string | null; nameHe: string | null; minutes: number }>();
     for (const order of waiting) {
       for (const stage of order.stages) {
         if (stage.placed) continue;
@@ -6748,6 +6748,8 @@ export class SchedulingService implements OnModuleInit {
           stageDefinitionId: stage.stageDefinitionId,
           code: stage.code,
           nameEn: stage.nameEn,
+          nameAr: stage.nameAr,
+          nameHe: stage.nameHe,
           minutes: 0,
         };
         current.minutes += stage.estimatedMinutes ?? 0;

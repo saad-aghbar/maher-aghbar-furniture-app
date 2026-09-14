@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { DealerPriceRow } from '@/api/modules/customers';
 import { AppText } from '@/components/AppText';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
-import { useLocale } from '@/i18n';
+import { isolateLtr, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { DealerEmptyPanel } from './DealerEmptyPanel';
@@ -63,7 +63,7 @@ export function DealerPriceList({
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
-          {`${t('customers.priceList')} · ${prices.length}`}
+          {`${t('customers.priceList')} · ${isolateLtr(String(prices.length))}`}
         </AppText>
         {onAdd ? (
           <AnimatedPressable

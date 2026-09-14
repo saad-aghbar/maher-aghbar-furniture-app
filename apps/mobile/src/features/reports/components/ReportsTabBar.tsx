@@ -31,6 +31,7 @@ const TAB_ICON: Partial<Record<ReportsCategory, keyof typeof Ionicons.glyphMap>>
   money: 'wallet-outline',
   orders: 'layers-outline',
   products: 'cube-outline',
+  inventory: 'file-tray-outline',
   returns: 'return-down-back-outline',
   coverage: 'alert-circle-outline',
   dashboard: 'grid-outline',

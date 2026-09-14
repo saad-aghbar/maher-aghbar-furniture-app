@@ -56,6 +56,7 @@ export function WorkerTimelineBoard({ workers, timezone, date }: Props) {
                     key={ms}
                     variant="caption"
                     color="secondary"
+                    dir="ltr"
                     style={{ width: PX_PER_HOUR, textAlign: 'left' }}
                   >
                     {label}

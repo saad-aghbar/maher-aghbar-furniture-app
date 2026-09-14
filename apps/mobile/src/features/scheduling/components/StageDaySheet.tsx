@@ -3,7 +3,7 @@ import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import type { FactoryDayResponse, FactoryDayWorker } from '@/api/modules/scheduling';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { minutesLabel } from '../selectFactoryTower';
@@ -32,7 +32,7 @@ export function StageDaySheet({
   availableMinutes,
   onOpenWorker,
 }: Props) {
-  const { t, locale } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const free = Math.max(0, availableMinutes - scheduledMinutes);
@@ -77,9 +77,9 @@ export function StageDaySheet({
                 padding: theme.spacing.md,
               }}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: localeRow(isRTL), justifyContent: 'space-between' }}>
                 <AppText weight={titleWeight}>{worker.name}</AppText>
-                <AppText color="secondary">
+                <AppText color="secondary" dir="ltr">
                   {`${minutesLabel(worker.scheduledMinutes)} / ${minutesLabel(worker.availableMinutes)}`}
                 </AppText>
               </View>

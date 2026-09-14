@@ -1171,7 +1171,7 @@ export async function seedPiece8FactoryFloorExamples(
         data: {
           taskId: assemblyTaskId,
           category: 'PREVIOUS_STAGE_DEFECT',
-          reason: 'SEMI handoff discrepancy: DAMAGED — seed P8-G open attention',
+          reason: 'mobile.tasks.seedBlockers.semiHandoff',
           reportedById: assemblerId,
         },
       });

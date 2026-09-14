@@ -792,10 +792,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
                 </View>
               ) : (
                 <DealerEmptyPanel
-                  text={(() => {
-                    const v = t('customers.noStatement');
-                    return v === 'customers.noStatement' ? 'No statement yet.' : v;
-                  })()}
+                  text={t('customers.noStatement')}
                   icon="document-text-outline"
                   nested
                 />
@@ -1041,10 +1038,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
         <ListItemEnter index={8}>
           <View style={{ paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.xl }}>
             <DestructiveButton
-              label={(() => {
-                const v = t('customers.deleteDealer');
-                return v === 'customers.deleteDealer' ? 'Delete dealer' : v;
-              })()}
+              label={t('customers.deleteDealer')}
               onPress={() => {
                 void haptics.selection();
                 setDeleteOpen(true);

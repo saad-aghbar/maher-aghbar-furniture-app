@@ -5,7 +5,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { hoursMinutesToTotalMinutes, totalMinutesToHoursMinutes } from '@/features/tasks/formatDuration';
 import { useTheme } from '@/theme';
 
@@ -28,7 +28,7 @@ export function StageDurationSheet({
   assignedWorkerName,
   onSave,
 }: Props) {
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [hours, setHours] = useState('0');
@@ -74,7 +74,7 @@ export function StageDurationSheet({
           </AppText>
         </View>
 
-        <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+        <View style={{ flexDirection: localeRow(isRTL), gap: theme.spacing.md }}>
           <View style={{ flex: 1, gap: 4 }}>
             <AppText variant="caption" color="muted">
               {t('mobile.production.workflow.durationHours')}

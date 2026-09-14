@@ -412,6 +412,21 @@ export function setRuntimeUiLocale(locale: Locale) {
   runtimeUiLocale = locale;
 }
 
+export { localizeFloorNote, extractLeadingRef, hasRtlScript, looksLikeI18nKey } from './floorNote';
+export {
+  inferMgmtEvent,
+  mgmtAttentionAction,
+  mgmtAttentionTitle,
+  mgmtAttentionWhy,
+  mgmtBlockedWhy,
+  mgmtEventLabel,
+  mgmtFlowLabel,
+  type MgmtCopyParams,
+  type MgmtKeyedBlocked,
+  type MgmtKeyedCard,
+  type MgmtKeyedEvent,
+  type MgmtTranslate,
+} from './mgmtCopy';
 export { allLeafKeys, flattenLeaves, flattenNamespace } from './flatten';
 export {
   arabicPluralCategory,

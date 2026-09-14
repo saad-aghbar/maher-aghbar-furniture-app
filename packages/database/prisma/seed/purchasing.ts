@@ -20,12 +20,12 @@ export async function seedPurchasing(
   },
 ) {
   const suppliers = [
-    { code: 'SUP-TIMBER', nameEn: 'Zarqa Timber Yard', nameAr: 'ساحة أخشاب الزرقاء', phone: '+96253990001', email: 'sales@zarqa-timber.jo' },
-    { code: 'SUP-FOAM', nameEn: 'Jordan Foam Industries', nameAr: 'صناعات الإسفنج الأردنية', phone: '+96265551002', email: 'orders@jo-foam.jo' },
-    { code: 'SUP-FABRIC', nameEn: 'Abdali Textile Mill', nameAr: 'مصنع أقمشة العبدلي', phone: '+96265661003', email: 'b2b@abdali-textile.jo' },
-    { code: 'SUP-HW', nameEn: 'Sahab Hardware Co', nameAr: 'شركة سحاب للمعدات', phone: '+96264001004', email: 'desk@sahab-hw.jo' },
-    { code: 'SUP-FINISH', nameEn: 'Marka Coatings', nameAr: 'دهانات ماركا', phone: '+96264881005', email: 'sales@marka-coatings.jo' },
-    { code: 'SUP-PACK', nameEn: 'East Pack Packaging', nameAr: 'إيست باك للتغليف', phone: '+96265111006', email: 'ops@eastpack.jo' },
+    { code: 'SUP-TIMBER', nameEn: 'Zarqa Timber Yard', nameAr: 'ساحة أخشاب الزرقاء', nameHe: 'חצר עץ זרקא', phone: '+96253990001', email: 'sales@zarqa-timber.jo' },
+    { code: 'SUP-FOAM', nameEn: 'Jordan Foam Industries', nameAr: 'صناعات الإسفنج الأردنية', nameHe: 'תעשיות ספוג ירדן', phone: '+96265551002', email: 'orders@jo-foam.jo' },
+    { code: 'SUP-FABRIC', nameEn: 'Abdali Textile Mill', nameAr: 'مصنع أقمشة العبدلي', nameHe: 'מפעל טקסטיל עבדלי', phone: '+96265661003', email: 'b2b@abdali-textile.jo' },
+    { code: 'SUP-HW', nameEn: 'Sahab Hardware Co', nameAr: 'شركة سحاب للمعدات', nameHe: 'סחאב לחומרה', phone: '+96264001004', email: 'desk@sahab-hw.jo' },
+    { code: 'SUP-FINISH', nameEn: 'Marka Coatings', nameAr: 'دهانات ماركا', nameHe: 'מרקה לציפויים', phone: '+96264881005', email: 'sales@marka-coatings.jo' },
+    { code: 'SUP-PACK', nameEn: 'East Pack Packaging', nameAr: 'إيست باك للتغليف', nameHe: 'איסט פק לאריזה', phone: '+96265111006', email: 'ops@eastpack.jo' },
   ];
 
   const supplierIds: Record<string, string> = {};
@@ -36,6 +36,7 @@ export async function seedPurchasing(
         name: s.nameEn,
         nameEn: s.nameEn,
         nameAr: s.nameAr,
+        nameHe: s.nameHe,
         phone: s.phone,
         email: s.email,
         paymentTermsDays: 30,

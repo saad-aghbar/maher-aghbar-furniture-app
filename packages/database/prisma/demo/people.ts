@@ -23,6 +23,7 @@ export type DealerRef = {
   username: string;
   nameEn: string;
   nameAr: string;
+  nameHe: string;
   city: string;
   area: string;
   street: string;
@@ -249,6 +250,7 @@ const DEALERS: Array<{
     code: 'CUS-0101',
     nameEn: 'Nile Interiors',
     nameAr: 'النيل للديكور',
+    nameHe: 'נייל לעיצוב פנים',
     city: 'Amman',
     area: 'Abdoun',
     street: 'Zahran Street 42',
@@ -266,6 +268,7 @@ const DEALERS: Array<{
     code: 'CUS-0102',
     nameEn: 'Oasis Living',
     nameAr: 'واحة المعيشة',
+    nameHe: 'אואזיס ליווינג',
     city: 'Amman',
     area: 'Sweifieh',
     street: 'Wakalat Street 18',
@@ -283,6 +286,7 @@ const DEALERS: Array<{
     code: 'CUS-0103',
     nameEn: 'Balqis Hospitality',
     nameAr: 'بلقيس للضيافة',
+    nameHe: 'בלקיס לאירוח',
     city: 'Amman',
     area: 'Abdali',
     street: 'Boulevard 7',
@@ -300,6 +304,7 @@ const DEALERS: Array<{
     code: 'CUS-0104',
     nameEn: 'Cedar House Amman',
     nameAr: 'بيت الأرز عمّان',
+    nameHe: 'בית הארז עמאן',
     city: 'Amman',
     area: 'Jabal Amman',
     street: 'Rainbow Street 9',
@@ -317,6 +322,7 @@ const DEALERS: Array<{
     code: 'CUS-0105',
     nameEn: 'Zaatar Home',
     nameAr: 'زعتر هوم',
+    nameHe: 'זעתר הום',
     city: 'Amman',
     area: 'Khalda',
     street: 'Wasfi Al-Tal 210',
@@ -334,6 +340,7 @@ const DEALERS: Array<{
     code: 'CUS-0106',
     nameEn: 'Qasr Suites',
     nameAr: 'قصر الأجنحة',
+    nameHe: 'קסר סוויטס',
     city: 'Amman',
     area: '5th Circle',
     street: 'Paris Circle 3',
@@ -351,6 +358,7 @@ const DEALERS: Array<{
     code: 'CUS-0107',
     nameEn: 'Rawnaq Showroom',
     nameAr: 'رواق للعرض',
+    nameHe: 'רוונאק לתצוגה',
     city: 'Zarqa',
     area: 'New Zarqa',
     street: 'King Hussein 55',
@@ -368,6 +376,7 @@ const DEALERS: Array<{
     code: 'CUS-0108',
     nameEn: 'Diwan Seating',
     nameAr: 'ديوان للجلوس',
+    nameHe: 'דיואן לישיבה',
     city: 'Amman',
     area: 'Marka',
     street: 'Industrial Street 12',
@@ -385,6 +394,7 @@ const DEALERS: Array<{
     code: 'CUS-0109',
     nameEn: 'Noor Furnishings',
     nameAr: 'نور للمفروشات',
+    nameHe: 'נור לריהוט',
     city: 'Irbid',
     area: 'University Street',
     street: 'University Street 88',
@@ -402,6 +412,7 @@ const DEALERS: Array<{
     code: 'CUS-0110',
     nameEn: 'Jabal Contract',
     nameAr: 'جبل للعقود',
+    nameHe: 'ג'בל לחוזים',
     city: 'Amman',
     area: 'Shmeisani',
     street: 'Sharif Naser 4',
@@ -490,6 +501,7 @@ export async function seedDemoPeople(prisma: PrismaClient, passwordHash: string)
         name: d.nameEn,
         nameEn: d.nameEn,
         nameAr: d.nameAr,
+        nameHe: d.nameHe,
         customerType: d.type,
         companyName: d.nameEn,
         preferredLanguage: Locale.ar,

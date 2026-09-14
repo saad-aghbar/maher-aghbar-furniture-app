@@ -49,22 +49,11 @@ export function DeleteDealerSheet({
     }
   }, [open]);
 
-  const title = (() => {
-    const v = t('customers.deleteDealer');
-    return v === 'customers.deleteDealer' ? 'Delete dealer' : v;
-  })();
+  const title = t('customers.deleteDealer');
 
-  const hint = (() => {
-    const v = t('customers.deleteDealerHint');
-    return v === 'customers.deleteDealerHint'
-      ? 'Type this dealer’s portal username and password to permanently remove them from the list.'
-      : v;
-  })();
+  const hint = t('customers.deleteDealerHint');
 
-  const confirmLabel = (() => {
-    const v = t('customers.deleteDealerConfirm');
-    return v === 'customers.deleteDealerConfirm' ? 'Delete dealer' : v;
-  })();
+  const confirmLabel = t('customers.deleteDealerConfirm');
 
   const onSubmit = async () => {
     setError(null);
@@ -85,18 +74,14 @@ export function DeleteDealerSheet({
       const ok = t('customers.deleted');
       showToast({
         variant: 'success',
-        message: ok === 'customers.deleted' ? 'Dealer deleted.' : ok,
+        message: ok,
       });
       onClose();
       onDeleted();
     } catch (err) {
       if (isApiError(err) && err.code === 'INVALID_PORTAL_CREDENTIALS') {
         const msg = t('customers.deleteDealerBadCredentials');
-        setError(
-          msg === 'customers.deleteDealerBadCredentials'
-            ? 'Dealer username or password is incorrect.'
-            : msg,
-        );
+        setError(msg);
         return;
       }
       setError(toastMessageForError(err, t));

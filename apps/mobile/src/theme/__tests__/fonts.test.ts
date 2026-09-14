@@ -1,45 +1,46 @@
 import {
-  KO_SANS,
-  RUBIK,
+  PLEX_ARABIC,
+  PLEX_HEBREW,
+  PLEX_LATIN,
   applyAppTypeface,
   resolveAppFontFamily,
   resolveAppFontStyle,
 } from '../fonts';
 
 describe('resolveAppFontFamily', () => {
-  it('uses softened KO Sans for Arabic', () => {
-    expect(resolveAppFontFamily('ar', { weight: 'regular' })).toBe(KO_SANS.regular);
-    expect(resolveAppFontFamily('ar', { weight: 'medium' })).toBe(KO_SANS.regular);
-    expect(resolveAppFontFamily('ar', { weight: 'semibold' })).toBe(KO_SANS.medium);
+  it('uses Plex Arabic 1:1 for Arabic', () => {
+    expect(resolveAppFontFamily('ar', { weight: 'regular' })).toBe(PLEX_ARABIC.regular);
+    expect(resolveAppFontFamily('ar', { weight: 'medium' })).toBe(PLEX_ARABIC.medium);
+    expect(resolveAppFontFamily('ar', { weight: 'semibold' })).toBe(PLEX_ARABIC.semibold);
   });
 
-  it('uses Rubik 1:1 for English and Hebrew', () => {
-    expect(resolveAppFontFamily('en', { weight: 'regular' })).toBe(RUBIK.regular);
-    expect(resolveAppFontFamily('en', { weight: 'medium' })).toBe(RUBIK.medium);
-    expect(resolveAppFontFamily('en', { weight: 'semibold' })).toBe(RUBIK.semibold);
-    expect(resolveAppFontFamily('he', { weight: 'regular' })).toBe(RUBIK.regular);
-    expect(resolveAppFontFamily('he', { weight: 'medium' })).toBe(RUBIK.medium);
-    expect(resolveAppFontFamily('he', { weight: 'semibold' })).toBe(RUBIK.semibold);
+  it('uses Plex Sans 1:1 for English and Plex Hebrew 1:1 for Hebrew', () => {
+    expect(resolveAppFontFamily('en', { weight: 'regular' })).toBe(PLEX_LATIN.regular);
+    expect(resolveAppFontFamily('en', { weight: 'medium' })).toBe(PLEX_LATIN.medium);
+    expect(resolveAppFontFamily('en', { weight: 'semibold' })).toBe(PLEX_LATIN.semibold);
+    expect(resolveAppFontFamily('he', { weight: 'regular' })).toBe(PLEX_HEBREW.regular);
+    expect(resolveAppFontFamily('he', { weight: 'medium' })).toBe(PLEX_HEBREW.medium);
+    expect(resolveAppFontFamily('he', { weight: 'semibold' })).toBe(PLEX_HEBREW.semibold);
   });
 
-  it('maps display variants to medium before Arabic softening', () => {
-    expect(resolveAppFontFamily('ar', { variant: 'title' })).toBe(KO_SANS.regular);
-    expect(resolveAppFontFamily('en', { variant: 'title' })).toBe(RUBIK.medium);
-    expect(resolveAppFontFamily('he', { variant: 'heading' })).toBe(RUBIK.medium);
+  it('maps display variants to medium without Arabic softening', () => {
+    expect(resolveAppFontFamily('ar', { variant: 'title' })).toBe(PLEX_ARABIC.medium);
+    expect(resolveAppFontFamily('en', { variant: 'title' })).toBe(PLEX_LATIN.medium);
+    expect(resolveAppFontFamily('he', { variant: 'heading' })).toBe(PLEX_HEBREW.medium);
   });
 });
 
 describe('resolveAppFontStyle', () => {
   it('zeros tracking only for Arabic', () => {
     expect(resolveAppFontStyle('ar', { weight: 'regular' })).toEqual({
-      fontFamily: KO_SANS.regular,
+      fontFamily: PLEX_ARABIC.regular,
       letterSpacing: 0,
     });
     expect(resolveAppFontStyle('en', { weight: 'medium' })).toEqual({
-      fontFamily: RUBIK.medium,
+      fontFamily: PLEX_LATIN.medium,
     });
     expect(resolveAppFontStyle('he', { weight: 'semibold' })).toEqual({
-      fontFamily: RUBIK.semibold,
+      fontFamily: PLEX_HEBREW.semibold,
     });
   });
 
@@ -52,9 +53,9 @@ describe('resolveAppFontStyle', () => {
 });
 
 describe('applyAppTypeface', () => {
-  it('maps numeric fontWeight onto Rubik files and strips fontWeight', () => {
+  it('maps numeric fontWeight onto Plex files and strips fontWeight', () => {
     const next = applyAppTypeface('en', { fontSize: 15, fontWeight: '600' });
-    expect(next.fontFamily).toBe(RUBIK.semibold);
+    expect(next.fontFamily).toBe(PLEX_LATIN.semibold);
     expect(next.fontWeight).toBeUndefined();
     expect(next.fontSize).toBe(15);
   });
@@ -65,7 +66,7 @@ describe('applyAppTypeface', () => {
       { fontWeight: '400', color: '#111' },
       { weight: 'semibold' },
     );
-    expect(next.fontFamily).toBe(RUBIK.semibold);
+    expect(next.fontFamily).toBe(PLEX_LATIN.semibold);
     expect(next.fontWeight).toBeUndefined();
   });
 
@@ -74,15 +75,15 @@ describe('applyAppTypeface', () => {
     expect(next.fontFamily).toBe('Courier');
   });
 
-  it('softens Arabic after mapping a heavy system weight', () => {
+  it('maps a heavy system weight onto Plex Arabic SemiBold', () => {
     const next = applyAppTypeface('ar', { fontWeight: '600' });
-    expect(next.fontFamily).toBe(KO_SANS.medium);
+    expect(next.fontFamily).toBe(PLEX_ARABIC.semibold);
     expect(next.letterSpacing).toBe(0);
     expect(next.fontWeight).toBeUndefined();
   });
 
-  it('keeps Rubik for Latin punctuation runs in Arabic UI', () => {
+  it('keeps the locale face when face=latin is passed (no-op)', () => {
     const next = applyAppTypeface('ar', { fontSize: 12 }, { face: 'latin', weight: 'semibold' });
-    expect(next.fontFamily).toBe(RUBIK.semibold);
+    expect(next.fontFamily).toBe(PLEX_ARABIC.semibold);
   });
 });

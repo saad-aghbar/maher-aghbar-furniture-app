@@ -70,6 +70,17 @@ export type SalesOrderListItem = {
   /** Latest linked delivery status (admin list enrichment). */
   deliveryStatus?: string | null;
   lineCount?: number | null;
+  lineStrip?: Array<{
+    id?: string;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    description?: string | null;
+    sku?: string | null;
+    quantity?: number | null;
+    manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+    imageUrl?: string | null;
+  }> | null;
   productionReadinessSummary?: SalesOrderProductionReadinessSummary | null;
   /** Piece 1/2 — accepted SO awaiting production setup release */
   productionSetupRequired?: boolean;
@@ -88,7 +99,9 @@ export type SalesOrderListItem = {
     id?: string;
     number: string;
     status?: string;
+    salesOrderLineId?: string | null;
     progressPercent?: number | null;
+    currentStageCode?: string | null;
     releasedToFactoryAt?: string | null;
     actualStartDate?: string | null;
   }> | null;

@@ -305,6 +305,7 @@ export function MonthCalendar({
                   {variant === 'admin' && meta?.loadPercent != null && !meta.disabled ? (
                     <AppText
                       variant="caption"
+                      dir="ltr"
                       style={{
                         color: cellColors.ink,
                         fontSize: 9,
@@ -422,7 +423,7 @@ function resolveCellColors(input: {
   }
   if (inRangeStrip) {
     return {
-      bg: colors.brandSoft,
+      bg: colors.calendarLoadLight,
       border: colors.brandSoft,
       ink: colors.textPrimary,
       dot: colors.brand,

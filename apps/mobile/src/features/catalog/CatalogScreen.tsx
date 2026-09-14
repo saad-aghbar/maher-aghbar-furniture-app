@@ -98,10 +98,7 @@ export function CatalogScreen({
   const pickForOrder = isDealer && isCatalogPickForOrder(searchParams);
   const allowed = can(user, 'catalog.read');
   const canCreate = showCreateProduct && can(user, 'catalog.manage');
-  const addProductLabel = (() => {
-    const v = t('catalog.addProduct');
-    return v === 'catalog.addProduct' ? 'Add product' : v;
-  })();
+  const addProductLabel = t('catalog.addProduct');
   const fabSize = 56;
   const tabClearance = isDealer ? DEALER_TAB_BAR_CLEARANCE : SURFACE_TAB_BAR_CLEARANCE;
   /** Admin grid: last row + chocolate + FAB must clear the floating tab (inset only). */

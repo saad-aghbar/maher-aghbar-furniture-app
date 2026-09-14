@@ -30,6 +30,9 @@ export const PRODUCTION_LIST_BUCKETS = [
 ] as const;
 export type ProductionListBucket = (typeof PRODUCTION_LIST_BUCKETS)[number];
 
+export const PRODUCTION_COMPLEXITIES = ['STANDARD', 'MODIFIED', 'CUSTOM'] as const;
+export type ProductionComplexityFilter = (typeof PRODUCTION_COMPLEXITIES)[number];
+
 export class ListProductionOrdersDto extends PaginationDto {
   @ApiPropertyOptional({ enum: ProductionOrderStatus })
   @IsOptional()
@@ -78,6 +81,21 @@ export class ListProductionOrdersDto extends PaginationDto {
   @IsOptional()
   @IsIn(['late_missed', 'at_risk'])
   dayFocus?: 'late_missed' | 'at_risk';
+
+  /** Line manufacturing kind — matching item still loads sibling POs on the same sales order. */
+  @ApiPropertyOptional({ enum: PRODUCTION_COMPLEXITIES })
+  @IsOptional()
+  @IsIn([...PRODUCTION_COMPLEXITIES])
+  complexity?: ProductionComplexityFilter;
+
+  /**
+   * boards = one parent per commercial order (paginate group keys, include unmatched siblings).
+   * orders = one row per production order (admin-web default).
+   */
+  @ApiPropertyOptional({ enum: ['boards', 'orders'] })
+  @IsOptional()
+  @IsIn(['boards', 'orders'])
+  group?: 'boards' | 'orders';
 }
 
 export class ProductionDaySummaryQueryDto {
@@ -111,6 +129,11 @@ export class ProductionDaySummaryQueryDto {
   @IsOptional()
   @IsIn(['late_missed', 'at_risk'])
   dayFocus?: 'late_missed' | 'at_risk';
+
+  @ApiPropertyOptional({ enum: PRODUCTION_COMPLEXITIES })
+  @IsOptional()
+  @IsIn([...PRODUCTION_COMPLEXITIES])
+  complexity?: ProductionComplexityFilter;
 }
 
 export class UpdateProductionOrderDto {

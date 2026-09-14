@@ -22,6 +22,8 @@ describe('selectOrderDetail', () => {
     expect(vm.phone).toBe('+962 7 9000 0000');
     expect(vm.projectName).toBe('Grand Hotel Lobby');
     expect(vm.items[0]?.dimensions).toContain('220');
+    expect(vm.items[0]?.productionStatus).toBe('IN_PROGRESS');
+    expect(vm.items[0]?.productionProgressPercent).toBe(55);
     expect(vm.costMaterials.find((m) => m.key === 'fabric')?.qty).toBe(12);
     expect(vm.deliveries).toHaveLength(1);
     expect(vm.productionOrders[0]?.stages[0]?.dependsOnCodes).toEqual([]);
@@ -114,5 +116,6 @@ describe('selectOrderDetail', () => {
     expect(vm.items[0]?.imageUrl).toBe('https://example.com/custom.jpg');
     expect(vm.items[0]?.productionStatus).toBe('READY');
     expect(vm.items[0]?.manufacturingComplexity).toBe('CUSTOM');
+    expect(vm.items[0]?.productionProgressPercent).toBe(55);
   });
 });

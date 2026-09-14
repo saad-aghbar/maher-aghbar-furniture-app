@@ -1375,7 +1375,7 @@ export async function seedPiece9QualityPackagingExamples(
         data: {
           taskId: packTaskId,
           category: BlockerCategory.MATERIAL_MISSING,
-          reason: 'P9-J: missing Back package / packaging material — seed blocker',
+          reason: 'mobile.tasks.seedBlockers.missingPackaging',
           reportedById: packerId,
         },
       });

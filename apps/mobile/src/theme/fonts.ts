@@ -7,59 +7,85 @@ import {
 import type { FontWeightToken, TypographyVariantName } from './types';
 
 /**
- * Brand Arabic typeface — KO Sans (Boharat / Kotype).
- * Loaded via expo-font; PostScript names match the OTF `name` table.
+ * Latin UI face — IBM Plex Sans (OFL). Carries full ASCII, shekel, percent.
  */
-export const KO_SANS = {
-  regular: 'KOSans-Regular',
-  medium: 'KOSans-Medium',
-  semibold: 'KOSans-SemiBold',
+export const PLEX_LATIN = {
+  regular: 'IBMPlexSans-Regular',
+  medium: 'IBMPlexSans-Medium',
+  semibold: 'IBMPlexSans-SemiBold',
 } as const;
 
 /**
- * Latin + Hebrew typeface — Rubik (SIL OFL). Same files cover both scripts
- * so mixed English/Hebrew strings stay on one face.
+ * Arabic UI face — IBM Plex Sans Arabic (OFL). Also carries Latin + shekel,
+ * so mixed SKU / price / Arabic labels stay on one family.
  */
-export const RUBIK = {
-  regular: 'Rubik-Regular',
-  medium: 'Rubik-Medium',
-  semibold: 'Rubik-SemiBold',
+export const PLEX_ARABIC = {
+  regular: 'IBMPlexSansArabic-Regular',
+  medium: 'IBMPlexSansArabic-Medium',
+  semibold: 'IBMPlexSansArabic-SemiBold',
 } as const;
 
 /**
- * KO Sans glyph boxes sit above Latin metric line boxes on React Native.
- * Tight `lineHeight` (common for hero money) crops Arabic ascenders and
- * Latin digits/currency when the UI is in Arabic.
+ * Hebrew UI face — IBM Plex Sans Hebrew (OFL). Also carries Latin + shekel.
  */
-const AR_MIN_LINE_RATIO = 1.5;
+export const PLEX_HEBREW = {
+  regular: 'IBMPlexSansHebrew-Regular',
+  medium: 'IBMPlexSansHebrew-Medium',
+  semibold: 'IBMPlexSansHebrew-SemiBold',
+} as const;
 
-export type KoSansFamily = (typeof KO_SANS)[keyof typeof KO_SANS];
-export type RubikFamily = (typeof RUBIK)[keyof typeof RUBIK];
-export type AppFontFamily = KoSansFamily | RubikFamily;
+/**
+ * Plex Arabic is a UI face (unlike KO Sans). Only bump extremely tight
+ * hero line boxes; do not inflate every Arabic label.
+ */
+const AR_MIN_LINE_RATIO = 1.2;
+
+export type PlexLatinFamily = (typeof PLEX_LATIN)[keyof typeof PLEX_LATIN];
+export type PlexArabicFamily = (typeof PLEX_ARABIC)[keyof typeof PLEX_ARABIC];
+export type PlexHebrewFamily = (typeof PLEX_HEBREW)[keyof typeof PLEX_HEBREW];
+export type AppFontFamily = PlexLatinFamily | PlexArabicFamily | PlexHebrewFamily;
 
 /** expo-font map — keys become `fontFamily` values. */
-export const koSansFontSources: Record<KoSansFamily, number> = {
-  [KO_SANS.regular]: require('../../assets/fonts/KOSans-Regular.otf'),
-  [KO_SANS.medium]: require('../../assets/fonts/KOSans-Medium.otf'),
-  [KO_SANS.semibold]: require('../../assets/fonts/KOSans-SemiBold.otf'),
+export const plexLatinFontSources: Record<PlexLatinFamily, number> = {
+  [PLEX_LATIN.regular]: require('../../assets/fonts/IBMPlexSans-Regular.ttf'),
+  [PLEX_LATIN.medium]: require('../../assets/fonts/IBMPlexSans-Medium.ttf'),
+  [PLEX_LATIN.semibold]: require('../../assets/fonts/IBMPlexSans-SemiBold.ttf'),
 };
 
-export const rubikFontSources: Record<RubikFamily, number> = {
-  [RUBIK.regular]: require('../../assets/fonts/Rubik-Regular.ttf'),
-  [RUBIK.medium]: require('../../assets/fonts/Rubik-Medium.ttf'),
-  [RUBIK.semibold]: require('../../assets/fonts/Rubik-SemiBold.ttf'),
+export const plexArabicFontSources: Record<PlexArabicFamily, number> = {
+  [PLEX_ARABIC.regular]: require('../../assets/fonts/IBMPlexSansArabic-Regular.ttf'),
+  [PLEX_ARABIC.medium]: require('../../assets/fonts/IBMPlexSansArabic-Medium.ttf'),
+  [PLEX_ARABIC.semibold]: require('../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf'),
 };
 
-const koSansWeightToFamily: Record<FontWeightToken, KoSansFamily> = {
-  regular: KO_SANS.regular,
-  medium: KO_SANS.medium,
-  semibold: KO_SANS.semibold,
+export const plexHebrewFontSources: Record<PlexHebrewFamily, number> = {
+  [PLEX_HEBREW.regular]: require('../../assets/fonts/IBMPlexSansHebrew-Regular.ttf'),
+  [PLEX_HEBREW.medium]: require('../../assets/fonts/IBMPlexSansHebrew-Medium.ttf'),
+  [PLEX_HEBREW.semibold]: require('../../assets/fonts/IBMPlexSansHebrew-SemiBold.ttf'),
 };
 
-const rubikWeightToFamily: Record<FontWeightToken, RubikFamily> = {
-  regular: RUBIK.regular,
-  medium: RUBIK.medium,
-  semibold: RUBIK.semibold,
+export const plexFontSources = {
+  ...plexLatinFontSources,
+  ...plexArabicFontSources,
+  ...plexHebrewFontSources,
+};
+
+const latinWeightToFamily: Record<FontWeightToken, PlexLatinFamily> = {
+  regular: PLEX_LATIN.regular,
+  medium: PLEX_LATIN.medium,
+  semibold: PLEX_LATIN.semibold,
+};
+
+const arabicWeightToFamily: Record<FontWeightToken, PlexArabicFamily> = {
+  regular: PLEX_ARABIC.regular,
+  medium: PLEX_ARABIC.medium,
+  semibold: PLEX_ARABIC.semibold,
+};
+
+const hebrewWeightToFamily: Record<FontWeightToken, PlexHebrewFamily> = {
+  regular: PLEX_HEBREW.regular,
+  medium: PLEX_HEBREW.medium,
+  semibold: PLEX_HEBREW.semibold,
 };
 
 function weightFromVariant(variant?: TypographyVariantName): FontWeightToken {
@@ -77,19 +103,10 @@ function weightFromVariant(variant?: TypographyVariantName): FontWeightToken {
   }
 }
 
-/** KO Sans SemiBold reads heavy at phone sizes — step Arabic weights down one. */
-function softenArabicWeight(weight: FontWeightToken): FontWeightToken {
-  if (weight === 'semibold') return 'medium';
-  if (weight === 'medium') return 'regular';
-  return 'regular';
-}
-
 /**
  * Resolve the app typeface for the active locale.
- * Arabic → KO Sans (weights softened). English / Hebrew → Rubik (1:1 weights).
- *
- * UI uses Regular / Medium / SemiBold — KO Sans Thin is print-sample only; at
- * phone sizes it reads as disconnected strokes.
+ * Arabic → Plex Arabic. Hebrew → Plex Hebrew. English → Plex Sans.
+ * Weights map 1:1. Each family carries Latin, so mixed SKUs never tofu.
  */
 export function resolveAppFontFamily(
   locale: string,
@@ -97,10 +114,9 @@ export function resolveAppFontFamily(
 ): AppFontFamily {
   const { weight, variant } = opts;
   const token = weight ?? weightFromVariant(variant);
-  if (locale === 'ar') {
-    return koSansWeightToFamily[softenArabicWeight(token)];
-  }
-  return rubikWeightToFamily[token];
+  if (locale === 'ar') return arabicWeightToFamily[token];
+  if (locale === 'he') return hebrewWeightToFamily[token];
+  return latinWeightToFamily[token];
 }
 
 /**
@@ -144,17 +160,37 @@ export function weightTokenFromFontWeight(
 
 function weightTokenFromFamily(family: string | undefined): FontWeightToken | undefined {
   if (!family) return undefined;
-  if (family === KO_SANS.semibold || family === RUBIK.semibold) return 'semibold';
-  if (family === KO_SANS.medium || family === RUBIK.medium) return 'medium';
-  if (family === KO_SANS.regular || family === RUBIK.regular) return 'regular';
+  if (
+    family === PLEX_LATIN.semibold ||
+    family === PLEX_ARABIC.semibold ||
+    family === PLEX_HEBREW.semibold
+  ) {
+    return 'semibold';
+  }
+  if (
+    family === PLEX_LATIN.medium ||
+    family === PLEX_ARABIC.medium ||
+    family === PLEX_HEBREW.medium
+  ) {
+    return 'medium';
+  }
+  if (
+    family === PLEX_LATIN.regular ||
+    family === PLEX_ARABIC.regular ||
+    family === PLEX_HEBREW.regular
+  ) {
+    return 'regular';
+  }
   return undefined;
 }
 
 /**
  * Flatten a text style onto the locale typeface and drop `fontWeight`.
  * iOS/Android fall back to the system UI face when a custom `fontFamily`
- * file is combined with `fontWeight` — that is why some labels still
- * looked like San Francisco / Roboto after Rubik loaded.
+ * file is combined with `fontWeight`.
+ *
+ * `face: 'latin'` is accepted for call-site compatibility and is a no-op —
+ * every Plex family already covers Latin punctuation.
  */
 export function applyAppTypeface(
   locale: string,
@@ -162,7 +198,6 @@ export function applyAppTypeface(
   opts: {
     weight?: FontWeightToken;
     variant?: TypographyVariantName;
-    /** Latin punctuation (e.g. `/`) must use Rubik — KO Sans omits or hides it. */
     face?: 'app' | 'latin';
   } = {},
 ): TextStyle {
@@ -177,17 +212,16 @@ export function applyAppTypeface(
     'regular';
 
   const { fontWeight: _fontWeight, fontFamily: _fontFamily, ...rest } = flat;
-  const typeLocale = opts.face === 'latin' ? 'en' : locale;
+  void opts.face;
   return {
     ...rest,
-    ...resolveAppFontStyle(typeLocale, { weight: token }),
+    ...resolveAppFontStyle(locale, { weight: token }),
   };
 }
 
 /**
- * Final style pass for Arabic `Text`: ensure the native line box is tall
- * enough that KO Sans (and Latin numerals rendered with it) are not clipped.
- * Apply after variant + caller styles are composed.
+ * Final style pass for Arabic `Text`: only lift extremely tight line boxes
+ * (hero money). Plex Arabic does not need KO Sans's 1.5 ratio or extra pad.
  */
 export function resolveArabicTextMetrics(
   locale: string,
@@ -199,23 +233,10 @@ export function resolveArabicTextMetrics(
   const fontSize = typeof flat?.fontSize === 'number' ? flat.fontSize : 17;
   const lineHeight = typeof flat?.lineHeight === 'number' ? flat.lineHeight : undefined;
   const minLineHeight = Math.ceil(fontSize * AR_MIN_LINE_RATIO);
-  const minPadTop = Math.max(2, Math.round(fontSize * 0.08));
-
-  const existingPadTop =
-    typeof flat?.paddingTop === 'number'
-      ? flat.paddingTop
-      : typeof flat?.paddingVertical === 'number'
-        ? flat.paddingVertical
-        : typeof flat?.padding === 'number'
-          ? flat.padding
-          : 0;
 
   const next: TextStyle = {};
-  if (lineHeight == null || lineHeight < minLineHeight) {
+  if (lineHeight != null && lineHeight < minLineHeight) {
     next.lineHeight = minLineHeight;
-  }
-  if (existingPadTop < minPadTop) {
-    next.paddingTop = minPadTop;
   }
   if (Platform.OS === 'android') {
     next.includeFontPadding = true;

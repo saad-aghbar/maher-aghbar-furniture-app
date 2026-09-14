@@ -2,11 +2,12 @@ import type { Locale } from '@maher/types';
 import { parseYmd, todayYmd, toYmd } from '@/components/calendar/calendarMath';
 import { dateRangeParts, formatCurrency, formatNumber } from '@/i18n/format';
 
-export type ReportsPeriod = 'today' | 'week' | 'month';
+export type ReportsPeriod = 'today' | 'week' | 'month' | 'custom';
 export type ReportsCategory =
   | 'money'
   | 'orders'
   | 'products'
+  | 'inventory'
   | 'returns'
   | 'coverage'
   | 'dashboard'

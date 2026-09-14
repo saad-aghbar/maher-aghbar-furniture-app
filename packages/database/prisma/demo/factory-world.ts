@@ -21,6 +21,7 @@ import { seedPiece8FactoryFloorExamples } from './piece8-factory-floor';
 import { seedPiece9QualityPackagingExamples } from './piece9-quality-packaging';
 import { seedPiece10FinishedOutboundExamples } from './piece10-finished-outbound';
 import { seedPiece11ExceptionsReturnsExamples } from './piece11-exceptions-returns';
+import { seedCostPerformanceWorld } from './cost-performance-uat';
 import { seedNileDealerReturns } from './seed-nile-returns';
 import { seedUniqueFloorWorkerExamples } from './unique-floor-workers';
 import { seedPiece12ManagementDashboardExamples } from './piece12-management-dashboard';
@@ -29,6 +30,7 @@ import { seedDemoExtras } from './extras';
 import { wipeOperationalData } from './wipe';
 import { ensureQuotationAcceptedUniqueIndex } from './quotation-accepted-index';
 import { reconcileAvailableQtyFromTransactions, ensureAllDefaultWarehouseBins, ensureAllWarehouseBinQrCodes } from '../seed/warehouse-bins';
+import { backfillNameHe } from '../seed/backfill-name-he';
 
 export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   const passwordHash = hashSync('123', 12);
@@ -192,6 +194,19 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     driverId: people.driverId,
   });
 
+  console.log('Seeding Cost & Performance ledger examples…');
+  await seedCostPerformanceWorld(prisma, {
+    adminId: people.adminId,
+    warehouseUserId: people.warehouseId,
+    inspectorId: people.inspectorId,
+    driverId: people.driverId,
+    dealers: people.dealers,
+    workers: people.workers,
+    products: catalog.products,
+    counters,
+    passwordHash,
+  });
+
   console.log('Seeding Nile dealer returns desk examples…');
   await seedNileDealerReturns(prisma);
 
@@ -232,6 +247,8 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   if (patchedBins > 0) {
     console.log(`  reconciled ${patchedBins} bin balances from ledger txs`);
   }
+
+  await backfillNameHe(prisma);
 
   await seedDemoSequences(prisma, counters);
   console.log(`Demo factory as of ${asOf.toISOString()} ready.`);

@@ -44,11 +44,6 @@ export function CreateWarehouseSheet({
   const [error, setError] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
 
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
-
   useEffect(() => {
     if (!open) return;
     setName('');
@@ -60,7 +55,7 @@ export function CreateWarehouseSheet({
 
   async function submit() {
     if (!name.trim()) {
-      setError(label('catalog.namesRequired', 'Name is required.'));
+      setError(t('catalog.namesRequired'));
       return;
     }
     setError(null);
@@ -80,7 +75,7 @@ export function CreateWarehouseSheet({
           void haptics.confirmMedium();
           showToast({
             variant: 'success',
-            message: label('mobile.inventory.warehouseCreated', 'Warehouse added'),
+            message: t('mobile.inventory.warehouseCreated'),
           });
           onCreated(row);
           onClose();
@@ -89,10 +84,7 @@ export function CreateWarehouseSheet({
           void haptics.error();
           const msg = isApiError(err)
             ? toastMessageForError(err)
-            : label(
-                'mobile.inventory.warehouseCreateFailed',
-                'Couldn’t add warehouse',
-              );
+            : t('mobile.inventory.warehouseCreateFailed');
           setError(msg);
           showToast({ variant: 'error', message: msg });
         },
@@ -108,16 +100,13 @@ export function CreateWarehouseSheet({
       <BottomSheet
         open={open}
         onClose={onClose}
-        title={label('mobile.inventory.newWarehouse', 'Add warehouse')}
+        title={t('mobile.inventory.newWarehouse')}
         fitContent
         overlay={overlay}
       >
         <View style={{ gap: theme.spacing.md }}>
           <AppText variant="caption" color="muted">
-            {label(
-              'mobile.inventory.newWarehouseHint',
-              'Adds a warehouse for receiving, transfers, and stock counts.',
-            )}
+            {t('mobile.inventory.newWarehouseHint')}
           </AppText>
           {error ? (
             <AppText variant="caption" color="error">
@@ -126,8 +115,8 @@ export function CreateWarehouseSheet({
           ) : null}
           <LocaleNameField value={name} onChange={setName} />
           <InventoryPickerRow
-            label={label('mobile.inventory.warehouseType', 'Warehouse type')}
-            value={label(`mobile.inventory.warehouseTypes.${type}`, type)}
+            label={t('mobile.inventory.warehouseType')}
+            value={t(`mobile.inventory.warehouseTypes.${type}`)}
             icon="business-outline"
             onPress={() => setTypeSheet(true)}
           />
@@ -141,7 +130,7 @@ export function CreateWarehouseSheet({
           >
             <AppText variant="caption">
               {isDefault ? '☑ ' : '☐ '}
-              {label('inventory.isDefault', 'Default for this type')}
+              {t('inventory.isDefault')}
             </AppText>
           </AnimatedPressable>
           <InventorySheetFooter

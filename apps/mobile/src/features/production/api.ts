@@ -9,6 +9,8 @@ export type {
   ProductionListBucket,
   ProductionOrderDetail,
   ProductionOrderListItem,
+  ProductionBasketBoard,
+  ProductionComplexityFilter,
   ProductionPriority,
   ProductionReadiness,
   ProductionReadinessReason,

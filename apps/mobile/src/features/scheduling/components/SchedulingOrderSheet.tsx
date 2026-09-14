@@ -5,7 +5,7 @@ import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { OrderCardMedia } from '@/features/sales-orders/components/OrderCardMedia';
 import type { ScheduleOrderCard } from '@/api/modules/scheduling';
 import type { ProductionTaskRow } from '@/features/production/selectProduction';
-import { formatTimeRange, useLocale } from '@/i18n';
+import { formatTimeRange, localeRow, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -38,7 +38,7 @@ export function SchedulingOrderSheet({
   tasks = [],
   onOpenTask,
 }: Props) {
-  const { t, locale, formatDate } = useLocale();
+  const { t, locale, isRTL, formatDate } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -65,7 +65,7 @@ export function SchedulingOrderSheet({
         {order ? (
           <>
             <DealerBoard>
-              <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+              <View style={{ flexDirection: localeRow(isRTL), gap: theme.spacing.md }}>
                 <OrderCardMedia imageUrl={order.imageUrl ?? null} size={72} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <AppText weight={titleWeight}>{title}</AppText>

@@ -12,6 +12,7 @@ import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { CostPressableRow } from './components/CostPressableRow';
+import { useCostFloorScrollPad } from './costFloorScroll';
 import { useCostReturnDossierQuery } from './query';
 
 const BACK_FALLBACK = '/(app)/(admin)/reports' as Href;
@@ -24,6 +25,7 @@ export function CostReturnDossierScreen({ id }: Props) {
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const query = useCostReturnDossierQuery(id);
+  const scrollPad = useCostFloorScrollPad();
   const data = query.data;
 
   const money = (value: number | null | undefined) =>
@@ -61,6 +63,12 @@ export function CostReturnDossierScreen({ id }: Props) {
         <ErrorState title={t('common.loadFailed')} onRetry={() => void query.refetch()} />
       ) : null}
 
+      <ScrollView
+        style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: scrollPad, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
       {query.isLoading && !data ? (
         <DealerBoard title={t('accounting.returnCostDossier')} titleWeight={titleWeight}>
           <ActivityIndicator color={colors.brand} />
@@ -68,10 +76,7 @@ export function CostReturnDossierScreen({ id }: Props) {
       ) : null}
 
       {data ? (
-        <ScrollView
-          contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+        <>
           <ListItemEnter index={0}>
             <DealerBoard title={data.number} titleWeight={titleWeight}>
               <View style={{ gap: theme.spacing.sm }}>
@@ -94,6 +99,9 @@ export function CostReturnDossierScreen({ id }: Props) {
                   </CostPressableRow>
                 ) : null}
                 <AppText dir="ltr">
+                  {t('accounting.originalProduction')}: {money(data.originalProductionCost)}
+                </AppText>
+                <AppText dir="ltr">
                   {t('accounting.repairCost')}: {money(data.repairCost)}
                 </AppText>
                 <AppText dir="ltr">
@@ -106,7 +114,7 @@ export function CostReturnDossierScreen({ id }: Props) {
                   {t('accounting.returnGrossCost')}: {money(data.returnGrossCost)}
                 </AppText>
                 <AppText dir="ltr">
-                  {t('accounting.recoveredValue')}: {money(data.recoveredValue)}
+                  {t('accounting.lifetimeCost')}: {money(data.lifetimeFactoryCost)}
                 </AppText>
                 <AppText dir="ltr">
                   {t('accounting.disposedValue')}: {money(data.disposedValue)}
@@ -116,6 +124,32 @@ export function CostReturnDossierScreen({ id }: Props) {
           </ListItemEnter>
 
           <ListItemEnter index={1}>
+            <DealerBoard
+              title={t('mobile.reports.recoveredValue')}
+              titleWeight={titleWeight}
+              accentColor={colors.success}
+            >
+              <View style={{ gap: theme.spacing.sm }}>
+                <AppText variant="title" weight={titleWeight} dir="ltr">
+                  {money(data.recoveredValue)}
+                </AppText>
+                <AppText variant="caption" color="muted">
+                  {t('mobile.reports.recoveredNotNetted')}
+                </AppText>
+                <AppText dir="ltr" color="muted">
+                  {t('mobile.reports.netEconomicEffect')}:{' '}
+                  {data.returnGrossCost == null || data.recoveredValue == null
+                    ? '—'
+                    : money(data.returnGrossCost - data.recoveredValue)}
+                </AppText>
+                <AppText variant="caption" color="muted">
+                  {t('mobile.reports.netEconomicEffectHint')}
+                </AppText>
+              </View>
+            </DealerBoard>
+          </ListItemEnter>
+
+          <ListItemEnter index={2}>
             <DealerBoard title={t('mobile.reports.pieces')} titleWeight={titleWeight}>
               {(data.pieces ?? []).length ? (
                 <View style={{ gap: theme.spacing.sm }}>
@@ -128,8 +162,20 @@ export function CostReturnDossierScreen({ id }: Props) {
                       <AppText weight={titleWeight}>
                         {t('mobile.reports.pieces')} {index + 1}
                       </AppText>
+                      <AppText variant="caption">
+                        {t('mobile.reports.repair')}: {money(piece.repairCost)}
+                      </AppText>
+                      <AppText variant="caption">
+                        {t('mobile.reports.replacement')}: {money(piece.replacementCost)}
+                      </AppText>
+                      <AppText variant="caption">
+                        {t('mobile.reports.recovery')}: {money(piece.recoveryCost)}
+                      </AppText>
                       <AppText variant="caption" dir="ltr">
                         {money(piece.workCost)} · {piece.workerEffortMinutes} min
+                      </AppText>
+                      <AppText variant="caption" dir="ltr">
+                        {t('mobile.reports.recoveredValue')}: {money(piece.recoveredValue)}
                       </AppText>
                     </CostPressableRow>
                   ))}
@@ -139,8 +185,9 @@ export function CostReturnDossierScreen({ id }: Props) {
               )}
             </DealerBoard>
           </ListItemEnter>
-        </ScrollView>
+        </>
       ) : null}
+      </ScrollView>
     </AppScreen>
   );
 }

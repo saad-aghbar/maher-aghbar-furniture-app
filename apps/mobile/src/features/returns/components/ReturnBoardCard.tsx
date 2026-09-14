@@ -41,15 +41,11 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
   const productUri = resolveOrderMediaUri(item.productImageUrl);
   const tone = dealerReturnRailTone(item.lifecyclePhase, item.approvalStatus);
   const accent = toneColor(tone, colors);
-  const lifecycleLabel = (() => {
-    const v = t(item.lifecycleLabelKey);
-    return v === item.lifecycleLabelKey ? item.lifecyclePhase.replace(/_/g, ' ') : v;
-  })();
+  const lifecycleLabel = t(item.lifecycleLabelKey);
   const reasonLabel = (() => {
     const fromCatalog = t(item.reasonLabelKey);
     if (fromCatalog && fromCatalog !== item.reasonLabelKey) return fromCatalog;
-    const fallback = t(`mobile.returns.reasons.${item.reason}`);
-    return fallback !== `mobile.returns.reasons.${item.reason}` ? fallback : item.reason;
+    return t(`mobile.returns.reasons.${item.reason}`);
   })();
   const nextAction = t(
     returnNextActionKey(item.lifecyclePhase, {
@@ -194,7 +190,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
             locale={locale}
           />
           <InsetCell
-            label={t('catalog.qty') === 'catalog.qty' ? 'Qty' : t('catalog.qty')}
+            label={t('catalog.qty')}
             value={item.quantityLabel}
             isRTL={isRTL}
             locale={locale}

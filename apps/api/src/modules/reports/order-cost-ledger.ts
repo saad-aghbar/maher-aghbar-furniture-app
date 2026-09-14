@@ -110,16 +110,21 @@ export function saleValueFromSubtotals(invoiceSubtotal: unknown, orderSubtotal: 
 export function marginFrom(
   saleValue: number | null,
   actualCost: number | null,
-  laborCost: number | null = null,
+  complete?: boolean,
 ) {
-  if (saleValue == null || actualCost == null) {
-    return { grossMargin: null as number | null, marginPct: null as number | null };
+  const ok = complete ?? (saleValue != null && actualCost != null);
+  if (!ok || saleValue == null || actualCost == null) {
+    return {
+      grossMargin: null as number | null,
+      marginPct: null as number | null,
+      incomplete: true,
+    };
   }
-  const labor = laborCost ?? 0;
-  const grossMargin = Number(roundMoney(saleValue - actualCost - labor));
+  const grossMargin = Number(roundMoney(saleValue - actualCost));
   return {
     grossMargin,
     marginPct: saleValue > 0 ? Number(roundMoney((grossMargin / saleValue) * 100)) : null,
+    incomplete: false,
   };
 }
 

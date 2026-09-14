@@ -1,4 +1,5 @@
 import type { GoodsReceiptInput, PurchaseOrder, PurchaseOrderLine } from '@/api/modules/purchasing';
+import { localizedName } from '@maher/i18n';
 import { locationPickerLabel, pickDefaultLocationId, warehouseBinLine } from '@/features/inventory/pickDefaultLocation';
 import { isFabricCategory } from './orderBuilder';
 
@@ -156,6 +157,7 @@ export type ReceiveWarehouseRef = {
   name?: string | null;
   nameEn?: string | null;
   nameAr?: string | null;
+  nameHe?: string | null;
   locations?: Array<{
     id: string;
     name?: string | null;
@@ -167,9 +169,11 @@ export type ReceiveWarehouseRef = {
 
 function warehouseDisplayName(warehouse: ReceiveWarehouseRef | undefined, locale: string): string {
   if (!warehouse) return '';
-  return locale === 'ar'
-    ? warehouse.nameAr || warehouse.nameEn || warehouse.name || warehouse.code || ''
-    : warehouse.nameEn || warehouse.nameAr || warehouse.name || warehouse.code || '';
+  return localizedName(
+    locale,
+    warehouse,
+    warehouse.name || warehouse.code || '',
+  );
 }
 
 export function namesForReceiveDestination(

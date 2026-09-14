@@ -97,10 +97,11 @@ const DEALERS: Array<{
   code: string;
   nameEn: string;
   nameAr: string;
+  nameHe: string;
 }> = [
-  { username: 'nile', code: 'CUS-0101', nameEn: 'Nile Interiors', nameAr: 'النيل للديكور' },
-  { username: 'oasis', code: 'CUS-0102', nameEn: 'Oasis Living', nameAr: 'واحة المعيشة' },
-  { username: 'balqis', code: 'CUS-0103', nameEn: 'Balqis Hospitality', nameAr: 'بلقيس للضيافة' },
+  { username: 'nile', code: 'CUS-0101', nameEn: 'Nile Interiors', nameAr: 'النيل للديكور', nameHe: 'נייל לעיצוב פנים' },
+  { username: 'oasis', code: 'CUS-0102', nameEn: 'Oasis Living', nameAr: 'واحة المعيشة', nameHe: 'אואזיס ליווינג' },
+  { username: 'balqis', code: 'CUS-0103', nameEn: 'Balqis Hospitality', nameAr: 'بلقيس للضيافة', nameHe: 'בלקיס לאירוח' },
 ];
 
 const WORKERS: Array<{
@@ -163,6 +164,7 @@ export async function seedPeople(
         name: d.nameEn,
         nameEn: d.nameEn,
         nameAr: d.nameAr,
+        nameHe: d.nameHe,
         customerType: CustomerType.COMPANY,
         companyName: d.nameEn,
         preferredLanguage: Locale.ar,

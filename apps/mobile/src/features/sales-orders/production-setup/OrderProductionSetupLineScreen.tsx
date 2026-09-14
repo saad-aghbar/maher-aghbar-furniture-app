@@ -32,7 +32,7 @@ import { LocaleNameField } from '@/features/catalog/components/BilingualNameFiel
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { OrderCardMedia } from '../components/OrderCardMedia';
 import { haptics, ListItemEnter } from '@/motion';
-import { useLocale } from '@/i18n';
+import { chevronForwardName, formatIdentifier, useLocale } from '@/i18n';
 import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { useTheme } from '@/theme';
 import type {
@@ -499,7 +499,7 @@ export function OrderProductionSetupLineScreen({
                   {title}
                 </AppText>
                 <AppText variant="caption" color="secondary">
-                  {query.data?.salesOrder.number}
+                  {formatIdentifier(locale, query.data?.salesOrder.number ?? '')}
                   {query.data?.salesOrder.customer
                     ? ` · ${dealerDisplayName(query.data.salesOrder.customer, locale)}`
                     : ''}
@@ -565,7 +565,7 @@ export function OrderProductionSetupLineScreen({
                     paddingVertical: 4,
                   }}
                 >
-                  <Ionicons name="chevron-forward" size={16} color={colors.warning} />
+                  <Ionicons name={chevronForwardName(isRTL)} size={16} color={colors.warning} />
                   <AppText variant="caption" style={{ flex: 1 }}>
                     {issue.message}
                   </AppText>

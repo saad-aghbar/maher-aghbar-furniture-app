@@ -116,7 +116,10 @@ export function classifyAdminOrderLifecycle(input: AdminLifecycleInput): AdminOr
   }).journeyBucket;
 }
 
-export function adminLifecycleActionHint(input: AdminLifecycleInput): string | null {
+export function adminLifecycleActionHint(
+  input: AdminLifecycleInput,
+  t?: (key: string, vars?: Record<string, string | number>) => string,
+): string | null {
   if (input.productionReadinessSummary?.actionHint) {
     return input.productionReadinessSummary.actionHint;
   }
@@ -138,25 +141,39 @@ export function adminLifecycleActionHint(input: AdminLifecycleInput): string | n
   if (journey.attention) {
     return journey.attention.reasonLabelKey;
   }
+  const label = (life: AdminOrderLifecycle) => {
+    if (t) {
+      const key = `mobile.orders.actionHint.${life}`;
+      const translated = t(key);
+      if (translated !== key) return translated;
+    }
+    return ADMIN_LIFECYCLE_LABEL_FALLBACK[life];
+  };
   switch (journey.journeyBucket) {
     case 'needs_attention':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.needs_attention;
+      return label('needs_attention');
     case 'ready_to_start':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_start;
+      return label('ready_to_start');
     case 'in_production':
-      return input.currentStageLabel
-        ? `In ${input.currentStageLabel}`
-        : ADMIN_LIFECYCLE_LABEL_FALLBACK.in_production;
+      if (input.currentStageLabel) {
+        if (t) {
+          const key = 'mobile.orders.actionHint.inStage';
+          const translated = t(key, { stage: input.currentStageLabel });
+          if (translated !== key) return translated;
+        }
+        return `In ${input.currentStageLabel}`;
+      }
+      return label('in_production');
     case 'ready_to_ship':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_ship;
+      return label('ready_to_ship');
     case 'shipped':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.shipped;
+      return label('shipped');
     case 'delivered':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.delivered;
+      return label('delivered');
     case 'rfq':
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.rfq;
+      return label('rfq');
     default:
-      return ADMIN_LIFECYCLE_LABEL_FALLBACK.preparing;
+      return label('preparing');
   }
 }
 

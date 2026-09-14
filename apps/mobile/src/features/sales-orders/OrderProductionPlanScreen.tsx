@@ -166,7 +166,15 @@ export function OrderProductionPlanScreen({
       );
     }
     if (setupLines.length) {
-      return <OrderProductionPlanItemBoard salesOrderId={salesOrderId} lines={setupLines} />;
+      return (
+        <OrderProductionPlanItemBoard
+          salesOrderId={salesOrderId}
+          lines={setupLines}
+          orderNumber={setupQuery.data?.salesOrder.number ?? order.number}
+          dealer={setupQuery.data?.salesOrder.customer ?? order.customer}
+          progress={setupQuery.data?.progress}
+        />
+      );
     }
   }
 

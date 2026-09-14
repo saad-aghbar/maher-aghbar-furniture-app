@@ -329,6 +329,7 @@
     "requiresInspectionHint": "A quality check before the next stage.",
     "requiresPhotosHint": "Workers attach photos when they finish.",
     "removeStage": "Remove stage",
+    "removeFromWorkflow": "Remove from workflow",
     "reconnectDependencies": "Reconnect dependencies",
     "invalidCycle": "Those connections would loop the workflow. A stage that comes later can’t also run before an earlier one — clear Runs after or Leads into and try again.",
     "unreachableStage": "Some stages are unreachable — connect them to the main path.",
@@ -737,5 +738,22 @@
   "usageFromWarehouse": "From {name}",
   "usageToWarehouse": "To {name}",
   "materialsBoardTitle": "Materials",
-  "materialsRemaining": "{remaining} of {bom} left for other stages"
+  "materialsRemaining": "{remaining} of {bom} left for other stages",
+  "deptCodes": {
+    "MGMT": "Management",
+    "SALES": "Sales",
+    "PURCH": "Purchasing",
+    "WH": "Warehouse",
+    "PROD": "Production",
+    "CARP": "Carpentry",
+    "PAINT": "Painting",
+    "UPHOL": "Upholstery",
+    "ASM": "Assembly",
+    "QC": "Quality",
+    "PACK": "Packaging",
+    "DEL": "Delivery",
+    "ACCT": "Accounting",
+    "CUTTING": "Cutting",
+    "ASSEMBLY": "Assembly"
+  }
 }

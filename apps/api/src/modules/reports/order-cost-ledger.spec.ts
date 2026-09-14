@@ -41,14 +41,11 @@ describe('order-cost-ledger', () => {
     expect(saleValueFromSubtotals(0, 0)).toBeNull();
   });
 
-  it('keeps margin null when cost is missing', () => {
-    expect(marginFrom(100, null)).toEqual({ grossMargin: null, marginPct: null });
-    expect(marginFrom(200, 50)).toEqual({ grossMargin: 150, marginPct: 75 });
-  });
-
-  it('subtracts labor from margin only when a rate produced a number', () => {
-    expect(marginFrom(200, 100, 40)).toEqual({ grossMargin: 60, marginPct: 30 });
-    expect(marginFrom(200, 100, null)).toEqual({ grossMargin: 100, marginPct: 50 });
+  it('keeps margin incomplete when cost is missing or coverage is incomplete', () => {
+    expect(marginFrom(100, null)).toMatchObject({ grossMargin: null, incomplete: true });
+    expect(marginFrom(200, 50)).toMatchObject({ grossMargin: 150, marginPct: 75, incomplete: false });
+    expect(marginFrom(200, 100, false)).toMatchObject({ grossMargin: null, incomplete: true });
+    expect(marginFrom(200, 140, true)).toMatchObject({ grossMargin: 60, marginPct: 30 });
   });
 
   it('shows average per unit instead of inventing per-piece cost', () => {

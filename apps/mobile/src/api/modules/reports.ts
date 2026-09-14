@@ -77,6 +77,8 @@ export type MgmtTile = {
   filter: string;
 };
 
+export type MgmtCopyParams = Record<string, string | number | boolean | null | undefined>;
+
 export type MgmtAttentionCard = {
   id: string;
   title: string;
@@ -85,6 +87,10 @@ export type MgmtAttentionCard = {
   priority: 'critical' | 'high' | 'normal';
   href: string;
   filter: string;
+  titleKey?: string;
+  whyKey?: string;
+  actionKey?: string;
+  whyParams?: MgmtCopyParams;
 };
 
 export type MgmtFlowPhase = {
@@ -101,12 +107,16 @@ export type MgmtBlockedItem = {
   why: string;
   href: string;
   filter: string;
+  whyKey?: string;
+  whyParams?: MgmtCopyParams;
 };
 
 export type MgmtEvent = {
   at: string;
   label: string;
   href?: string;
+  kind?: string;
+  params?: MgmtCopyParams;
 };
 
 export type MgmtFinanceSummary = {
@@ -301,14 +311,52 @@ export async function getWorkerHome(): Promise<WorkerHomePayload> {
 export type ReportsPeriodQuery = {
   from?: string;
   to?: string;
+  dateBasis?: string;
   customerId?: string;
   productId?: string;
   variantId?: string;
   optionValueId?: string;
   status?: string;
+  q?: string;
+  complexity?: string;
+  delivered?: string;
+  hasReturn?: string;
+  hasRework?: string;
+  coverage?: string;
+  marginHealth?: string;
+  sort?: string;
+  lifecycle?: string;
+  warehouseId?: string;
+  type?: string;
   page?: number;
   pageSize?: number;
 };
+
+export function costSearchParams(query: ReportsPeriodQuery) {
+  return toSearchParams({
+    from: query.from,
+    to: query.to,
+    dateBasis: query.dateBasis,
+    customerId: query.customerId,
+    productId: query.productId,
+    variantId: query.variantId,
+    optionValueId: query.optionValueId,
+    status: query.status,
+    q: query.q,
+    complexity: query.complexity,
+    delivered: query.delivered,
+    hasReturn: query.hasReturn,
+    hasRework: query.hasRework,
+    coverage: query.coverage,
+    marginHealth: query.marginHealth,
+    sort: query.sort,
+    lifecycle: query.lifecycle,
+    warehouseId: query.warehouseId,
+    type: query.type,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+}
 
 export type DashboardReportPayload = {
   activeOrders?: number;
@@ -412,15 +460,23 @@ export type CostOrderRow = {
   number: string;
   status: string;
   productSummary: string;
+  items?: number;
+  quantity?: number;
   actualCost: number | null;
   plannedCost: number | null;
   variance: number | null;
   saleValue: number | null;
   grossMargin: number | null;
   marginPct: number | null;
+  marginIncomplete?: boolean;
   coverage: 'FINAL' | 'PARTIAL' | 'UNPRICED';
+  coveragePct?: number | null;
   labor: number | null;
   workerEffortMinutes: number;
+  hasReturn?: boolean;
+  hasRework?: boolean;
+  afterSaleCost?: number | null;
+  orderDate?: string;
   dealer?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null };
 };
 
@@ -431,10 +487,14 @@ export type CostOrderDossier = {
   dealer?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null };
   summary: {
     saleValue: number | null;
+    invoiced?: number | null;
+    collected?: number | null;
+    outstanding?: number | null;
     actualProductionCost: number | null;
     plannedCost?: number | null;
     variance?: number | null;
     grossMargin: number | null;
+    marginIncomplete?: boolean;
     coverage: string;
     averageCostPerUnit: number | null;
     labor?: number | null;
@@ -447,6 +507,7 @@ export type CostOrderDossier = {
     manufacturingComplexity?: string | null;
     imageUrl?: string | null;
     quantity: number;
+    saleValue?: number | null;
     actualCost: number | null;
     actualMaterial?: number | null;
     actualFabric?: number | null;
@@ -480,7 +541,9 @@ export type CostOrderDossier = {
       enabled: boolean;
       total: number | null;
       note: string | null;
-      byWorker?: Array<{ userId: string; minutes: number; actual: number | null }>;
+      timedMinutes?: number;
+      unpricedMinutes?: number;
+      byWorker?: Array<{ userId: string; name?: string; minutes: number; actual: number | null }>;
       byStage?: Array<{
         stageDefinitionId: string;
         stageCode: string | null;
@@ -516,11 +579,26 @@ export type CostOrderDossier = {
 export type CostProductRow = {
   productId: string;
   orderCount: number;
+  unitsProduced?: number;
   averageActualCost: number | null;
   lowestActualCost: number | null;
   highestActualCost: number | null;
+  averageSaleValue?: number | null;
+  averageMargin?: number | null;
+  averageMaterial?: number | null;
+  averageFabric?: number | null;
+  averageLabor?: number | null;
   averageEffortMinutes: number | null;
-  product: { id: string; sku: string; nameEn?: string | null; nameAr?: string | null } | null;
+  returnRate?: number | null;
+  reworkRate?: number | null;
+  product: {
+    id: string;
+    sku: string;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    imageUrl?: string | null;
+  } | null;
 };
 
 export type CostVariantRow = {
@@ -534,6 +612,7 @@ export type CostVariantRow = {
     sku?: string | null;
     nameEn?: string | null;
     nameAr?: string | null;
+    nameHe?: string | null;
     productId?: string;
   } | null;
 };
@@ -552,29 +631,43 @@ export type CostReturnRow = {
   id: string;
   number: string;
   lifecycleState?: string;
+  createdAt?: string;
   salesOrder?: { id: string; number: string } | null;
+  dealer?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null };
+  pieceCount?: number;
+  originalProductionCost?: number | null;
+  lifetimeFactoryCost?: number | null;
+  repairCost?: number | null;
+  replacementCost?: number | null;
+  recoveryCost?: number | null;
+  returnGrossCost?: number | null;
+  recoveredValue?: number | null;
+  disposedValue?: number | null;
 };
 
 export type CostCoveragePayload = {
   pricedCount?: number;
   unpricedCount?: number;
-  unpriced: Array<{ id: string; sku: string; nameEn?: string | null; category?: string | null }>;
+  coveragePct?: number | null;
+  valuationCoveragePct?: number | null;
+  ordersFullyCostedPct?: number | null;
+  orderCount?: number;
+  fullyCostedOrders?: number;
+  partiallyCostedOrders?: number;
+  materialCoveragePct?: number | null;
+  fabricCoveragePct?: number | null;
+  laborTimeCoveragePct?: number | null;
+  laborPriceCoveragePct?: number | null;
+  laborTimeKnownOrders?: number;
+  laborCostPricedOrders?: number;
+  unlinkedLines?: number;
+  unpriced: Array<{ id: string; sku: string; nameEn?: string | null; nameAr?: string | null; nameHe?: string | null; category?: string | null }>;
+  affected?: Record<string, number>;
 };
 
 export async function getCostOrders(query: ReportsPeriodQuery) {
-  const qs = toSearchParams({
-    from: query.from,
-    to: query.to,
-    customerId: query.customerId,
-    productId: query.productId,
-    variantId: query.variantId,
-    optionValueId: query.optionValueId,
-    status: query.status,
-    page: query.page ?? 1,
-    pageSize: query.pageSize ?? 50,
-  });
   return apiGet<{ data: CostOrderRow[]; meta?: { page: number; pageSize: number; totalItems: number } }>(
-    `/reports/cost/orders${qs}`,
+    `/reports/cost/orders${costSearchParams(query)}`,
   );
 }
 
@@ -583,40 +676,19 @@ export async function getCostOrderDossier(id: string) {
 }
 
 export async function getCostProducts(query: ReportsPeriodQuery) {
-  const qs = toSearchParams({
-    from: query.from,
-    to: query.to,
-    customerId: query.customerId,
-    productId: query.productId,
-    variantId: query.variantId,
-    optionValueId: query.optionValueId,
-    status: query.status,
-    page: query.page ?? 1,
-    pageSize: query.pageSize ?? 50,
-  });
   return apiGet<{
     data: CostProductRow[];
     products: CostProductRow[];
     variants?: CostVariantRow[];
     byOption?: CostOptionRow[];
     meta?: { totalItems: number };
-  }>(
-    `/reports/cost/products${qs}`,
-  );
+  }>(`/reports/cost/products${costSearchParams(query)}`);
 }
 
 export async function getCostReturns(query: ReportsPeriodQuery) {
-  const qs = toSearchParams({
-    from: query.from,
-    to: query.to,
-    customerId: query.customerId,
-    productId: query.productId,
-    variantId: query.variantId,
-    status: query.status,
-    page: query.page ?? 1,
-    pageSize: query.pageSize ?? 50,
-  });
-  return apiGet<{ data: CostReturnRow[] }>(`/reports/cost/returns${qs}`);
+  return apiGet<{ data: CostReturnRow[]; meta?: { totalItems: number } }>(
+    `/reports/cost/returns${costSearchParams(query)}`,
+  );
 }
 
 export type CostReturnDossier = {
@@ -626,6 +698,8 @@ export type CostReturnDossier = {
   lifecycleState?: string;
   salesOrder?: { id: string; number: string } | null;
   pieceCount?: number;
+  originalProductionCost?: number | null;
+  lifetimeFactoryCost?: number | null;
   repairCost?: number | null;
   replacementCost?: number | null;
   recoveryCost?: number | null;
@@ -649,10 +723,6 @@ export type CostReturnDossier = {
 
 export async function getCostReturnDossier(id: string) {
   return apiGet<CostReturnDossier>(`/reports/cost/returns/${encodeURIComponent(id)}`);
-}
-
-export async function getCostCoverage() {
-  return apiGet<CostCoveragePayload>('/reports/cost/coverage');
 }
 
 export async function postCostCoverageBackfill() {
@@ -688,4 +758,170 @@ export type CostLaborActuals = {
 export async function getCostLaborActuals(query: ReportsPeriodQuery = {}) {
   const qs = toSearchParams({ from: query.from, to: query.to });
   return apiGet<CostLaborActuals>(`/reports/cost/labor${qs}`);
+}
+
+export type CostMoneyDesk = {
+  dateBasis: string;
+  orderPerformance: {
+    orderCount: number;
+    empty: boolean;
+    saleValue: number | null;
+    actualProductionCost: number | null;
+    grossMargin: number | null;
+    marginPct: number | null;
+    marginIncomplete: boolean;
+    complete: boolean;
+    coveragePct: number | null;
+    invoiced: number | null;
+    collected: number | null;
+    outstanding: number | null;
+  };
+  costMix: {
+    materials: number | null;
+    fabric: number | null;
+    labor: number | null;
+    waste: number | null;
+    rework: number | null;
+  };
+  factoryActivity: {
+    productionCostIncurred: number | null;
+    receipts: number | null;
+    issues: number | null;
+    unusedReturns: number | null;
+    wipOutput: number | null;
+    finishedOutput: number | null;
+    scrap: number | null;
+    recovery?: number | null;
+    transfer?: number | null;
+    adjustment?: number | null;
+    workerHours: number;
+    laborCost: number | null;
+    flow?: {
+      receipt?: number | null;
+      productionIssue?: number | null;
+      productionReturn?: number | null;
+      wipOutput?: number | null;
+      finishedOutput?: number | null;
+      scrap?: number | null;
+      recovery?: number | null;
+      adjustment?: number | null;
+      transfer?: number | null;
+      other?: number | null;
+    };
+  };
+  afterSaleCost: number | null;
+  purchaseInflow: number | null;
+  inventoryValue: number | null;
+  inventoryCoveragePct?: number | null;
+  attention: {
+    negativeMargin: number;
+    partiallyCosted: number;
+    laborRateMissing: number;
+    hasReturn: number;
+  };
+};
+
+export async function getCostMoney(query: ReportsPeriodQuery) {
+  return apiGet<CostMoneyDesk>(`/reports/cost/money${costSearchParams(query)}`);
+}
+
+export async function getCostProductProfile(productId: string, query: ReportsPeriodQuery) {
+  return apiGet<{
+    product: CostProductRow['product'] & { manufacturingCost?: number | null };
+    plannedBaseline: number | null;
+    data: CostProductRow[];
+    variants?: CostVariantRow[];
+  }>(`/reports/cost/products/${encodeURIComponent(productId)}${costSearchParams(query)}`);
+}
+
+export async function getCostVariantProfile(
+  productId: string,
+  variantId: string,
+  query: ReportsPeriodQuery,
+) {
+  return apiGet<{
+    variant: CostVariantRow['variant'] & { manufacturingCost?: number | null };
+    plannedBaseline: number | null;
+    data: CostProductRow[];
+    variants?: CostVariantRow[];
+  }>(
+    `/reports/cost/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}${costSearchParams(query)}`,
+  );
+}
+
+export async function getCostCustomWork(query: ReportsPeriodQuery) {
+  return apiGet<{ data: CostOrderRow[] }>(`/reports/cost/custom-work${costSearchParams(query)}`);
+}
+
+export type CostInventorySummary = {
+  label: string;
+  total: number | null;
+  coveragePct: number | null;
+  byClass: Record<string, { value: number | null; coveragePct: number | null }>;
+  rawGroups: Array<{ group: string; value: number | null; coveragePct: number | null }>;
+};
+
+export async function getCostInventorySummary() {
+  return apiGet<CostInventorySummary>('/reports/cost/inventory/summary');
+}
+
+export async function getCostInventoryFlow(query: ReportsPeriodQuery) {
+  return apiGet<CostMoneyDesk['factoryActivity']>(`/reports/cost/inventory/flow${costSearchParams(query)}`);
+}
+
+export type CostInventoryItem = {
+  id: string;
+  sku: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  itemClass?: string;
+  group?: string;
+  qty: number;
+  value: number | null;
+  coveragePct: number | null;
+};
+
+export async function getCostInventoryItems(query: ReportsPeriodQuery) {
+  return apiGet<{ data: CostInventoryItem[]; meta?: { totalItems: number } }>(
+    `/reports/cost/inventory/items${costSearchParams(query)}`,
+  );
+}
+
+export type CostInventoryItemDetail = CostInventoryItem & {
+  costBasis: number | null;
+  flow: Record<string, number | null>;
+  consumption: number | null;
+  ledger: Array<{
+    id: string;
+    number: string;
+    date: string;
+    type: string;
+    flow: string;
+    qty: number;
+    unitCost: number | null;
+    value: number | null;
+    warehouse: string | null;
+    productionOrderId?: string | null;
+    salesOrderId?: string | null;
+  }>;
+};
+
+export async function getCostInventoryItem(id: string, query: ReportsPeriodQuery) {
+  return apiGet<CostInventoryItemDetail>(
+    `/reports/cost/inventory/items/${encodeURIComponent(id)}${costSearchParams(query)}`,
+  );
+}
+
+export async function getCostCoverage(query: ReportsPeriodQuery = {}) {
+  return apiGet<CostCoveragePayload>(`/reports/cost/coverage${costSearchParams(query)}`);
+}
+
+export async function getCostCoverageIssues(query: ReportsPeriodQuery) {
+  return apiGet<{
+    type: string;
+    total: number;
+    data: Array<Record<string, unknown>>;
+    meta?: { totalItems: number };
+  }>(`/reports/cost/coverage/issues${costSearchParams(query)}`);
 }

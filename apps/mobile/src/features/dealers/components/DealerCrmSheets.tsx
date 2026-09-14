@@ -272,35 +272,20 @@ export function AddAddressSheet({
     }
   };
 
-  const defaultsHint = (() => {
-    const v = t('customers.addressDefaultsHint');
-    return v === 'customers.addressDefaultsHint'
-      ? 'Only one address can be default delivery, and only one can be default billing. The same address may have both. Options already used by another address are locked.'
-      : v;
-  })();
+  const defaultsHint = t('customers.addressDefaultsHint');
 
   const deliveryLockedHint =
     deliveryLocked && currentDelivery
-      ? (() => {
-          const v = t('customers.defaultDeliveryLocked', {
+      ? t('customers.defaultDeliveryLocked', {
             label: currentDelivery.label || '—',
-          });
-          return v === 'customers.defaultDeliveryLocked'
-            ? `Default delivery is on “${currentDelivery.label || '—'}” — unlock it there first.`
-            : v;
-        })()
+          })
       : null;
 
   const billingLockedHint =
     billingLocked && currentBilling
-      ? (() => {
-          const v = t('customers.defaultBillingLocked', {
+      ? t('customers.defaultBillingLocked', {
             label: currentBilling.label || '—',
-          });
-          return v === 'customers.defaultBillingLocked'
-            ? `Default billing is on “${currentBilling.label || '—'}” — unlock it there first.`
-            : v;
-        })()
+          })
       : null;
 
   return (
@@ -356,10 +341,7 @@ export function AddAddressSheet({
 
             <DealerFormSection
               icon="flag-outline"
-              label={(() => {
-                const v = t('customers.addressDefaults');
-                return v === 'customers.addressDefaults' ? 'Defaults' : v;
-              })()}
+              label={t('customers.addressDefaults')}
               titleWeight={titleWeight}
             >
               <AppText
@@ -533,8 +515,7 @@ export function EditAddressSheet({
       const updatedMsg = t('customers.addressUpdated');
       showToast({
         variant: 'success',
-        message:
-          updatedMsg === 'customers.addressUpdated' ? 'Address updated.' : updatedMsg,
+        message: updatedMsg,
       });
       reset();
     } catch (err) {
@@ -552,8 +533,7 @@ export function EditAddressSheet({
       const deletedMsg = t('customers.addressDeleted');
       showToast({
         variant: 'success',
-        message:
-          deletedMsg === 'customers.addressDeleted' ? 'Address deleted.' : deletedMsg,
+        message: deletedMsg,
       });
       reset();
     } catch (err) {
@@ -562,52 +542,26 @@ export function EditAddressSheet({
     }
   };
 
-  const editTitle = (() => {
-    const v = t('customers.editAddress');
-    return v === 'customers.editAddress' ? 'Edit address' : v;
-  })();
+  const editTitle = t('customers.editAddress');
 
-  const deleteLabel = (() => {
-    const v = t('customers.deleteAddress');
-    return v === 'customers.deleteAddress' ? 'Delete address' : v;
-  })();
+  const deleteLabel = t('customers.deleteAddress');
 
-  const deleteConfirmMsg = (() => {
-    const v = t('customers.deleteAddressConfirm');
-    return v === 'customers.deleteAddressConfirm'
-      ? 'Remove this address from the dealer?'
-      : v;
-  })();
+  const deleteConfirmMsg = t('customers.deleteAddressConfirm');
 
-  const defaultsHint = (() => {
-    const v = t('customers.addressDefaultsHint');
-    return v === 'customers.addressDefaultsHint'
-      ? 'Only one address can be default delivery, and only one can be default billing. The same address may have both. Options already used by another address are locked.'
-      : v;
-  })();
+  const defaultsHint = t('customers.addressDefaultsHint');
 
   const deliveryLockedHint =
     deliveryLocked && currentDelivery
-      ? (() => {
-          const v = t('customers.defaultDeliveryLocked', {
+      ? t('customers.defaultDeliveryLocked', {
             label: currentDelivery.label || '—',
-          });
-          return v === 'customers.defaultDeliveryLocked'
-            ? `Default delivery is on “${currentDelivery.label || '—'}” — unlock it there first.`
-            : v;
-        })()
+          })
       : null;
 
   const billingLockedHint =
     billingLocked && currentBilling
-      ? (() => {
-          const v = t('customers.defaultBillingLocked', {
+      ? t('customers.defaultBillingLocked', {
             label: currentBilling.label || '—',
-          });
-          return v === 'customers.defaultBillingLocked'
-            ? `Default billing is on “${currentBilling.label || '—'}” — unlock it there first.`
-            : v;
-        })()
+          })
       : null;
 
   return (
@@ -658,10 +612,7 @@ export function EditAddressSheet({
 
             <DealerFormSection
               icon="flag-outline"
-              label={(() => {
-                const v = t('customers.addressDefaults');
-                return v === 'customers.addressDefaults' ? 'Defaults' : v;
-              })()}
+              label={t('customers.addressDefaults')}
               titleWeight={titleWeight}
             >
               <AppText
@@ -923,10 +874,7 @@ export function ViewNoteSheet({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const title =
     kind === 'profile' ? t('customers.profileNotes') : t('customers.notes');
-  const editTitle = (() => {
-    const v = t('customers.editNote');
-    return v === 'customers.editNote' ? 'Edit note' : v;
-  })();
+  const editTitle = t('customers.editNote');
 
   const updateNote = useUpdateDealerNoteMutation(customerId);
   const updateDealer = useUpdateDealerMutation(customerId);
@@ -988,7 +936,7 @@ export function ViewNoteSheet({
       const updatedMsg = t('customers.noteUpdated');
       showToast({
         variant: 'success',
-        message: updatedMsg === 'customers.noteUpdated' ? 'Note updated.' : updatedMsg,
+        message: updatedMsg,
       });
       setDisplayBody(next);
       setDraft(next);

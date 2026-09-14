@@ -8,6 +8,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useTheme } from '@/theme';
+import { useLocale } from '@/i18n';
 import { durations, easingBezier, withMotionDuration } from './presets';
 import { useReducedMotion } from './useReducedMotion';
 
@@ -75,6 +76,7 @@ export function BottomSheetTransition({
 }: Props) {
   const reduce = useReducedMotion();
   const { colors } = useTheme();
+  const { t } = useLocale();
   const p = useSharedValue(progress);
   const fallbackDragY = useSharedValue(0);
   const fallbackDragging = useSharedValue(0);
@@ -143,7 +145,7 @@ export function BottomSheetTransition({
       >
         <AnimatedPressable
           accessibilityRole="button"
-          accessibilityLabel="Dismiss"
+          accessibilityLabel={t('common.dismiss')}
           pointerEvents={progress >= 1 ? 'none' : 'auto'}
           onPress={onBackdropPress}
           style={[

@@ -261,6 +261,7 @@ export async function seedPiece10FinishedOutboundExamples(
         code: 'FIN-P10',
         nameEn: 'Finished Goods — Piece 10 Alt',
         nameAr: 'منتجات جاهزة — قطعة 10',
+        nameHe: 'מוצרים מוגמרים — חלופי',
         type: 'FINISHED_GOODS',
         isActive: true,
         isDefault: false,

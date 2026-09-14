@@ -11,17 +11,25 @@ export {
 export type { BrandIntroMode, BrandIntroPhase } from './brandIntroMotion';
 export { typography } from './typography';
 export {
-  KO_SANS,
-  RUBIK,
-  koSansFontSources,
-  rubikFontSources,
+  PLEX_ARABIC,
+  PLEX_HEBREW,
+  PLEX_LATIN,
+  plexArabicFontSources,
+  plexFontSources,
+  plexHebrewFontSources,
+  plexLatinFontSources,
   applyAppTypeface,
   resolveAppFontFamily,
   resolveAppFontStyle,
   resolveArabicTextMetrics,
   weightTokenFromFontWeight,
 } from './fonts';
-export type { AppFontFamily, KoSansFamily, RubikFamily } from './fonts';
+export type {
+  AppFontFamily,
+  PlexArabicFamily,
+  PlexHebrewFamily,
+  PlexLatinFamily,
+} from './fonts';
 export { spacing } from './spacing';
 export { radius } from './radius';
 export { createElevation } from './elevation';

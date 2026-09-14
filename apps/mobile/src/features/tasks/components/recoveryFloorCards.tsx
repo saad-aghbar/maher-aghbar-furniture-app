@@ -11,7 +11,7 @@ import {
   locationsForWarehouse,
   WarehouseBinBoard,
 } from '@/features/inventory/components/WarehouseBinBoard';
-import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
+import { warehouseDisplayName as warehouseDeskName } from '@/features/inventory/warehouseDesk';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -48,9 +48,7 @@ export function emptyDestGroup(): RecoveryDestGroup {
 }
 
 export function warehouseDisplayName(warehouse: Warehouse, locale: string) {
-  return locale.startsWith('ar')
-    ? warehouse.nameAr || warehouse.nameEn || warehouse.code
-    : warehouse.nameEn || warehouse.nameAr || warehouse.code;
+  return warehouseDeskName(warehouse, locale);
 }
 
 export function RecoveryPlusTrigger({

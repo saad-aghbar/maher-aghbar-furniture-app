@@ -1,12 +1,16 @@
 import type {
   AssignableWorker,
+  ProductionBasketBoard,
   ProductionOrderDetail,
   ProductionOrderListItem,
   ProductionTask,
 } from './api';
+import type { ProductionHubOrderHrefInput } from './productionHubOrderHref';
 import type { Locale } from '@maher/types';
 import { localizedName } from '@maher/i18n';
-import { formatDate } from '@/i18n/format';
+import { formatDate, formatPercent, isolateLtr } from '@/i18n/format';
+import { translate } from '@/i18n/translate';
+import { complexityBadgeKey } from '@/features/sales-orders/orderManufacturingKind';
 
 function asLocale(locale: string): Locale {
   return locale === 'ar' || locale === 'he' || locale === 'en' ? locale : 'en';
@@ -271,7 +275,10 @@ function taskDisplayName(task: ProductionTask, locale: string): string {
   return task.name;
 }
 
-function humanizeDeptCode(code: string): string {
+function humanizeDeptCode(locale: string, code: string): string {
+  const key = `production.deptCodes.${code.trim().toUpperCase()}`;
+  const translated = translate(asLocale(locale), key);
+  if (translated !== key) return translated;
   return code
     .trim()
     .split(/[_-\s]+/)
@@ -280,9 +287,9 @@ function humanizeDeptCode(code: string): string {
     .join(' ');
 }
 
-function departmentLabel(code?: string | null): string | null {
+function departmentLabel(locale: string, code?: string | null): string | null {
   if (!code?.trim()) return null;
-  return humanizeDeptCode(code);
+  return humanizeDeptCode(locale, code);
 }
 
 /** Prefer localized department name from a worker in that dept; else humanize the code. */
@@ -294,9 +301,9 @@ export function resolveDepartmentLabel(
   if (!code?.trim()) return null;
   const fromWorker = workers.find((w) => w.department?.code === code)?.department;
   if (fromWorker) {
-    return localizedName(locale, fromWorker, humanizeDeptCode(code));
+    return localizedName(locale, fromWorker, humanizeDeptCode(locale, code));
   }
-  return humanizeDeptCode(code);
+  return humanizeDeptCode(locale, code);
 }
 
 /** Prefer workers in the stage department; if none match, keep the full list (skill-filtered by API). */
@@ -349,7 +356,7 @@ export function selectProductionDetail(
       notes: task.notes ?? '',
       assigneeId: task.assignedEmployeeId ?? task.assignedEmployee?.id ?? null,
       assigneeName: assignee || null,
-      departmentLabel: departmentLabel(task.stageDefinition?.responsibleDepartment),
+      departmentLabel: departmentLabel(locale, task.stageDefinition?.responsibleDepartment),
       responsibleDepartment: task.stageDefinition?.responsibleDepartment ?? null,
       canAssign: taskCanAssign(task),
       canHold: task.status === 'IN_PROGRESS',
@@ -392,5 +399,237 @@ export function selectProductionDetail(
     assignedWorkerCount: tasks.filter((task) => Boolean(task.assigneeId || task.assigneeName))
       .length,
     taskCount: tasks.length,
+  };
+}
+
+export type ProductionBasketItemFact = {
+  kind: 'stage' | 'planned' | 'actual' | 'idle';
+  text: string;
+};
+
+export type ProductionBasketItemModel = {
+  id: string;
+  title: string;
+  imageUrl: string | null;
+  complexity: 'standard' | 'modified' | 'custom';
+  status: string;
+  progressPercent: number;
+  isLate: boolean;
+  blocked: boolean;
+  matched: boolean;
+  fact: ProductionBasketItemFact;
+  href: ProductionHubOrderHrefInput;
+  showStages: false;
+};
+
+export type ProductionBasketBoardModel = {
+  id: string;
+  salesOrderId: string | null;
+  number: string;
+  dealerName: string;
+  status: string;
+  isLate: boolean;
+  blocked: boolean;
+  readinessReason: string | null;
+  deliveryLabel: string | null;
+  origin: ProductionOriginModel | null;
+  progressPercent: number;
+  doneCount: number;
+  itemCount: number;
+  items: ProductionBasketItemModel[];
+  href: ProductionHubOrderHrefInput;
+  showStages: false;
+};
+
+function formatClock(iso: string | null | undefined, locale: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString(locale === 'ar' ? 'ar' : locale === 'he' ? 'he' : 'en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function dayLensStageName(
+  row: {
+    stageNameEn?: string | null;
+    stageNameAr?: string | null;
+    stageNameHe?: string | null;
+    stage?: string | null;
+  },
+  locale: string,
+): string | null {
+  const named =
+    locale === 'ar'
+      ? row.stageNameAr || row.stageNameEn || row.stage
+      : locale === 'he'
+        ? row.stageNameHe || row.stageNameEn || row.stage
+        : row.stageNameEn || row.stage;
+  const trimmed = named?.trim() || '';
+  if (!trimmed || /^[A-Z][A-Z0-9_]{2,}$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function eventKindLabel(kind: string, t?: (key: string) => string): string {
+  if (!t) return kind;
+  const key = `mobile.production.dayLens.event.${kind}`;
+  const label = t(key);
+  return label === key ? t('mobile.production.dayLens.event.unknown') : label;
+}
+
+export function selectProductionBasketItemFact(
+  item: ProductionOrderListItem,
+  locale: string,
+  opts?: { dateScope?: 'day' | 'all'; t?: (key: string) => string },
+): ProductionBasketItemFact {
+  const dateScope = opts?.dateScope ?? 'all';
+  if (dateScope === 'day') {
+    const lens = item.dayLens;
+    if (lens?.mode === 'planned') {
+      const task = [...(lens.plannedTasks ?? [])].sort((a, b) => {
+        const as = a.plannedStart ? new Date(a.plannedStart).getTime() : 0;
+        const bs = b.plannedStart ? new Date(b.plannedStart).getTime() : 0;
+        return as - bs;
+      })[0];
+      if (task) {
+        const stage =
+          locale === 'ar'
+            ? task.stageNameAr || task.stageNameEn
+            : locale === 'he'
+              ? task.stageNameHe || task.stageNameEn
+              : task.stageNameEn;
+        const start = formatClock(task.plannedStart, locale);
+        const end = formatClock(task.plannedCompletion, locale);
+        const window = start && end ? isolateLtr(`${start}–${end}`) : start || end;
+        const text = [stage, task.workerName, window].filter(Boolean).join(' · ');
+        return { kind: 'planned', text: text || '—' };
+      }
+    }
+    if (lens?.mode === 'actual') {
+      const ev = [...(lens.events ?? [])].sort((a, b) => {
+        const at = a.at ? new Date(a.at).getTime() : 0;
+        const bt = b.at ? new Date(b.at).getTime() : 0;
+        return at - bt;
+      })[0];
+      if (ev) {
+        const stage = dayLensStageName(ev, locale);
+        const text = [eventKindLabel(ev.kind, opts?.t), stage].filter(Boolean).join(' · ');
+        return { kind: 'actual', text: text || '—' };
+      }
+    }
+    return { kind: 'idle', text: '—' };
+  }
+
+  const pct = Math.max(0, Math.min(100, Math.round(Number(item.progressPercent ?? 0))));
+  const stage = productionStageLabel(item, locale);
+  const text = stage
+    ? `${stage} · ${formatPercent(asLocale(locale), pct)}`
+    : formatPercent(asLocale(locale), pct);
+  return { kind: 'stage', text };
+}
+
+function hrefFromItem(item: ProductionOrderListItem): ProductionHubOrderHrefInput {
+  return {
+    id: item.id,
+    salesOrderId: item.salesOrder?.id ?? item.salesOrderId ?? null,
+    releasedToFactoryAt: item.releasedToFactoryAt ?? null,
+    originType: item.originType,
+  };
+}
+
+function rollupBoardStatus(items: ProductionOrderListItem[]): string {
+  if (items.length === 0) return 'PLANNED';
+  const blocked = items.find(
+    (item) =>
+      item.readiness?.boardBucket === 'blocked' ||
+      item.status === 'BLOCKED' ||
+      item.status === 'ON_HOLD',
+  );
+  if (blocked) return blocked.status;
+  if (items.every((item) => item.status === 'COMPLETED')) return 'COMPLETED';
+  if (items.some((item) => item.status === 'IN_PROGRESS')) return 'IN_PROGRESS';
+  return items[0]?.status ?? 'PLANNED';
+}
+
+function itemDone(item: ProductionOrderListItem): boolean {
+  if (item.status === 'COMPLETED') return true;
+  return Math.round(Number(item.progressPercent ?? 0)) >= 100;
+}
+
+export function selectProductionBasketItem(
+  item: ProductionOrderListItem,
+  locale: string,
+  opts?: { dateScope?: 'day' | 'all'; t?: (key: string) => string },
+): ProductionBasketItemModel {
+  const card = selectProductionCard(item, locale);
+  return {
+    id: item.id,
+    title: card.title,
+    imageUrl: card.imageUrl,
+    complexity: complexityBadgeKey(
+      item.manufacturingComplexity ?? item.salesOrderLine?.manufacturingComplexity,
+    ),
+    status: item.status,
+    progressPercent: card.progressPercent,
+    isLate: card.isLate,
+    blocked: card.boardBucket === 'blocked',
+    matched: item.matched !== false,
+    fact: selectProductionBasketItemFact(item, locale, opts),
+    href: hrefFromItem(item),
+    showStages: false,
+  };
+}
+
+export function selectProductionBasketBoard(
+  board: ProductionBasketBoard,
+  locale: string,
+  opts?: { dateScope?: 'day' | 'all'; t?: (key: string) => string },
+): ProductionBasketBoardModel {
+  const items = board.items ?? [];
+  const mapped = items.map((item) => selectProductionBasketItem(item, locale, opts));
+  const highlightMatches = mapped.some((item) => !item.matched);
+  const itemsForBoard = highlightMatches
+    ? mapped
+    : mapped.map((item) => ({ ...item, matched: false }));
+  const first = items[0];
+  const card = first ? selectProductionCard(first, locale) : null;
+  const progressValues = mapped.map((item) => item.progressPercent);
+  const progressPercent =
+    progressValues.length === 0
+      ? 0
+      : Math.round(
+          progressValues.reduce((sum, n) => sum + n, 0) / progressValues.length,
+        );
+  const deliveryMs = items
+    .map((item) =>
+      item.requiredDeliveryDate ? new Date(item.requiredDeliveryDate).getTime() : NaN,
+    )
+    .filter((n) => Number.isFinite(n));
+  const earliestDelivery = deliveryMs.length
+    ? new Date(Math.min(...deliveryMs)).toISOString()
+    : null;
+  const blockedItem = mapped.find((item) => item.blocked);
+  const firstReason = items.find((item) => item.readiness?.reasons?.[0])?.readiness?.reasons?.[0];
+
+  return {
+    id: board.id,
+    salesOrderId: board.salesOrderId ?? first?.salesOrder?.id ?? null,
+    number: first?.salesOrder?.number ?? first?.number ?? board.id,
+    dealerName: card?.dealerName ?? '—',
+    status: rollupBoardStatus(items),
+    isLate: mapped.some((item) => item.isLate),
+    blocked: Boolean(blockedItem),
+    readinessReason:
+      firstReason?.message || firstReason?.stageName || firstReason?.code || null,
+    deliveryLabel: earliestDelivery ? formatDate(asLocale(locale), earliestDelivery) : null,
+    origin: first ? selectProductionOrigin(first) : null,
+    progressPercent,
+    doneCount: items.filter(itemDone).length,
+    itemCount: mapped.length,
+    items: itemsForBoard,
+    href: mapped[0]?.href ?? { id: board.id, salesOrderId: board.salesOrderId },
+    showStages: false,
   };
 }

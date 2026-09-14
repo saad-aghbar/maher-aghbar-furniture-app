@@ -17,13 +17,13 @@ type AppTextProps = TextProps & {
    * the block still sits on the reading-start edge in Arabic).
    */
   dir?: 'auto' | 'ltr' | 'rtl';
-  /** Rubik even in Arabic — needed for `/` and other Latin punctuation. */
+  /** Accepted for call-site compatibility. Plex families already cover Latin punctuation. */
   face?: 'app' | 'latin';
 };
 
 /**
  * Themed text with locale-aware alignment and the app typeface
- * (KO Sans for Arabic, Rubik for English / Hebrew).
+ * (IBM Plex Sans Arabic / Hebrew / Latin).
  * Prefer this over raw `Text` in feature UI.
  */
 export function AppText({

@@ -26,7 +26,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { CategoryPickerSheet } from '@/features/catalog/components/CategoryPickerSheet';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
-import { useLocale } from '@/i18n';
+import { isolateLtr, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { useUpsertDealerPriceMutation } from '../query';
@@ -448,7 +448,7 @@ export function AddPriceSheet({
                       paddingHorizontal: 2,
                     }}
                   >
-                    {`${section.title} · ${section.items.length}`}
+                    {`${section.title} · ${isolateLtr(String(section.items.length))}`}
                   </AppText>
 
                   <View style={{ gap: 6 }}>

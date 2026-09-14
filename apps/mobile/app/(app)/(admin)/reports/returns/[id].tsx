@@ -7,11 +7,7 @@ export default function ReturnCostDossierRoute() {
   const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
   return (
-    <PermissionGate
-      user={user}
-      require={['inventory.cost.read', 'report.inventory.read']}
-      mode="any"
-    >
+    <PermissionGate user={user} require="inventory.cost.read">
       <CostReturnDossierScreen id={String(id ?? '')} />
     </PermissionGate>
   );

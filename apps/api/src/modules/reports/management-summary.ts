@@ -17,6 +17,8 @@ export type MgmtTile = {
   filter: string;
 };
 
+export type MgmtCopyParams = Record<string, string | number | boolean | null | undefined>;
+
 export type MgmtAttentionCard = {
   id: string;
   title: string;
@@ -25,6 +27,10 @@ export type MgmtAttentionCard = {
   priority: 'critical' | 'high' | 'normal';
   href: string;
   filter: string;
+  titleKey?: string;
+  whyKey?: string;
+  actionKey?: string;
+  whyParams?: MgmtCopyParams;
 };
 
 export type MgmtFlowPhase = {
@@ -39,6 +45,8 @@ export type MgmtEvent = {
   at: string;
   label: string;
   href?: string;
+  kind?: string;
+  params?: MgmtCopyParams;
 };
 
 export type MgmtBlockedItem = {
@@ -47,6 +55,8 @@ export type MgmtBlockedItem = {
   why: string;
   href: string;
   filter: string;
+  whyKey?: string;
+  whyParams?: MgmtCopyParams;
 };
 
 export type MgmtWorkers = {
@@ -95,6 +105,10 @@ export function mgmtAttention(card: MgmtAttentionCard): MgmtAttentionCard {
     ...card,
     priority: card.priority ?? 'normal',
   };
+}
+
+export function mgmtEvent(event: MgmtEvent): MgmtEvent {
+  return event;
 }
 
 const PRIORITY_RANK: Record<MgmtAttentionCard['priority'], number> = {

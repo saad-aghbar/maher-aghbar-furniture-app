@@ -1,4 +1,6 @@
 import { localizedName } from '@maher/i18n';
+import { formatIdentifier, formatPercent } from '@/i18n/format';
+import type { Locale } from '@maher/types';
 import type {
   SalesOrderListItem,
   SalesOrderProductionReadinessSummary,
@@ -11,9 +13,45 @@ import {
   type JourneyPrimaryCta,
   type JourneyReadiness,
 } from './adminOrderJourney';
-import { resolveOrderManufacturingKind } from './orderManufacturingKind';
+import { resolveOrderManufacturingKind, complexityBadgeKey } from './orderManufacturingKind';
 
 export type OrdersListVariant = 'admin' | 'dealer';
+
+export type OrderBasketItemModel = {
+  id: string;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  imageUrl: string | null;
+  complexity: 'standard' | 'modified' | 'custom';
+  fact: string;
+  productionOrderId: string | null;
+  done: boolean;
+};
+
+/** Admin desk list card — basket rows plus journey chrome. */
+export type OrderBasketBoardOrder = {
+  id: string;
+  number: string;
+  status: string;
+  deliveryStatus?: string | null;
+  dealerName?: string | null;
+  sellerPrice?: number | null;
+  kind?: 'order' | 'rfq' | 'returnWork';
+  quantity?: string | number | null;
+  lifecycle?: AdminOrderLifecycle;
+  attention?: JourneyAttention;
+  primaryCta?: JourneyPrimaryCta;
+  journeyReadiness?: JourneyReadiness;
+  actionHint?: string | null;
+  progressPercent?: number | null;
+  progressLabel?: string | null;
+  deliveryDate?: string | null;
+  plannedStartDate?: string | null;
+  items?: OrderBasketItemModel[];
+  productionReadinessSummary?: SalesOrderProductionReadinessSummary | null;
+  journeyLogistics?: SalesOrderJourneyLogistics | null;
+};
 
 export type AdminOrderCardModel = {
   id: string;
@@ -47,6 +85,7 @@ export type AdminOrderCardModel = {
   kind?: 'order' | 'rfq' | 'returnWork';
   /** Commercial line kind: standard | modified | custom (worst of lines). */
   manufacturingKind?: 'standard' | 'modified' | 'custom';
+  items?: OrderBasketItemModel[];
   primaryProductionOrderId?: string | null;
   plannedStartDate?: string | null;
   journeyLogistics?: SalesOrderJourneyLogistics | null;
@@ -78,6 +117,59 @@ export type DealerOrderCardModel = {
   quantity?: string | number | null;
   hasReturn?: boolean;
 };
+
+export function selectOrderBasketItems(
+  item: SalesOrderListItem,
+  locale: string,
+): OrderBasketItemModel[] {
+  const lines = item.lineStrip ?? [];
+  const pos = item.productionOrders ?? [];
+  return lines.map((line, index) => {
+    const id = line.id?.trim() || `line-${index}`;
+    const linked =
+      pos.find((po) => po.salesOrderLineId && po.salesOrderLineId === line.id) ??
+      (pos.length === 1 && lines.length === 1 ? pos[0] : undefined);
+    const quantity = Number(line.quantity);
+    const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const sku = line.sku?.trim() || null;
+    const qtyFact = sku
+      ? `${formatIdentifier(locale as Locale, sku)}  × ${qty}`
+      : `× ${qty}`;
+    const pct =
+      linked?.progressPercent != null && Number.isFinite(Number(linked.progressPercent))
+        ? Math.max(0, Math.min(100, Math.round(Number(linked.progressPercent))))
+        : null;
+    const status = String(linked?.status ?? '').toUpperCase();
+    const done = status === 'COMPLETED' || pct === 100;
+    const fact = pct != null ? formatPercent(locale as Locale, pct) : qtyFact;
+    return {
+      id,
+      title: basketItemTitle(line, locale),
+      sku,
+      quantity: qty,
+      imageUrl: line.imageUrl?.trim() || null,
+      complexity: complexityBadgeKey(line.manufacturingComplexity),
+      fact,
+      productionOrderId: linked?.id?.trim() || null,
+      done,
+    };
+  });
+}
+
+function basketItemTitle(
+  line: NonNullable<SalesOrderListItem['lineStrip']>[number],
+  locale: string,
+): string {
+  const named = localizedName(
+    locale,
+    { nameEn: line.nameEn ?? '', nameAr: line.nameAr ?? '', nameHe: line.nameHe ?? '' },
+    '',
+  ).trim();
+  if (named && named !== '—') return named;
+  if (line.description?.trim()) return line.description.trim();
+  if (line.sku?.trim()) return line.sku.trim();
+  return '—';
+}
 
 function toNumber(value: number | string | null | undefined): number | null {
   if (value == null || value === '') return null;
@@ -188,6 +280,7 @@ export function toAdminOrderCard(
       (journey.attention ? journey.attention.reasonLabelKey : null),
     kind: 'order',
     manufacturingKind: resolveOrderManufacturingKind([item.manufacturingComplexity]),
+    items: selectOrderBasketItems(item, locale),
     primaryProductionOrderId:
       item.productionReadinessSummary?.primaryProductionOrderId ??
       item.productionOrders?.[0]?.id ??

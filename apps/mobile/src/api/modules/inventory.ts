@@ -28,6 +28,7 @@ export type InventoryBalance = {
     code: string;
     nameEn: string;
     nameAr: string;
+    nameHe?: string | null;
     type?: string;
   } | null;
   location?: {
@@ -110,6 +111,7 @@ export type InventoryTransaction = {
     code: string;
     nameEn: string;
     nameAr: string;
+    nameHe?: string | null;
   } | null;
 };
 
@@ -163,6 +165,7 @@ export type Warehouse = {
   code: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string | null;
   type?: string;
   isActive?: boolean;
   isDefault?: boolean;
@@ -362,6 +365,7 @@ export type WarehouseRef = {
   code: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string | null;
   type?: string;
 };
 
@@ -892,6 +896,7 @@ export type WipKitCard = {
     code: string;
     nameEn: string;
     nameAr: string;
+    nameHe?: string | null;
     type?: string;
   } | null;
   productionOrder: {

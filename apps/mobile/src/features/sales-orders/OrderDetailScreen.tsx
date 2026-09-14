@@ -34,6 +34,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { productionFloorStatusLabel } from '@/features/production/selectProduction';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -51,7 +52,7 @@ import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
-import { useLocale } from '@/i18n';
+import { formatPercent, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE, surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
@@ -978,7 +979,7 @@ export function OrderDetailScreen({
                   status: po.status,
                   details:
                     po.progressPercent != null
-                      ? `${Math.round(po.progressPercent)}%`
+                      ? formatPercent(locale, Math.round(po.progressPercent))
                       : '—',
                   onPress: () => {
                     if (vm.releasedToFactory) {
@@ -1095,10 +1096,7 @@ export function OrderDetailScreen({
                     value={vm.sellerPrice}
                     formatCurrency={formatCurrency}
                     isRTL={isRTL}
-                    footnote={(() => {
-                      const v = t('sales.autoCalculated');
-                      return v === 'sales.autoCalculated' ? 'Auto-calculated' : v;
-                    })()}
+                    footnote={t('sales.autoCalculated')}
                   />
                   <MoneyRow
                     label={t('mobile.orderDetail.productionPrice')}
@@ -1950,6 +1948,32 @@ function LineItemCard({
           ) : item.quantity != null ? (
             <AppText variant="caption">× {item.quantity}</AppText>
           ) : null}
+          {item.productionStatus ? (
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+                flexWrap: 'wrap',
+              }}
+            >
+              <StatusBadge
+                status={item.productionStatus}
+                label={
+                  productionFloorStatusLabel(
+                    item.productionStatus,
+                    t('mobile.production.inProduction'),
+                  ) ?? t(`statuses.${item.productionStatus}`)
+                }
+                dot
+              />
+              {item.productionProgressPercent != null ? (
+                <AppText variant="caption" color="secondary" dir="ltr">
+                  {`${Math.round(item.productionProgressPercent)}%`}
+                </AppText>
+              ) : null}
+            </View>
+          ) : null}
           {statusFragment ? (
             <StatusBadge
               status={lineStatusBadgeStatus(statusFragment)}
@@ -1965,7 +1989,7 @@ function LineItemCard({
           color="secondary"
           style={{
             paddingHorizontal: theme.spacing.md,
-            paddingBottom: bits.length || item.productionStatus || item.notes ? 0 : theme.spacing.md,
+            paddingBottom: bits.length || item.notes ? 0 : theme.spacing.md,
             ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
           }}
         >
@@ -1978,24 +2002,11 @@ function LineItemCard({
           color="muted"
           style={{
             paddingHorizontal: theme.spacing.md,
-            paddingBottom: item.productionStatus || item.notes ? 0 : theme.spacing.md,
-            ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
-          }}
-        >
-          {bits.join(' · ')}
-        </AppText>
-      ) : null}
-      {item.productionStatus ? (
-        <AppText
-          variant="caption"
-          color="muted"
-          style={{
-            paddingHorizontal: theme.spacing.md,
             paddingBottom: item.notes ? 0 : theme.spacing.md,
             ...(isRTL ? { paddingRight: theme.spacing.lg + 4 } : { paddingLeft: theme.spacing.lg + 4 }),
           }}
         >
-          {t(`statuses.${item.productionStatus}`)}
+          {bits.join(' · ')}
         </AppText>
       ) : null}
       {item.notes ? (

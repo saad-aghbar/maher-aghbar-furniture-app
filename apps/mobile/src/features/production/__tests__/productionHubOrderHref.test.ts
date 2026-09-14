@@ -1,4 +1,4 @@
-import { productionHubOrderHref } from '../productionHubOrderHref';
+import { productionHubBoardHref, productionHubOrderHref } from '../productionHubOrderHref';
 
 describe('productionHubOrderHref', () => {
   it('opens the sales-order plan for unreleased work with a sales order', () => {
@@ -43,5 +43,37 @@ describe('productionHubOrderHref', () => {
         originType: 'REPLACEMENT',
       }),
     ).toBe('/(app)/(admin)/production/po-rep');
+  });
+
+  it('opens the first released PO from a mixed basket', () => {
+    expect(
+      productionHubBoardHref([
+        {
+          id: 'po-wait',
+          salesOrderId: 'so-9',
+          releasedToFactoryAt: null,
+          originType: 'SALES_ORDER',
+        },
+        {
+          id: 'po-floor',
+          salesOrderId: 'so-9',
+          releasedToFactoryAt: '2026-09-01T08:00:00.000Z',
+          originType: 'SALES_ORDER',
+        },
+      ]),
+    ).toBe('/(app)/(admin)/production/po-floor');
+  });
+
+  it('opens the sales-order plan when no basket item is released', () => {
+    expect(
+      productionHubBoardHref([
+        {
+          id: 'po-a',
+          salesOrderId: 'so-9',
+          releasedToFactoryAt: null,
+          originType: 'SALES_ORDER',
+        },
+      ]),
+    ).toBe('/(app)/(admin)/orders/so-9/production-plan');
   });
 });

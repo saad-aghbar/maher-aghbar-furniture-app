@@ -11,7 +11,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
-import { localizedName } from '@maher/i18n';
+import { localizedName, statusLabel } from '@maher/i18n';
 import { listRequests } from '@/api/modules/requests';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
@@ -407,7 +407,12 @@ export function OrdersListScreen({
       imageUrl: r.imageUrl ?? null,
       progressPercent:
         r.status === 'DRAFT' ? 5 : r.status === 'SUBMITTED' ? 15 : r.status === 'QUOTED' ? 40 : 25,
-      progressLabel: r.status === 'DRAFT' ? 'Draft' : r.status === 'SUBMITTED' ? 'Submitted' : null,
+      progressLabel:
+        r.status === 'DRAFT'
+          ? statusLabel(locale, 'DRAFT')
+          : r.status === 'SUBMITTED'
+            ? statusLabel(locale, 'SUBMITTED')
+            : null,
       deliveryDate: null,
       arrivedAt: r.createdAt ?? null,
       externalOrderNumber: r.externalOrderNumber ?? null,
@@ -461,6 +466,7 @@ export function OrdersListScreen({
     q,
     deliveryMetaBySoId,
     deliveryStatusBySoId,
+    locale,
   ]);
 
   const items: SalesOrderListItem[] =

@@ -38,11 +38,6 @@ export function ProductGalleryBoard({
     : 0;
   const current = photos[safeIndex] ?? null;
 
-  const label = (key: string, fallback: string) => {
-    const v = t(key);
-    return v === key ? fallback : v;
-  };
-
   const heroStyle = {
     width: '100%' as const,
     aspectRatio,
@@ -87,7 +82,7 @@ export function ProductGalleryBoard({
             <Ionicons name="images-outline" size={26} color={colors.brand} />
           </View>
           <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
-            {label('catalog.productPhotosTapHint', 'Tap to add product photos')}
+            {t('catalog.productPhotosTapHint')}
           </AppText>
           <AppText
             variant="caption"
@@ -95,10 +90,7 @@ export function ProductGalleryBoard({
             align="center"
             style={{ lineHeight: 16 }}
           >
-            {label(
-              'catalog.productPhotosHint',
-              'Add several photos — they rotate on product cards.',
-            )}
+            {t('catalog.productPhotosHint')}
           </AppText>
         </View>
       )}
@@ -158,7 +150,7 @@ export function ProductGalleryBoard({
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
-          accessibilityLabel={label('catalog.changeProductPhoto', 'Product photos')}
+          accessibilityLabel={t('catalog.changeProductPhoto')}
           disabled={uploading}
           onPress={() => {
             void haptics.selection();
@@ -200,7 +192,7 @@ export function ProductGalleryBoard({
                 variant="button"
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                accessibilityLabel={label('catalog.productPhotoThumb', 'Photo')}
+                accessibilityLabel={t('catalog.productPhotoThumb')}
                 onPress={() => {
                   void haptics.selection();
                   onSelectIndex(i);
@@ -251,7 +243,7 @@ export function ProductGalleryBoard({
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
-          accessibilityLabel={label('catalog.addProductPhotos', 'Add more photos')}
+          accessibilityLabel={t('catalog.addProductPhotos')}
           disabled={uploading}
           onPress={() => {
             void haptics.selection();
@@ -273,7 +265,7 @@ export function ProductGalleryBoard({
         >
           <Ionicons name="add" size={22} color={colors.brand} />
           <AppText variant="caption" weight={titleWeight} color="brand" style={{ fontSize: 10 }}>
-            {label('catalog.addProductPhotos', 'Add')}
+            {t('catalog.addProductPhotos')}
           </AppText>
         </AnimatedPressable>
         </ScrollView>

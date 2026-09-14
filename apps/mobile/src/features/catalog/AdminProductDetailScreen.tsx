@@ -96,11 +96,6 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  /** Prefer i18n; fall back if Metro still has a stale @maher/i18n bundle. */
-  const label = (key: string, fallback: string) => {
-    const value = t(key);
-    return value === key ? fallback : value;
-  };
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -290,7 +285,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
       void haptics.confirmLight();
       showToast({
         variant: 'success',
-        message: label('catalog.productPhotoSaved', 'Product photos updated.'),
+        message: t('catalog.productPhotoSaved'),
       });
     } catch (err) {
       void haptics.error();
@@ -298,7 +293,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
         variant: 'error',
         message: isApiError(err)
           ? toastMessageForError(err)
-          : label('catalog.productPhotoUploadError', 'Couldn’t upload photo.'),
+          : t('catalog.productPhotoUploadError'),
       });
     } finally {
       setPhotoUploading(false);
@@ -318,7 +313,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
       void haptics.confirmLight();
       showToast({
         variant: 'success',
-        message: label('catalog.productPhotoSaved', 'Product photos updated.'),
+        message: t('catalog.productPhotoSaved'),
       });
     } catch (err) {
       void haptics.error();
@@ -326,7 +321,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
         variant: 'error',
         message: isApiError(err)
           ? toastMessageForError(err)
-          : label('catalog.productPhotoUploadError', 'Couldn’t upload photo.'),
+          : t('catalog.productPhotoUploadError'),
       });
     } finally {
       setPhotoUploading(false);
@@ -580,7 +575,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
 
         <ListItemEnter index={2}>
           <PrimaryButton
-            label={label('mobile.adminProduct.save', 'Save product')}
+            label={t('mobile.adminProduct.save')}
             loading={saveMutation.isPending}
             disabled={saveMutation.isPending}
             onPress={onSave}

@@ -24,3 +24,11 @@ export function productionHubOrderHref(item: ProductionHubOrderHrefInput): strin
   }
   return `/(app)/(admin)/production/${item.id}`;
 }
+
+/** Parent Details: plan if nothing is released, else the first released PO. */
+export function productionHubBoardHref(items: ProductionHubOrderHrefInput[]): string {
+  const released = items.find((item) => item.releasedToFactoryAt);
+  const target = released ?? items[0];
+  if (!target) return '/(app)/(admin)/production';
+  return productionHubOrderHref(target);
+}

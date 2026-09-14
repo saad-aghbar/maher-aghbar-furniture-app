@@ -19,6 +19,7 @@ import {
   parseSuggestedWindow,
   todayYmd,
 } from '../assignWindow';
+import { localizeFloorNote } from '@maher/i18n';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -1067,7 +1068,7 @@ export function ProductionTaskSheet({
               <DealerBoard title={t('mobile.adminScheduling.taskSheet.history')} titleWeight={titleWeight}>
                 {history!.slice(0, 6).map((row) => (
                   <AppText key={row.id} variant="caption" color="secondary">
-                    {`${new Date(row.createdAt).toLocaleString(locale)} · ${row.reason ?? row.kind ?? ''}`}
+                    {`${new Date(row.createdAt).toLocaleString(locale)} · ${localizeFloorNote(t, locale, row.reason ?? row.kind ?? '')}`}
                   </AppText>
                 ))}
               </DealerBoard>

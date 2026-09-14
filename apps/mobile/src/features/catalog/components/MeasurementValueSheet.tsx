@@ -16,15 +16,6 @@ export const MEASUREMENT_UNIT_PRESETS = ['cm', 'm', 'mm', 'in', 'pcs'] as const;
 
 export type MeasurementUnitPreset = (typeof MEASUREMENT_UNIT_PRESETS)[number];
 
-function labelOrFallback(
-  t: (key: string) => string,
-  key: string,
-  fallback: string,
-) {
-  const value = t(key);
-  return value === key ? fallback : value;
-}
-
 export function useUnitDraft(active: boolean, unit: string, fallback = 'cm') {
   const [draftUnit, setDraftUnit] = useState(unit || fallback);
   const [customUnit, setCustomUnit] = useState('');
@@ -78,7 +69,6 @@ export function UnitPresetChips({
 }) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
-  const label = (key: string, fallback: string) => labelOrFallback(t, key, fallback);
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
@@ -149,7 +139,7 @@ export function UnitPresetChips({
             weight="semibold"
             style={{ color: customUnitMode ? colors.brand : colors.textPrimary }}
           >
-            {label('catalog.customUnit', 'Custom')}
+            {t('catalog.customUnit')}
           </AppText>
         </Pressable>
       </View>
@@ -172,7 +162,7 @@ export function UnitPresetChips({
           <AppTextInput
             value={customUnit}
             onChangeText={onCustomUnitChange}
-            placeholder={label('catalog.customUnitPlaceholder', 'e.g. pcs')}
+            placeholder={t('catalog.customUnitPlaceholder')}
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -203,7 +193,6 @@ type UnitPanelProps = {
 export function UnitPickerPanel({ active, unit, onBack, onSelect }: UnitPanelProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const label = (key: string, fallback: string) => labelOrFallback(t, key, fallback);
   const draft = useUnitDraft(active, unit, 'pcs');
   const unitOk = draft.resolvedUnit.length > 0;
 
@@ -229,10 +218,7 @@ export function UnitPickerPanel({ active, unit, onBack, onSelect }: UnitPanelPro
             color="muted"
             style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
           >
-            {label(
-              'mobile.inventory.pickUnitHint',
-              'Pick a unit, or create a custom one.',
-            )}
+            {t('mobile.inventory.pickUnitHint')}
           </AppText>
           <SecondaryButton
             label={t('common.back')}
@@ -253,10 +239,7 @@ export function UnitPickerPanel({ active, unit, onBack, onSelect }: UnitPanelPro
           color="muted"
           style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
-          {label(
-            'mobile.inventory.pickUnitHint',
-            'Pick a unit, or create a custom one.',
-          )}
+          {t('mobile.inventory.pickUnitHint')}
         </AppText>
       )}
 
@@ -282,7 +265,7 @@ export function UnitPickerPanel({ active, unit, onBack, onSelect }: UnitPanelPro
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
-          {label('mobile.inventory.unit', 'Unit')}
+          {t('mobile.inventory.unit')}
         </AppText>
         <UnitPresetChips
           draftUnit={draft.draftUnit}
@@ -329,7 +312,6 @@ export function MeasurementValuePanel({
 }: PanelProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const label = (key: string, fallback: string) => labelOrFallback(t, key, fallback);
   const draft = useUnitDraft(active, unit, 'cm');
   const [draftValue, setDraftValue] = useState(selected);
 
@@ -370,10 +352,7 @@ export function MeasurementValuePanel({
             color="muted"
             style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
           >
-            {label(
-              'catalog.pickMeasurementValueHint',
-              'Pick a measurement type, or create one like pcs — then enter the amount.',
-            )}
+            {t('catalog.pickMeasurementValueHint')}
           </AppText>
           <SecondaryButton
             label={t('common.back')}
@@ -412,7 +391,7 @@ export function MeasurementValuePanel({
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
-          {label('catalog.measurementType', 'Measurement type')}
+          {t('catalog.measurementType')}
         </AppText>
         <UnitPresetChips
           draftUnit={draft.draftUnit}
@@ -446,7 +425,7 @@ export function MeasurementValuePanel({
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
-          {label('catalog.measurementAmount', 'Amount')}
+          {t('catalog.measurementAmount')}
         </AppText>
         <View
           style={{
@@ -459,8 +438,8 @@ export function MeasurementValuePanel({
             value={draftValue}
             onChangeText={setDraftValue}
             min={0}
-            placeholder={label('catalog.customMeasurementPlaceholder', 'e.g. 12')}
-            accessibilityLabel={label('catalog.measurementAmount', 'Amount')}
+            placeholder={t('catalog.customMeasurementPlaceholder')}
+            accessibilityLabel={t('catalog.measurementAmount')}
             containerStyle={{ flex: 1, width: undefined }}
           />
           <View
@@ -488,7 +467,7 @@ export function MeasurementValuePanel({
       </View>
 
       <PrimaryButton
-        label={label('catalog.applyMeasurementValue', 'Apply')}
+        label={t('catalog.applyMeasurementValue')}
         disabled={!canApply}
         onPress={apply}
         haptic="medium"

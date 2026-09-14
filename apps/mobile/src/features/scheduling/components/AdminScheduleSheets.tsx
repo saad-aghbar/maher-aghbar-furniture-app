@@ -16,7 +16,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { OrderCardMedia } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { isValidOptionalDate } from '@/features/requests/newOrderValidation';
-import { formatCompactHours, formatTime, formatTimeRange, useLocale } from '@/i18n';
+import { formatCompactHours, formatTime, formatTimeRange, localeRow, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
@@ -662,7 +662,7 @@ function OvertimeStepper({
   disabled?: boolean;
   onChange: (next: string) => void;
 }) {
-  const { t, locale } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const dark = colorScheme === 'dark';
   const canEarlier = canStepOvertime(value, shiftEnd, -1);
@@ -721,7 +721,7 @@ function OvertimeStepper({
       </AppText>
       <View
         style={{
-          flexDirection: 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: theme.spacing.md,

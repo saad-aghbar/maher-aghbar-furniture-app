@@ -3,7 +3,7 @@ import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { WorkerHomeNotification } from '../api';
@@ -61,7 +61,7 @@ function AlertStamp({ notification, index, isRTL, reduce, onPress }: AlertStampP
       >
         <View
           style={{
-            flexDirection: 'row',
+            flexDirection: localeRow(isRTL),
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: theme.spacing.sm,

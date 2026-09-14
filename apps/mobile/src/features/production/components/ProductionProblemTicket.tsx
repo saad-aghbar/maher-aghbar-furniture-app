@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { localizedName } from '@maher/i18n';
+import { localizedName, localizeFloorNote } from '@maher/i18n';
 import type { ProductionProblemRow } from '@/api/modules/production';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
@@ -180,7 +180,7 @@ export function ProductionProblemTicket({ row, onOpenOrder, onAnswer }: Props) {
                 textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              {row.reason}
+              {localizeFloorNote(t, locale, row.reason)}
             </AppText>
           </View>
           {stage ? (

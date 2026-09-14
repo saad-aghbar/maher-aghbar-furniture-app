@@ -43,6 +43,8 @@ describe('journeyLaneFixtures', () => {
       t,
     );
     expect(prep.ctaLabelKey).toBe('mobile.productionSetup.planTitle');
+    expect(prep.facts.some((f) => f.key === 'readiness')).toBe(false);
+    expect(JSON.stringify(prep)).not.toContain('planReadyOf');
 
     const ready = buildLaneCardPresentation(
       {

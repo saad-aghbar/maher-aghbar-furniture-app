@@ -437,6 +437,8 @@ export type UnscheduledDemandStage = {
   stageDefinitionId: string | null;
   code: string | null;
   nameEn: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
   minutes: number;
 };
 

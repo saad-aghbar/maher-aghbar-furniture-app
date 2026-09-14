@@ -4,6 +4,7 @@ import Animated from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { mgmtBlockedWhy, mgmtEventLabel } from '@maher/i18n';
 import { AnimatedPressable, CountUp, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { barFill, useMgmtNav, type LabeledTile } from './boardShared';
@@ -28,7 +29,7 @@ export function ProductionBoard({
   events,
   blockedTitle,
 }: Props) {
-  const { isRTL, formatDateTime } = useLocale();
+  const { isRTL, formatDateTime, t, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const nav = useMgmtNav();
@@ -117,7 +118,7 @@ export function ProductionBoard({
               {when}
             </AppText>
             <AppText variant="bodySecondary" style={{ flex: 1 }} numberOfLines={2}>
-              {ev.label}
+              {mgmtEventLabel(t, locale, ev)}
             </AppText>
           </View>
         );
@@ -174,7 +175,7 @@ export function ProductionBoard({
                   {b.title}
                 </AppText>
                 <AppText variant="caption" color="secondary" numberOfLines={1}>
-                  {b.why}
+                  {mgmtBlockedWhy(t, locale, b)}
                 </AppText>
               </View>
               <Ionicons

@@ -23,13 +23,13 @@ import {
 } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import type { ProductionDateMode, ProductionDayFocus, ProductionListBucket } from './api';
+import type { ProductionComplexityFilter, ProductionDateMode, ProductionDayFocus, ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
 import { ProductionProblemsBar } from './components/ProductionProblemsBar';
 import { ProductionDealerSheet } from './components/ProductionDealerSheet';
 import { ProductionDayLensBoard } from './components/ProductionDayLensBoard';
-import { ProductionDayOrderCard } from './components/ProductionDayOrderCard';
-import { ProductionOrderCard } from './components/ProductionOrderCard';
+import { ProductionBasketBoard } from './components/ProductionBasketBoard';
+import { ProductionComplexityChrome, type ProductionKindFilter } from './components/ProductionComplexityChrome';
 import {
   originFocusToParam,
   type OriginFocus,
@@ -37,15 +37,15 @@ import {
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
 import { deviceLocalTodayYmd } from './factoryLocalDay';
 import {
-  flattenProductionOrderPages,
+  flattenProductionBoardPages,
   useProductionDaySummaryQuery,
   useProductionDealersQuery,
   useProductionOrdersInfiniteQuery,
   useProductionProblemsQuery,
   useProductionSummaryQuery,
 } from './query';
-import { productionHubOrderHref } from './productionHubOrderHref';
-import { selectProductionCard } from './selectProduction';
+import { productionHubBoardHref, productionHubOrderHref } from './productionHubOrderHref';
+import { selectProductionBasketBoard } from './selectProduction';
 import { boardCountForBucket, productionListItemsForBoard } from './boardLaneList';
 
 type MetricAccent = 'brand' | 'success' | 'late' | 'warning';
@@ -113,6 +113,7 @@ export function ProductionOverviewScreen() {
   const [dateMode, setDateMode] = useState<ProductionDateMode>('planned');
   const [dayFocus, setDayFocus] = useState<ProductionDayFocus | null>(null);
   const [dateScope, setDateScope] = useState<'day' | 'all'>('day');
+  const [kindFilter, setKindFilter] = useState<ProductionKindFilter>('all');
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [factoryTodayYmd, setFactoryTodayYmd] = useState(deviceLocalTodayYmd());
 
@@ -144,7 +145,12 @@ export function ProductionOverviewScreen() {
   }, [searchInput, q]);
 
   const originParam = originFocusToParam(origin);
-  const summaryQuery = useProductionSummaryQuery(allowed, originParam);
+  const complexityParam: ProductionComplexityFilter | undefined =
+    kindFilter === 'all' ? undefined : kindFilter;
+  const summaryQuery = useProductionSummaryQuery(allowed, originParam, {
+    complexity: complexityParam,
+    customerId: dealerId ?? undefined,
+  });
   const daySummaryQuery = useProductionDaySummaryQuery(
     {
       onDate,
@@ -153,6 +159,7 @@ export function ProductionOverviewScreen() {
       customerId: dealerId ?? undefined,
       origin: originParam,
       dayFocus: dateScope === 'day' ? dayFocus ?? undefined : undefined,
+      complexity: complexityParam,
     },
     allowed && dateScope === 'day',
   );
@@ -167,6 +174,7 @@ export function ProductionOverviewScreen() {
       dateMode: dateScope === 'day' ? dateMode : undefined,
       origin: originParam,
       dayFocus: dateScope === 'day' ? dayFocus ?? undefined : undefined,
+      complexity: complexityParam,
     },
     allowed,
   );
@@ -222,7 +230,7 @@ export function ProductionOverviewScreen() {
       productionListItemsForBoard({
         isPlaceholderData: Boolean(listQuery.isPlaceholderData),
         selectedLaneCount,
-        flattened: flattenProductionOrderPages(listQuery.data),
+        flattened: flattenProductionBoardPages(listQuery.data),
       }),
     [listQuery.data, listQuery.isPlaceholderData, selectedLaneCount],
   );
@@ -332,7 +340,7 @@ export function ProductionOverviewScreen() {
         data={listItems}
         keyExtractor={(item) => item.id}
         style={{ opacity: isFilterUpdating && !listQuery.isPlaceholderData ? 0.72 : 1 }}
-        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${dayFocus ?? ''}:${origin ?? ''}:${selectedLaneCount}:${isFilterUpdating}`}
+        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${dayFocus ?? ''}:${origin ?? ''}:${kindFilter}:${selectedLaneCount}:${isFilterUpdating}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: listBottomPad,
@@ -581,6 +589,14 @@ export function ProductionOverviewScreen() {
                 ...orderBoardShadow(colorScheme),
               }}
             >
+              <ProductionComplexityChrome
+                value={kindFilter}
+                onChange={(next) => {
+                  setStaggerListEnter(false);
+                  setKindFilter(next);
+                  listRef.current?.scrollToOffset({ offset: 0, animated: false });
+                }}
+              />
               <ProductionProblemsBar
                 openCount={openProblemsQuery.data?.data.length ?? 0}
                 onPress={() => {
@@ -651,26 +667,26 @@ export function ProductionOverviewScreen() {
           </View>
         }
         renderItem={({ item, index }) => {
-          const card = selectProductionCard(item, locale);
-          const openOrder = () => {
+          const board = selectProductionBasketBoard(item, locale, {
+            dateScope,
+            t,
+          });
+          const openDetails = () => {
             void haptics.selection();
-            const soId = item.salesOrder?.id ?? card.salesOrderId;
-            router.push(
-              productionHubOrderHref({
-                id: item.id,
-                salesOrderId: soId,
-                releasedToFactoryAt: item.releasedToFactoryAt ?? card.releasedToFactoryAt,
-                originType: item.originType,
-              }) as Href,
-            );
+            router.push(productionHubBoardHref(board.items.map((row) => row.href)) as Href);
           };
           return (
             <ListItemEnter index={index} enabled={staggerListEnter}>
-              {dateScope === 'all' ? (
-                <ProductionOrderCard order={card} onPress={openOrder} />
-              ) : (
-                <ProductionDayOrderCard order={item} onPress={openOrder} />
-              )}
+              <ProductionBasketBoard
+                board={board}
+                onPressDetails={openDetails}
+                onPressItem={(itemId) => {
+                  const row = board.items.find((entry) => entry.id === itemId);
+                  if (!row) return;
+                  void haptics.selection();
+                  router.push(productionHubOrderHref(row.href) as Href);
+                }}
+              />
             </ListItemEnter>
           );
         }}

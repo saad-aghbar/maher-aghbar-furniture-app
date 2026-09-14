@@ -123,6 +123,7 @@ export async function seedPiece4ManufacturingSpecExamples(
         sku: 'P4-ZERO-COST',
         nameEn: 'Demo zero-cost trim',
         nameAr: 'تقليم بدون تكلفة (تجريبي)',
+        nameHe: 'קישוט ללא עלות (דמו)',
         category: InventoryCategory.OTHER,
         itemClass: InventoryItemClass.RAW_MATERIAL,
         unit: 'pcs',

@@ -105,6 +105,9 @@ export type ProductionOrderListItem = {
   promiseState?: string | null;
   imageUrl?: string | null;
   isLate?: boolean;
+  matched?: boolean;
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+  salesOrderId?: string | null;
   customer?: ProductionCustomer | null;
   product?: {
     id: string;
@@ -130,8 +133,19 @@ export type ProductionOrderListItem = {
     salesOrder?: { id: string; number: string } | null;
   } | null;
   salesOrderLine?: {
-    id: string;
+    id?: string;
     description?: string | null;
+    quantity?: number | string | null;
+    sortOrder?: number | null;
+    manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+    product?: {
+      id: string;
+      sku?: string;
+      nameEn?: string | null;
+      nameAr?: string | null;
+      nameHe?: string | null;
+      imageUrl?: string | null;
+    } | null;
     productionSetup?: {
       workflowId?: string | null;
       manufacturingName?: string | null;
@@ -150,6 +164,14 @@ export type ProductionOrderListItem = {
   plannedStartDate?: string | null;
   /** Phase C day lens enrichment (present when onDate+dateMode queried). */
   dayLens?: ProductionDayLensPayload | null;
+};
+
+export type ProductionComplexityFilter = 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+
+export type ProductionBasketBoard = {
+  id: string;
+  salesOrderId: string | null;
+  items: ProductionOrderListItem[];
 };
 
 export type ProductionDateMode = 'planned' | 'actual';
@@ -408,8 +430,18 @@ export type AssignableWorker = {
   } | null;
 };
 
-export async function getProductionSummary(origin?: 'normal' | 'returned') {
-  const qs = toSearchParams({ origin });
+export async function getProductionSummary(
+  origin?: 'normal' | 'returned',
+  filters?: {
+    complexity?: ProductionComplexityFilter;
+    customerId?: string;
+  },
+) {
+  const qs = toSearchParams({
+    origin,
+    complexity: filters?.complexity,
+    customerId: filters?.customerId,
+  });
   return apiGet<ProductionSummary>(`/reports/production-summary${qs}`);
 }
 
@@ -427,6 +459,8 @@ export async function listProductionOrders(
     dateMode?: ProductionDateMode;
     origin?: 'normal' | 'returned';
     dayFocus?: ProductionDayFocus;
+    complexity?: ProductionComplexityFilter;
+    group?: 'boards' | 'orders';
   } = {},
 ) {
   const qs = toSearchParams({
@@ -442,8 +476,10 @@ export async function listProductionOrders(
     dateMode: params.dateMode,
     origin: params.origin,
     dayFocus: params.dayFocus,
+    complexity: params.complexity,
+    group: params.group,
   });
-  return apiGet<PaginatedResponse<ProductionOrderListItem>>(`/production-orders${qs}`);
+  return apiGet<PaginatedResponse<ProductionBasketBoard>>(`/production-orders${qs}`);
 }
 
 export async function getProductionDaySummary(params: {
@@ -453,6 +489,7 @@ export async function getProductionDaySummary(params: {
   customerId?: string;
   origin?: 'normal' | 'returned';
   dayFocus?: ProductionDayFocus;
+  complexity?: ProductionComplexityFilter;
 } = {}) {
   const qs = toSearchParams({
     onDate: params.onDate,
@@ -461,6 +498,7 @@ export async function getProductionDaySummary(params: {
     customerId: params.customerId,
     origin: params.origin,
     dayFocus: params.dayFocus,
+    complexity: params.complexity,
   });
   return apiGet<ProductionDaySummary>(`/production-orders/day-summary${qs}`);
 }

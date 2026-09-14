@@ -1,7 +1,7 @@
 import { Image, Pressable, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { PendingAttachment } from '../pendingAttachment';
 
@@ -25,7 +25,7 @@ export function AttachmentRow({
   onRemove,
   busy,
 }: AttachmentRowProps) {
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
 
   return (
@@ -45,7 +45,7 @@ export function AttachmentRow({
         <View
           key={f.id}
           style={{
-            flexDirection: 'row',
+            flexDirection: localeRow(isRTL),
             alignItems: 'center',
             gap: theme.spacing.md,
             padding: theme.spacing.sm,

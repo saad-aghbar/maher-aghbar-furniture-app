@@ -1,5 +1,6 @@
 import { ActivityIndicator, Modal, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type LoadingOverlayProps = {
@@ -9,12 +10,13 @@ type LoadingOverlayProps = {
 
 export function LoadingOverlay({ visible, message }: LoadingOverlayProps) {
   const { colors, theme } = useTheme();
+  const { t } = useLocale();
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
       <View
         accessibilityViewIsModal
-        accessibilityLabel={message ?? 'Loading'}
+        accessibilityLabel={message ?? t('common.loading')}
         style={[styles.backdrop, { backgroundColor: colors.overlay }]}
       >
         <View

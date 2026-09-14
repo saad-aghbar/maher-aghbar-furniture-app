@@ -5,18 +5,15 @@ import { ActionSheet } from '@/components/sheets/ActionSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { warehouseDisplayName } from '../warehouseDesk';
 
 export type InventoryWarehouseOption = {
   id: string;
   code: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string | null;
 };
-
-function warehouseDisplayName(w: InventoryWarehouseOption, locale: string): string {
-  if (locale === 'ar') return w.nameAr || w.nameEn || w.code;
-  return w.nameEn || w.nameAr || w.code;
-}
 
 /**
  * Compact warehouse control — opens ActionSheet instead of a chip strip.

@@ -96,6 +96,7 @@ export const adminOrderDetailFixture: SalesOrderDetail = {
       number: 'PO-1',
       status: 'IN_PROGRESS',
       progressPercent: 55,
+      salesOrderLineId: 'i1',
       stages: [
         {
           code: 'MATERIAL_PREP',

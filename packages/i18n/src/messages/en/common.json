@@ -2,6 +2,8 @@
   "appName": "Maher Al-Aghbar Furniture",
   "appNameFull": "Maher Al-Aghbar & Sons Furniture",
   "loading": "Loading…",
+  "dismiss": "Dismiss",
+  "holdToConfirm": "Hold to confirm",
   "save": "Save",
   "cancel": "Cancel",
   "delete": "Delete",

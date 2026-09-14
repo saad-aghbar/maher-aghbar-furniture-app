@@ -3,11 +3,11 @@ import { Text, TextInput, type StyleProp, type TextStyle } from 'react-native';
 import { useFonts } from 'expo-font';
 import { getActiveLocale, useLocale } from '@/i18n';
 import {
-  KO_SANS,
-  RUBIK,
+  PLEX_ARABIC,
+  PLEX_HEBREW,
+  PLEX_LATIN,
   applyAppTypeface,
-  koSansFontSources,
-  rubikFontSources,
+  plexFontSources,
 } from '@/theme/fonts';
 
 type TextDefaults = { style?: { fontFamily?: string } };
@@ -45,22 +45,24 @@ function patchHostText() {
 
 patchHostText();
 
+function defaultFamilyFor(locale: string): string {
+  if (locale === 'ar') return PLEX_ARABIC.regular;
+  if (locale === 'he') return PLEX_HEBREW.regular;
+  return PLEX_LATIN.regular;
+}
+
 /**
- * Loads KO Sans (Arabic) and Rubik (English / Hebrew) and applies the
- * matching regular face as the default Text / TextInput typeface —
- * covers raw `Text` that bypasses `AppText`.
+ * Loads IBM Plex Sans / Sans Arabic / Sans Hebrew and applies the matching
+ * regular face as the default Text / TextInput typeface — covers raw `Text`
+ * that bypasses `AppText`.
  */
 export function FontProvider({ children }: { children: ReactNode }) {
   const { locale } = useLocale();
-  const [loaded, error] = useFonts({
-    ...koSansFontSources,
-    ...rubikFontSources,
-  });
+  const [loaded, error] = useFonts(plexFontSources);
 
   useEffect(() => {
     if (!loaded && !error) return;
-    const family = locale === 'ar' ? KO_SANS.regular : RUBIK.regular;
-    applyDefaultTypeface(family);
+    applyDefaultTypeface(defaultFamilyFor(locale));
     return () => applyDefaultTypeface(undefined);
   }, [locale, loaded, error]);
 

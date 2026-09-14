@@ -1,4 +1,4 @@
-import { rollupLaborCost } from './labor-costing';
+import { rollupLaborCost, summarizeLaborEntries } from './labor-costing';
 import type { LaborRateRow } from '../tasks/labor-rate';
 
 const rates: LaborRateRow[] = [
@@ -62,6 +62,57 @@ describe('rollupLaborCost', () => {
     });
     expect(labor).not.toBeNull();
     expect(labor?.actual).toBeNull();
+    expect(labor?.byWorker).toEqual([
+      expect.objectContaining({ userId: 'a', minutes: 60, actual: null }),
+    ]);
+    expect(labor?.byStage[0]?.minutes).toBe(60);
+  });
+
+  it('does not price old hours with today rate when no historical row applies', () => {
+    const summary = summarizeLaborEntries({
+      rates: [
+        {
+          userId: 'a',
+          hourlyRate: 99,
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveTo: null,
+        },
+      ],
+      tasks: [{ id: 't1', stageDefinitionId: 'uph' }],
+      entries: [
+        {
+          id: 'e1',
+          taskId: 't1',
+          userId: 'a',
+          minutes: 60,
+          endedAt: new Date('2026-01-15T00:00:00.000Z'),
+        },
+      ],
+      now: new Date('2026-09-14T00:00:00.000Z'),
+    });
+    expect(summary.timedMinutes).toBe(60);
+    expect(summary.unpricedMinutes).toBe(60);
+    expect(summary.actual).toBeNull();
+  });
+
+  it('dedupes time entries and never adds task.actualMinutes', () => {
+    const summary = summarizeLaborEntries({
+      rates: [
+        {
+          userId: 'a',
+          hourlyRate: 20,
+          effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+          effectiveTo: null,
+        },
+      ],
+      tasks: [{ id: 't1', stageDefinitionId: 'uph', isRework: false }],
+      entries: [
+        { id: 'e1', taskId: 't1', userId: 'a', minutes: 60 },
+        { id: 'e1', taskId: 't1', userId: 'a', minutes: 60 },
+      ],
+    });
+    expect(summary.timedMinutes).toBe(60);
+    expect(summary.actual).toBe(20);
   });
 
   it('estimates from variant stage minutes × a stage-or-global rate', () => {

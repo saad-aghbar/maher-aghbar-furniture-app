@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import { SkeletonShimmer } from '@/motion';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type SkeletonLoaderProps = {
@@ -9,10 +10,11 @@ type SkeletonLoaderProps = {
 
 export function SkeletonLoader({ rows = 3, rowHeight = 16 }: SkeletonLoaderProps) {
   const { theme } = useTheme();
+  const { t } = useLocale();
 
   return (
     <View
-      accessibilityLabel="Loading"
+      accessibilityLabel={t('common.loading')}
       accessibilityRole="progressbar"
       style={{ gap: theme.spacing.md }}
     >
