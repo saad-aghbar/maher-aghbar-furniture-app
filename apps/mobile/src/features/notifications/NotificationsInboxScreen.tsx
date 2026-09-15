@@ -15,6 +15,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
 import { useSmartBack } from '@/navigation/useSmartBack';
+import { navigateSurfaceHref } from '@/navigation/navigateSurfaceHref';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -340,8 +341,11 @@ export function NotificationsInboxScreen({
                 if (item.unread) {
                   markOne.mutate(item.id);
                 }
-                const href = mapNotificationLinkToHref(item.linkUrl, surface);
-                if (href) router.push(href);
+                const href = mapNotificationLinkToHref(item.linkUrl, surface, item.topic, {
+                  entityType: item.entityType,
+                  entityId: item.entityId,
+                });
+                navigateSurfaceHref(router, href);
               }}
             />
           </ListItemEnter>

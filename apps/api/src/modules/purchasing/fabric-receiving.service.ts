@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,7 @@ import {
 } from './goods-receipt-fabric-lots';
 import { requireFabricUnitCost } from './fabric-cost';
 import { FabricProcurementService } from './fabric-procurement.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 
 export type FabricReceiveInput = {
   qty: number;
@@ -59,6 +61,7 @@ export class FabricReceivingService {
     private readonly inventory: InventoryService,
     private readonly fabrics: FabricProcurementService,
     private readonly supplierInvoices: SupplierInvoicesService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   async attachLotsFromGoodsReceipt(input: {
@@ -367,6 +370,14 @@ export class FabricReceivingService {
       });
     });
 
+    await this.opsNotify
+      ?.onFabric({
+        id,
+        eventKind: FabricProcurementEventKind.RECEIVED,
+        state: FabricProcurementState.READY_FOR_PICKUP,
+        actorUserId: user.id,
+      })
+      .catch(() => undefined);
     return this.fabrics.getById(id, user);
   }
 
@@ -664,5 +675,13 @@ export class FabricReceivingService {
         },
       });
     });
+    await this.opsNotify
+      ?.onFabric({
+        id: params.procurementId,
+        eventKind: FabricProcurementEventKind.RECEIVED,
+        state: FabricProcurementState.READY_FOR_PICKUP,
+        actorUserId: params.user.id,
+      })
+      .catch(() => undefined);
   }
 }

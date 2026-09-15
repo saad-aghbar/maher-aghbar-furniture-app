@@ -22,13 +22,12 @@ import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-
 type PlaceTileDef = {
   key: string;
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
   hintKey: string;
-  href: Href;
+  href?: Href;
   permission: Permission;
   wide?: boolean;
   tone?: 'paper' | 'ink';
@@ -103,7 +102,7 @@ const PLACES: PlaceTileDef[] = [
     icon: 'notifications-outline',
     labelKey: 'mobile.dealerAccount.notificationSettings',
     hintKey: 'mobile.dealerAccount.placeNotificationsHint',
-    href: '/(app)/notifications' as Href,
+    href: '/(app)/(customer)/account/notifications' as Href,
     permission: 'notification.read',
   },
 ];
@@ -145,7 +144,6 @@ export function DealerPlacesDock() {
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const gap = theme.spacing.sm;
-
   const places = useMemo(
     () => PLACES.filter((p) => can(user, p.permission)),
     [user],
@@ -236,7 +234,7 @@ export function DealerPlacesDock() {
                 }
                 onPress={() => {
                   void haptics.confirmLight();
-                  router.push(place.href);
+                  if (place.href) router.push(place.href);
                 }}
               />
             ))}

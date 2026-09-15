@@ -63,6 +63,9 @@ export function ProductionBasketItemRow({ item, onPress }: Props) {
       ) : null}
       <ProductThumb uri={item.imageUrl} size={THUMB} radius={theme.radius.md} />
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <AppText variant="caption" color="muted" dir="ltr" numberOfLines={1}>
+          {item.number}
+        </AppText>
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',

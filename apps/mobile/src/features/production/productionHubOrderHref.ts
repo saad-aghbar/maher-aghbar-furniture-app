@@ -25,8 +25,12 @@ export function productionHubOrderHref(item: ProductionHubOrderHrefInput): strin
   return `/(app)/(admin)/production/${item.id}`;
 }
 
-/** Parent Details: plan if nothing is released, else the first released PO. */
+/** Parent Details: always the sales-order line chooser when an SO exists. */
 export function productionHubBoardHref(items: ProductionHubOrderHrefInput[]): string {
+  const soId = items.map((item) => item.salesOrderId?.trim()).find(Boolean) ?? null;
+  if (soId) {
+    return `/(app)/(admin)/orders/${soId}/production-plan`;
+  }
   const released = items.find((item) => item.releasedToFactoryAt);
   const target = released ?? items[0];
   if (!target) return '/(app)/(admin)/production';

@@ -23,6 +23,7 @@
     "seed:product-measurements": "dotenv -e ../../.env -- tsx prisma/seed-product-measurements.ts",
     "backfill:default-variants": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-default-variants.ts",
     "backfill:name-he": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-name-he.ts",
+    "backfill:sales-order-item-letters": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-sales-order-item-letters.ts",
     "set-passwords-123": "dotenv -e ../../.env -- tsx prisma/set-all-passwords-to-123.ts",
     "repair:protected-stages": "dotenv -e ../../.env -- node prisma/repair-protected-stages.mjs",
     "repair:workflow-scope": "dotenv -e ../../.env -- node prisma/repair-workflow-scope.mjs",
@@ -32,6 +33,7 @@
   },
   "dependencies": {
     "@maher/permissions": "workspace:*",
+    "@maher/notifications": "workspace:*",
     "@prisma/client": "^6.1.0"
   },
   "devDependencies": {

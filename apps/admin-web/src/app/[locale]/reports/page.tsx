@@ -308,7 +308,7 @@ export default function ReportsPage() {
   const inventory = useReportQuery<InventoryReport>('inventory', '/api/v1/reports/inventory');
   const financial = useReportQuery<FinancialReport>('financial', '/api/v1/reports/financial');
   const purchasing = useReportQuery<PurchasingReport>('purchasing', '/api/v1/reports/purchasing');
-  laborRates: useReportQuery<
+  const laborRates = useReportQuery<
     Array<{
       id: string;
       userId?: string | null;

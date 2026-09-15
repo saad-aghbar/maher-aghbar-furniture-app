@@ -77,5 +77,14 @@
   "catalog": "الكتالوج",
   "profile": "الملف الشخصي",
   "factoryLabel": "المصنع",
-  "home": "الرئيسية"
+  "home": "الرئيسية",
+  "basket": "السلة",
+  "customize": "تخصيص",
+  "customItem": "قطعة مخصصة",
+  "productionPlan": "خطة الإنتاج",
+  "fabricJobs": "مهام القماش",
+  "receive": "استلام",
+  "lowStock": "مخزون منخفض",
+  "myLane": "المسار",
+  "takeIn": "استلام عدة"
 }

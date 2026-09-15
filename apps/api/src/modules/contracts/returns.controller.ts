@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -34,6 +35,7 @@ import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { roundMoney } from '../../common/helpers/money.util';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { ManufacturingCostService } from '../production/manufacturing-cost.service';
 import { ReturnsService } from './returns.service';
 import { ReturnLifecycleState, ReturnResponsibility } from '@maher/database';
@@ -268,6 +270,7 @@ export class ReturnsController {
     private readonly returns: ReturnsService,
     private readonly manufacturingCost: ManufacturingCostService,
     private readonly pieces: ReturnPieceService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   private photoUrl(key: string | null | undefined): string | null {
@@ -512,6 +515,7 @@ export class ReturnsController {
       where: { id: created.id },
       include: RETURN_INCLUDE,
     });
+    await this.notifyDealerReturn(withPieces.customerId, 'RETURN_SUBMITTED', withPieces.number, withPieces.id);
     return this.enrichReturn(withPieces);
   }
 
@@ -690,13 +694,7 @@ export class ReturnsController {
           newValues: { approvalStatus: 'REJECTED' },
         },
       });
-      await this.notifications
-        .notifyCustomerUsers(updated.customerId, {
-          templateCode: 'RETURN_REJECTED',
-          vars: { number: updated.number },
-          linkUrl: `/returns/${updated.id}`,
-        })
-        .catch(() => undefined);
+      await this.notifyDealerReturn(updated.customerId, 'RETURN_REJECTED', updated.number, updated.id);
       return this.enrichReturn(updated);
     }
 
@@ -727,13 +725,7 @@ export class ReturnsController {
         },
       },
     });
-    await this.notifications
-      .notifyCustomerUsers(updated.customerId, {
-        templateCode: 'RETURN_APPROVED',
-        vars: { number: updated.number },
-        linkUrl: `/returns/${updated.id}`,
-      })
-      .catch(() => undefined);
+    await this.notifyDealerReturn(updated.customerId, 'RETURN_APPROVED', updated.number, updated.id);
     return this.enrichReturn(updated);
   }
 
@@ -784,13 +776,7 @@ export class ReturnsController {
       warehouseId: body.warehouseId,
       locationId: body.receivedLocationId,
     });
-    await this.notifications
-      .notifyCustomerUsers(updated.customerId, {
-        templateCode: 'RETURN_RECEIVED',
-        vars: { number: updated.number },
-        linkUrl: `/returns/${updated.id}`,
-      })
-      .catch(() => undefined);
+    await this.notifyDealerReturn(updated.customerId, 'RETURN_RECEIVED', updated.number, updated.id);
     return this.enrichReturn(
       await this.prisma.returnRequest.findUniqueOrThrow({ where: { id }, include: RETURN_INCLUDE }),
     );
@@ -900,9 +886,7 @@ export class ReturnsController {
   @RequireAnyPermissions('return.inspect', 'sales-order.update')
   async sendCharge(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const updated = await this.returns.sendCharge(id, user);
-    await this.notifyDealerReturn(updated.customerId, 'RETURN_CHARGE_PROPOSED', updated.number, id, {
-      amount: String(updated.chargeAmount ?? ''),
-    });
+    await this.notifyDealerReturn(updated.customerId, 'RETURN_CHARGE_PROPOSED', updated.number, id);
     return this.enrichReturn(
       await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
     );
@@ -917,16 +901,7 @@ export class ReturnsController {
   ) {
     const updated = await this.returns.respondCharge(id, user, body ?? { accept: false });
     if (!body?.accept) {
-      await this.notifications
-        .notifyAdminUsers({
-          templateCode: 'RETURN_CHARGE_REJECTED',
-          vars: {
-            number: updated.number,
-            note: updated.chargeRejectionNote ?? '',
-          },
-          linkUrl: `/returns/${id}`,
-        })
-        .catch(() => undefined);
+      await this.notifyDealerReturn(updated.customerId, 'RETURN_CHARGE_REJECTED', updated.number, id);
     }
     return this.enrichReturn(
       await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: updated.id }, include: RETURN_INCLUDE }),
@@ -948,7 +923,6 @@ export class ReturnsController {
     if (row) {
       await this.notifyDealerReturn(row.customerId, 'RETURN_CHARGED', row.number, id, {
         invoice: charged.invoice.number,
-        total: String(charged.invoice.total ?? body.amount ?? ''),
       });
     }
     return charged;
@@ -982,13 +956,7 @@ export class ReturnsController {
         newValues: { approvalStatus: 'NEED_INFO', needInfoNote: note },
       },
     });
-    await this.notifications
-      .notifyCustomerUsers(updated.customerId, {
-        templateCode: 'RETURN_NEED_INFO',
-        vars: { number: updated.number, note },
-        linkUrl: `/returns/${updated.id}`,
-      })
-      .catch(() => undefined);
+    await this.notifyDealerReturn(updated.customerId, 'RETURN_NEED_INFO', updated.number, updated.id);
     return this.enrichReturn(updated);
   }
 
@@ -999,11 +967,27 @@ export class ReturnsController {
     returnId: string,
     extra: Record<string, string> = {},
   ) {
+    if (this.opsNotify) {
+      await this.opsNotify
+        .onReturnCase({
+          templateCode,
+          id: returnId,
+          number,
+          customerId,
+          delivery: extra.delivery,
+          invoice: extra.invoice,
+        })
+        .catch(() => undefined);
+      return;
+    }
     await this.notifications
       .notifyCustomerUsers(customerId, {
         templateCode,
-        vars: { number, ...extra },
+        vars: { number, delivery: extra.delivery, invoice: extra.invoice },
         linkUrl: `/returns/${returnId}`,
+        eventId: `${templateCode}:${returnId}`,
+        entityType: 'returnRequest',
+        entityId: returnId,
       })
       .catch(() => undefined);
   }

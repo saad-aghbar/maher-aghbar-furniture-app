@@ -37,6 +37,8 @@
   "hold": "Hold",
   "holdDescription": "Put this sales order on hold? You can optionally add a reason.",
   "heldBanner": "Sales order put on hold.",
+  "resume": "Resume",
+  "resumedBanner": "Sales order resumed.",
   "cancelOrder": "Cancel order",
   "cancelDescription": "Cancel this sales order? Related open production orders will also be cancelled.",
   "cancelledBanner": "Sales order cancelled.",

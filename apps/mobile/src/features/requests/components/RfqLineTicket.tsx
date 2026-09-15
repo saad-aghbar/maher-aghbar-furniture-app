@@ -11,6 +11,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { RequestItem } from '../types';
+import { lineHasAiFill } from '../requestAiReading';
 
 type Props = {
   requestId: string;
@@ -113,6 +114,11 @@ export function RfqLineTicket({ requestId, item }: Props) {
           <AppText variant="caption">
             {t(`mobile.lineKind.${kind}`)} · × {String(item.quantity)}
           </AppText>
+          {lineHasAiFill(item) ? (
+            <AppText variant="caption" color="muted">
+              {t('mobile.adminRequest.filledFromSheet')}
+            </AppText>
+          ) : null}
         </View>
       </View>
     </AnimatedPressable>

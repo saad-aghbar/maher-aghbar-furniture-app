@@ -6,7 +6,7 @@ import { PermissionGate } from '@/navigation/PermissionGate';
 export default function AdminReturnsRoute() {
   const { user } = useAuth();
   return (
-    <PermissionGate user={user} require={['return.read', 'sales-order.read']} mode="any">
+    <PermissionGate user={user} require="return.read" mode="all">
       <ReturnsListScreen
         detailHref={(id) => `/(app)/(admin)/returns/${id}` as Href}
         adminControls

@@ -15,6 +15,7 @@ import { hmInTimezone, hmToMinutes, mergeOvertimeException } from './overtime-as
 import { IdempotencyService } from '../../common/idempotency.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { SchedulingQueueService, type SchedulingJobName } from './scheduling-queue';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
 import { loadFabricReadinessForProductionOrder } from '../production/fabric-readiness-load';
@@ -218,6 +219,7 @@ export class SchedulingService implements OnModuleInit {
     private readonly idempotency: IdempotencyService,
     private readonly queue: SchedulingQueueService,
     @Optional() placement?: PlacementService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {
     this.placement = placement ?? new PlacementService(this.prisma);
   }
@@ -2169,16 +2171,20 @@ export class SchedulingService implements OnModuleInit {
           },
           data: { status: 'WAITING_FOR_MATERIALS' },
         });
+        const so = await this.prisma.salesOrder.findUnique({
+          where: { id: po.salesOrderId },
+          select: { id: true, number: true, status: true },
+        });
+        if (so?.status === 'WAITING_FOR_MATERIALS') {
+          await this.opsNotify
+            ?.onShortageBlockingProduction({
+              salesOrderId: so.id,
+              number: so.number,
+            })
+            .catch(() => undefined);
+        }
       }
     }
-
-    await this.debouncedNotify('SCHEDULE_AWAITING_APPROVAL', po.id, () =>
-      this.notifications.notifyAdminUsers({
-        templateCode: 'SCHEDULE_AWAITING_APPROVAL',
-        vars: { number: po.number, date: result.earliestCompletion?.toISOString().slice(0, 10) ?? '' },
-        linkUrl: `/production-orders/${po.id}`,
-      }),
-    );
 
     return this.getOrderSchedule(po.id);
   }
@@ -2194,9 +2200,9 @@ export class SchedulingService implements OnModuleInit {
 
     const po = await this.prisma.productionOrder.findUnique({
       where: { id: poId },
-      select: { requiredDeliveryDate: true },
+      select: { requiredDeliveryDate: true, number: true, salesOrder: { select: { number: true } } },
     });
-    await this.prisma.productionSchedule.create({
+    const created = await this.prisma.productionSchedule.create({
       data: {
         productionOrderId: poId,
         version: nextVersion,
@@ -2212,13 +2218,18 @@ export class SchedulingService implements OnModuleInit {
       },
     });
 
-    await this.debouncedNotify('SCHEDULE_AT_RISK', poId, () =>
-      this.notifications.notifyAdminUsers({
-        templateCode: 'SCHEDULE_AT_RISK',
-        vars: { reason: message },
-        linkUrl: `/production-orders/${poId}`,
-      }),
-    );
+    const alreadyAtRisk =
+      latest &&
+      (latest.promiseState === 'AT_RISK' || latest.materialRisk === true || latest.status === 'NEEDS_REVIEW');
+    if (!alreadyAtRisk) {
+      await this.opsNotify
+        ?.onScheduleAtRisk({
+          productionOrderId: poId,
+          number: po?.salesOrder?.number ?? po?.number ?? poId,
+          scheduleId: created.id,
+        })
+        .catch(() => undefined);
+    }
   }
 
   async recalculate(poId: string, userId: string, dto: RecalculateDto) {
@@ -2461,19 +2472,22 @@ export class SchedulingService implements OnModuleInit {
 
     const po = await this.prisma.productionOrder.findUnique({
       where: { id: poId },
-      select: { number: true, customerId: true, salesOrder: { select: { customerId: true } } },
+      select: { number: true, customerId: true, salesOrder: { select: { customerId: true, number: true } } },
     });
 
-    const today = new Date();
-    const startingToday = allocations.filter((a) => a.employeeId && isSameUtcDay(a.plannedStart, today));
+    const tz = (await this.ensureDefaultCalendar()).timezone || DEFAULT_FACTORY_TIMEZONE;
+    const todayYmd = ymdInTimezone(new Date(), tz);
+    const startingToday = allocations.filter(
+      (a) => a.employeeId && a.productionTaskId && ymdInTimezone(a.plannedStart, tz) === todayYmd,
+    );
     for (const alloc of startingToday) {
-      await this.notifications
-        .sendFromTemplate({
-          templateCode: 'TASK_SCHEDULED_TODAY',
-          channel: 'IN_APP',
-          to: { userId: alloc.employeeId! },
-          vars: { orderNumber: po?.number ?? '' },
-          linkUrl: alloc.productionTaskId ? `/tasks/${alloc.productionTaskId}` : undefined,
+      await this.opsNotify
+        ?.onTaskScheduledToday({
+          taskId: alloc.productionTaskId!,
+          taskName: 'Task',
+          number: po?.salesOrder?.number ?? po?.number ?? '',
+          employeeId: alloc.employeeId!,
+          dayYmd: todayYmd,
         })
         .catch(() => undefined);
     }
@@ -4961,6 +4975,7 @@ export class SchedulingService implements OnModuleInit {
         orderBy: { version: 'desc' },
       });
       if (!schedule || !isActiveScheduleStatus(schedule.status)) return;
+      const alreadyAtRisk = Boolean(schedule.materialRisk) || schedule.promiseState === 'AT_RISK';
       await this.prisma.productionSchedule
         .update({ where: { id: schedule.id }, data: { materialRisk: true } })
         .catch(() => undefined);
@@ -4970,13 +4985,15 @@ export class SchedulingService implements OnModuleInit {
           data: { attentionCode: 'MATERIAL_RISK' },
         })
         .catch(() => undefined);
-      await this.debouncedNotify('SCHEDULE_AT_RISK', task.productionOrderId, () =>
-        this.notifications.notifyAdminUsers({
-          templateCode: 'SCHEDULE_AT_RISK',
-          vars: { reason: `Task ${task.name} reported a blocker` },
-          linkUrl: `/production-orders/${task.productionOrderId}`,
-        }),
-      );
+      if (!alreadyAtRisk) {
+        await this.opsNotify
+          ?.onScheduleAtRisk({
+            productionOrderId: task.productionOrderId,
+            number: task.number || task.name,
+            scheduleId: schedule.id,
+          })
+          .catch(() => undefined);
+      }
       this.queue.enqueue('RISK_ANALYSIS', { productionOrderId: task.productionOrderId }).catch(() => undefined);
       return;
     }

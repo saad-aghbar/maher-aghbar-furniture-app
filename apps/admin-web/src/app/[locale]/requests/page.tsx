@@ -15,6 +15,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  InboxCellGrid,
   Input,
   Modal,
   MotionSection,
@@ -61,12 +62,13 @@ interface RequestRow {
 const RFQ_SOURCES = ['PORTAL', 'SALES', 'WHATSAPP', 'EMAIL', 'PDF', 'PHONE'] as const;
 const RFQ_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
 
-type StatusGroupFilter = '' | 'waiting_review' | 'needs_information' | 'drafts';
+type StatusGroupFilter = '' | 'waiting_review' | 'needs_information' | 'quoted' | 'drafts';
 
 const STATUS_GROUP_FILTERS: Array<{ value: StatusGroupFilter; labelKey: string }> = [
   { value: '', labelKey: 'all' },
   { value: 'waiting_review', labelKey: 'filterWaitingReview' },
   { value: 'needs_information', labelKey: 'filterNeedsInformation' },
+  { value: 'quoted', labelKey: 'filterQuoted' },
   { value: 'drafts', labelKey: 'filterDrafts' },
 ];
 
@@ -260,34 +262,17 @@ export default function AdminRfqsPage() {
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
       <MotionSection enter="rise" className="space-y-3">
-        <div className="maher-stagger flex flex-wrap gap-2" role="tablist" aria-label={tc('factoryReview')}>
-          {STATUS_GROUP_FILTERS.map((item) => {
-            const selected = statusGroup === item.value;
-            const label =
-              item.value === '' ? tCommon('all') : tc(item.labelKey as never);
-            return (
-              <button
-                key={item.value || 'all'}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => {
-                  setPage(1);
-                  setStatusGroup(item.value);
-                  if (item.value) setStatus('');
-                }}
-                className={cn(
-                  'maher-filter-chip maher-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
-                  selected
-                    ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
-                    : 'border-border bg-surface text-text-secondary hover:border-brand/30 hover:text-text-primary',
-                )}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        <InboxCellGrid
+          value={statusGroup}
+          onChange={(id: string) => {
+            setStatusGroup(id as StatusGroupFilter);
+            setPage(1);
+          }}
+          items={STATUS_GROUP_FILTERS.map((item) => ({
+            id: item.value,
+            label: item.value === '' ? tCommon('all') : tc(item.labelKey as never),
+          }))}
+        />
 
         <div className="flex flex-wrap items-end gap-3">
           <label className="relative min-w-[220px] flex-1">

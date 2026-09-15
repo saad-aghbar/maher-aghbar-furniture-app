@@ -1,12 +1,14 @@
 'use client';
 
 import { BackButton } from '@/components/back-button';
+import { Link } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { isScheduledForToday, toDateOnly } from '@/lib/scheduling';
 import {
   Alert,
   Badge,
   Button,
+  CameraCapture,
   Card,
   ErrorState,
   Ltr,
@@ -15,6 +17,7 @@ import {
   PhotoAttachField,
   Skeleton,
   StatusBadge,
+  useCodeScanner,
 } from '@maher/ui';
 import { localizedName, translateApiError } from '@maher/i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -82,7 +85,9 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const t = useTranslations('production');
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
+  const tNav = useTranslations('navigation');
   const qc = useQueryClient();
+  const { openScanner } = useCodeScanner();
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -387,6 +392,92 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                 <p className="text-sm text-text-tertiary">{t('noAttachedPhotos')}</p>
               )}
             </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/tasks/${params.id}/take-in`}>
+                <Button variant="secondary">{tNav('takeIn')}</Button>
+              </Link>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await apiFetch('/api/v1/quality-inspections', {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        taskId: data.id,
+                        productionOrderId: data.productionOrder?.id,
+                        result: 'PASS',
+                      }),
+                    });
+                    setBanner(t('qcPass'));
+                  } catch (err) {
+                    setError(translateApiError(locale, err, tCommon('actionFailed')));
+                  }
+                }}
+              >
+                {t('qcPass')}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await apiFetch('/api/v1/quality-inspections', {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        taskId: data.id,
+                        productionOrderId: data.productionOrder?.id,
+                        result: 'FAIL',
+                      }),
+                    });
+                    setBanner(t('qcFail'));
+                  } catch (err) {
+                    setError(translateApiError(locale, err, tCommon('actionFailed')));
+                  }
+                }}
+              >
+                {t('qcFail')}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  const code = await openScanner({ title: t('materialsIdentify') });
+                  if (!code) return;
+                  try {
+                    await apiFetch(`/api/v1/tasks/${params.id}/material-usage/identify`, {
+                      method: 'POST',
+                      body: JSON.stringify({ code }),
+                    });
+                    setBanner(t('materialsIdentify'));
+                  } catch (err) {
+                    setError(translateApiError(locale, err, tCommon('actionFailed')));
+                  }
+                }}
+              >
+                {t('materialsIdentify')}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await apiFetch(`/api/v1/tasks/${params.id}/block`, {
+                      method: 'POST',
+                      body: JSON.stringify({ reason: t('reportProblem'), category: 'OTHER' }),
+                    });
+                    setBanner(t('reportProblem'));
+                    await qc.invalidateQueries({ queryKey: ['task', params.id] });
+                  } catch (err) {
+                    setError(translateApiError(locale, err, tCommon('actionFailed')));
+                  }
+                }}
+              >
+                {t('reportProblem')}
+              </Button>
+            </div>
+            <CameraCapture
+              label={t('addPhoto')}
+              disabled={uploading || loading}
+              onUploadFile={onPickPhoto}
+              onAttachUrl={onAttachUrl}
+            />
 
             {data.timing ? (
               <div className="rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface-secondary)] p-3">

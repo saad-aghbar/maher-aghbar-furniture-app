@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { QualityResult } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { ProductionInventoryService } from '../production/production-inventory.service';
 import { ProductionReworkService } from '../production/production-rework.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
+import { emptyPipelineFacts, type NewlyReadyTask, type PipelineHandoffFacts } from '../production/pipeline-handoff';
 import { checklistProgressPercent, inspectionItemsNeedResync } from './inspection-pieces';
 import { loadIncomingPiecesForInspection } from './prior-stage-packages';
 import {
@@ -31,6 +33,7 @@ export class QualityInspectionService {
     private readonly pipeline: StagePipelineService,
     private readonly productionInventory: ProductionInventoryService,
     private readonly rework: ProductionReworkService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
   ) {}
 
   async piecesForOrder(productionOrderId: string, stageCode?: string) {
@@ -155,6 +158,8 @@ export class QualityInspectionService {
       inspectionItemId?: string;
     }> = [];
 
+    let handoffFacts: PipelineHandoffFacts | null = null;
+    let newlyReady: NewlyReadyTask[] = [];
     await this.prisma.$transaction(async (tx) => {
       for (const item of merged) {
         await tx.qualityInspectionItem.update({
@@ -247,20 +252,30 @@ export class QualityInspectionService {
             userId: params.userId,
             tx,
           });
-          await this.pipeline.onTaskComplete(inspection.productionOrderId, stage.id, tx);
+          handoffFacts = await this.pipeline.onTaskComplete(inspection.productionOrderId, stage.id, tx);
+          newlyReady = handoffFacts?.newlyReadyTasks ?? [];
         } else {
           await this.productionInventory.onInspectionPassed({
             productionOrderId: inspection.productionOrderId,
             userId: params.userId,
             tx,
           });
-          await this.pipeline.unlockReadyStages(inspection.productionOrderId, tx);
+          const newly = await this.pipeline.unlockReadyStages(inspection.productionOrderId, tx);
+          handoffFacts = emptyPipelineFacts(inspection.productionOrderId);
+          handoffFacts.newlyReadyTasks = newly ?? [];
+          newlyReady = handoffFacts.newlyReadyTasks;
         }
         await tx.productionOrder.update({
           where: { id: inspection.productionOrderId },
           data: { status: 'IN_PROGRESS' },
         });
-        await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
+        const rollup = await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
+        if (handoffFacts) {
+          handoffFacts.poBecameReadyForDelivery = rollup.poBecameReadyForDelivery;
+          handoffFacts.soBecameReadyForDelivery = rollup.soBecameReadyForDelivery;
+          handoffFacts.salesOrderId = rollup.salesOrderId;
+          handoffFacts.deliveryId = rollup.deliveryId;
+        }
       } else if (isPartial || wantsFail) {
         const failNote =
           params.defectDescription ??
@@ -442,6 +457,45 @@ export class QualityInspectionService {
           inspectionItemId: start.inspectionItemId,
         })
         .catch(() => undefined);
+    }
+
+    const po = await this.prisma.productionOrder.findUnique({
+      where: { id: inspection.productionOrderId },
+      select: {
+        number: true,
+        salesOrder: { select: { id: true, number: true, customerId: true } },
+      },
+    });
+    const soNumber = po?.salesOrder?.number ?? po?.number ?? inspection.number;
+    if (allPass) {
+      if (handoffFacts) {
+        await this.floorHandoff?.emitPipeline(handoffFacts, { actorUserId: params.userId });
+      }
+      const packagingTaskId =
+        newlyReady.find((t) => {
+          const code = String(t.stageCode).toUpperCase();
+          return code === 'PACKAGING' || code === 'PACK';
+        })?.id ?? null;
+      await this.floorHandoff?.onQualityPassed({
+        inspectionId: params.id,
+        productionOrderId: inspection.productionOrderId,
+        number: soNumber,
+        actorUserId: params.userId,
+        customerId: po?.salesOrder?.customerId ?? null,
+        salesOrderId: po?.salesOrder?.id ?? null,
+        packagingTaskId,
+      });
+    } else if (isPartial || wantsFail) {
+      await this.floorHandoff?.onQualityFailed({
+        inspectionId: params.id,
+        productionOrderId: inspection.productionOrderId,
+        number: soNumber,
+        actorUserId: params.userId,
+        customerId: po?.salesOrder?.customerId ?? null,
+        salesOrderId: po?.salesOrder?.id ?? null,
+        skipReworkRequired: pendingStarts.length > 0,
+        reworkTaskId: null,
+      });
     }
 
     return this.load(params.id);

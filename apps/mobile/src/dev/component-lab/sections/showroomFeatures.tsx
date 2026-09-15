@@ -248,11 +248,14 @@ const invoice = (over: Partial<InvoiceCardModel> = {}): InvoiceCardModel => ({
 const notif = (over: Partial<NotificationCardModel> = {}): NotificationCardModel => ({
   id: 'n1',
   type: 'PRODUCTION',
+  topic: null,
   title: 'Stage ready',
   body: 'Upholstery can start on PO-SHOW-001.',
   unread: true,
   createdAt: new Date().toISOString(),
   linkUrl: null,
+  entityType: null,
+  entityId: null,
   ...over,
 });
 

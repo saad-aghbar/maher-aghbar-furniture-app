@@ -7,8 +7,12 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  FilterChip,
+  FilterPanel,
+  Input,
   MotionSection,
   PageHero,
+  PeriodCells,
   Skeleton,
   Table,
   TableBody,
@@ -19,6 +23,7 @@ import {
 } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
 
 interface Statement {
   closingBalance: string | number;
@@ -38,6 +43,10 @@ export default function StatementPage() {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const tAcc = useTranslations('accounting');
+  const [period, setPeriod] = useState('month');
+  const [type, setType] = useState<'all' | 'debit' | 'credit'>('all');
+  const [q, setQ] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const { data: me, isLoading: meLoading, isError: meError } = useQuery({
     queryKey: ['me'],
@@ -49,6 +58,25 @@ export default function StatementPage() {
     enabled: Boolean(me?.customerId),
     queryFn: () => apiFetch<Statement>(`/api/v1/statements/${me!.customerId}`),
   });
+
+  const entries = useMemo(() => {
+    const all = data?.entries ?? [];
+    const now = new Date();
+    const start = new Date(now);
+    if (period === 'today') start.setHours(0, 0, 0, 0);
+    else if (period === 'week') start.setDate(now.getDate() - 7);
+    else if (period === 'month') start.setDate(now.getDate() - 31);
+    else start.setFullYear(2000);
+    const needle = q.trim().toLowerCase();
+    return all.filter((e) => {
+      const d = new Date(e.date);
+      if (Number.isFinite(d.getTime()) && d < start) return false;
+      if (type === 'debit' && !(Number(e.debit) > 0)) return false;
+      if (type === 'credit' && !(Number(e.credit) > 0)) return false;
+      if (needle && !`${e.reference} ${e.description}`.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [data?.entries, period, type, q]);
 
   if (meLoading || isLoading) {
     return (
@@ -86,6 +114,36 @@ export default function StatementPage() {
         }
       />
 
+      <PeriodCells
+        value={period}
+        onChange={setPeriod}
+        items={[
+          { id: 'today', label: tCommon('periodToday') },
+          { id: 'week', label: tCommon('periodWeek') },
+          { id: 'month', label: tCommon('periodMonth') },
+          { id: 'custom', label: tCommon('periodCustom') },
+        ]}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Input withSearchIcon value={q} onChange={(e) => setQ(e.target.value)} placeholder={tCommon('search')} className="max-w-sm" />
+        <button type="button" className="text-sm text-brand hover:underline" onClick={() => setFilterOpen(true)}>
+          {tCommon('filter')}
+        </button>
+      </div>
+      <FilterPanel
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title={tCommon('filter')}
+        onApply={() => setFilterOpen(false)}
+        onClear={() => setType('all')}
+      >
+        {(['all', 'debit', 'credit'] as const).map((id) => (
+          <FilterChip key={id} selected={type === id} onClick={() => setType(id)}>
+            {id === 'all' ? tCommon('all') : id === 'debit' ? tAcc('colDebit') : tAcc('colCredit')}
+          </FilterChip>
+        ))}
+      </FilterPanel>
+
       {!data?.entries?.length ? (
         <MotionSection>
           <EmptyState
@@ -118,7 +176,7 @@ export default function StatementPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {data.entries.map((e) => (
+                  {entries.map((e) => (
                     <TableRow key={`${e.reference}-${e.date}`}>
                       <TableCell>{e.date.slice(0, 10)}</TableCell>
                       <TableCell>{e.reference}</TableCell>

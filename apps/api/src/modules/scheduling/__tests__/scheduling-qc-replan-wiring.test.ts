@@ -152,6 +152,12 @@ function makeQuality() {
     },
     qualityChecklistTemplate: { findFirst: jest.fn().mockResolvedValue(null) },
     productionTask: { findFirst: jest.fn().mockResolvedValue(null) },
+    productionOrder: {
+      findUnique: jest.fn().mockResolvedValue({
+        number: 'PO-1',
+        salesOrder: { id: 'so-1', number: 'SO-1042', customerId: 'cust-1' },
+      }),
+    },
     wipKit: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   } as any;
@@ -192,7 +198,6 @@ function makeQuality() {
     scheduling,
     floor,
     inspections,
-    notifications,
   );
   return { controller, prisma, tx, scheduling, pipeline, productionInventory, sequences };
 }

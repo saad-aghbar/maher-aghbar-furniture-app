@@ -1,5 +1,5 @@
 jest.mock('../production/ensure-fabric-procurements', () => ({
-  ensureFabricProcurementsForProductionOrder: jest.fn(async () => 1),
+  ensureFabricProcurementsForProductionOrder: jest.fn(async () => ['fp-1']),
 }));
 
 import {

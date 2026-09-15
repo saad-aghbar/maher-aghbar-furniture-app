@@ -3,6 +3,7 @@
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
 import { Card, ErrorState, MotionSection, PageHero, Skeleton } from '@maher/ui';
+import { Link } from '@/i18n/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -11,6 +12,7 @@ export default function ProfilePage() {
   const tc = useTranslations('catalog');
   const tAuth = useTranslations('auth');
   const tCustomers = useTranslations('customers');
+  const tCommon = useTranslations('common');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['auth-me'],
@@ -77,6 +79,30 @@ export default function ProfilePage() {
               </div>
             ) : null}
           </dl>
+        </Card>
+      </MotionSection>
+      <MotionSection delayMs={80}>
+        <Card title={tCommon('quickActions')} className="max-w-lg">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {(
+              [
+                { href: '/quotations', label: t('quotations') },
+                { href: '/invoices', label: t('invoices') },
+                { href: '/payments', label: t('payments') },
+                { href: '/statement', label: t('statement') },
+                { href: '/returns', label: t('returns') },
+                { href: '/deliveries', label: t('schedule') },
+              ] as const
+            ).map((place) => (
+              <Link
+                key={place.href}
+                href={place.href}
+                className="rounded-lg border border-border px-3 py-2 text-brand hover:bg-brand-soft"
+              >
+                {place.label}
+              </Link>
+            ))}
+          </div>
         </Card>
       </MotionSection>
     </div>

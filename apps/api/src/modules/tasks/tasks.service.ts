@@ -32,6 +32,9 @@ import {
   TaskProgressDto,
 } from './dto/task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
+import type { PipelineHandoffFacts } from '../production/pipeline-handoff';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { PlacementService } from '../scheduling/placement.service';
 import { ReturnPieceService } from '../contracts/return-piece.service';
@@ -106,6 +109,8 @@ export class TasksService {
     @Optional() private readonly scheduling?: SchedulingService,
     @Optional() private readonly returnPieces?: ReturnPieceService,
     @Optional() placement?: PlacementService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {
     this.placement = placement ?? new PlacementService(this.prisma);
   }
@@ -775,7 +780,11 @@ export class TasksService {
         blockers: true,
         stageDefinition: true,
         stageInstance: true,
-        productionOrder: true,
+        productionOrder: {
+          include: {
+            salesOrder: { select: { id: true, number: true, customerId: true } },
+          },
+        },
       },
     });
     if (!task) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Task not found.' });
@@ -1163,28 +1172,40 @@ export class TasksService {
       openStartedAt: null,
     });
 
-    const orderNumber = updated.productionOrder?.number ?? '';
+    const orderNumber =
+      task.productionOrder.salesOrder?.number ?? task.productionOrder.number ?? '';
     const taskName = updated.name ?? updated.stageDefinition?.nameEn ?? 'Task';
     const priority = dto.priority ?? updated.priority;
-    await this.notifications
-      .sendFromTemplate({
-        templateCode: 'WORKER_ASSIGNED',
-        channel: 'IN_APP',
-        to: { userId: dto.employeeId },
-        vars: { taskName, orderNumber },
-        linkUrl: `/tasks/${updated.id}`,
-      })
-      .catch(() => undefined);
-    if (priority === 'URGENT') {
+    if (this.floorHandoff) {
+      await this.floorHandoff.onTaskAssigned({
+        taskId: updated.id,
+        employeeId: dto.employeeId,
+        taskName,
+        number: orderNumber,
+        actorUserId: actorUserId ?? null,
+        urgent: priority === 'URGENT',
+      });
+    } else {
       await this.notifications
         .sendFromTemplate({
-          templateCode: 'URGENT_TASK',
+          templateCode: 'WORKER_ASSIGNED',
           channel: 'IN_APP',
           to: { userId: dto.employeeId },
-          vars: { taskName, orderNumber },
+          vars: { taskName, orderNumber, number: orderNumber },
           linkUrl: `/tasks/${updated.id}`,
         })
         .catch(() => undefined);
+      if (priority === 'URGENT') {
+        await this.notifications
+          .sendFromTemplate({
+            templateCode: 'URGENT_TASK',
+            channel: 'IN_APP',
+            to: { userId: dto.employeeId },
+            vars: { taskName, orderNumber, number: orderNumber },
+            linkUrl: `/tasks/${updated.id}`,
+          })
+          .catch(() => undefined);
+      }
     }
 
     return { ...updated, timing };
@@ -1267,8 +1288,15 @@ export class TasksService {
       });
       await this.pipeline.onTaskStart(task.productionOrderId, task.stageInstanceId, tx);
       return updated;
-    }).then((updated) => {
+    }).then(async (updated) => {
       this.notifyScheduleLifecycle(id, 'start');
+      await this.floorHandoff?.onTaskLifecycle({
+        topic: 'task.started',
+        taskId: id,
+        taskName: task.name ?? task.stageDefinition?.nameEn ?? 'Task',
+        number: task.productionOrder.salesOrder?.number ?? task.productionOrder.number ?? '',
+        actorUserId: userId,
+      });
       return updated;
     });
   }
@@ -1289,8 +1317,15 @@ export class TasksService {
         where: { id },
         data: { status: 'PAUSED' },
       });
-    }).then((updated) => {
+    }).then(async (updated) => {
       this.notifyScheduleLifecycle(id, 'pause');
+      await this.floorHandoff?.onTaskLifecycle({
+        topic: 'task.paused',
+        taskId: id,
+        taskName: task.name ?? task.stageDefinition?.nameEn ?? 'Task',
+        number: task.productionOrder.salesOrder?.number ?? task.productionOrder.number ?? '',
+        actorUserId: userId,
+      });
       return updated;
     });
   }
@@ -1326,6 +1361,13 @@ export class TasksService {
       await this.scheduling
         ?.applyPauseSlide({ taskId: id, actorUserId: userId })
         .catch(() => undefined);
+      await this.floorHandoff?.onTaskLifecycle({
+        topic: 'task.resumed',
+        taskId: id,
+        taskName: task.name ?? task.stageDefinition?.nameEn ?? 'Task',
+        number: task.productionOrder.salesOrder?.number ?? task.productionOrder.number ?? '',
+        actorUserId: userId,
+      });
       return updated;
     });
   }
@@ -1887,6 +1929,8 @@ export class TasksService {
       }
     }
 
+    let handoffFacts: PipelineHandoffFacts | null = null;
+    let finishedMovementKey: string | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.closeOpenTimeEntries(tx, id, userId);
       await ensureTaskTimeEntry(tx, {
@@ -1960,7 +2004,7 @@ export class TasksService {
         skipRawConsume = true;
       }
 
-      await this.productionInventory.onStageQtyProgress({
+      const invProgress = await this.productionInventory.onStageQtyProgress({
         productionOrderId: task.productionOrderId,
         stageInstanceId: task.stageInstanceId,
         userId,
@@ -1970,6 +2014,9 @@ export class TasksService {
         completedQtyAfter,
         skipRawConsume,
       });
+      if (invProgress?.finishedPosted && invProgress.finishedMovementKey) {
+        finishedMovementKey = invProgress.finishedMovementKey;
+      }
 
       if (fullyDone && task.stageInstanceId) {
         const snapNode = await tx.productionOrderWorkflowSnapshotNode.findFirst({
@@ -2047,7 +2094,7 @@ export class TasksService {
 
       if (fullyDone) {
         // Completes stage when all tasks done, unlocks next READY stages, rolls up PO %.
-        await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
+        handoffFacts = await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
         await this.productionInventory.onStageTaskComplete({
           productionOrderId: task.productionOrderId,
           stageInstanceId: task.stageInstanceId,
@@ -2084,6 +2131,36 @@ export class TasksService {
     }
 
     this.notifyScheduleLifecycle(id, 'complete');
+
+    if (handoffFacts) {
+      await this.floorHandoff?.emitPipeline(handoffFacts, { actorUserId: userId });
+      const soNumber =
+        (task.productionOrder as { salesOrder?: { number?: string } } | undefined)?.salesOrder
+          ?.number ?? task.productionOrder?.number ?? '';
+      await this.floorHandoff?.onTaskLifecycle({
+        topic: 'task.completed',
+        taskId: id,
+        taskName: task.name ?? task.stageDefinition?.nameEn ?? 'Task',
+        number: soNumber,
+        actorUserId: userId,
+        salesOrderId: task.productionOrder?.salesOrderId ?? null,
+        customerId: (task.productionOrder as { salesOrder?: { customerId?: string } } | undefined)
+          ?.salesOrder?.customerId,
+      });
+    }
+
+    if (finishedMovementKey) {
+      const soNumber =
+        (task.productionOrder as { salesOrder?: { number?: string } } | undefined)?.salesOrder
+          ?.number ?? task.productionOrder?.number ?? '';
+      await this.opsNotify?.onFinishedPosted({
+        productionOrderId: task.productionOrderId,
+        salesOrderId: task.productionOrder?.salesOrderId ?? null,
+        number: soNumber,
+        actorUserId: userId,
+        movementKey: finishedMovementKey,
+      });
+    }
 
     if (recoveryPieceId) {
       await this.returnPieces?.completeRecoveryIfPosted(recoveryPieceId);

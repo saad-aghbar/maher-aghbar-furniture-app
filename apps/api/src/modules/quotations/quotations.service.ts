@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DiscountType, Prisma } from '@maher/database';
+import { itemLetterAtIndex } from '../../common/sales-order-item-number';
 import type { EmailProvider, WhatsAppProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
 import {
@@ -1400,6 +1401,7 @@ export class QuotationsService {
                         : 'DEALER_PRICE_OR_BASE',
                     orderSpec: orderSpec as unknown as Prisma.InputJsonValue,
                     sortOrder: index,
+                    itemLetter: itemLetterAtIndex(index),
                     lineOptions: optionCreates.length
                       ? { create: optionCreates }
                       : undefined,

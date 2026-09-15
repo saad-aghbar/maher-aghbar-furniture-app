@@ -2,7 +2,7 @@
   "name": "@maher/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start -c",
     "dev": "expo start -c",
@@ -21,6 +21,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.0.1",
     "@maher/i18n": "workspace:*",
+    "@maher/notifications": "workspace:*",
     "@maher/permissions": "workspace:*",
     "@maher/types": "workspace:*",
     "@maher/workflow-domain": "workspace:^",

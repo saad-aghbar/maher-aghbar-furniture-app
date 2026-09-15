@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
@@ -26,10 +27,42 @@ function pkgDir(name) {
   );
 }
 
+const expoRouterDir = fs.realpathSync(pkgDir('expo-router'));
+
 config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules ?? {}),
   'expo-audio': pkgDir('expo-audio'),
   'expo-speech': pkgDir('expo-speech'),
+  'expo-router': expoRouterDir,
+};
+
+/**
+ * pnpm keeps two expo-router@6.0.24 peer-hash folders. Expo Go may still request
+ * the old entry URL after install. Collapse every copy onto the app's realpath
+ * so Route + LinkPreview React contexts stay the same instance as `Stack`.
+ */
+function canonicalizeExpoRouterPath(filePath) {
+  if (!filePath) return filePath;
+  const posix = filePath.replace(/\\/g, '/');
+  const marker = '/node_modules/expo-router/';
+  const idx = posix.lastIndexOf(marker);
+  if (idx === -1) return filePath;
+  const rest = posix.slice(idx + marker.length);
+  return rest ? path.join(expoRouterDir, rest) : expoRouterDir;
+}
+
+const upstreamResolve = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolved = upstreamResolve
+    ? upstreamResolve(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+  if (resolved?.type === 'sourceFile' && resolved.filePath) {
+    const next = canonicalizeExpoRouterPath(resolved.filePath);
+    if (next !== resolved.filePath) {
+      return { ...resolved, filePath: next };
+    }
+  }
+  return resolved;
 };
 
 // Release builds must not ship /dev galleries (or the fixture modules they pull in).

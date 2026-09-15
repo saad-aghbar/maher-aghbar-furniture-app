@@ -75,6 +75,27 @@ describe('filterAdminOverflowModules', () => {
     expect(filterAdminOverflowModules(dealer, 'more').some((m) => m.key === 'scheduling')).toBe(false);
     expect(filterAdminOverflowModules(worker, 'more').some((m) => m.key === 'scheduling')).toBe(false);
   });
+
+  it('never exposes a standalone AI intake tile', () => {
+    const intake = withPerms('ai-intake.read', 'ai-intake.manage', 'catalog.read');
+    expect(ADMIN_OVERFLOW_MODULES.some((m) => m.key === 'ai-intake')).toBe(false);
+    expect(filterAdminOverflowModules(intake, 'more').some((m) => m.key === 'ai-intake')).toBe(false);
+    expect(filterAdminOverflowModules(intake, 'home').some((m) => m.key === 'ai-intake')).toBe(false);
+  });
+
+  it('shows production problems only with matching permissions', () => {
+    const intake = withPerms('ai-intake.read');
+    const problems = withPerms('production-task.update-any');
+    expect(filterAdminOverflowModules(intake, 'more').some((m) => m.key === 'problems')).toBe(false);
+    expect(filterAdminOverflowModules(problems, 'more').some((m) => m.key === 'problems')).toBe(true);
+  });
+
+  it('shows returns only with return.read, not a nearby sales-order.read', () => {
+    const sales = withPerms('sales-order.read');
+    const returns = withPerms('return.read');
+    expect(filterAdminOverflowModules(sales, 'more').some((m) => m.key === 'returns')).toBe(false);
+    expect(filterAdminOverflowModules(returns, 'more').some((m) => m.key === 'returns')).toBe(true);
+  });
 });
 
 describe('packOverflowPlaceRows', () => {

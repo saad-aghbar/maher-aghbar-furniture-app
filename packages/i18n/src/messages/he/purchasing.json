@@ -31,5 +31,7 @@
   "expectedDate": "תאריך אספקה",
   "openOrders": "הזמנות פתוחות",
   "recentOrders": "הזמנות אחרונות",
-  "purchaseHistory": "היסטוריית רכישה"
+  "purchaseHistory": "היסטוריית רכישה",
+  "fabricJobs": "משימות בד",
+  "scanToAdd": "סריקה להוספת שורה"
 }

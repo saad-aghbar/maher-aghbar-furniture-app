@@ -1,10 +1,13 @@
 'use client';
 
 import { apiFetch, API_URL } from '@/lib/api-client';
+import { Link } from '@/i18n/navigation';
 import {
   Button,
   EmptyState,
   ErrorState,
+  FilterChip,
+  FilterPanel,
   MotionSection,
   PageHero,
   Skeleton,
@@ -19,6 +22,7 @@ import {
 } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 interface Invoice {
   id: string;
@@ -31,6 +35,8 @@ interface Invoice {
 export default function InvoicesPage() {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
+  const [status, setStatus] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['customer-invoices'],
@@ -52,11 +58,27 @@ export default function InvoicesPage() {
     return <ErrorState title={t('invoices')} onRetry={() => refetch()} />;
   }
 
-  const rows = data ?? [];
+  const rows = (data ?? []).filter((row) => !status || row.status === status);
 
   return (
     <div className="space-y-6">
       <PageHero tone="soft" title={t('invoices')} description={tCommon('invoicesSubtitle')} />
+      <button type="button" className="text-sm text-brand hover:underline" onClick={() => setFilterOpen(true)}>
+        {tCommon('filter')}
+      </button>
+      <FilterPanel
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title={tCommon('filter')}
+        onApply={() => setFilterOpen(false)}
+        onClear={() => setStatus('')}
+      >
+        {['', 'DRAFT', 'ISSUED', 'PARTIAL', 'PAID', 'OVERDUE', 'VOID'].map((s) => (
+          <FilterChip key={s || 'all'} selected={status === s} onClick={() => setStatus(s)}>
+            {s || tCommon('all')}
+          </FilterChip>
+        ))}
+      </FilterPanel>
       {rows.length === 0 ? (
         <MotionSection>
           <EmptyState title={tCommon('emptyList')} />
@@ -76,7 +98,11 @@ export default function InvoicesPage() {
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.number}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/invoices/${row.id}`} className="text-brand hover:underline">
+                      {row.number}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     {String(row.total)} {tCommon('currency')}
                   </TableCell>

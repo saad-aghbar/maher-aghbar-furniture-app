@@ -45,7 +45,7 @@ describe('productionHubOrderHref', () => {
     ).toBe('/(app)/(admin)/production/po-rep');
   });
 
-  it('opens the first released PO from a mixed basket', () => {
+  it('Details opens the sales-order line chooser, not the first released PO', () => {
     expect(
       productionHubBoardHref([
         {
@@ -61,7 +61,20 @@ describe('productionHubOrderHref', () => {
           originType: 'SALES_ORDER',
         },
       ]),
-    ).toBe('/(app)/(admin)/production/po-floor');
+    ).toBe('/(app)/(admin)/orders/so-9/production-plan');
+  });
+
+  it('Details on a one-item released basket still opens the chooser', () => {
+    expect(
+      productionHubBoardHref([
+        {
+          id: 'po-only',
+          salesOrderId: 'so-9',
+          releasedToFactoryAt: '2026-09-01T08:00:00.000Z',
+          originType: 'SALES_ORDER',
+        },
+      ]),
+    ).toBe('/(app)/(admin)/orders/so-9/production-plan');
   });
 
   it('opens the sales-order plan when no basket item is released', () => {

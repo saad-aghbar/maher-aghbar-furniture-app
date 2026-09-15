@@ -231,5 +231,13 @@
   "loadSheetConfirmDepart": "Confirm truck departed",
   "loadSheetConfirmDepartTitle": "Confirm truck departed?",
   "loadSheetConfirmDepartBody": "This marks the delivery as out for delivery and issues Finished Goods from warehouse stock. The dealer confirms receipt later — this is not delivered.",
-  "loadSheetDeparted": "Truck departed — Finished Goods left stock."
+  "loadSheetDeparted": "Truck departed — Finished Goods left stock.",
+  "identify": "Identify",
+  "verify": "Verify",
+  "fabricBundle": "Fabric bundle",
+  "scanMode": "Scan mode",
+  "itemQr": "Item QR",
+  "semiFinished": "Semi-finished",
+  "finishedGoods": "Finished goods",
+  "scanUnknown": "Code not found"
 }

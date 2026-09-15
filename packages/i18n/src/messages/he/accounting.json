@@ -285,5 +285,14 @@
   "searchPayments": "חיפוש תשלומים…",
   "filterDateFrom": "מ־",
   "filterDateTo": "עד",
-  "paymentDealer": "סוחר"
+  "paymentDealer": "סוחר",
+  "sectionInventory": "מלאי",
+  "sectionCustom": "עבודה מותאמת",
+  "dateBasis": "בסיס תאריך",
+  "dateBasisOrder": "תאריך הזמנה",
+  "dateBasisDelivered": "נמסר",
+  "dateBasisActivity": "פעילות",
+  "complexityFilter": "מורכבות",
+  "coverageIssue": "בעיית כיסוי",
+  "scanPackage": "סריקת חבילה"
 }

@@ -16,13 +16,15 @@ import { onSessionExpired, clearSession } from '@/auth/session';
 import { mapLoginError, type AuthStatus, type LoginUiError } from '@/auth/mapAuthError';
 import { restoreSession } from '@/auth/sessionRestore';
 import { resetQueryClientOnLogout } from '@/auth/resetQueryClientOnLogout';
+import { AppState, type AppStateStatus } from 'react-native';
 import {
   clearBiometricCredentials,
   isBiometricUnlockEnabled,
   saveBiometricCredentials,
   shouldRequireBiometricGate,
 } from '@/auth/biometrics';
-import { registerPushDevice } from '@/features/notifications/registerPushDevice';
+import { registerPushDevice, releasePushDevice } from '@/features/notifications/registerPushDevice';
+import { clearPendingNotificationIntent } from '@/storage/pushDevice';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -137,6 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
+      await releasePushDevice();
+      await clearPendingNotificationIntent();
       await apiLogout();
     } catch {
       await clearSession();
@@ -159,6 +163,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     }
   }, [applyUser]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const onChange = (next: AppStateStatus) => {
+      if (next === 'active') void refreshUser();
+    };
+    const sub = AppState.addEventListener('change', onChange);
+    return () => sub.remove();
+  }, [status, refreshUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

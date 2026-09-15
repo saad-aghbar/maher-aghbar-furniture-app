@@ -77,5 +77,14 @@
   "catalog": "קטלוג",
   "profile": "פרופיל",
   "factoryLabel": "מפעל",
-  "home": "בית"
+  "home": "בית",
+  "basket": "סל",
+  "customize": "התאמה",
+  "customItem": "פריט מותאם",
+  "productionPlan": "תוכנית ייצור",
+  "fabricJobs": "משימות בד",
+  "receive": "קליטה",
+  "lowStock": "מלאי נמוך",
+  "myLane": "מסלול",
+  "takeIn": "קליטת ערכה"
 }

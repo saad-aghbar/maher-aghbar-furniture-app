@@ -36,6 +36,8 @@ import { useEffect, useRef, useState } from 'react';
 
 interface CustomerRequestItem {
   id: string;
+  itemNumber?: string | null;
+  itemLetter?: string | null;
   productName: string;
   description?: string | null;
   quantity: string | number;
@@ -126,6 +128,7 @@ interface SalesOrderDetail {
     status: string;
     progressPercent?: number | null;
     currentStageCode?: string | null;
+    salesOrderLineId?: string | null;
   }>;
   invoices?: Array<{
     id: string;
@@ -257,6 +260,21 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const resumeMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/sales-orders/${params.id}/resume`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tSales('resumedBanner'));
+      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   const promoteMutation = useMutation({
     mutationFn: (args: { lineId: string; productId?: string | null }) =>
       args.productId
@@ -315,7 +333,10 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
     ? localizedName(locale, order.customer, order.customer.name)
     : undefined;
   const req = order.customerRequest;
-  const items = req?.items?.length ? req.items : order.orderedItems ?? [];
+  const items = (req?.items?.length ? req.items : order.orderedItems ?? []).map((item, index) => ({
+    ...item,
+    itemNumber: item.itemNumber ?? order.orderedItems?.[index]?.itemNumber ?? null,
+  }));
   const cb = order.costBreakdown ?? {};
   const seller = Number(order.sellerPrice ?? order.total ?? 0);
   const production = Number(order.productionPrice ?? order.manufacturingCost ?? 0);
@@ -348,12 +369,12 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
           <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
             <StatusBadge status={order.status} />
             {needsProductionSetup ? (
-              <Link href={`/sales-orders/${params.id}/production-setup`}>
+              <Link href={`/sales-orders/${params.id}/production-plan`}>
                 <Button>{tSales('prepareProduction')}</Button>
               </Link>
             ) : null}
             {setupReleased ? (
-              <Link href={`/sales-orders/${params.id}/production-setup`}>
+              <Link href={`/sales-orders/${params.id}/production-plan`}>
                 <Button variant="secondary" size="sm">
                   {tSales('orderSetup.viewSetup')}
                 </Button>
@@ -362,6 +383,15 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
             {HOLDABLE.includes(order.status) ? (
               <Button variant="secondary" onClick={() => setHoldOpen(true)}>
                 {tSales('hold')}
+              </Button>
+            ) : null}
+            {order.status === 'ON_HOLD' ? (
+              <Button
+                variant="secondary"
+                onClick={() => resumeMutation.mutate()}
+                disabled={resumeMutation.isPending}
+              >
+                {tSales('resume')}
               </Button>
             ) : null}
             {canOpenCancel(order.status) ? (
@@ -413,7 +443,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         <Alert variant="info">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="font-medium">{tSales('orderAcceptedSetup')}</p>
-            <Link href={`/sales-orders/${params.id}/production-setup`}>
+            <Link href={`/sales-orders/${params.id}/production-plan`}>
               <Button size="sm">{tSales('prepareProduction')}</Button>
             </Link>
           </div>
@@ -427,7 +457,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
             {tSales('orderSetup.workerAssignmentHint')}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link href={`/sales-orders/${params.id}/production-setup`}>
+            <Link href={`/sales-orders/${params.id}/production-plan`}>
               <Button size="sm" variant="secondary">
                 {tSales('orderSetup.viewSetup')}
               </Button>
@@ -537,18 +567,51 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         </div>
 
         <div className="space-y-3 border-t border-border pt-4">
-          <h3 className="text-sm font-semibold">{tSales('whatTheyOrdered')}</h3>
+          <h3 className="text-sm font-medium">{tSales('whatTheyOrdered')}</h3>
           {items.length === 0 ? (
             <p className="text-sm text-text-secondary">{tSales('noCustomerItems')}</p>
           ) : (
             <ul className="space-y-3">
-              {items.map((item) => (
+              {items.map((item) => {
+                const setupLine = setupData?.lines.find(
+                  (line) =>
+                    line.id === item.id ||
+                    line.salesOrderLineId === item.id ||
+                    line.description === item.productName,
+                );
+                const complexity = setupLine?.manufacturingComplexity;
+                const kind =
+                  complexity === 'CUSTOM'
+                    ? tc('lineKindCustom')
+                    : complexity === 'MODIFIED'
+                      ? tc('lineKindCustomized')
+                      : tc('lineKindStandard');
+                return (
                 <li
                   key={item.id}
                   className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="font-semibold text-text-primary">{item.productName}</p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      {setupLine?.product?.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={setupLine.product.imageUrl}
+                          alt=""
+                          className="h-14 w-14 rounded-lg object-cover"
+                        />
+                      ) : null}
+                      <div>
+                        {item.itemNumber ? (
+                          <p className="text-[11px] text-text-tertiary" dir="ltr">
+                            {item.itemNumber}
+                          </p>
+                        ) : null}
+                        <p className="font-medium text-text-primary">{item.productName}</p>
+                        <p className="text-[11px] text-[var(--maher-brand)]">{kind}</p>
+                        {setupLine ? <StatusBadge status={setupLine.status} /> : null}
+                      </div>
+                    </div>
                     <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
                       × {Number(item.quantity)}
                     </p>
@@ -576,7 +639,8 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                   </div>
                   {item.notes ? <p className="mt-2 text-sm text-text-secondary">{item.notes}</p> : null}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
@@ -719,7 +783,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                 <h2 className="text-base font-semibold">{tSales('orderSetup.releasedSpec')}</h2>
                 <p className="text-sm text-text-secondary">{tSales('orderSetup.releasedSpecHint')}</p>
               </div>
-              <Link href={`/sales-orders/${params.id}/production-setup`}>
+              <Link href={`/sales-orders/${params.id}/production-plan`}>
                 <Button size="sm" variant="ghost">
                   {tSales('orderSetup.viewSetup')}
                 </Button>
@@ -732,9 +796,21 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                   className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="font-semibold text-text-primary">
-                      {line.manufacturingName ?? line.description ?? '—'}
-                    </p>
+                    <div>
+                      {(() => {
+                        const child = (order.productionOrders ?? []).find(
+                          (po) => po.salesOrderLineId === line.salesOrderLineId,
+                        );
+                        return child?.number ? (
+                          <p className="text-[11px] text-text-tertiary" dir="ltr">
+                            {child.number}
+                          </p>
+                        ) : null;
+                      })()}
+                      <p className="font-semibold text-text-primary">
+                        {line.manufacturingName ?? line.description ?? '—'}
+                      </p>
+                    </div>
                     <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
                       × {line.quantity}
                     </p>

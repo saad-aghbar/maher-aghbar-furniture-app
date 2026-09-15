@@ -134,6 +134,12 @@ export class SalesOrdersController {
   }
 
   @RequirePermissions('sales-order.update')
+  @Post(':id/resume')
+  resume(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesOrders.resume(id, user.id);
+  }
+
+  @RequirePermissions('sales-order.update')
   @Post(':id/cancel')
   cancel(
     @Param('id') id: string,

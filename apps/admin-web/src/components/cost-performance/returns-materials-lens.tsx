@@ -156,7 +156,7 @@ export function ProductAnalyticsLens() {
               <TableRow key={row.productId}>
                 <TableCell>
                   <Link
-                    href={`/reports/orders${periodQs}${periodQs ? '&' : '?'}productId=${row.productId}`}
+                    href={`/reports/products/${row.productId}${periodQs}`}
                     className="underline"
                   >
                     {row.product?.sku ?? row.productId}

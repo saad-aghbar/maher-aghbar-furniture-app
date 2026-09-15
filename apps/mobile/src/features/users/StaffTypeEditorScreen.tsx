@@ -1,25 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
-import { expandPermissionDependencies, groupedPermissionCatalog } from '@maher/permissions';
+import { expandPermissionDependencies } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { ErrorState } from '@/components/feedback/ErrorState';
-import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { LocaleNameField } from '@/features/catalog/components/BilingualNameField';
 import { useLocale } from '@/i18n';
 import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
-import { AnimatedPressable, haptics } from '@/motion';
+import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { PermissionBoard } from './components/PermissionBoard';
 import {
   UserFormError,
   UserFormFooter,
@@ -30,7 +29,6 @@ import {
   useStaffTypeQuery,
   useUpdateStaffTypeMutation,
 } from './query';
-import { localizedPermissionGroupName, localizedPermissionName } from './permissionLabels';
 
 type Props = { id: string };
 
@@ -68,7 +66,7 @@ const empty = (): FormState => ({
 export function StaffTypeEditorScreen({ id }: Props) {
   const isNew = id === 'new';
   const { t, locale, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const router = useRouter();
@@ -79,7 +77,6 @@ export function StaffTypeEditorScreen({ id }: Props) {
   const updateMutation = useUpdateStaffTypeMutation();
   const [form, setForm] = useState<FormState>(empty);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!detailQuery.data) return;
@@ -123,23 +120,6 @@ export function StaffTypeEditorScreen({ id }: Props) {
         form.name || (readOnly ? t('users.view') : t('users.editStaffType')),
       );
   const descriptionMinHeight = theme.sizes.touch.min;
-
-  const catalog = useMemo(() => groupedPermissionCatalog({ assignableToStaffOnly: true }), []);
-  const needle = search.trim().toLowerCase();
-  const visible = useMemo(
-    () =>
-      catalog
-        .map((group) => ({
-          ...group,
-          permissions: group.permissions.filter((p) => {
-            if (!needle) return true;
-            const hay = `${p.code} ${p.nameEn} ${p.nameAr} ${p.nameHe}`.toLowerCase();
-            return hay.includes(needle);
-          }),
-        }))
-        .filter((g) => g.permissions.length > 0),
-    [catalog, needle],
-  );
 
   const onSubmit = async () => {
     setError(null);
@@ -299,113 +279,12 @@ export function StaffTypeEditorScreen({ id }: Props) {
         </UserFormSection>
 
         <UserFormSection icon="shield-outline" label={t('users.permissions')} titleWeight={titleWeight}>
-          <TextField
-            value={search}
-            onChangeText={setSearch}
-            placeholder={t('users.searchPermissions')}
-            autoCapitalize="none"
-            autoCorrect={false}
+          <PermissionBoard
+            selected={form.permissionCodes}
+            editable={!readOnly}
+            showSearch
+            onChange={(permissionCodes) => setForm((f) => ({ ...f, permissionCodes }))}
           />
-          <View
-            style={{
-              alignSelf: isRTL ? 'flex-end' : 'flex-start',
-              paddingHorizontal: theme.spacing.md,
-              paddingVertical: theme.spacing.xs,
-              borderRadius: theme.radius.full,
-              backgroundColor: colors.brandSoft,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <AppText variant="caption" color="brand" weight={titleWeight}>
-              {t('users.permissionCount', { n: form.permissionCodes.length })}
-            </AppText>
-          </View>
-          {visible.map((group) => (
-            <View
-              key={group.group}
-              style={{
-                borderRadius: theme.radius.lg,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surfaceSecondary,
-                overflow: 'hidden',
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: theme.spacing.md,
-                  paddingVertical: theme.spacing.sm,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
-                }}
-              >
-                <AppText variant="caption" weight={titleWeight} color="brand">
-                  {localizedPermissionGroupName(group.group, locale)}
-                </AppText>
-                <AppText variant="caption" color="muted">
-                  {String(group.permissions.length)}
-                </AppText>
-              </View>
-              {group.permissions.map((perm) => {
-                const checked = form.permissionCodes.includes(perm.code);
-                return (
-                  <AnimatedPressable
-                    key={perm.code}
-                    variant="button"
-                    disabled={readOnly}
-                    onPress={() => {
-                      if (readOnly) return;
-                      void haptics.selection();
-                      setForm((f) => {
-                        const next = checked
-                          ? f.permissionCodes.filter((c) => c !== perm.code)
-                          : [...f.permissionCodes, perm.code];
-                        return { ...f, permissionCodes: expandPermissionDependencies(next) };
-                      });
-                    }}
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                      gap: theme.spacing.md,
-                      paddingHorizontal: theme.spacing.md,
-                      paddingVertical: theme.spacing.md,
-                      backgroundColor: checked ? colors.brandSoft : 'transparent',
-                      opacity: readOnly ? 0.85 : 1,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: 11,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderWidth: 1.5,
-                        borderColor: checked ? colors.brand : colors.borderStrong,
-                        backgroundColor: checked ? colors.brand : colors.surface,
-                      }}
-                    >
-                      {checked ? <Ionicons name="checkmark" size={13} color={colors.onBrand} /> : null}
-                    </View>
-                    <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-                      <AppText variant="label" weight={checked ? titleWeight : 'medium'}>
-                        {localizedPermissionName(perm.code, locale)}
-                      </AppText>
-                      {perm.riskLevel === 'sensitive' ? (
-                        <AppText variant="caption" color="muted">
-                          {t('users.sensitivePermission')}
-                        </AppText>
-                      ) : null}
-                    </View>
-                  </AnimatedPressable>
-                );
-              })}
-            </View>
-          ))}
         </UserFormSection>
 
         {error ? <UserFormError message={error} /> : null}

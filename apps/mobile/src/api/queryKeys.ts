@@ -56,6 +56,7 @@ export const queryKeys = {
     all: ['notifications'] as const,
     lists: () => [...queryKeys.notifications.all, 'list'] as const,
     list: (filters: unknown = {}) => [...queryKeys.notifications.lists(), filters] as const,
+    topics: () => [...queryKeys.notifications.all, 'topics'] as const,
   },
   reports: {
     all: ['reports'] as const,

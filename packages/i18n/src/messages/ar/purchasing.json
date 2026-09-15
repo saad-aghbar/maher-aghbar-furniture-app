@@ -31,5 +31,7 @@
   "expectedDate": "تاريخ التوريد",
   "openOrders": "أوامر مفتوحة",
   "recentOrders": "أوامر حديثة",
-  "purchaseHistory": "سجل الشراء"
+  "purchaseHistory": "سجل الشراء",
+  "fabricJobs": "مهام القماش",
+  "scanToAdd": "امسح لإضافة بند"
 }

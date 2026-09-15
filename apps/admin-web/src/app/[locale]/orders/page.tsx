@@ -263,7 +263,7 @@ function OrderCard({
                 {tCatalog('markReadyForQuote')}
               </Button>
             ) : row.kind === 'sales_order' && row.status === 'DRAFT' ? (
-              <Link href={`/sales-orders/${row.id}/production-setup`}>
+              <Link href={`/sales-orders/${row.id}/production-plan`}>
                 <Button size="sm" variant="secondary" className="maher-sheen">
                   {tSales('prepareProduction')}
                 </Button>

@@ -198,6 +198,30 @@ export function ReportsChrome({ children }: { children: ReactNode }) {
             ]}
           />
           <Select
+            label={ta('dateBasis')}
+            value={filter.dateBasis}
+            onChange={(e) => sync({ dateBasis: e.target.value })}
+            className="min-w-[10rem]"
+            options={[
+              { value: '', label: ta('dateBasisDelivered') },
+              { value: 'orderDate', label: ta('dateBasisOrder') },
+              { value: 'delivered', label: ta('dateBasisDelivered') },
+              { value: 'activity', label: ta('dateBasisActivity') },
+            ]}
+          />
+          <Select
+            label={ta('complexityFilter')}
+            value={filter.complexity}
+            onChange={(e) => sync({ complexity: e.target.value })}
+            className="min-w-[10rem]"
+            options={[
+              { value: '', label: ta('sectionAll') },
+              { value: 'STANDARD', label: 'STANDARD' },
+              { value: 'MODIFIED', label: 'MODIFIED' },
+              { value: 'CUSTOM', label: 'CUSTOM' },
+            ]}
+          />
+          <Select
             label={ta('filterSalesRep')}
             value={filter.salesRepId}
             onChange={(e) => sync({ salesRepId: e.target.value })}

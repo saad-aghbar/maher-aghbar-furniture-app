@@ -1,5 +1,6 @@
 'use client';
 
+import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import { useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -1084,6 +1085,7 @@ export default function InventoryPage() {
           ) : null
         }
       />
+      <InventoryScanBar />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {actionError ? <Alert variant="error">{actionError}</Alert> : null}
 

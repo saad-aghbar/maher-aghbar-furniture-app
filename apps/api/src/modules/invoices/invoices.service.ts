@@ -24,6 +24,7 @@ import {
   type InvoiceCreatableSource,
 } from './invoice-creatable-sources';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { ManufacturingCostService } from '../production/manufacturing-cost.service';
 import {
   classifyInvoice,
@@ -62,6 +63,7 @@ export class InvoicesService {
     private readonly sequences: SequenceService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly manufacturingCost?: ManufacturingCostService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   private async dealerFinance(customerId: string) {
@@ -80,6 +82,37 @@ export class InvoicesService {
       payments,
       currency: invoices[0]?.currency ?? 'ILS',
     });
+  }
+
+  private async emitInvoiceCreated(input: {
+    id: string;
+    number: string;
+    customerId: string;
+    actorUserId: string;
+  }) {
+    if (this.opsNotify) {
+      await this.opsNotify
+        .onInvoice({
+          topic: 'invoice.created',
+          id: input.id,
+          number: input.number,
+          customerId: input.customerId,
+          actorUserId: input.actorUserId,
+          transition: 'ISSUED',
+        })
+        .catch(() => undefined);
+      return;
+    }
+    await this.notifications
+      .notifyCustomerUsers(input.customerId, {
+        templateCode: 'INVOICE_CREATED',
+        vars: { number: input.number },
+        linkUrl: `/invoices/${input.id}`,
+        eventId: `invoice.created:invoice:${input.id}:ISSUED`,
+        entityType: 'invoice',
+        entityId: input.id,
+      })
+      .catch(() => undefined);
   }
 
   async list(
@@ -445,6 +478,19 @@ export class InvoicesService {
       });
     });
 
+    if (dto.status === InvoiceStatus.VOID) {
+      await this.opsNotify
+        ?.onInvoice({
+          topic: 'invoice.voided',
+          id: invoice.id,
+          number: invoice.number,
+          customerId: invoice.customerId,
+          actorUserId: userId,
+          transition: 'VOID',
+        })
+        .catch(() => undefined);
+    }
+
     return this.get(id);
   }
 
@@ -637,13 +683,12 @@ export class InvoicesService {
       },
     });
 
-    await this.notifications
-      .notifyCustomerUsers(so.customerId, {
-        templateCode: 'INVOICE_CREATED',
-        vars: { number: invoice.number, total: String(invoice.total) },
-        linkUrl: `/invoices/${invoice.id}`,
-      })
-      .catch(() => undefined);
+    await this.emitInvoiceCreated({
+      id: invoice.id,
+      number: invoice.number,
+      customerId: so.customerId,
+      actorUserId: userId,
+    });
 
     return invoice;
   }
@@ -738,13 +783,12 @@ export class InvoicesService {
       },
     });
 
-    await this.notifications
-      .notifyCustomerUsers(customer.id, {
-        templateCode: 'INVOICE_CREATED',
-        vars: { number: invoice.number, total: String(invoice.total) },
-        linkUrl: `/invoices/${invoice.id}`,
-      })
-      .catch(() => undefined);
+    await this.emitInvoiceCreated({
+      id: invoice.id,
+      number: invoice.number,
+      customerId: customer.id,
+      actorUserId: input.userId,
+    });
 
     return invoice;
   }

@@ -12,6 +12,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  FilterChip,
   Input,
   Ltr,
   Modal,
@@ -521,9 +522,9 @@ function UsersHub() {
 
       <div className="flex flex-wrap gap-2">
         {segments.map((s) => (
-          <button
+          <FilterChip
             key={s.key}
-            type="button"
+            selected={segment === s.key}
             onClick={() => {
               setSegment(s.key);
               setRoleCode('');
@@ -531,15 +532,9 @@ function UsersHub() {
               if (s.key !== 'all') setDepartmentId('');
               setPage(1);
             }}
-            className={[
-              'rounded-lg border px-3 py-1.5 text-sm font-medium transition',
-              segment === s.key
-                ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
-                : 'border-border bg-surface text-text-secondary hover:border-brand/40 hover:text-text-primary',
-            ].join(' ')}
           >
             {s.label}
-          </button>
+          </FilterChip>
         ))}
       </div>
 

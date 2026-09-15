@@ -77,5 +77,14 @@
   "catalog": "Catalog",
   "profile": "Profile",
   "factoryLabel": "Factory",
-  "home": "Home"
+  "home": "Home",
+  "basket": "Basket",
+  "customize": "Customize",
+  "customItem": "Custom item",
+  "productionPlan": "Production plan",
+  "fabricJobs": "Fabric jobs",
+  "receive": "Receive",
+  "lowStock": "Low stock",
+  "myLane": "Lane",
+  "takeIn": "Take in"
 }

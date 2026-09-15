@@ -28,6 +28,7 @@ export {
   getPermissionMeta,
   groupedPermissionCatalog,
   isAssignableToStaff,
+  toggleGroupPermissionSelection,
   type GroupedPermissionCatalog,
   type PermissionGroup,
   type PermissionMeta,

@@ -2,7 +2,12 @@ import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { can } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
-import { registerDeviceToken } from '@/api/modules/notifications';
+import { registerDeviceToken, releaseDeviceToken } from '@/api/modules/notifications';
+import {
+  clearStoredPushToken,
+  getStoredPushToken,
+  setStoredPushToken,
+} from '@/storage/pushDevice';
 
 function resolvePlatform(): 'ios' | 'android' | 'web' {
   if (Platform.OS === 'ios') return 'ios';
@@ -11,24 +16,42 @@ function resolvePlatform(): 'ios' | 'android' | 'web' {
 }
 
 /** Expo Go (SDK 53+) has no remote push — skip native notifications module entirely. */
-function isExpoGo(): boolean {
+export function isExpoGo(): boolean {
   return (
     Constants.appOwnership === 'expo' ||
     Constants.executionEnvironment === ExecutionEnvironment.StoreClient
   );
 }
 
+async function ensureAndroidChannels(
+  Notifications: typeof import('expo-notifications'),
+): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync('maher-default', {
+    name: 'Maher',
+    importance: Notifications.AndroidImportance.DEFAULT,
+  });
+  await Notifications.setNotificationChannelAsync('maher-high', {
+    name: 'Maher important',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+  });
+  await Notifications.setNotificationChannelAsync('maher-critical', {
+    name: 'Maher urgent',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'default',
+  });
+}
+
 /**
  * Register Expo push token with the API after login.
- * Push *delivery* is not implemented server-side — registration only.
- * No-ops in Expo Go (avoids SDK 53+ expo-notifications warnings).
+ * OS permission and "Deliver to this phone" are stored on this device row.
  */
 export async function registerPushDevice(user: AuthUser | null | undefined): Promise<boolean> {
   if (!user || !can(user, 'notification.read')) return false;
   if (isExpoGo()) return false;
 
   try {
-    // Dynamic import so Expo Go never loads expo-notifications (and its WARN spam).
     const Notifications = await import('expo-notifications');
 
     Notifications.setNotificationHandler({
@@ -41,12 +64,7 @@ export async function registerPushDevice(user: AuthUser | null | undefined): Pro
       }),
     });
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.DEFAULT,
-      });
-    }
+    await ensureAndroidChannels(Notifications);
 
     const permissions = await Notifications.getPermissionsAsync();
     let status = permissions.status;
@@ -54,6 +72,7 @@ export async function registerPushDevice(user: AuthUser | null | undefined): Pro
       const asked = await Notifications.requestPermissionsAsync();
       status = asked.status;
     }
+    const osPermission = status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'undetermined';
     if (status !== 'granted') return false;
 
     const projectId =
@@ -67,10 +86,29 @@ export async function registerPushDevice(user: AuthUser | null | undefined): Pro
     const token = tokenResult.data?.trim();
     if (!token) return false;
 
-    await registerDeviceToken({ token, platform: resolvePlatform() });
+    await registerDeviceToken({
+      token,
+      platform: resolvePlatform(),
+      osPermission,
+      pushEnabled: true,
+    });
+    await setStoredPushToken(token);
     return true;
   } catch {
-    // Missing projectId / simulator / permission denial — never block login.
     return false;
+  }
+}
+
+/** Unbind this phone from the signed-in user so the next account cannot inherit pushes. */
+export async function releasePushDevice(): Promise<void> {
+  const token = await getStoredPushToken();
+  try {
+    if (token && !isExpoGo()) {
+      await releaseDeviceToken(token);
+    }
+  } catch {
+    // Offline logout still clears the local token; B's register will steal if needed.
+  } finally {
+    await clearStoredPushToken();
   }
 }

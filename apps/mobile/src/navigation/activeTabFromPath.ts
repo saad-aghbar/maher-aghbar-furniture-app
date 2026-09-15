@@ -44,7 +44,8 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
     if (
       segments.includes('orders') ||
       segments.includes('requests') ||
-      segments.includes('quotations')
+      segments.includes('quotations') ||
+      segments.includes('ai-intake')
     ) {
       return 'orders';
     }
@@ -59,9 +60,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
       segments.includes('reports') ||
       segments.includes('returns') ||
       segments.includes('reports') ||
-      segments.includes('ai-intake') ||
       segments.includes('ai-chat') ||
-      segments.includes('notifications') ||
       segments.includes('search') ||
       segments.includes('more')
     ) {
@@ -94,8 +93,8 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
       return 'tasks';
     }
     if (segments.includes('completed')) return 'completed';
-    if (segments.includes('notifications')) return 'notifications';
     if (segments.includes('profile')) return 'profile';
+    if (segments.includes('notifications')) return 'notifications';
   }
 
   // Bare tab routes after groups are stripped: `/more`, `/orders`, …

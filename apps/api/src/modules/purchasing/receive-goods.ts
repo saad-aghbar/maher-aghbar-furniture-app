@@ -12,6 +12,8 @@ import {
   groupReceiptLinesByWarehouse,
   receiptIdempotencyKey,
 } from './receivable-queue';
+import { stockCrossedBelowMin, type LowStockCross } from '../notifications/ops-notify.classify';
+import type { OpsNotifyService } from '../notifications/ops-notify.service';
 
 export type ReceiveGoodsLine = {
   inventoryItemId: string;
@@ -41,6 +43,7 @@ type ReceiveDeps = {
   inventory: any;
   fabricReceiving: any;
   supplierInvoices: any;
+  opsNotify?: OpsNotifyService;
 };
 
 export async function receivePurchaseOrderGoods(
@@ -183,6 +186,25 @@ export async function receivePurchaseOrderGoods(
       return { ...existingReceipts[0], receipts: existingReceipts };
     }
   }
+
+  const itemIds = [...new Set(body.lines.map((l) => l.inventoryItemId))];
+  const beforeRows = itemIds.length
+    ? await deps.prisma.inventoryItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, sku: true, minStock: true, balances: { select: { availableQty: true } } },
+      })
+    : [];
+  const beforeByItem = new Map<string, { sku: string; minStock: number; qty: number }>(
+    beforeRows.map((row: { id: string; sku: string; minStock: unknown; balances: Array<{ availableQty: unknown }> }) => [
+      row.id,
+      {
+        sku: row.sku,
+        minStock: Number(row.minStock),
+        qty: row.balances.reduce((s, b) => s + Number(b.availableQty), 0),
+      },
+    ]),
+  );
+  const prevPoStatus = po.status;
 
   const receipts = await deps.prisma.$transaction(async (tx: any) => {
     const created = [];
@@ -395,6 +417,80 @@ export async function receivePurchaseOrderGoods(
     await deps.supplierInvoices
       .ensureFromPurchaseOrder(poId, userId, first.id)
       .catch(() => undefined);
+  }
+
+  if (deps.opsNotify && receipts.length) {
+    const poAfter = await deps.prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      select: { id: true, number: true, status: true },
+    });
+    for (const grn of receipts) {
+      await deps.opsNotify
+        .onGoodsReceipt({
+          id: grn.id,
+          number: grn.number,
+          purchaseOrderId: poId,
+          actorUserId: userId,
+        })
+        .catch(() => undefined);
+    }
+    if (poAfter && prevPoStatus !== poAfter.status) {
+      if (poAfter.status === PurchaseOrderStatus.PARTIALLY_RECEIVED) {
+        await deps.opsNotify
+          .onPurchaseOrder({
+            topic: 'po.partial',
+            id: poAfter.id,
+            number: poAfter.number,
+            actorUserId: userId,
+            transition: 'PARTIALLY_RECEIVED',
+          })
+          .catch(() => undefined);
+      }
+      if (poAfter.status === PurchaseOrderStatus.RECEIVED) {
+        await deps.opsNotify
+          .onPurchaseOrder({
+            topic: 'po.received',
+            id: poAfter.id,
+            number: poAfter.number,
+            actorUserId: userId,
+            transition: 'RECEIVED',
+          })
+          .catch(() => undefined);
+      }
+    }
+    const afterRows = itemIds.length
+      ? await deps.prisma.inventoryItem.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, sku: true, minStock: true, balances: { select: { availableQty: true } } },
+        })
+      : [];
+    for (const row of afterRows) {
+      const before = beforeByItem.get(row.id);
+      if (!before) continue;
+      const afterQty = row.balances.reduce((s: number, b: { availableQty: unknown }) => s + Number(b.availableQty), 0);
+      if (stockCrossedBelowMin(before.qty, afterQty, Number(row.minStock))) {
+        const cross: LowStockCross = {
+          itemId: row.id,
+          sku: row.sku,
+          before: before.qty,
+          after: afterQty,
+          minStock: Number(row.minStock),
+        };
+        await deps.opsNotify.onLowStockCross(cross, userId).catch(() => undefined);
+      }
+    }
+    const fabricIds = await deps.prisma.fabricProcurement.findMany({
+      where: {
+        purchaseOrderId: poId,
+        lots: { some: { goodsReceiptId: { in: receipts.map((r: { id: string }) => r.id) } } },
+      },
+      select: { id: true },
+    });
+    for (const fabric of fabricIds) {
+      await deps.opsNotify
+        .onFabric({ id: fabric.id, eventKind: 'RECEIVED', state: 'READY_FOR_PICKUP', actorUserId: userId })
+        .catch(() => undefined);
+    }
   }
 
   return { ...first, receipts };

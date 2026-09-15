@@ -4,6 +4,8 @@ import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
 import { AvailabilityCard, localDealerMinimumRequestYmd } from '@/components/availability-card';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { useRouter } from '@/i18n/navigation';
+import { useOrderBasket } from '@/components/order-basket-provider';
+import { lineHasProduct, lineToRequestItem } from '@/lib/basket';
 import {
   Alert,
   Button,
@@ -94,6 +96,8 @@ function CreateOrderForm() {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get('productId') ?? '';
 
+  const basket = useOrderBasket();
+  const basketLines = basket.lines.filter(lineHasProduct);
   const [productId, setProductId] = useState(initialProductId);
   const [customProductName, setCustomProductName] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -435,12 +439,17 @@ function CreateOrderForm() {
     setLoading(true);
     setError(null);
     try {
-      const name = productName.trim();
-      const qty = Number(quantity);
       const address = deliveryAddress.trim();
-      if (!name) throw new Error(tc('customerProductRequired'));
-      if (!(qty > 0)) throw new Error(tc('quantityPositive'));
-      if (!address) throw new Error(tc('deliveryAddressRequired'));
+      const itemsFromBasket = basketLines.map((line) => lineToRequestItem(line, tc('name')));
+      if (itemsFromBasket.length) {
+        if (!address) throw new Error(tc('deliveryAddressRequired'));
+      } else {
+        const name = productName.trim();
+        const qty = Number(quantity);
+        if (!name) throw new Error(tc('customerProductRequired'));
+        if (!(qty > 0)) throw new Error(tc('quantityPositive'));
+        if (!address) throw new Error(tc('deliveryAddressRequired'));
+      }
 
       const me = meQuery.data;
       const typedName = endCustomerName.trim();
@@ -471,11 +480,13 @@ function CreateOrderForm() {
           deliveryLat: deliveryLat ?? undefined,
           deliveryLng: deliveryLng ?? undefined,
           notes: notes.trim() || undefined,
-          items: [
+          items: itemsFromBasket.length
+            ? itemsFromBasket
+            : [
             {
               productId: productId || undefined,
-              productName: name,
-              quantity: qty,
+              productName: productName.trim(),
+              quantity: Number(quantity),
               fabric: fabric.trim() || undefined,
               color: extraFabrics[0]?.color?.trim() || undefined,
               fabrics: [
@@ -526,6 +537,7 @@ function CreateOrderForm() {
       setConfirmDraft(asDraft);
       setConfirmNumber(created.number);
       setConfirmOpen(true);
+      if (itemsFromBasket.length) basket.clear();
     } catch (err) {
       const message = err instanceof Error && err.message ? err.message : tc('actionFailed');
       setError(message);
@@ -566,8 +578,9 @@ function CreateOrderForm() {
     setConfirmNumber('');
   }
 
-  const canSubmit =
-    Boolean(productName.trim()) && Number(quantity) > 0 && Boolean(deliveryAddress.trim());
+  const canSubmit = basketLines.length
+    ? Boolean(deliveryAddress.trim())
+    : Boolean(productName.trim()) && Number(quantity) > 0 && Boolean(deliveryAddress.trim());
   const busy = loading || aiBusy;
 
   return (
@@ -575,6 +588,21 @@ function CreateOrderForm() {
       <PageHero tone="soft" title={t('createOrder')} description={tc('orderSection')} />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
+
+      {basketLines.length ? (
+        <Card title={t('basket')} className="maher-form-section">
+          <ul className="space-y-2 text-sm">
+            {basketLines.map((line) => (
+              <li key={line.id} className="flex justify-between gap-2">
+                <span>
+                  {line.customProductName || line.variantLabel || line.productId}
+                  {` · ${line.quantity}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
       {banner ? <Alert variant={aiBusy ? 'info' : 'success'}>{banner}</Alert> : null}
 
       <Modal

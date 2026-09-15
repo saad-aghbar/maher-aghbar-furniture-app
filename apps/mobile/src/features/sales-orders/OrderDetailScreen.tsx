@@ -1930,6 +1930,11 @@ function LineItemCard({
           )}
         </View>
         <View style={{ flex: 1, gap: theme.spacing.xs }}>
+          {item.itemNumber ? (
+            <AppText variant="caption" color="muted" dir="ltr">
+              {item.itemNumber}
+            </AppText>
+          ) : null}
           {productName ? (
             <AppText variant="body" weight={titleWeight} numberOfLines={2}>
               {productName}

@@ -6,6 +6,7 @@ import { SequenceService } from '../../common/sequence.service';
 import { roundMoney } from '../../common/helpers/money.util';
 import { buildPurchaseOrderWhatsAppBody as buildPoWhatsAppCopy } from '../../common/helpers/fabric-whatsapp-copy';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
 import { WHATSAPP_PROVIDER } from '../../integrations/integrations.module';
 import { classifyMaterialDemand } from './material-demand';
@@ -82,6 +83,7 @@ export class PurchasingService {
     @Optional()
     @Inject(forwardRef(() => SchedulingQueueService))
     private readonly schedulingQueue?: SchedulingQueueService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   private async companyFlag(key: string, defaultValue = true): Promise<boolean> {
@@ -183,19 +185,6 @@ export class PurchasingService {
     const lineCount = orders.reduce((s, o) => s + o.lineCount, 0);
     this.logger.log(
       `Created ${orders.length} PO(s) from low stock (${lineCount} lines)`,
-    );
-
-    await this.notifyLowStock(
-      draft.groups.flatMap((g) =>
-        g.items.map((i) => ({
-          sku: i.sku,
-          name: i.nameEn || i.nameAr || i.sku,
-          available: i.onHandQty,
-          minStock: i.minStock,
-        })),
-      ),
-      orders[0]?.number,
-      opts.skipNotify,
     );
 
     return {
@@ -612,6 +601,17 @@ export class PurchasingService {
         entityId: id,
       },
     });
+    if (existing.status !== PurchaseOrderStatus.SENT) {
+      await this.opsNotify
+        ?.onPurchaseOrder({
+          topic: 'po.sent',
+          id: po.id,
+          number: po.number,
+          actorUserId: userId,
+          transition: 'SENT',
+        })
+        .catch(() => undefined);
+    }
     return po;
   }
 
@@ -865,20 +865,6 @@ export class PurchasingService {
       const isLow = available <= Number(item.minStock);
       if (!isLow) return;
 
-      if (await this.isLowStockAlertsEnabled()) {
-        await this.notifyLowStock(
-          [
-            {
-              sku: item.sku,
-              name: item.nameEn || item.nameAr || item.sku,
-              available,
-              minStock: Number(item.minStock),
-            },
-          ],
-          undefined,
-        );
-      }
-
       if (await this.isAutoReorderEnabled()) {
         await this.createFromLowStock({
           requestedById: userId,
@@ -895,52 +881,6 @@ export class PurchasingService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
-    }
-  }
-
-  private async notifyLowStock(
-    items: Array<{ sku: string; name: string; available: number; minStock: number }>,
-    prNumber?: string,
-    skip?: boolean,
-  ) {
-    if (skip || !(await this.isLowStockAlertsEnabled()) || !items.length) return;
-    const recipients = await this.prisma.user.findMany({
-      where: {
-        archivedAt: null,
-        isActive: true,
-        roles: {
-          some: {
-            role: {
-              code: {
-                in: ['SYSTEM_ADMINISTRATOR'],
-              },
-            },
-          },
-        },
-      },
-      select: { id: true },
-      take: 30,
-    });
-    const summary = items
-      .slice(0, 5)
-      .map((i) => `${i.sku} (${i.available}/${i.minStock})`)
-      .join(', ');
-    const linkUrl = prNumber
-      ? `${process.env.NEXT_PUBLIC_ADMIN_WEB_URL ?? process.env.ADMIN_WEB_URL ?? 'http://localhost:3000'}/purchasing`
-      : `${process.env.NEXT_PUBLIC_ADMIN_WEB_URL ?? process.env.ADMIN_WEB_URL ?? 'http://localhost:3000'}/inventory`;
-
-    for (const user of recipients) {
-      await this.notifications.sendFromTemplate({
-        templateCode: 'LOW_STOCK',
-        channel: 'IN_APP',
-        to: { userId: user.id },
-        vars: {
-          count: items.length,
-          items: summary,
-          prNumber: prNumber ?? '—',
-        },
-        linkUrl,
-      });
     }
   }
 
@@ -1113,6 +1053,15 @@ export class PurchasingService {
           entityId: poId,
         },
       });
+      await this.opsNotify
+        ?.onPurchaseOrder({
+          topic: 'po.approved',
+          id: existing.id,
+          number: existing.number,
+          actorUserId: userId,
+          transition: 'APPROVED',
+        })
+        .catch(() => undefined);
     }
     if (
       existing.status !== PurchaseOrderStatus.APPROVED &&
@@ -1178,6 +1127,18 @@ export class PurchasingService {
         },
       },
     });
+
+    if (existing.status !== PurchaseOrderStatus.SENT) {
+      await this.opsNotify
+        ?.onPurchaseOrder({
+          topic: 'po.sent',
+          id: po.id,
+          number: po.number,
+          actorUserId: userId,
+          transition: 'SENT',
+        })
+        .catch(() => undefined);
+    }
 
     return { purchaseOrder: po, whatsapp };
   }

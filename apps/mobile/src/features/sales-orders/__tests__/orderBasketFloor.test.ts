@@ -22,6 +22,7 @@ describe('admin order basket boards floor', () => {
     const lane = read('laneOrderCard.ts');
     expect(card).toContain('OrderBasketBoard');
     expect(card).toContain('orderBasketItemHref');
+    expect(card).toContain('orderBasketDetailsHref');
     expect(card).not.toContain('DeskCard');
     expect(card).not.toContain('itemStrip');
     expect(hub).toContain('items: o.items');

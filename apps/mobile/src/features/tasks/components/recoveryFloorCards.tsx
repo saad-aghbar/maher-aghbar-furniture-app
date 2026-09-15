@@ -11,6 +11,7 @@ import {
   locationsForWarehouse,
   WarehouseBinBoard,
 } from '@/features/inventory/components/WarehouseBinBoard';
+import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 import { warehouseDisplayName as warehouseDeskName } from '@/features/inventory/warehouseDesk';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';

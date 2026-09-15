@@ -285,5 +285,14 @@
   "searchPayments": "Search payments…",
   "filterDateFrom": "From",
   "filterDateTo": "To",
-  "paymentDealer": "Dealer"
+  "paymentDealer": "Dealer",
+  "sectionInventory": "Inventory",
+  "sectionCustom": "Custom work",
+  "dateBasis": "Date basis",
+  "dateBasisOrder": "Order date",
+  "dateBasisDelivered": "Delivered",
+  "dateBasisActivity": "Activity",
+  "complexityFilter": "Complexity",
+  "coverageIssue": "Coverage issue",
+  "scanPackage": "Scan package"
 }

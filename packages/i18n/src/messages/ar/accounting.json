@@ -285,5 +285,14 @@
   "searchPayments": "بحث المدفوعات…",
   "filterDateFrom": "من",
   "filterDateTo": "إلى",
-  "paymentDealer": "التاجر"
+  "paymentDealer": "التاجر",
+  "sectionInventory": "المخزون",
+  "sectionCustom": "العمل المخصص",
+  "dateBasis": "أساس التاريخ",
+  "dateBasisOrder": "تاريخ الطلب",
+  "dateBasisDelivered": "التسليم",
+  "dateBasisActivity": "النشاط",
+  "complexityFilter": "التعقيد",
+  "coverageIssue": "مشكلة تغطية",
+  "scanPackage": "مسح الطرد"
 }

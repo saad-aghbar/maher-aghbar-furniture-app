@@ -147,7 +147,7 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
     );
   }
 
-  if (productQuery.isError || !vm || !selectedVariant) {
+  if (productQuery.isError || !product || !vm || !selectedVariant) {
     return (
       <AppScreen>
         <ScreenBackLead fallback={backFallback} />

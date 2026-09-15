@@ -231,5 +231,13 @@
   "loadSheetConfirmDepart": "تأكيد مغادرة الشاحنة",
   "loadSheetConfirmDepartTitle": "تأكيد مغادرة الشاحنة؟",
   "loadSheetConfirmDepartBody": "هذا يسجّل التسليم كخارج للتسليم ويصرف البضائع الجاهزة من مخزون المستودع. يؤكّد التاجر الاستلام لاحقاً — هذا ليس تسليماً.",
-  "loadSheetDeparted": "غادرت الشاحنة — خرجت البضائع الجاهزة من المخزون."
+  "loadSheetDeparted": "غادرت الشاحنة — خرجت البضائع الجاهزة من المخزون.",
+  "identify": "تعرّف",
+  "verify": "تحقق",
+  "fabricBundle": "رزمة قماش",
+  "scanMode": "وضع المسح",
+  "itemQr": "رمز الصنف",
+  "semiFinished": "نصف جاهز",
+  "finishedGoods": "بضائع جاهزة",
+  "scanUnknown": "الرمز غير موجود"
 }

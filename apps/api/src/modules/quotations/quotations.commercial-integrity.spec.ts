@@ -421,12 +421,14 @@ describe('quotations commercial integrity', () => {
         lines: {
           create: Array<{
             manufacturingComplexity: string;
+            itemLetter?: string;
             orderSpec?: { manufacturingComplexity?: string; customMeasurements?: unknown };
           }>;
         };
       };
     };
     expect(created.data.lines.create[0]?.manufacturingComplexity).toBe('CUSTOM');
+    expect(created.data.lines.create[0]?.itemLetter).toBe('A');
     expect(created.data.lines.create[0]?.orderSpec?.manufacturingComplexity).toBe('CUSTOM');
     expect(created.data.lines.create[0]?.orderSpec?.customMeasurements).toEqual([
       expect.objectContaining({ key: 'arm', value: 70 }),
@@ -598,6 +600,7 @@ describe('quotations commercial integrity', () => {
       data: {
         lines: {
           create: Array<{
+            itemLetter?: string;
             variantId?: string;
             variantSku?: string;
             orderSpec?: {
@@ -612,6 +615,7 @@ describe('quotations commercial integrity', () => {
       };
     };
     expect(created.data.lines.create[0]?.variantId).toBe('v-250');
+    expect(created.data.lines.create[0]?.itemLetter).toBe('A');
     expect(created.data.lines.create[0]?.variantSku).toBe('KARINA-250');
     expect(created.data.lines.create[0]?.orderSpec?.variantId).toBe('v-250');
     expect(created.data.lines.create[0]?.orderSpec?.orientation).toBe('LEFT');

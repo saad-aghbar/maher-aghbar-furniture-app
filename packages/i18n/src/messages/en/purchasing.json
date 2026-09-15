@@ -31,5 +31,7 @@
   "expectedDate": "Expected date",
   "openOrders": "Open orders",
   "recentOrders": "Recent orders",
-  "purchaseHistory": "Purchase history"
+  "purchaseHistory": "Purchase history",
+  "fabricJobs": "Fabric jobs",
+  "scanToAdd": "Scan to add a line"
 }

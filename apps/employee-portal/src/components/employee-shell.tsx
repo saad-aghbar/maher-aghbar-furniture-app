@@ -73,7 +73,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const navHrefs = useMemo(() => navItems.map((item) => item.href), []);
 
   return (
-    <div className="mx-auto min-h-screen max-w-xl bg-background shadow-elevated sm:my-6 sm:rounded-[var(--maher-radius-xl)]">
+    <div className="mx-auto min-h-screen max-w-4xl bg-background shadow-elevated sm:my-6 sm:rounded-[var(--maher-radius-xl)]">
       <header
         ref={headerRef}
         data-header-tone={overDark ? 'on-dark' : 'on-light'}

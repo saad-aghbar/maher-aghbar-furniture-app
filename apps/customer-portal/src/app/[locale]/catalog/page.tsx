@@ -88,7 +88,19 @@ export default function CatalogPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero tone="soft" title={t('catalog')} description={tc('products')} />
+      <PageHero
+        tone="soft"
+        title={t('catalog')}
+        description={tc('products')}
+        actions={
+          <Link
+            href="/order/custom"
+            className="inline-flex h-10 items-center rounded-[var(--maher-radius-md)] bg-[var(--maher-brand-soft)] px-4 text-sm font-medium text-brand"
+          >
+            {t('customItem')}
+          </Link>
+        }
+      />
 
       <MotionSection delayMs={40} className="space-y-4">
         <div className="maher-stagger flex flex-wrap gap-2">
@@ -151,11 +163,11 @@ export default function CatalogPage() {
             const price = product.price ?? product.dealerPrice ?? product.basePrice;
             const priceNum = price != null ? Number(price) : NaN;
             return (
-              <SurfaceCard
-                key={product.id}
-                tilt
-                className="maher-list-card group flex flex-col !rounded-xl"
-              >
+              <Link key={product.id} href={`/catalog/${product.id}`} className="flex">
+                <SurfaceCard
+                  tilt
+                  className="maher-list-card group flex flex-1 flex-col !rounded-xl"
+                >
                 <div className="relative aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]">
                   {image ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -185,15 +197,13 @@ export default function CatalogPage() {
                         ? `${priceNum.toFixed(0)} ${tCommon('currency')}`
                         : '—'}
                     </span>
-                    <Link
-                      href={`/orders/new?productId=${product.id}`}
-                      className="shrink-0 text-xs font-semibold text-brand hover:underline"
-                    >
-                      {t('createOrder')}
-                    </Link>
+                    <span className="shrink-0 text-xs font-semibold text-brand">
+                      {tCommon('viewDetails')}
+                    </span>
                   </div>
                 </div>
               </SurfaceCard>
+              </Link>
             );
           })}
         </StaggerGrid>

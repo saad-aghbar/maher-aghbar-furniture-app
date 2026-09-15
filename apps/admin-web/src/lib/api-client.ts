@@ -118,6 +118,8 @@ export type OrderSetupMaterial = {
 export type OrderSetupLine = {
   id: string;
   salesOrderLineId: string;
+  itemLetter?: string | null;
+  itemNumber?: string | null;
   status: string;
   manufacturingName: string | null;
   manufacturingComplexity?: string | null;

@@ -755,5 +755,15 @@
     "ACCT": "הנהלת חשבונות",
     "CUTTING": "חיתוך",
     "ASSEMBLY": "הרכבה"
-  }
+  },
+  "viewBoards": "סלים",
+  "viewItems": "הזמנות",
+  "kitQr": "QR ערכה",
+  "takeInTitle": "קליטת ערכה",
+  "takeInContinue": "המשך למשימה",
+  "reportProblem": "דיווח על בעיה",
+  "qcPass": "עבר בדיקה",
+  "qcFail": "נכשל בבדיקה",
+  "materialsIdentify": "זיהוי חומר",
+  "scanFinLot": "סריקת מנה גמורה"
 }

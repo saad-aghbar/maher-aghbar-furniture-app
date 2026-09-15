@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Optional,
   Param,
   Patch,
   Post,
@@ -46,6 +47,7 @@ import { normalizePurchaseOrderOrigin } from './purchase-order-origin';
 import { resolveLineWarehouse } from './purchase-order-lines';
 import { receivePurchaseOrderGoods } from './receive-goods';
 import { attachPurchaseRunMeta, PURCHASE_RUN_INCLUDE } from './purchase-run';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 
 class PurchaseLineDto {
   @IsString()
@@ -276,6 +278,7 @@ export class PurchasingController {
     private readonly inventory: InventoryService,
     private readonly supplierInvoices: SupplierInvoicesService,
     private readonly fabricReceiving: FabricReceivingService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   private async assertPurchasableItems(ids: Array<string | undefined>) {
@@ -389,7 +392,7 @@ export class PurchasingController {
   async createRequest(@Body() dto: CreatePurchaseRequestDto, @CurrentUser() user: AuthUser) {
     await this.assertPurchasableItems(dto.lines.map((l) => l.inventoryItemId));
     const number = await this.sequences.next('PR', 'PR');
-    return this.prisma.purchaseRequest.create({
+    const created = await this.prisma.purchaseRequest.create({
       data: {
         number,
         requestedById: user.id,
@@ -408,6 +411,16 @@ export class PurchasingController {
       },
       include: { lines: true, preferredSupplier: true },
     });
+    await this.opsNotify
+      ?.onPurchaseRequest({
+        topic: 'pr.created',
+        id: created.id,
+        number: created.number,
+        actorUserId: user.id,
+        requesterUserId: user.id,
+      })
+      .catch(() => undefined);
+    return created;
   }
 
   @Post('purchase-requests/:id/approve')
@@ -433,6 +446,15 @@ export class PurchasingController {
         entityId: id,
       },
     });
+    await this.opsNotify
+      ?.onPurchaseRequest({
+        topic: 'pr.approved',
+        id: updated.id,
+        number: updated.number,
+        actorUserId: user.id,
+        requesterUserId: pr.requestedById,
+      })
+      .catch(() => undefined);
     return updated;
   }
 
@@ -926,6 +948,15 @@ export class PurchasingController {
         entityId: id,
       },
     });
+    await this.opsNotify
+      ?.onPurchaseOrder({
+        topic: 'po.cancelled',
+        id: po.id,
+        number: po.number,
+        actorUserId: user.id,
+        transition: 'CANCELLED',
+      })
+      .catch(() => undefined);
     return po;
   }
 
@@ -1031,6 +1062,15 @@ export class PurchasingController {
         entityId: id,
       },
     });
+    await this.opsNotify
+      ?.onPurchaseOrder({
+        topic: 'po.approved',
+        id: po.id,
+        number: po.number,
+        actorUserId: user.id,
+        transition: 'APPROVED',
+      })
+      .catch(() => undefined);
     return po;
   }
 
@@ -1200,6 +1240,7 @@ export class PurchasingController {
         inventory: this.inventory,
         fabricReceiving: this.fabricReceiving,
         supplierInvoices: this.supplierInvoices,
+        opsNotify: this.opsNotify,
       },
       id,
       body,

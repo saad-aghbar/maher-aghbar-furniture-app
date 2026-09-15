@@ -16,7 +16,7 @@ import { MoreBoard } from './MoreBoard';
 export function MorePreferencesBoard() {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { theme } = useTheme();
   const router = useRouter();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -83,6 +83,18 @@ export function MorePreferencesBoard() {
           onPress={() => {
             void haptics.selection();
             router.push('/(app)/(admin)/more/account' as Href);
+          }}
+        />
+
+        <HubCta
+          icon="notifications-outline"
+          label={t('mobile.notifications.prefs.title')}
+          isRTL={isRTL}
+          titleWeight={titleWeight}
+          primary={false}
+          onPress={() => {
+            void haptics.selection();
+            router.push('/(app)/(admin)/more/notifications' as Href);
           }}
         />
 

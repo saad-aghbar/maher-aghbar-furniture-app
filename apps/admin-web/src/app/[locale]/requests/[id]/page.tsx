@@ -11,6 +11,12 @@ import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
+  isHandwrittenDocument,
+  latestJobNotes,
+  lineHasAiFill,
+  requestAiReadingFlags,
+} from '@/lib/request-ai-reading';
+import {
   Alert,
   Badge,
   Button,
@@ -99,7 +105,17 @@ interface RequestDetail {
     downloadPath?: string | null;
   }>;
   quotations?: Array<{ id: string; number: string; status: string }>;
-  aiJobs?: Array<{ id: string; number: string; status: string }>;
+  aiJobs?: Array<{
+    id: string;
+    number: string;
+    status: string;
+    fields?: Array<{
+      fieldName: string;
+      fieldValue?: string | null;
+      reviewedValue?: string | null;
+      confidence?: number | string | null;
+    }>;
+  }>;
   reviewHistory?: Array<{ at: string; action: string; message?: string | null }>;
 }
 
@@ -361,6 +377,29 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
     deliveryChangeDate.trim() && deliveryChangeDate.trim() < dealerMinRequestYmd,
   );
   const presentationKey = data.presentationKey;
+  const sheetDocs = (data.documents ?? []).filter(isHandwrittenDocument);
+  const aiFlags = requestAiReadingFlags(data);
+  const jobNotes = latestJobNotes(data);
+
+  function sheetFieldLabel(key: string) {
+    const map: Record<string, string> = {
+      productName: tc('product'),
+      quantity: tc('qty'),
+      product: tc('product'),
+      width: tc('width'),
+      height: tc('height'),
+      depth: tc('depth'),
+      fabric: tc('fabric'),
+      notes: tc('notes'),
+    };
+    return map[key] ?? key;
+  }
+
+  function flagReasonLabel(reason: 'missing' | 'unclear' | 'mismatch') {
+    if (reason === 'missing') return tc('rfqSheetUnclearMissing');
+    if (reason === 'unclear') return tc('rfqSheetUnclearUnclear');
+    return tc('rfqSheetUnclearMismatch');
+  }
 
   function lineComplexityLabel(code?: string | null) {
     if (!code) return null;
@@ -572,24 +611,12 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       </Card>
       </MotionSection>
 
-      {(data.documents ?? []).some(
-        (d) =>
-          (d.category ?? '').includes('HANDWRITTEN') ||
-          (d.fileName ?? '').toLowerCase().includes('handwritten') ||
-          (d.mimeType ?? '').startsWith('image/'),
-      ) ? (
+      {(sheetDocs.length > 0) ? (
         <MotionSection className="maher-form-section" as="div">
           <Card title={tc('rfqSheetRecord')}>
+            <p className="mb-3 text-sm text-[var(--maher-text-secondary)]">{tc('rfqSheetHint')}</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              {(data.documents ?? [])
-                .filter(
-                  (d) =>
-                    (d.category ?? '').includes('HANDWRITTEN') ||
-                    (d.fileName ?? '').toLowerCase().includes('handwritten') ||
-                    (d.mimeType ?? '').startsWith('image/') ||
-                    (d.mimeType ?? '').includes('pdf'),
-                )
-                .map((d) => (
+              {sheetDocs.map((d) => (
                   <div key={d.id} className="space-y-2">
                     {(d.mimeType ?? '').startsWith('image/') && d.downloadPath ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -609,6 +636,22 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                   </div>
                 ))}
             </div>
+          </Card>
+        </MotionSection>
+      ) : null}
+
+      {aiFlags.length > 0 || jobNotes ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card title={tc('rfqSheetUnclearTitle')}>
+            <p className="mb-3 text-sm text-[var(--maher-text-secondary)]">{tc('rfqSheetUnclearHint')}</p>
+            {jobNotes ? <p className="mb-3 text-sm">{jobNotes}</p> : null}
+            <ul className="space-y-1 text-sm">
+              {aiFlags.map((flag) => (
+                <li key={`${flag.key}:${flag.reason}`}>
+                  {sheetFieldLabel(flag.key)} — {flagReasonLabel(flag.reason)}
+                </li>
+              ))}
+            </ul>
           </Card>
         </MotionSection>
       ) : null}
@@ -639,7 +682,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                   <TableRow key={item.id}>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span>{item.productName}</span>
+                        <Link href={`/requests/${params.id}/lines/${item.id}`} className="text-brand hover:underline">
+                          {item.productName}
+                        </Link>
                         {item.variantLabel ? (
                           <span className="text-sm text-[var(--maher-text-secondary)]">
                             {item.variantLabel}
@@ -657,6 +702,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                           >
                             {complexity}
                           </Badge>
+                        ) : null}
+                        {lineHasAiFill(item) ? (
+                          <Badge variant="info">{tc('filledFromSheet')}</Badge>
                         ) : null}
                       </div>
                     </TableCell>

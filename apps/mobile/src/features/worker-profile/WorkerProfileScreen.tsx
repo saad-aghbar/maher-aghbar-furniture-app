@@ -24,7 +24,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
 import { rolesLabel } from '@/i18n/roleLabel';
-import { haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 
@@ -237,6 +237,43 @@ export function WorkerProfileScreen() {
                 <ExpandableLocaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
               }
             />
+          </MoreBoard>
+        </Animated.View>
+
+        <Animated.View entering={enter(120)} style={{ gap: theme.spacing.sm }}>
+          <SectionLabel label={t('mobile.notifications.prefs.title')} locale={locale} />
+          <MoreBoard
+            style={{
+              padding: theme.spacing.lg,
+              paddingLeft: isRTL ? theme.spacing.lg : theme.spacing.lg + 4,
+              paddingRight: isRTL ? theme.spacing.lg + 4 : theme.spacing.lg,
+            }}
+          >
+            <AnimatedPressable
+              variant="button"
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.notifications.prefs.title')}
+              onPress={() => {
+                void haptics.selection();
+                router.push('/(app)/(employee)/profile/notifications' as Href);
+              }}
+              style={{
+                minHeight: 48,
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.brand,
+                backgroundColor: colors.brandSoft,
+                paddingHorizontal: theme.spacing.lg,
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <AppText variant="label" weight={titleWeight} style={{ color: colors.brand }}>
+                {t('mobile.notifications.prefs.open')}
+              </AppText>
+              <Ionicons name={isRTL ? 'arrow-back' : 'arrow-forward'} size={18} color={colors.brand} />
+            </AnimatedPressable>
           </MoreBoard>
         </Animated.View>
 

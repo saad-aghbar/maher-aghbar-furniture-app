@@ -3,11 +3,14 @@ import type { AppNotification } from './api';
 export type NotificationCardModel = {
   id: string;
   type: string;
+  topic: string | null;
   title: string;
   body: string;
   unread: boolean;
   createdAt: string;
   linkUrl: string | null;
+  entityType: string | null;
+  entityId: string | null;
 };
 
 const UUID_RE =
@@ -193,20 +196,30 @@ export function selectNotificationCard(
   locale: string,
   anonymousOrder = 'an order',
 ): NotificationCardModel {
-  const ar = locale === 'ar' || locale === 'he';
   const vars = notificationTemplateVars(row);
-  const rawTitle = ar
-    ? row.titleAr || row.titleEn || row.type
-    : row.titleEn || row.titleAr || row.type;
-  const rawBody = ar ? row.bodyAr || row.bodyEn || '' : row.bodyEn || row.bodyAr || '';
+  const rawTitle =
+    locale === 'he'
+      ? row.titleHe || row.titleEn || row.titleAr || row.type
+      : locale === 'ar'
+        ? row.titleAr || row.titleEn || row.type
+        : row.titleEn || row.titleAr || row.type;
+  const rawBody =
+    locale === 'he'
+      ? row.bodyHe || row.bodyEn || row.bodyAr || ''
+      : locale === 'ar'
+        ? row.bodyAr || row.bodyEn || ''
+        : row.bodyEn || row.bodyAr || '';
   return {
     id: row.id,
     type: row.type,
+    topic: row.topic ?? null,
     title: polishNotificationCopy(rawTitle, vars, { anonymousOrder }),
     body: polishNotificationCopy(rawBody, vars, { anonymousOrder }),
     unread: !row.readAt,
     createdAt: row.createdAt,
     linkUrl: row.linkUrl ?? null,
+    entityType: row.entityType ?? null,
+    entityId: row.entityId ?? null,
   };
 }
 

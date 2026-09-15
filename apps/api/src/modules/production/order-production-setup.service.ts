@@ -25,6 +25,8 @@ import {
   pickVariantScopedRows,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import { resolveSalesOrderProductionNumber } from '../../common/resolve-sales-order-production-number';
+import { formatSalesOrderItemNumber } from '../../common/sales-order-item-number';
 import { TranslationService } from '../catalog/translation.service';
 import { SequenceService } from '../../common/sequence.service';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
@@ -33,6 +35,7 @@ import {
   type MaterialCostMap,
 } from '../../common/helpers/order-costing.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { WorkflowSnapshotService } from './workflow/workflow-snapshot.service';
 import { distributeMaterialsToSnapshotNodes } from './distribute-stage-materials';
@@ -81,12 +84,21 @@ export type SetupValidationIssue = {
 export class OrderProductionSetupService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sequences: SequenceService,
+    private readonly _sequences: SequenceService,
     private readonly workflowSnapshots: WorkflowSnapshotService,
     private readonly inventory: InventoryService,
     private readonly notifications: NotificationsService,
     @Optional() private readonly translation?: TranslationService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
+
+  private async notifyNewFabricJobs(ids: string[], actorUserId?: string | null) {
+    for (const id of ids) {
+      await this.opsNotify
+        ?.onFabric({ id, state: 'NEEDS_ORDERING', actorUserId })
+        .catch(() => undefined);
+    }
+  }
 
   private assertStaff(user?: AuthUser) {
     if (user?.customerId) {
@@ -197,7 +209,8 @@ export class OrderProductionSetupService {
         },
       });
       void setup;
-      await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+      const createdFabric = await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+      await this.notifyNewFabricJobs(createdFabric, user?.id);
       return this.getSetup(salesOrderId, user);
     }
 
@@ -216,7 +229,8 @@ export class OrderProductionSetupService {
         },
       },
     });
-    await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+    const createdFabric = await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+    await this.notifyNewFabricJobs(createdFabric, user?.id);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -692,6 +706,7 @@ export class OrderProductionSetupService {
                 description: true,
                 quantity: true,
                 productId: true,
+                itemLetter: true,
                 manufacturingComplexity: true,
                 orderSpec: true,
                 product: {
@@ -861,9 +876,14 @@ export class OrderProductionSetupService {
         const selectedFabric =
           fabricMaterials.find((m) => m.inventoryItemId) ?? fabricMaterials[0] ?? null;
         const fabricAvail = selectedFabric?.availability ?? null;
+        const itemLetter = line.salesOrderLine.itemLetter?.trim() || null;
         return {
           id: line.id,
           salesOrderLineId: line.salesOrderLineId,
+          itemLetter,
+          itemNumber: itemLetter
+            ? formatSalesOrderItemNumber(setup.salesOrder.number, itemLetter)
+            : null,
           status: line.status,
           manufacturingName: line.manufacturingName,
           manufacturingComplexity: line.manufacturingComplexity,
@@ -1661,6 +1681,7 @@ export class OrderProductionSetupService {
 
     const resolved = await this.resolveMaterialRows(dto.materials, line.requestedFabricLabel);
 
+    let createdFabricIds: string[] = [];
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.salesOrderLineMaterialRequirement.findMany({
         where: { lineSetupId: line.id },
@@ -1747,7 +1768,7 @@ export class OrderProductionSetupService {
         },
       });
 
-      await ensureFabricProcurementsForSalesOrder(tx, salesOrderId);
+      createdFabricIds = await ensureFabricProcurementsForSalesOrder(tx, salesOrderId);
       const fabricReqs = await tx.salesOrderLineMaterialRequirement.findMany({
         where: { lineSetupId: line.id, category: 'FABRIC' },
         select: {
@@ -1765,6 +1786,7 @@ export class OrderProductionSetupService {
       }
     });
 
+    await this.notifyNewFabricJobs(createdFabricIds, user.id);
     await this.recomputeLineAndHeaderStatus(setup.id, line.id);
     await this.syncLineMaterialsToProductionOrders(line.id);
     await this.prisma.auditEvent.create({
@@ -1950,7 +1972,8 @@ export class OrderProductionSetupService {
       });
     });
 
-    await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+    const createdFabric = await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
+    await this.notifyNewFabricJobs(createdFabric, user.id);
     await this.recomputeLineAndHeaderStatus(setup.id, line.id);
     await this.syncLineMaterialsToProductionOrders(line.id, quantityModeByItemId);
 
@@ -2690,7 +2713,7 @@ export class OrderProductionSetupService {
     const updated = await this.prisma.$transaction(async (tx) => {
       for (const lineSetup of setup.lines) {
         const line = lineSetup.salesOrderLine;
-        const poNumber = await this.sequences.next('PO', 'PO');
+        const poNumber = await resolveSalesOrderProductionNumber(tx, order, line);
         const productionOrder = await tx.productionOrder.create({
           data: {
             number: poNumber,
@@ -2809,6 +2832,16 @@ export class OrderProductionSetupService {
         linkUrl: `/sales-orders/${order.id}`,
       })
       .catch(() => undefined);
+
+    if (updated.status === SalesOrderStatus.WAITING_FOR_MATERIALS) {
+      await this.opsNotify
+        ?.onShortageBlockingProduction({
+          salesOrderId: order.id,
+          number: order.number,
+          actorUserId: user.id,
+        })
+        .catch(() => undefined);
+    }
 
     // Piece 2: intentionally skip scheduling.generateForProductionOrder
     return {

@@ -755,5 +755,15 @@
     "ACCT": "المحاسبة",
     "CUTTING": "القص",
     "ASSEMBLY": "التجميع"
-  }
+  },
+  "viewBoards": "السلال",
+  "viewItems": "الأوامر",
+  "kitQr": "رمز العدة",
+  "takeInTitle": "استلام العدة",
+  "takeInContinue": "متابعة المهمة",
+  "reportProblem": "الإبلاغ عن مشكلة",
+  "qcPass": "قبول الفحص",
+  "qcFail": "رفض الفحص",
+  "materialsIdentify": "تعرّف على المادة",
+  "scanFinLot": "مسح دفعة جاهزة"
 }

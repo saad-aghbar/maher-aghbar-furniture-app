@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   FabricProcurementEventKind,
@@ -30,6 +31,7 @@ import {
   type FabricReadinessResult,
 } from '../production/fabric-readiness';
 import { PurchasingService } from './purchasing.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 
 const PROCUREMENT_INCLUDE = {
   requirement: {
@@ -118,6 +120,7 @@ export class FabricProcurementService {
     private readonly purchasing: PurchasingService,
     private readonly inventory: InventoryService,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   private assertRead(user?: AuthUser) {
@@ -351,6 +354,12 @@ export class FabricProcurementService {
       );
     }
 
+    for (const id of ids) {
+      await this.opsNotify
+        ?.onFabric({ id, eventKind: 'REQUESTED', state: 'AWAITING_SUPPLIER', actorUserId: user.id })
+        .catch(() => undefined);
+    }
+
     let purchaseOrderNumber: string | null = null;
     if (purchaseOrderId) {
       const poRow = await this.prisma.purchaseOrder.findUnique({
@@ -392,6 +401,14 @@ export class FabricProcurementService {
       },
     });
     await this.appendEvent(id, kind, user.id, input.note, { state: input.state }, row.supplierId);
+    await this.opsNotify
+      ?.onFabric({
+        id,
+        state: input.state,
+        eventKind: kind,
+        actorUserId: user.id,
+      })
+      .catch(() => undefined);
     return this.getById(id, user);
   }
 
@@ -431,6 +448,9 @@ export class FabricProcurementService {
       { fromSupplierId: previousSupplierId, toSupplierId: supplierId },
       supplierId,
     );
+    await this.opsNotify
+      ?.onFabric({ id, state: FabricProcurementState.NEEDS_ORDERING, actorUserId: user.id })
+      .catch(() => undefined);
     return this.getById(id, user);
   }
 

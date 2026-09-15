@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { InventoryTxType, InventoryTracking, Prisma, PurchaseOrderStatus } from '@maher/database';
@@ -45,6 +46,8 @@ import { assessFabricReadiness } from '../production/fabric-readiness';
 import { inventoryScanPayload } from '@maher/types';
 import { PurchasingService } from '../purchasing/purchasing.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
+import { stockCrossedBelowMin } from '../notifications/ops-notify.classify';
 import { comparePriority } from '../scheduling/domain/priority-fairness';
 import type { PrioritySortItem } from '../scheduling/domain/types';
 import { stripInventoryCostFields, stripInventoryCostList } from './inventory-cost.util';
@@ -107,6 +110,7 @@ export class InventoryService {
     private readonly purchasing: PurchasingService,
     @Inject(forwardRef(() => SchedulingQueueService))
     private readonly schedulingQueue?: SchedulingQueueService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   async listGroups(permissions?: string[]) {
@@ -775,7 +779,72 @@ export class InventoryService {
     };
 
     if (params.db) return run(params.db);
-    return this.prisma.$transaction((tx) => run(tx));
+    if (!this.opsNotify) {
+      return this.prisma.$transaction((tx) => run(tx));
+    }
+    const itemMeta = await this.prisma.inventoryItem.findUnique({
+      where: { id: params.inventoryItemId },
+      select: { sku: true, minStock: true },
+    });
+    const beforeQty = await this.totalAvailableQty(params.inventoryItemId);
+    const created = await this.prisma.$transaction((tx) => run(tx));
+    await this.emitAfterStockCommit({
+      created,
+      type: params.type,
+      itemId: params.inventoryItemId,
+      sku: itemMeta?.sku ?? params.inventoryItemId,
+      minStock: Number(itemMeta?.minStock ?? 0),
+      beforeQty,
+      actorUserId: params.userId,
+      referenceType: params.referenceType,
+    });
+    return created;
+  }
+
+  private async totalAvailableQty(inventoryItemId: string): Promise<number> {
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { inventoryItemId },
+      select: { availableQty: true },
+    });
+    return balances.reduce((s, b) => s + Number(b.availableQty), 0);
+  }
+
+  private async emitAfterStockCommit(input: {
+    created: { id: string };
+    type: InventoryTxType;
+    itemId: string;
+    sku: string;
+    minStock: number;
+    beforeQty: number;
+    actorUserId: string;
+    referenceType?: string;
+  }) {
+    if (!this.opsNotify) return;
+    const afterQty = await this.totalAvailableQty(input.itemId);
+    await this.opsNotify
+      .onInventoryPosted({
+        type: input.type,
+        txId: input.created.id,
+        itemId: input.itemId,
+        sku: input.sku,
+        actorUserId: input.actorUserId,
+        referenceType: input.referenceType,
+      })
+      .catch(() => undefined);
+    if (stockCrossedBelowMin(input.beforeQty, afterQty, input.minStock)) {
+      await this.opsNotify
+        .onLowStockCross(
+          {
+            itemId: input.itemId,
+            sku: input.sku,
+            before: input.beforeQty,
+            after: afterQty,
+            minStock: input.minStock,
+          },
+          input.actorUserId,
+        )
+        .catch(() => undefined);
+    }
   }
 
   async receive(

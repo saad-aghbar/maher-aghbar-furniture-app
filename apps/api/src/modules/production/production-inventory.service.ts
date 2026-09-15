@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import {
   InventoryAllocationMode,
   InventoryItemClass,
@@ -10,6 +10,7 @@ import {
 } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { resolveBinId } from '../inventory/bin-resolve';
 import { skuPrefixForItemClass } from '../../common/helpers/inventory-lifecycle.util';
 import { nextSkuFromExisting } from '../../common/helpers/inventory-category.util';
@@ -78,6 +79,7 @@ export class ProductionInventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   /**
@@ -94,22 +96,22 @@ export class ProductionInventoryService {
     completedQtyAfter: number;
     /** When true, hybrid material usage already posted raw issues for this progress. */
     skipRawConsume?: boolean;
-  }) {
-    if (!params.stageInstanceId) return;
+  }): Promise<{ finishedPosted: boolean; finishedMovementKey?: string }> {
+    if (!params.stageInstanceId) return { finishedPosted: false };
     const qtyDelta = Number(params.qtyDelta);
-    if (!(qtyDelta > 0)) return;
+    if (!(qtyDelta > 0)) return { finishedPosted: false };
 
     const stageInstanceId = params.stageInstanceId;
     const snap = await params.tx.productionOrderWorkflowSnapshotNode.findFirst({
       where: { stageInstanceId },
     });
-    if (!snap || snap.isSkipped) return;
+    if (!snap || snap.isSkipped) return { finishedPosted: false };
     if (
       snap.inventoryTracking === InventoryTracking.NONE &&
       !snap.consumesRawMaterials &&
       !snap.consumesSemiFinished
     ) {
-      return;
+      return { finishedPosted: false };
     }
 
     const po = await params.tx.productionOrder.findUniqueOrThrow({
@@ -182,8 +184,10 @@ export class ProductionInventoryService {
         qtyDelta,
       );
     }
+    let finishedPosted = false;
+    let finishedMovementKey: string | undefined;
     if (snap.inventoryTracking === InventoryTracking.PRODUCES_FINISHED) {
-      await this.produceOutput(
+      const posted = await this.produceOutput(
         {
           tx: params.tx,
           userId: params.userId,
@@ -196,7 +200,13 @@ export class ProductionInventoryService {
         InventoryItemClass.FINISHED_GOOD,
         qtyDelta,
       );
+      if (posted) {
+        finishedPosted = true;
+        const definitionKey = snap.outputDefinitionId || snap.id;
+        finishedMovementKey = `${InventoryTxType.FINISHED_GOODS_RECEIPT}:${params.productionOrderId}:${stageInstanceId}:${definitionKey}:${params.taskId}:${params.completedQtyAfter}`;
+      }
     }
+    return { finishedPosted, finishedMovementKey };
   }
 
   /** @deprecated Prefer onStageQtyProgress — kept for callers that finish the whole stage at once. */
@@ -1064,7 +1074,7 @@ export class ProductionInventoryService {
   ) {
     const qtyPerUnit = Number(snap.outputQtyPerUnit);
     const outputQty = outputQtyForOrder(Number.isFinite(qtyPerUnit) ? qtyPerUnit : 1, productionQty);
-    if (!(outputQty > 0)) return;
+    if (!(outputQty > 0)) return false;
 
     const txType =
       itemClass === InventoryItemClass.FINISHED_GOOD
@@ -1078,7 +1088,7 @@ export class ProductionInventoryService {
     const existingTx = await params.tx.inventoryTransaction.findFirst({
       where: { idempotencyKey: movementKey },
     });
-    if (existingTx) return;
+    if (existingTx) return false;
 
     const warehouse = await this.resolveOutputWarehouse(params.tx, snap, itemClass);
     const nameEn =
@@ -1094,7 +1104,7 @@ export class ProductionInventoryService {
         ? po.product?.nameHe ?? null
         : snap.outputNameHe ?? null;
     if (!nameEn) {
-      return;
+      return false;
     }
     const item = snap.outputInventoryItemId
       ? await params.tx.inventoryItem.findUnique({ where: { id: snap.outputInventoryItemId } })
@@ -1193,6 +1203,7 @@ export class ProductionInventoryService {
     if (itemClass === InventoryItemClass.FINISHED_GOOD) {
       await this.clearReplacementQuarantine(params.tx, po.id, params.userId);
     }
+    return itemClass === InventoryItemClass.FINISHED_GOOD;
   }
 
   private async clearReplacementQuarantine(tx: Tx, productionOrderId: string, userId: string) {

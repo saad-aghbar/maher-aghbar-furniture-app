@@ -1107,7 +1107,6 @@ export function NewOrderScreen() {
     const fresh = emptyOrderLine({ quantity: '1' });
     setLines([fresh]);
     setActiveLineId(fresh.id);
-    setSpecSheetOpen(false);
     setExternalOrderNumber('');
     setPriority('NORMAL');
     appliedDimsProduct.current = '';

@@ -133,8 +133,12 @@ Grouped by concern. Full template in `.env.example`.
 | Variable | Example |
 |----------|---------|
 | `ADMIN_WEB_URL` | `http://localhost:3000` |
-| `CUSTOMER_PORTAL_URL` | `http://localhost:3002` |
-| `EMPLOYEE_PORTAL_URL` | `http://localhost:3003` |
+| `CUSTOMER_PORTAL_URL` | `http://localhost:3001` |
+| `EMPLOYEE_PORTAL_URL` | `http://localhost:3002` |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` |
+| `NEXT_PUBLIC_ADMIN_WEB_URL` | `http://localhost:3000` |
+| `NEXT_PUBLIC_CUSTOMER_PORTAL_URL` | `http://localhost:3001` |
+| `NEXT_PUBLIC_EMPLOYEE_PORTAL_URL` | `http://localhost:3002` |
 
 ---
 

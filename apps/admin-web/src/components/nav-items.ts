@@ -56,7 +56,7 @@ export const navItems: NavItem[] = [
     href: '/products',
     key: 'products',
     icon: Armchair,
-    anyPermissions: ['catalog.manage'],
+    anyPermissions: ['catalog.read'],
   },
   {
     href: '/customers',
@@ -122,7 +122,7 @@ export const navItems: NavItem[] = [
     href: '/returns',
     key: 'returns',
     icon: RotateCcw,
-    anyPermissions: ['sales-order.read', 'customer.read'],
+    anyPermissions: ['return.read'],
   },
 ];
 
@@ -162,14 +162,13 @@ export const nestedNavGroups: NestedNavGroup[] = [
       { href: '/quotations', key: 'ordersReview', anyPermissions: ['quotation.read'] },
       { href: '/sales-orders', key: 'ordersActive', anyPermissions: ['sales-order.read'] },
       { href: '/deliveries', key: 'deliveries', anyPermissions: ['delivery.read'] },
-      { href: '/ai-intake', key: 'aiIntake', anyPermissions: ['ai-intake.read', 'ai-intake.manage'] },
     ],
   },
   {
     parentHref: '/products',
     matchPrefixes: ['/products', '/categories', '/materials', '/fabrics', '/spec-options', '/spec-option-values'],
     items: [
-      { href: '/products', key: 'products', anyPermissions: ['catalog.manage'] },
+      { href: '/products', key: 'products', anyPermissions: ['catalog.read'] },
       { href: '/categories', key: 'categories', anyPermissions: ['catalog.manage'] },
       { href: '/materials', key: 'materials', anyPermissions: ['catalog.manage'] },
       { href: '/fabrics', key: 'fabrics', anyPermissions: ['catalog.manage'] },
@@ -182,6 +181,8 @@ export const nestedNavGroups: NestedNavGroup[] = [
     matchPrefixes: ['/inventory', '/warehouses'],
     items: [
       { href: '/inventory', key: 'inventory', anyPermissions: ['inventory.read'] },
+      { href: '/inventory/receive', key: 'receive', anyPermissions: ['inventory.receive'] },
+      { href: '/inventory/low-stock', key: 'lowStock', anyPermissions: ['inventory.read'] },
       {
         href: '/warehouses',
         key: 'warehouses',
@@ -194,6 +195,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     matchPrefixes: ['/purchasing', '/suppliers'],
     items: [
       { href: '/purchasing', key: 'purchasing', anyPermissions: ['purchase-order.read'] },
+      { href: '/purchasing/fabric', key: 'fabricJobs', anyPermissions: ['fabric.procurement.read'] },
       { href: '/suppliers', key: 'suppliers', anyPermissions: ['supplier.read'] },
     ],
   },
@@ -226,6 +228,14 @@ export const nestedNavGroups: NestedNavGroup[] = [
         key: 'quality',
         anyPermissions: ['quality-inspection.read'],
       },
+    ],
+  },
+  {
+    parentHref: '/invoices',
+    matchPrefixes: ['/invoices', '/payments'],
+    items: [
+      { href: '/invoices', key: 'invoices', anyPermissions: ['invoice.read'] },
+      { href: '/payments', key: 'payments', anyPermissions: ['payment.read'] },
     ],
   },
   {

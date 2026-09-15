@@ -23,6 +23,7 @@ import {
   NumberStepper,
   Select,
   Skeleton,
+  useCodeScanner,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -86,6 +87,7 @@ export default function PurchaseOrderBuilderPage() {
   const tPurchasing = useTranslations('purchasing');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('navigation');
+  const { openScanner } = useCodeScanner();
 
   const [supplierId, setSupplierId] = useState('');
   const [search, setSearch] = useState('');
@@ -218,6 +220,23 @@ export default function PurchaseOrderBuilderPage() {
     <div className="space-y-6">
       <PageHeader backHref="/purchasing" title={tPurchasing('newOrder')} />
       {error ? <Alert variant="error">{error}</Alert> : null}
+      <Button
+        variant="secondary"
+        onClick={async () => {
+          const code = await openScanner({ title: tPurchasing('scanToAdd') });
+          if (!code) return;
+          try {
+            const found = await apiFetch<InventoryItem>(
+              `/api/v1/inventory/items/by-code/${encodeURIComponent(code.trim())}`,
+            );
+            toggleItem(found);
+          } catch (err) {
+            setError(mutationErrorMessage(err));
+          }
+        }}
+      >
+        {tPurchasing('scanToAdd')}
+      </Button>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="space-y-4 p-4">

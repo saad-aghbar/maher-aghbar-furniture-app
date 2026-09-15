@@ -23,6 +23,7 @@ export type OrderGalleryImage = {
 export type OrderLineItemView = {
   id: string;
   productId: string | null;
+  itemNumber: string | null;
   productName: string;
   description: string | null;
   quantity: number | null;
@@ -228,6 +229,7 @@ function mapItems(order: SalesOrderDetail): OrderLineItemView[] {
     return {
       id: item.id,
       productId: item.productId ?? null,
+      itemNumber: item.itemNumber ?? po?.number ?? null,
       productName: item.productName,
       description: item.description ?? null,
       quantity: toNumber(item.quantity),

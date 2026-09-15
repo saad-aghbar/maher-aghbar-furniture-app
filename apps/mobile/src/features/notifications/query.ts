@@ -9,7 +9,7 @@ import {
 export function useNotificationsQuery(enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.notifications.list(),
-    queryFn: () => listNotifications({ page: 1, pageSize: 50 }),
+    queryFn: () => listNotifications({ page: 1, pageSize: 100 }),
     enabled,
     refetchInterval: 60_000,
   });

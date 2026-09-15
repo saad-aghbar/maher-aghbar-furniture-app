@@ -380,7 +380,11 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
               const lineNet = missingPrice ? null : unit * qty;
               return (
               <TableRow key={line.id}>
-                <TableCell>{line.description}</TableCell>
+                <TableCell>
+                  <Link href={`/quotations/${params.id}/lines/${line.id}`} className="text-brand hover:underline">
+                    {line.description}
+                  </Link>
+                </TableCell>
                 <TableNumericCell>{String(line.quantity)}</TableNumericCell>
                 <TableNumericCell>
                   {[line.width, line.height, line.depth].filter((v) => v != null).join('×') || '—'}

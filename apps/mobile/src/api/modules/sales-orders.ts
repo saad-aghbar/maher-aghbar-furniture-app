@@ -283,6 +283,8 @@ export type SalesOrderStage = {
 export type SalesOrderLineItem = {
   id: string;
   productId?: string | null;
+  itemLetter?: string | null;
+  itemNumber?: string | null;
   productName: string;
   description?: string | null;
   quantity?: number | string | null;
@@ -653,6 +655,10 @@ export async function holdSalesOrder(
     `/sales-orders/${encodeURIComponent(id)}/hold`,
     { reason },
   );
+}
+
+export async function resumeSalesOrder(id: string): Promise<SalesOrderDetail> {
+  return apiPost<SalesOrderDetail>(`/sales-orders/${encodeURIComponent(id)}/resume`, {});
 }
 
 export async function cancelSalesOrder(

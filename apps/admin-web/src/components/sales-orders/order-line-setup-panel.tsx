@@ -234,6 +234,11 @@ export function OrderLineSetupPanel({
         className="flex w-full flex-wrap items-start justify-between gap-3 p-4 text-start hover:bg-[var(--maher-surface-muted)]/40"
       >
         <div className="min-w-0 space-y-1">
+          {line.itemNumber ? (
+            <p className="text-[11px] text-text-tertiary" dir="ltr">
+              {line.itemNumber}
+            </p>
+          ) : null}
           <p className="font-semibold text-text-primary">
             {line.manufacturingName || productLabel}
           </p>

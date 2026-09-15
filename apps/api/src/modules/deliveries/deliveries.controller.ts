@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -22,6 +23,7 @@ import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pag
 import type { AuthUser } from '@maher/types';
 import { InvoicesService } from '../invoices/invoices.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
@@ -182,6 +184,7 @@ export class DeliveriesController {
     private readonly inventory: InventoryService,
     private readonly pipeline: StagePipelineService,
     private readonly loadSheet: DeliveryLoadService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   @Get()
@@ -731,31 +734,51 @@ export class DeliveriesController {
     }
 
     const isReshipNotify = existing.purpose === DeliveryPurpose.RETURN_RESHIP;
-    await this.notifications
-      .notifyCustomerUsers(existing.customerId, {
-        templateCode: isReshipNotify ? 'RETURN_DELIVERED' : 'DELIVERY_COMPLETED',
-        vars: {
-          orderNumber: delivery.number,
-          number: delivery.number,
-          date: now.toISOString().slice(0, 10),
-        },
-        linkUrl: isReshipNotify
-          ? `/returns/${existing.returnRequestId ?? ''}`
-          : `/sales-orders/${existing.salesOrderId ?? ''}`,
-      })
-      .catch(() => undefined);
+    if (isReshipNotify && existing.returnRequestId && this.opsNotify) {
+      const ret = await this.prisma.returnRequest.findUnique({
+        where: { id: existing.returnRequestId },
+        select: { number: true, customerId: true },
+      });
+      if (ret) {
+        await this.opsNotify
+          .onReturnCase({
+            templateCode: 'RETURN_DELIVERED',
+            id: existing.returnRequestId,
+            number: ret.number,
+            customerId: ret.customerId,
+            delivery: delivery.number,
+          })
+          .catch(() => undefined);
+      }
+    } else {
+      await this.notifications
+        .notifyCustomerUsers(existing.customerId, {
+          templateCode: isReshipNotify ? 'RETURN_DELIVERED' : 'DELIVERY_COMPLETED',
+          vars: {
+            orderNumber: delivery.number,
+            number: delivery.number,
+            date: now.toISOString().slice(0, 10),
+          },
+          linkUrl: isReshipNotify
+            ? `/returns/${existing.returnRequestId ?? ''}`
+            : `/sales-orders/${existing.salesOrderId ?? ''}`,
+        })
+        .catch(() => undefined);
+    }
 
-    await this.notifications
-      .notifyAdminUsers({
-        templateCode: 'DELIVERY_COMPLETED',
-        vars: {
-          orderNumber: delivery.number,
-          number: delivery.number,
-          date: now.toISOString().slice(0, 10),
-        },
-        linkUrl: `/deliveries/${id}`,
-      })
-      .catch(() => undefined);
+    if (!(isReshipNotify && this.opsNotify)) {
+      await this.notifications
+        .notifyAdminUsers({
+          templateCode: 'DELIVERY_COMPLETED',
+          vars: {
+            orderNumber: delivery.number,
+            number: delivery.number,
+            date: now.toISOString().slice(0, 10),
+          },
+          linkUrl: `/deliveries/${id}`,
+        })
+        .catch(() => undefined);
+    }
 
     return delivery;
   }

@@ -14,3 +14,10 @@ if (process.env.NODE_ENV !== 'production') {
 
 export * from '@prisma/client';
 export { PrismaClient };
+export {
+  formatSalesOrderItemNumber,
+  itemLetterAtIndex,
+  nextItemLetter,
+  withLineItemLetters,
+} from './sales-order-item-number';
+export { backfillSalesOrderItemLetters } from './backfill-sales-order-item-letters';

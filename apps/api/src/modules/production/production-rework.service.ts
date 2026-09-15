@@ -3,6 +3,7 @@ import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -12,6 +13,7 @@ export class ProductionReworkService {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     @Optional() private readonly scheduling?: SchedulingService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
   ) {}
 
   async startRework(params: {
@@ -72,6 +74,8 @@ export class ProductionReworkService {
       }
 
       const taskNumber = await this.sequences.next('TASK', 'TSK');
+      const priorAssignee =
+        stage.tasks.find((t) => !t.isRework && t.assignedEmployeeId)?.assignedEmployeeId ?? null;
       const createdTask = await tx.productionTask.create({
         data: {
           number: taskNumber,
@@ -83,6 +87,7 @@ export class ProductionReworkService {
           status: 'READY',
           isRework: true,
           reworkRequestId: rework.id,
+          assignedEmployeeId: priorAssignee,
           estimatedMinutes: stage.tasks[0]?.estimatedMinutes ?? undefined,
         },
       });
@@ -139,13 +144,39 @@ export class ProductionReworkService {
         await this.scheduling
           ?.enqueueTargetedReplan(rework.productionOrderId, 'rework-start', createdTaskId)
           .catch(() => undefined);
+        if (this.floorHandoff) {
+          const po = await this.prisma.productionOrder.findUnique({
+            where: { id: rework.productionOrderId },
+            select: {
+              number: true,
+              salesOrder: { select: { number: true, customerId: true } },
+            },
+          });
+          const created = await this.prisma.productionTask.findUnique({
+            where: { id: createdTaskId },
+            select: {
+              assignedEmployeeId: true,
+              name: true,
+              stageDefinition: { select: { nameEn: true } },
+            },
+          });
+          await this.floorHandoff.onReworkTaskReady({
+            taskId: createdTaskId,
+            assignedEmployeeId: created?.assignedEmployeeId ?? null,
+            stageNameEn: created?.stageDefinition?.nameEn ?? created?.name ?? 'Rework',
+            number: po?.salesOrder?.number ?? po?.number ?? rework.number,
+            inspectionId: rework.inspectionId,
+            actorUserId: params.userId,
+            customerId: po?.salesOrder?.customerId ?? null,
+          });
+        }
       }
       return rework;
     });
   }
 
   async completeRework(reworkId: string, userId: string) {
-    return this.prisma
+    const result = await this.prisma
       .$transaction(async (tx) => {
         const rework = await tx.reworkRequest.findUniqueOrThrow({
           where: { id: reworkId },
@@ -261,6 +292,44 @@ export class ProductionReworkService {
           include: { inspection: true, tasks: true },
         });
       });
+
+    if (result.status === 'COMPLETED' && this.floorHandoff) {
+      const inspectionId =
+        result.inspection?.id ??
+        (result as { inspectionId?: string | null }).inspectionId ??
+        null;
+      if (inspectionId) {
+        const po = await this.prisma.productionOrder.findUnique({
+          where: { id: result.productionOrderId },
+          select: {
+            number: true,
+            salesOrder: { select: { id: true, number: true, customerId: true } },
+          },
+        });
+        const inspectionTasks = await this.prisma.productionTask.findMany({
+          where: {
+            productionOrderId: result.productionOrderId,
+            isRework: false,
+            stageDefinition: { code: 'INSPECTION' },
+          },
+          select: { id: true, assignedEmployeeId: true },
+        });
+        await this.floorHandoff?.onReworkReadyToInspect({
+          inspectionId,
+          productionOrderId: result.productionOrderId,
+          number: po?.salesOrder?.number ?? po?.number ?? result.number,
+          actorUserId: userId,
+          inspectionTaskId: inspectionTasks[0]?.id ?? null,
+          inspectorIds: inspectionTasks
+            .map((t) => t.assignedEmployeeId)
+            .filter((id): id is string => Boolean(id)),
+          customerId: po?.salesOrder?.customerId ?? null,
+          salesOrderId: po?.salesOrder?.id ?? null,
+          reworkId,
+        });
+      }
+    }
+    return result;
   }
 
   async createForReturn(params: {

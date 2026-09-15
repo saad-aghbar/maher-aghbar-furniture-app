@@ -49,21 +49,23 @@ function fabricsFromItem(item: {
 
 function optionsFromUnknown(value: unknown): NewOrderLineOption[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((row) => {
-      if (!row || typeof row !== 'object') return null;
-      const rec = row as Record<string, unknown>;
-      return {
-        specOptionValueId: asText(rec.specOptionValueId),
-        groupCode: asText(rec.groupCode) || undefined,
-        code: asText(rec.code) || undefined,
-        nameEn: asText(rec.nameEn) || undefined,
-        nameAr: asText(rec.nameAr) || undefined,
-        qty: rec.qty != null ? Number(rec.qty) : undefined,
-        note: asText(rec.note) || undefined,
-      } satisfies NewOrderLineOption;
-    })
-    .filter((row): row is NewOrderLineOption => Boolean(row));
+  const out: NewOrderLineOption[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== 'object') continue;
+    const rec = row as Record<string, unknown>;
+    const specOptionValueId = asText(rec.specOptionValueId);
+    if (!specOptionValueId) continue;
+    out.push({
+      specOptionValueId,
+      groupCode: asText(rec.groupCode) || undefined,
+      code: asText(rec.code) || undefined,
+      nameEn: asText(rec.nameEn) || undefined,
+      nameAr: asText(rec.nameAr) || undefined,
+      qty: rec.qty != null ? Number(rec.qty) : undefined,
+      note: asText(rec.note) || undefined,
+    });
+  }
+  return out;
 }
 
 export function requestItemToOrderLine(item: RequestItem, seatLabel: string): NewOrderLine {
@@ -132,7 +134,14 @@ export function requestItemToCreateInput(item: RequestItem | undefined): CreateR
     finish: item.finish ?? undefined,
     accessories: item.accessories ?? undefined,
     orientation: item.orientation ?? undefined,
-    options: item.options ?? undefined,
+    options: (item.options ?? []).map((row) => ({
+      specOptionValueId: row.specOptionValueId ?? undefined,
+      groupCode: row.groupCode ?? undefined,
+      code: row.code ?? undefined,
+      nameEn: row.nameEn ?? undefined,
+      nameAr: row.nameAr ?? undefined,
+      note: row.note ?? undefined,
+    })),
     photoDocumentIds: item.photoDocumentIds ?? undefined,
     primaryImageDocumentId: item.primaryImageDocumentId ?? undefined,
   };

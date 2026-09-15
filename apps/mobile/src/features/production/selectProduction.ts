@@ -409,6 +409,7 @@ export type ProductionBasketItemFact = {
 
 export type ProductionBasketItemModel = {
   id: string;
+  number: string;
   title: string;
   imageUrl: string | null;
   complexity: 'standard' | 'modified' | 'custom';
@@ -566,6 +567,7 @@ export function selectProductionBasketItem(
   const card = selectProductionCard(item, locale);
   return {
     id: item.id,
+    number: item.number,
     title: card.title,
     imageUrl: card.imageUrl,
     complexity: complexityBadgeKey(

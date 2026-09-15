@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/auth/AuthProvider';
+import { NotificationIntentProvider } from '@/features/notifications/NotificationIntentProvider';
 import { NetworkProvider } from '@/components/network/NetworkProvider';
 import { ToastProvider } from '@/components/feedback/Toast';
 import { LocationMapVisibilityProvider } from '@/components/maps/LocationMapVisibility';
@@ -27,6 +28,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                 <ToastProvider>
                   <QueryProvider>
                     <AuthProvider>
+                      <NotificationIntentProvider>
                       <OrderBasketProvider>
                         <CodeScannerProvider>
                           <AccessoryCameraProvider>
@@ -39,6 +41,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                           </AccessoryCameraProvider>
                         </CodeScannerProvider>
                       </OrderBasketProvider>
+                      </NotificationIntentProvider>
                     </AuthProvider>
                   </QueryProvider>
                 </ToastProvider>

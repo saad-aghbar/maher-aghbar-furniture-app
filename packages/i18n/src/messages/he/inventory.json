@@ -231,5 +231,13 @@
   "loadSheetConfirmDepart": "אשר יציאת משאית",
   "loadSheetConfirmDepartTitle": "לאשר יציאת משאית?",
   "loadSheetConfirmDepartBody": "פעולה זו מסמנת את המסירה כביציאה ומנפיקה סחורה גמורה מהמלאי. הסוחר מאשר קבלה מאוחר יותר — זה אינו נמסר.",
-  "loadSheetDeparted": "המשאית יצאה — סחורה גמורה יצאה מהמלאי."
+  "loadSheetDeparted": "המשאית יצאה — סחורה גמורה יצאה מהמלאי.",
+  "identify": "זיהוי",
+  "verify": "אימות",
+  "fabricBundle": "חבילת בד",
+  "scanMode": "מצב סריקה",
+  "itemQr": "QR פריט",
+  "semiFinished": "חצי גמור",
+  "finishedGoods": "סחורה גמורה",
+  "scanUnknown": "הקוד לא נמצא"
 }

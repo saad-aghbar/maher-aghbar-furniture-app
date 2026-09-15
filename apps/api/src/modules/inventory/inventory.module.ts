@@ -5,9 +5,14 @@ import { InventoryItemReportService } from './inventory-item-report.service';
 import { RawMaterialsReportService } from './raw-materials-report.service';
 import { PurchasingModule } from '../purchasing/purchasing.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [forwardRef(() => PurchasingModule), forwardRef(() => SchedulingModule)],
+  imports: [
+    NotificationsModule,
+    forwardRef(() => PurchasingModule),
+    forwardRef(() => SchedulingModule),
+  ],
   controllers: [InventoryController],
   providers: [InventoryService, InventoryItemReportService, RawMaterialsReportService],
   exports: [InventoryService, InventoryItemReportService, RawMaterialsReportService],

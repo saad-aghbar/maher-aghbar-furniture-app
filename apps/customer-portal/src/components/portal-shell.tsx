@@ -16,8 +16,10 @@ import {
   MessageSquare,
   Package,
   Receipt,
+  Banknote,
   Scroll,
   ShoppingBag,
+  ShoppingCart,
   SquarePen,
   Undo2,
   User,
@@ -25,17 +27,20 @@ import {
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
+import { useOrderBasketCount } from './order-basket-provider';
 import { AppThemeToggle } from './theme-toggle';
 
 const items = [
   { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
   { href: '/catalog', key: 'catalog', icon: ShoppingBag },
+  { href: '/basket', key: 'basket', icon: ShoppingCart },
   { href: '/orders/new', key: 'createOrder', icon: SquarePen },
   { href: '/orders', key: 'myOrders', icon: Package },
   { href: '/quotations', key: 'quotations', icon: FileText },
   { href: '/deliveries', key: 'schedule', icon: CalendarDays },
   { href: '/ai-chat', key: 'aiChat', icon: MessageSquare },
   { href: '/invoices', key: 'invoices', icon: Receipt },
+  { href: '/payments', key: 'payments', icon: Banknote },
   { href: '/statement', key: 'statement', icon: Scroll },
   { href: '/contracts', key: 'contracts', icon: FileText },
   { href: '/documents', key: 'documents', icon: FolderOpen },
@@ -74,6 +79,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   });
 
   const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
+  const basketCount = useOrderBasketCount();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -259,6 +265,11 @@ export function PortalShell({ children }: { children: ReactNode }) {
               >
                 <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />
                 {t(item.key)}
+                {item.href === '/basket' && basketCount > 0 ? (
+                  <span className="rounded-full bg-brand px-1.5 text-[10px] font-medium text-white">
+                    {basketCount}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

@@ -86,10 +86,7 @@ export function OrderBasketBoard({
       actionHint: order.actionHint,
       readiness: order.journeyReadiness,
       assignment: order.productionReadinessSummary?.assignment ?? null,
-      materialsReady:
-        order.productionReadinessSummary?.materialsReady ??
-        order.productionReadinessSummary?.material?.ready ??
-        null,
+      materialsReady: order.productionReadinessSummary?.materialsReady ?? null,
       needsSetup: order.productionReadinessSummary?.needsSetup ?? null,
       sellerPriceMissing: order.sellerPrice == null && !isRfq,
       primaryCta: order.primaryCta,

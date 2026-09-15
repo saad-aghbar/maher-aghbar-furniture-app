@@ -10,6 +10,8 @@ export type ReportsFilter = {
   salesRepId: string;
   status: string;
   page: string;
+  dateBasis: string;
+  complexity: string;
 };
 
 export const EMPTY_REPORTS_FILTER: ReportsFilter = {
@@ -22,6 +24,8 @@ export const EMPTY_REPORTS_FILTER: ReportsFilter = {
   salesRepId: '',
   status: '',
   page: '',
+  dateBasis: '',
+  complexity: '',
 };
 
 export function buildQuery(params: Record<string, string>) {
@@ -83,6 +87,8 @@ export function filterFromSearchParams(sp: URLSearchParams): ReportsFilter {
     salesRepId: sp.get('salesRepId') ?? '',
     status: sp.get('status') ?? '',
     page: sp.get('page') ?? '',
+    dateBasis: sp.get('dateBasis') ?? '',
+    complexity: sp.get('complexity') ?? '',
   };
 }
 
@@ -97,6 +103,8 @@ export function filterQueryString(filter: ReportsFilter) {
     salesRepId: filter.salesRepId,
     status: filter.status,
     page: filter.page,
+    dateBasis: filter.dateBasis,
+    complexity: filter.complexity,
   });
 }
 
@@ -104,6 +112,8 @@ export const REPORTS_SECTIONS = [
   { href: '/reports', key: 'sectionMoney' },
   { href: '/reports/orders', key: 'lensOrders' },
   { href: '/reports/products', key: 'sectionProducts' },
+  { href: '/reports/products/custom', key: 'sectionCustom' },
+  { href: '/reports/inventory', key: 'sectionInventory' },
   { href: '/reports/returns', key: 'lensReturns' },
   { href: '/reports/coverage', key: 'coverage' },
 ] as const;

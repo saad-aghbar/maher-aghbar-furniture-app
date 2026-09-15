@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, ScrollView, View } from 'react-native';
+import { Image, Linking, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
@@ -68,6 +68,13 @@ import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import type { RequestItem } from './types';
 import { localDealerMinimumRequestYmd, toDeliveryYmd } from './selectDeliveryAvailability';
+import {
+  handwrittenDocuments,
+  latestJobNotes,
+  requestAiReadingFlags,
+  sheetFieldI18nKey,
+  sheetFlagReasonI18nKey,
+} from './requestAiReading';
 
 type Props = {
   requestId: string;
@@ -78,6 +85,8 @@ type Props = {
 type WorkflowConfirm = 'needsInfo' | 'close' | null;
 
 type LinkedSalesOrder = { id: string; number: string; status: string };
+
+type SheetPreview = { id: string; fileName: string; uri: string | null; isImage: boolean };
 
 function priorityLabel(
   priority: string | null | undefined,
@@ -199,6 +208,7 @@ export function AdminRequestDetailScreen({
   const [confirm, setConfirm] = useState<WorkflowConfirm>(null);
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
+  const [sheetPreviews, setSheetPreviews] = useState<SheetPreview[]>([]);
   const [draftLines, setDraftLines] = useState<
     Array<{ key: string; productName: string; quantity: string; notes: string }>
   >([]);
@@ -259,19 +269,41 @@ export function AdminRequestDetailScreen({
     async function loadGallery() {
       if (!detail) {
         setGalleryUris([]);
+        setSheetPreviews([]);
         return;
       }
       const uris: string[] = [];
+      const previews: SheetPreview[] = [];
       const hero = resolveOrderMediaUri(detail.imageUrl);
-      if (hero) uris.push(hero);
+      const sheetDocs = handwrittenDocuments(detail.documents);
+
+      for (const doc of sheetDocs) {
+        const mime = (doc.mimeType ?? '').toLowerCase();
+        const name = (doc.fileName ?? '').toLowerCase();
+        const isImage =
+          mime.startsWith('image/') ||
+          /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/.test(name);
+        let uri: string | null = null;
+        if (isImage) {
+          try {
+            uri = await resolveDocumentUrl(doc.id);
+          } catch {
+            uri = null;
+          }
+        }
+        previews.push({ id: doc.id, fileName: doc.fileName, uri, isImage });
+        if (uri && !uris.includes(uri)) uris.push(uri);
+      }
+
+      if (hero && !uris.includes(hero)) uris.push(hero);
       for (const doc of detail.documents ?? []) {
+        if (sheetDocs.some((sheet) => sheet.id === doc.id)) continue;
         const mime = (doc.mimeType ?? '').toLowerCase();
         const name = (doc.fileName ?? '').toLowerCase();
         const isImage =
           mime.startsWith('image/') ||
           /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/.test(name);
         if (!isImage) continue;
-        // Avoid duplicating the signed hero if it already came from this attachment
         try {
           const url = await resolveDocumentUrl(doc.id);
           if (!uris.includes(url)) uris.push(url);
@@ -279,7 +311,10 @@ export function AdminRequestDetailScreen({
           // skip failed signed URLs
         }
       }
-      if (!cancelled) setGalleryUris(uris);
+      if (!cancelled) {
+        setGalleryUris(uris);
+        setSheetPreviews(previews);
+      }
     }
     void loadGallery();
     return () => {
@@ -579,6 +614,9 @@ export function AdminRequestDetailScreen({
   const quoteId = activeQuotationId ?? detail.quotations?.[0]?.id ?? null;
   const canOpenQuotation = Boolean(quoteId) || status === 'QUOTED';
   const incompleteWarnings = collectIncompleteWarnings(detail, t);
+  const sheetDocs = handwrittenDocuments(detail.documents);
+  const aiFlags = requestAiReadingFlags(detail);
+  const jobNotes = latestJobNotes(detail);
   const stage =
     pickedStage ??
     rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
@@ -668,17 +706,42 @@ export function AdminRequestDetailScreen({
           />
         </ListItemEnter>
 
-        {(detail.documents ?? []).some((doc) => (doc.category ?? '').includes('HANDWRITTEN') || (doc.fileName ?? '').endsWith('.pdf')) ? (
+        {sheetDocs.length > 0 ? (
           <ListItemEnter index={nextIndex()}>
-            <DealerBoard title={t('mobile.adminRequest.openPdf')} titleWeight={titleWeight}>
-              {(detail.documents ?? [])
-                .filter(
-                  (doc) =>
-                    (doc.category ?? '').includes('HANDWRITTEN') ||
-                    (doc.mimeType ?? '').includes('pdf') ||
-                    (doc.fileName ?? '').toLowerCase().endsWith('.pdf'),
-                )
-                .map((doc) => (
+            <DealerBoard title={t('mobile.adminRequest.sheetRecord')} titleWeight={titleWeight}>
+              <AppText variant="caption" color="muted">
+                {t('mobile.adminRequest.sheetHint')}
+              </AppText>
+              {sheetDocs.map((doc) => {
+                const preview = sheetPreviews.find((row) => row.id === doc.id);
+                if (preview?.isImage && preview.uri) {
+                  return (
+                    <AnimatedPressable
+                      key={doc.id}
+                      variant="button"
+                      accessibilityRole="button"
+                      accessibilityLabel={doc.fileName}
+                      onPress={() => {
+                        void haptics.selection();
+                        void openDocument(doc.id);
+                      }}
+                      style={{
+                        borderRadius: theme.radius.lg,
+                        overflow: 'hidden',
+                        borderWidth: 1,
+                        borderColor: colors.borderStrong,
+                        backgroundColor: colors.surfaceSecondary,
+                      }}
+                    >
+                      <Image
+                        source={{ uri: preview.uri }}
+                        resizeMode="contain"
+                        style={{ width: '100%', height: 220 }}
+                      />
+                    </AnimatedPressable>
+                  );
+                }
+                return (
                   <AnimatedPressable
                     key={doc.id}
                     variant="button"
@@ -692,7 +755,34 @@ export function AdminRequestDetailScreen({
                   >
                     <AppText>{doc.fileName}</AppText>
                   </AnimatedPressable>
-                ))}
+                );
+              })}
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
+        {aiFlags.length > 0 || jobNotes ? (
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard
+              title={t('mobile.adminRequest.sheetUnclearTitle')}
+              titleWeight={titleWeight}
+              accentColor={colors.warning}
+            >
+              <AppText variant="caption" color="muted">
+                {t('mobile.adminRequest.sheetUnclearHint')}
+              </AppText>
+              {jobNotes ? <AppText variant="body">{jobNotes}</AppText> : null}
+              {aiFlags.map((flag) => {
+                const fieldKey = sheetFieldI18nKey(flag.key);
+                const fieldLabel = t(fieldKey);
+                return (
+                  <AppText key={`${flag.key}:${flag.reason}`} variant="label">
+                    {fieldLabel === fieldKey ? flag.key : fieldLabel}
+                    {' — '}
+                    {t(sheetFlagReasonI18nKey(flag.reason))}
+                  </AppText>
+                );
+              })}
             </DealerBoard>
           </ListItemEnter>
         ) : null}

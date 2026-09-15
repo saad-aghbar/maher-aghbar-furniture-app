@@ -6,7 +6,7 @@ import type { SalesOrderJourneyLogistics } from '@/api/modules/sales-orders';
 /**
  * Stage CTA destination — card button only; card body still opens order detail.
  *
- * Preparing / plan CTAs → Production Plan desk.
+ * Preparing / in-production → Production Plan item chooser (never the first line).
  * Ready to start → order detail (View / Edit plan from there).
  * Delivery lanes → load sheet when deliveryId known.
  */
@@ -21,10 +21,8 @@ export function resolveOrderPrimaryCtaHref(args: {
     salesOrderId,
     lifecycle,
     primaryCta,
-    primaryProductionOrderId,
     journeyLogistics,
   } = args;
-  const po = primaryProductionOrderId;
   const deliveryId = journeyLogistics?.deliveryId?.trim() || null;
 
   if (primaryCta === 'review_request') {
@@ -50,8 +48,8 @@ export function resolveOrderPrimaryCtaHref(args: {
     return `/(app)/(admin)/orders/${salesOrderId}` as Href;
   }
 
-  if (lifecycle === 'in_production' && po) {
-    return `/(app)/(admin)/production/${po}` as Href;
+  if (lifecycle === 'in_production') {
+    return `/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href;
   }
   if (
     (lifecycle === 'ready_to_ship' ||
@@ -63,9 +61,6 @@ export function resolveOrderPrimaryCtaHref(args: {
   }
   if (lifecycle === 'ready_to_ship' || lifecycle === 'shipped') {
     return `/(app)/(admin)/orders/${salesOrderId}` as Href;
-  }
-  if (po && lifecycle === 'in_production') {
-    return `/(app)/(admin)/production/${po}` as Href;
   }
   return `/(app)/(admin)/orders/${salesOrderId}` as Href;
 }

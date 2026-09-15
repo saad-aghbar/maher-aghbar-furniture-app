@@ -46,8 +46,10 @@ import { rolesOmitDepartment, stageSkillsForAssignedRoles } from './employee-ass
 import { encryptPortalPassword } from '../../common/helpers/secret-box';
 import { SequenceService } from '../../common/sequence.service';
 import { provisionLinkedDealerCustomer, roleCodesIncludeCustomer } from '../../common/helpers/provision-dealer-customer.util';
+import { IamNotifyService } from '../notifications/iam-notify.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { versionHourlyRate } from '../tasks/labor-rate';
+import { revokeUserInteractiveAccess, roleIdsChanged } from './user-access';
 
 function splitCodes(value: unknown): string[] | undefined {
   if (value == null || value === '') return undefined;
@@ -236,6 +238,7 @@ const userSelect = {
   lastLoginAt: true,
   customerId: true,
   createdAt: true,
+  updatedAt: true,
   roles: { include: { role: true } },
   workerSkills: {
     where: { isActive: true },
@@ -256,6 +259,7 @@ export class UsersController {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     @Optional() private readonly scheduling?: SchedulingService,
+    @Optional() private readonly iamNotify?: IamNotifyService,
   ) {}
 
   private async syncWorkerSkills(userId: string, stageDefinitionIds: string[] | undefined) {
@@ -518,6 +522,10 @@ export class UsersController {
       },
     });
 
+    if (user.isActive) {
+      await this.iamNotify?.onInvited({ userId: user.id, actorUserId: actor.id });
+    }
+
     return {
       ...this.withStageIds(user),
       temporaryPassword: dto.password ? undefined : tempPassword,
@@ -642,10 +650,29 @@ export class UsersController {
       select: userSelect,
     });
 
-    if (passwordHash) {
-      await this.prisma.session.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt: new Date() },
+    const becameInactive = dto.isActive === false && existing.isActive;
+    const staffTypeChanged = roleIdsChanged(
+      existing.roles.map((r) => r.roleId),
+      dto.roleIds,
+    );
+
+    if (becameInactive) {
+      await this.iamNotify?.onDeactivated({
+        userId: id,
+        actorUserId: actor.id,
+        transition: `DEACTIVATED:${user.updatedAt.toISOString()}`,
+      });
+      await revokeUserInteractiveAccess(this.prisma, id);
+    } else if (passwordHash) {
+      await revokeUserInteractiveAccess(this.prisma, id);
+    }
+
+    if (staffTypeChanged) {
+      await this.iamNotify?.onRoleChanged({
+        userId: id,
+        actorUserId: actor.id,
+        fromCodes: existing.roles.map((r) => r.role.code),
+        toCodes: assignedRoles.map((r) => r.code),
       });
     }
 
@@ -724,10 +751,7 @@ export class UsersController {
         portalPasswordEnc: encryptPortalPassword(temporaryPassword),
       },
     });
-    await this.prisma.session.updateMany({
-      where: { userId: id, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    await revokeUserInteractiveAccess(this.prisma, id);
     await this.prisma.auditEvent.create({
       data: {
         userId: actor.id,
@@ -750,11 +774,23 @@ export class UsersController {
     assertCannotDeleteSelf(actor.id, id);
     await this.ensureNotLastActiveAdmin(id);
 
+    if (existing.isActive) {
+      await this.iamNotify?.onDeactivated({
+        userId: id,
+        actorUserId: actor.id,
+        transition: `DELETED:${new Date().toISOString()}`,
+      });
+    }
+
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.session.updateMany({
         where: { userId: id, revokedAt: null },
         data: { revokedAt: now },
+      });
+      await tx.devicePushToken.updateMany({
+        where: { userId: id, disabledAt: null },
+        data: { disabledAt: now },
       });
       await tx.user.update({
         where: { id },

@@ -8,6 +8,7 @@ import {
   seedReturnRepairWorkflow,
 } from './workflow';
 import { ensureDefaultWarehouseBin } from './warehouse-bins';
+import { seedNotificationTopicTemplates } from './notification-topics';
 
 /** IAM, org, stage library, STANDARD_FURNITURE, settings, QC, notification templates. */
 export async function seedFoundation(prisma: PrismaClient): Promise<void> {
@@ -68,6 +69,8 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
   }
 
   for (const preset of Object.values(SYSTEM_STAFF_PRESETS)) {
+    // System presets only. Custom staff types (isSystem: false) are never listed here
+    // and must not be overwritten or silently granted new permissions.
     const role = await prisma.role.upsert({
       where: { code: preset.code },
       update: {
@@ -881,6 +884,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       update: tpl,
     });
   }
+  await seedNotificationTopicTemplates(prisma);
 
   const returns = await prisma.returnRequest.findMany({
     select: {

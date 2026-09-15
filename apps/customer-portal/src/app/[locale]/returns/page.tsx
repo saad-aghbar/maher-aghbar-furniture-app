@@ -1,12 +1,13 @@
 'use client';
 
 import { ListPage } from '@/components/list-page';
+import { Link } from '@/i18n/navigation';
 import { apiFetch, apiUpload, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
   Button,
-  ImageSourceField,
+  CameraCapture,
   Input,
   Modal,
   Select,
@@ -69,6 +70,7 @@ export default function ReturnsPage() {
   const [description, setDescription] = useState('');
   const [reasonPhoto, setReasonPhoto] = useState('');
   const [issuePhoto, setIssuePhoto] = useState('');
+  const [lineIndex, setLineIndex] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
@@ -82,6 +84,7 @@ export default function ReturnsPage() {
   });
 
   const orders = ordersQuery.data ?? [];
+  const selectedOrderLines = orders.find((o) => o.id === salesOrderId)?.lines ?? [];
 
   function resetForm() {
     setSalesOrderId('');
@@ -91,13 +94,25 @@ export default function ReturnsPage() {
     setDescription('');
     setReasonPhoto('');
     setIssuePhoto('');
+    setLineIndex(0);
     setFormError(null);
   }
 
   function onSelectOrder(id: string) {
     setSalesOrderId(id);
     const order = orders.find((o) => o.id === id);
+    setLineIndex(0);
     const line = order?.lines?.[0];
+    if (line) {
+      setProductDesc(line.description || line.product?.nameEn || line.product?.nameAr || '');
+      setQuantity(String(Number(line.quantity) || 1));
+    }
+  }
+
+  function onSelectLine(index: number) {
+    setLineIndex(index);
+    const order = orders.find((o) => o.id === salesOrderId);
+    const line = order?.lines?.[index];
     if (line) {
       setProductDesc(line.description || line.product?.nameEn || line.product?.nameAr || '');
       setQuantity(String(Number(line.quantity) || 1));
@@ -162,7 +177,11 @@ export default function ReturnsPage() {
           {
             key: 'number',
             header: tCommon('number'),
-            render: (row) => <span className="font-medium">{row.number}</span>,
+            render: (row) => (
+              <Link href={`/returns/${row.id}`} className="font-medium text-brand hover:underline">
+                {row.number}
+              </Link>
+            ),
           },
           {
             key: 'productDesc',
@@ -237,6 +256,20 @@ export default function ReturnsPage() {
               </option>
             ))}
           </Select>
+          {selectedOrderLines.length > 1 ? (
+            <Select
+              label={tc('selectOrderLine')}
+              value={String(lineIndex)}
+              onChange={(e) => onSelectLine(Number(e.target.value))}
+              disabled={submitMutation.isPending}
+            >
+              {selectedOrderLines.map((line, i) => (
+                <option key={`${line.description}-${i}`} value={String(i)}>
+                  {line.description || line.product?.nameEn || line.product?.nameAr || `#${i + 1}`} × {String(line.quantity)}
+                </option>
+              ))}
+            </Select>
+          ) : null}
 
           <Input
             label={tc('product')}
@@ -275,26 +308,26 @@ export default function ReturnsPage() {
           />
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <ImageSourceField
-              label={tc('uploadReasonPhoto')}
-              value={reasonPhoto}
-              onChange={setReasonPhoto}
-              hint={tCommon('photoUrlHint')}
-              uploadLabel={tCommon('uploadFromDevice')}
-              uploadingLabel={tCommon('uploading')}
-              disabled={submitMutation.isPending}
-              onUploadFile={(file) => uploadPhoto(file, 'RETURN_REASON')}
-            />
-            <ImageSourceField
-              label={tc('uploadIssuePhoto')}
-              value={issuePhoto}
-              onChange={setIssuePhoto}
-              hint={tCommon('photoUrlHint')}
-              uploadLabel={tCommon('uploadFromDevice')}
-              uploadingLabel={tCommon('uploading')}
-              disabled={submitMutation.isPending}
-              onUploadFile={(file) => uploadPhoto(file, 'RETURN_ISSUE')}
-            />
+            <div className="space-y-1">
+              <CameraCapture
+                label={tc('uploadReasonPhoto')}
+                disabled={submitMutation.isPending}
+                onUploadFile={async (file) => {
+                  setReasonPhoto(await uploadPhoto(file, 'RETURN_REASON'));
+                }}
+              />
+              {reasonPhoto ? <p className="text-xs text-text-secondary">{tCommon('takePhoto')}</p> : null}
+            </div>
+            <div className="space-y-1">
+              <CameraCapture
+                label={tc('uploadIssuePhoto')}
+                disabled={submitMutation.isPending}
+                onUploadFile={async (file) => {
+                  setIssuePhoto(await uploadPhoto(file, 'RETURN_ISSUE'));
+                }}
+              />
+              {issuePhoto ? <p className="text-xs text-text-secondary">{tCommon('takePhoto')}</p> : null}
+            </div>
           </div>
         </div>
       </Modal>

@@ -108,6 +108,8 @@ describe('Piece 2 order production setup', () => {
       },
       salesOrderLine: {
         findUnique: jest.fn().mockResolvedValue({ id: 'line-1', productId: 'p1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
       productStageMaterialInput: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -350,6 +352,7 @@ describe('Piece 2 order production setup', () => {
             description: 'Sofa',
             productId: 'p1',
             specifications: null,
+            itemLetter: 'A',
           },
         },
       ],
@@ -366,6 +369,7 @@ describe('Piece 2 order production setup', () => {
             description: 'Sofa',
             productId: 'p1',
             specifications: null,
+            itemLetter: 'A',
           },
         ],
       },
@@ -397,6 +401,11 @@ describe('Piece 2 order production setup', () => {
     expect(inventory.tryReserveForSalesOrder).toHaveBeenCalledTimes(1);
     expect(result.schedulingSkipped).toBe(true);
     expect(result.workerAssignmentRequired).toBe(true);
+    expect(prisma.productionOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ number: 'SO-1.A' }),
+      }),
+    );
   });
 });
 
@@ -417,6 +426,8 @@ describe('Piece 4 manufacturing specification', () => {
       salesOrderLineMaterialRequirement: { deleteMany: jest.fn(), createMany: jest.fn() },
       salesOrderLine: {
         findUnique: jest.fn().mockResolvedValue({ id: 'line-1', productId: 'p1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
       productStageMaterialInput: {
         findMany: jest.fn().mockResolvedValue([]),

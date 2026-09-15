@@ -755,5 +755,15 @@
     "ACCT": "Accounting",
     "CUTTING": "Cutting",
     "ASSEMBLY": "Assembly"
-  }
+  },
+  "viewBoards": "Baskets",
+  "viewItems": "Orders",
+  "kitQr": "Kit QR",
+  "takeInTitle": "Take in kit",
+  "takeInContinue": "Continue to task",
+  "reportProblem": "Report a problem",
+  "qcPass": "Pass inspection",
+  "qcFail": "Fail inspection",
+  "materialsIdentify": "Identify material",
+  "scanFinLot": "Scan finished lot"
 }

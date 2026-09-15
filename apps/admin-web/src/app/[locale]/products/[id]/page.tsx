@@ -17,6 +17,7 @@ import {
   Alert,
   Button,
   Card,
+  CameraCapture,
   ErrorState,
   ImageSourceField,
   Input,
@@ -592,6 +593,19 @@ export default function ProductDetailPage() {
                 </div>
               )}
             </div>
+            <CameraCapture
+              label={t('takeProductPhoto')}
+              onUploadFile={async (file: File) => {
+                const form = new FormData();
+                form.append('file', file);
+                const res = await apiUpload<{ downloadPath: string }>(
+                  '/api/v1/uploads?category=PRODUCT_IMAGE',
+                  form,
+                );
+                const url = `${API_URL}${res.downloadPath}`;
+                setPhotos((prev) => (prev.includes(url) ? prev : [...prev, url]));
+              }}
+            />
             <ImageSourceField
               label={t('changeProductPhoto')}
               value={photos[0] ?? ''}
@@ -1211,10 +1225,10 @@ export default function ProductDetailPage() {
                 const nameAr = window.prompt(t('variantNameAr'));
                 const nameEn = window.prompt(t('variantNameEn'));
                 if (!code || !nameAr || !nameEn) return;
-                void apiFetch(`/api/v1/products/${id}/variants`, {
+                void apiFetch<{ id: string }>(`/api/v1/products/${id}/variants`, {
                   method: 'POST',
                   body: JSON.stringify({ code, nameAr, nameEn }),
-                }).then((row: { id: string }) => {
+                }).then((row) => {
                   void qc.invalidateQueries({ queryKey: ['product-variants', id] });
                   window.location.href = `/${locale}/products/${id}/variants/${row.id}`;
                 });

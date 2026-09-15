@@ -8,7 +8,7 @@ type Db = PrismaClient | Prisma.TransactionClient;
 export async function ensureFabricProcurementsForSalesOrder(
   db: Db,
   salesOrderId: string,
-): Promise<number> {
+): Promise<string[]> {
   const reqs = await db.salesOrderLineMaterialRequirement.findMany({
     where: {
       category: InventoryCategory.FABRIC,
@@ -22,9 +22,10 @@ export async function ensureFabricProcurementsForSalesOrder(
       lineSetup: { select: { salesOrderLineId: true } },
     },
   });
+  const createdIds: string[] = [];
   for (const req of reqs) {
     if (!req.lineSetup?.salesOrderLineId) continue;
-    await db.fabricProcurement.create({
+    const row = await db.fabricProcurement.create({
       data: {
         requirementId: req.id,
         salesOrderId,
@@ -34,14 +35,15 @@ export async function ensureFabricProcurementsForSalesOrder(
         state: 'NEEDS_ORDERING',
       },
     });
+    createdIds.push(row.id);
   }
-  return reqs.length;
+  return createdIds;
 }
 
 export async function ensureFabricProcurementsForProductionOrder(
   db: Db,
   productionOrderId: string,
-): Promise<number> {
+): Promise<string[]> {
   const reqs = await db.salesOrderLineMaterialRequirement.findMany({
     where: {
       category: InventoryCategory.FABRIC,
@@ -54,8 +56,9 @@ export async function ensureFabricProcurementsForProductionOrder(
       expectedQty: true,
     },
   });
+  const createdIds: string[] = [];
   for (const req of reqs) {
-    await db.fabricProcurement.create({
+    const row = await db.fabricProcurement.create({
       data: {
         requirementId: req.id,
         productionOrderId,
@@ -64,8 +67,9 @@ export async function ensureFabricProcurementsForProductionOrder(
         state: 'NEEDS_ORDERING',
       },
     });
+    createdIds.push(row.id);
   }
-  return reqs.length;
+  return createdIds;
 }
 
 export type EnsureFabricProcurementsDb = Db;

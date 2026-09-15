@@ -3,6 +3,7 @@ import {
   PERMISSION_META,
   expandPermissionDependencies,
   groupedPermissionCatalog,
+  toggleGroupPermissionSelection,
 } from '../permission-meta';
 import { ROLE_PERMISSIONS } from '../catalog';
 import { SYSTEM_STAFF_PRESETS } from '../staff';
@@ -48,6 +49,19 @@ describe('permission metadata', () => {
     const codes = groups.flatMap((g) => g.permissions.map((p) => p.code));
     expect(new Set(codes).size).toBe(PERMISSIONS.length);
     expect(groups.find((g) => g.group === 'inventory')?.nameAr).toBe('المخزون');
+    expect(groups.find((g) => g.group === 'returns')?.nameEn).toBe('Returns');
+    expect(groups.find((g) => g.group === 'fabric')?.nameEn).toBe('Fabric');
+    expect(PERMISSION_META['return.read'].group).toBe('returns');
+    expect(PERMISSION_META['fabric.procurement.read'].group).toBe('fabric');
+  });
+
+  it('select-all in a group expands dependencies and clear removes the group', () => {
+    const next = toggleGroupPermissionSelection([], ['inventory.transfer']);
+    expect(next).toEqual(
+      expect.arrayContaining(['inventory.read', 'warehouse.read', 'inventory.transfer']),
+    );
+    const cleared = toggleGroupPermissionSelection(next, ['inventory.transfer', 'inventory.read', 'warehouse.read']);
+    expect(cleared).not.toContain('inventory.transfer');
   });
 });
 
@@ -86,6 +100,7 @@ describe('WAREHOUSE_MANAGEMENT preset', () => {
 
   it('Piece 6 grants purchase-order.read for receive flow', () => {
     expect(preset).toContain('purchase-order.read');
+    expect(preset).toContain('fabric.procurement.read');
   });
 
   it('is not a hardcoded identity role', () => {

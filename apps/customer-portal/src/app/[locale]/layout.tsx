@@ -1,5 +1,6 @@
 import { ConditionalShell } from '@/components/conditional-shell';
 import { getFontClass, getPrimaryFontFamily } from '@/lib/fonts';
+import { DeskToolsI18n } from '@/providers/desk-tools-i18n';
 import { QueryProvider } from '@/providers/query-provider';
 import { StatusI18nProvider } from '@/providers/status-i18n-provider';
 import { getDirection, isValidLocale } from '@maher/i18n';
@@ -36,7 +37,9 @@ export default async function LocaleLayout({ children, params }: Props) {
           <ThemeProvider>
             <StatusI18nProvider>
               <QueryProvider>
-                <ConditionalShell>{children}</ConditionalShell>
+                <DeskToolsI18n>
+                  <ConditionalShell>{children}</ConditionalShell>
+                </DeskToolsI18n>
               </QueryProvider>
             </StatusI18nProvider>
           </ThemeProvider>

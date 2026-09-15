@@ -8,7 +8,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { ProductionReworkService } from '../production/production-rework.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { QualityFloorService } from './quality-floor.service';
 import { QualityInspectionService, isQcPass, isQcFail } from './quality-inspection.service';
 import { ReturnPieceService } from '../contracts/return-piece.service';
@@ -107,7 +106,6 @@ export class QualityController {
     private readonly scheduling: SchedulingService,
     private readonly floor: QualityFloorService,
     private readonly inspections: QualityInspectionService,
-    private readonly notifications: NotificationsService,
     @Optional() private readonly returnPieces?: ReturnPieceService,
   ) {}
 
@@ -196,15 +194,6 @@ export class QualityController {
     @CurrentUser() user: AuthUser,
   ) {
     const result = await this.rework.completeRework(reworkId, user.id);
-    await this.notifications
-      .notifyAdminUsers({
-        templateCode: 'ORDER_CONFIRMED',
-        vars: {
-          number: result.number,
-        },
-        linkUrl: `/production/${result.productionOrderId}`,
-      })
-      .catch(() => undefined);
     return result;
   }
 
@@ -258,22 +247,8 @@ export class QualityController {
 
     if (isQcPass(nextResult) && !isQcPass(previousResult)) {
       await this.scheduling.enqueueTargetedReplan(before.productionOrderId, 'qc-pass');
-      await this.notifications
-        .notifyAdminUsers({
-          templateCode: 'ORDER_CONFIRMED',
-          vars: { number: updated.number },
-          linkUrl: `/production/${before.productionOrderId}`,
-        })
-        .catch(() => undefined);
     } else if ((isQcFail(nextResult) || (!nextResult && dto.checklistResults?.some((i) => i.result === 'FAIL'))) && !isQcFail(previousResult)) {
       await this.scheduling.enqueueTargetedReplan(before.productionOrderId, 'qc-fail');
-      await this.notifications
-        .notifyAdminUsers({
-          templateCode: 'ORDER_CONFIRMED',
-          vars: { number: updated.number },
-          linkUrl: `/production/${before.productionOrderId}`,
-        })
-        .catch(() => undefined);
     }
 
     return updated;

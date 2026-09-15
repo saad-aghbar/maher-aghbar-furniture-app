@@ -11,7 +11,7 @@ import { WorkflowProgressHit } from '@/features/production-flow/components/Workf
 import type { JourneyAttention, JourneyPrimaryCta, JourneyReadiness } from '../adminOrderJourney';
 import type { AdminOrderLifecycle } from '../adminOrderLifecycle';
 import { dealerLifecycleCardCopy } from '../dealerLifecycleCardCopy';
-import { orderBasketItemHref } from '../orderBasketItemHref';
+import { orderBasketDetailsHref, orderBasketItemHref } from '../orderBasketItemHref';
 import type { OrderBasketItemModel } from '../selectOrderCard';
 import { selectOrderStationStub } from '../selectDealerOrders';
 import { OrderBasketBoard } from './OrderBasketBoard';
@@ -92,13 +92,20 @@ export function OrdersProgressCard({
     return (
       <OrderBasketBoard
         order={order}
-        onPressDetails={onPress}
+        onPressDetails={() => {
+          if (order.kind === 'rfq' || order.kind === 'returnWork') {
+            onPress();
+            return;
+          }
+          router.push(orderBasketDetailsHref(order.id));
+        }}
         onPressItem={(itemId) => {
           router.push(
             orderBasketItemHref({
               salesOrderId: order.id,
               lineId: itemId,
               lifecycle: order.lifecycle,
+              itemCount: order.items?.length ?? 0,
               productionOrderId:
                 order.items?.find((row) => row.id === itemId)?.productionOrderId ??
                 order.primaryProductionOrderId ??

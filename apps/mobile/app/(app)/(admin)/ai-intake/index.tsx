@@ -1,12 +1,6 @@
-import { useAuth } from '@/auth/AuthProvider';
-import { PermissionGate } from '@/navigation/PermissionGate';
-import { AiIntakeListScreen } from '@/features/ai-intake/AiIntakeListScreen';
+import { Redirect, type Href } from 'expo-router';
 
+/** Legacy More tile / list — AI reading lives on the dealer request. */
 export default function AdminAiIntakeListRoute() {
-  const { user } = useAuth();
-  return (
-    <PermissionGate user={user} require="ai-intake.read" mode="all">
-      <AiIntakeListScreen />
-    </PermissionGate>
-  );
+  return <Redirect href={'/(app)/(admin)/(tabs)/orders' as Href} />;
 }

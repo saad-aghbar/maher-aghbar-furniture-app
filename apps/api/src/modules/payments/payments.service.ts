@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InvoiceStatus, PaymentMethod, Prisma } from '@maher/database';
 import type { AuthUser } from '@maher/types';
@@ -11,6 +12,7 @@ import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import type { ListPaymentsDto, UpdatePaymentDto } from './dto/payment.dto';
 import {
   classifyInvoice,
@@ -31,6 +33,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   async list(query: ListPaymentsDto & { dateFrom?: string; dateTo?: string; method?: string }, user?: AuthUser) {
@@ -261,16 +264,39 @@ export class PaymentsService {
             templateCode: 'PAYMENT_RECEIVED',
             channel: 'WHATSAPP',
             to: { email: customer?.email, phone: customer?.phone },
-            vars: { amount: String(dto.amount), number: payment.number },
+            vars: { number: payment.number },
           })
           .catch(() => undefined);
-        await this.notifications
-          .notifyCustomerUsers(dto.customerId, {
-            templateCode: 'PAYMENT_RECEIVED',
-            vars: { amount: String(dto.amount), number: payment.number },
-            linkUrl: `/account/statement`,
-          })
-          .catch(() => undefined);
+        const firstInvoiceId = dto.invoiceId ?? dto.allocations?.[0]?.invoiceId;
+        const invoice = firstInvoiceId
+          ? await this.prisma.invoice.findUnique({
+              where: { id: firstInvoiceId },
+              select: { id: true, number: true },
+            })
+          : null;
+        if (this.opsNotify) {
+          await this.opsNotify
+            .onPaymentReceived({
+              id: payment.id,
+              number: payment.number,
+              customerId: dto.customerId,
+              invoiceId: invoice?.id ?? firstInvoiceId,
+              invoiceNumber: invoice?.number ?? payment.number,
+              actorUserId: userId,
+            })
+            .catch(() => undefined);
+        } else {
+          await this.notifications
+            .notifyCustomerUsers(dto.customerId, {
+              templateCode: 'PAYMENT_RECEIVED',
+              vars: { number: invoice?.number ?? payment.number },
+              linkUrl: invoice?.id ? `/invoices/${invoice.id}` : `/account/statement`,
+              eventId: `payment.received:payment:${payment.id}:RECORDED`,
+              entityType: 'payment',
+              entityId: payment.id,
+            })
+            .catch(() => undefined);
+        }
         return this.enrichPayment(payment);
       });
   }

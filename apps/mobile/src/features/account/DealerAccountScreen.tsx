@@ -95,7 +95,7 @@ export function DealerAccountScreen() {
           <AnimatedPressable
             variant="button"
             accessibilityRole="button"
-            accessibilityLabel={t('mobile.dealerAccount.notificationSettings')}
+            accessibilityLabel={t('mobile.notifications.title')}
             onPress={() => {
               void haptics.selection();
               router.push('/(app)/notifications' as Href);

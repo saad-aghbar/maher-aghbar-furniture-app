@@ -13,7 +13,7 @@ import { useTheme } from '@/theme';
 /** Preferences board — theme + locale inline, security CTA pill. */
 export function DealerPreferencesBoard() {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { theme } = useTheme();
   const router = useRouter();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -84,6 +84,17 @@ export function DealerPreferencesBoard() {
           onPress={() => {
             void haptics.selection();
             router.push('/(app)/(customer)/account/security' as Href);
+          }}
+        />
+        <HubCta
+          icon="notifications-outline"
+          label={t('mobile.notifications.prefs.title')}
+          isRTL={isRTL}
+          titleWeight={titleWeight}
+          primary={false}
+          onPress={() => {
+            void haptics.selection();
+            router.push('/(app)/(customer)/account/notifications' as Href);
           }}
         />
       </MoreBoard>

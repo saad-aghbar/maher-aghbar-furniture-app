@@ -14,9 +14,12 @@ const fixtureUnread: NotificationCardModel = {
   title: 'Production ready',
   body: 'PO-P14-GOLDEN is ready for the next stage.',
   type: 'PRODUCTION',
+  topic: null,
   unread: true,
   createdAt: new Date().toISOString(),
   linkUrl: '/production',
+  entityType: 'productionOrder',
+  entityId: null,
 };
 
 const fixtureRead: NotificationCardModel = {

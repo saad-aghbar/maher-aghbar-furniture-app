@@ -12,6 +12,7 @@ import {
   Input,
   Ltr,
   PageHero,
+  PillTabBar,
   Select,
   Skeleton,
   StatusBadge,
@@ -34,6 +35,7 @@ import {
   productionLifecycleBoardLabel,
   type ProductionLifecycleFilter,
 } from '@/lib/production-lifecycle';
+import { ProductionBasketBoard, type ProductionBasket } from '@/components/production/production-basket-board';
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface DealerOption {
@@ -248,6 +250,7 @@ function ProductionPageInner() {
   const [q, setQ] = useState('');
   const [dealerId, setDealerId] = useState('');
   const [page, setPage] = useState(1);
+  const [viewMode, setViewMode] = useState<'items' | 'boards'>('boards');
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startId, setStartId] = useState<string | null>(null);
@@ -334,6 +337,16 @@ function ProductionPageInner() {
         `/api/v1/production-orders?${listParams}`,
       ),
     placeholderData: keepPreviousData,
+  });
+
+  const boardsQuery = useQuery({
+    queryKey: ['production-orders-boards', listParams],
+    queryFn: () =>
+      apiFetch<{ data: ProductionBasket[] }>(
+        `/api/v1/production-orders?${listParams}&group=boards`,
+      ),
+    placeholderData: keepPreviousData,
+    enabled: viewMode === 'boards',
   });
 
   const startMutation = useMutation({
@@ -465,6 +478,14 @@ function ProductionPageInner() {
   return (
     <div className="space-y-6">
       <PageHero title={t('production')} description={tp('orders')} tone="soft" />
+      <PillTabBar
+        value={viewMode}
+        onChange={(id: string) => setViewMode(id as 'items' | 'boards')}
+        items={[
+          { id: 'boards', label: tp('viewBoards') },
+          { id: 'items', label: tp('viewItems') },
+        ]}
+      />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error && !startId ? <Alert variant="error">{error}</Alert> : null}
 
@@ -589,7 +610,15 @@ function ProductionPageInner() {
         </div>
       ) : null}
 
-      {listQuery.isError && !listQuery.data ? (
+      {viewMode === 'boards' ? (
+        boardsQuery.isError && !boardsQuery.data ? (
+          <ErrorState title={t('production')} onRetry={() => boardsQuery.refetch()} retryLabel={tCommon('retry')} />
+        ) : boardsQuery.isLoading && !boardsQuery.data ? (
+          <Skeleton className="h-48 w-full rounded-xl" />
+        ) : (
+          <ProductionBasketBoard boards={boardsQuery.data?.data ?? []} />
+        )
+      ) : listQuery.isError && !listQuery.data ? (
         <ErrorState
           title={t('production')}
           onRetry={() => listQuery.refetch()}

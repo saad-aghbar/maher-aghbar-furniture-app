@@ -31,6 +31,7 @@ import { wipeOperationalData } from './wipe';
 import { ensureQuotationAcceptedUniqueIndex } from './quotation-accepted-index';
 import { reconcileAvailableQtyFromTransactions, ensureAllDefaultWarehouseBins, ensureAllWarehouseBinQrCodes } from '../seed/warehouse-bins';
 import { backfillNameHe } from '../seed/backfill-name-he';
+import { backfillSalesOrderItemLetters } from '../../src/backfill-sales-order-item-letters';
 
 export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   const passwordHash = hashSync('123', 12);
@@ -249,6 +250,7 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   }
 
   await backfillNameHe(prisma);
+  await backfillSalesOrderItemLetters(prisma);
 
   await seedDemoSequences(prisma, counters);
   console.log(`Demo factory as of ${asOf.toISOString()} ready.`);

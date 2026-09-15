@@ -492,12 +492,12 @@ export default function DashboardPage() {
   }> = [
     { href: '/orders', label: t('orders'), icon: ShoppingCart, anyPermissions: ['request.read', 'quotation.read', 'sales-order.read'] },
     { href: '/production', label: t('production'), icon: Factory, anyPermissions: ['production-order.read'] },
-    { href: '/products', label: t('products'), icon: Armchair, anyPermissions: ['catalog.manage'] },
+    { href: '/products', label: t('products'), icon: Armchair, anyPermissions: ['catalog.read'] },
     { href: '/customers', label: t('dealers'), icon: Users, anyPermissions: ['customer.read'] },
     { href: '/inventory', label: t('inventory'), icon: Boxes, anyPermissions: ['inventory.read'] },
     { href: '/purchasing', label: t('purchasing'), icon: Receipt, anyPermissions: ['purchase-order.read', 'supplier.read'] },
     { href: '/invoices', label: t('invoices'), icon: Banknote, anyPermissions: ['invoice.read'] },
-    { href: '/returns', label: t('returns'), icon: RotateCcw, anyPermissions: ['sales-order.read', 'customer.read'] },
+    { href: '/returns', label: t('returns'), icon: RotateCcw, anyPermissions: ['return.read'] },
   ];
   const quickActions = allQuick.filter(
     (item) => !item.anyPermissions?.length || canAny(user, item.anyPermissions),

@@ -1,7 +1,7 @@
 'use client';
 
 import { apiFetch } from '@/lib/api-client';
-import { Badge, Card, EmptyState, Skeleton, StatusBadge } from '@maher/ui';
+import { Badge, Card, EmptyState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -115,6 +115,7 @@ export function ProductionWipPanel({ productionOrderId }: Props) {
             <p className="font-medium" dir="ltr">
               {kit.qrCode}
             </p>
+            <QrDisplay value={kit.qrCode} size={96} label={tp('kitQr')} />
             <p className="text-xs text-text-secondary" dir="ltr">
               {tp('hubWipLocation')}: {loc}
               {` · ${kit.pieces.length}/${kit.expectedPieceCount}`}

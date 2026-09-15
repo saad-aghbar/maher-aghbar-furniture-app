@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
@@ -14,6 +15,8 @@ import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
 import { ListProductionOrdersDto, UpdateProductionOrderDto, type ProductionListBucket } from './dto/production.dto';
 import { StagePipelineService } from './stage-pipeline.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
+import { emptyPipelineFacts } from './pipeline-handoff';
 import {
   decorateInspectionJourneyFields,
   mapWorkflowStageAdmin,
@@ -85,6 +88,7 @@ export class ProductionService {
     private readonly manufacturingCost: ManufacturingCostService,
     @Inject(forwardRef(() => SchedulingService))
     private readonly scheduling: SchedulingService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
   ) {}
 
   /**
@@ -1947,6 +1951,7 @@ export class ProductionService {
     }
 
     const now = new Date();
+    const facts = emptyPipelineFacts(id);
     await this.prisma.$transaction(async (tx) => {
       await tx.productionOrder.update({
         where: { id },
@@ -1970,8 +1975,12 @@ export class ProductionService {
           data: { status: 'READY_FOR_PRODUCTION' },
         });
       }
-      await this.pipeline.unlockReadyStages(id, tx);
-      await this.pipeline.rollupProgress(id, tx);
+      facts.newlyReadyTasks = await this.pipeline.unlockReadyStages(id, tx);
+      const rollup = await this.pipeline.rollupProgress(id, tx);
+      facts.poBecameReadyForDelivery = rollup.poBecameReadyForDelivery;
+      facts.soBecameReadyForDelivery = rollup.soBecameReadyForDelivery;
+      facts.salesOrderId = rollup.salesOrderId;
+      facts.deliveryId = rollup.deliveryId;
       await tx.auditEvent.create({
         data: {
           userId: actorUserId ?? order.createdById ?? null,
@@ -1987,6 +1996,8 @@ export class ProductionService {
         },
       });
     });
+
+    await this.floorHandoff?.emitPipeline(facts, { actorUserId: actorUserId ?? null });
 
     // Confirm / release always returns Ready for factory (Ready to start on Orders).
     return this.getById(id);

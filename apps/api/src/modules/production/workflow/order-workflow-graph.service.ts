@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../../common/prisma.service';
@@ -13,6 +14,8 @@ import {
 } from '../../../common/helpers/live-task-progress';
 import { WorkflowSnapshotService } from './workflow-snapshot.service';
 import { StagePipelineService } from '../stage-pipeline.service';
+import { FloorHandoffService } from '../../notifications/floor-handoff.service';
+import { emptyPipelineFacts } from '../pipeline-handoff';
 import { isReleasedToFactory } from '../factory-release';
 import { isQualityGateStage } from '../../scheduling/domain/milestone';
 
@@ -71,6 +74,7 @@ export class OrderWorkflowGraphService {
     private readonly prisma: PrismaService,
     private readonly snapshots: WorkflowSnapshotService,
     private readonly pipeline: StagePipelineService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
   ) {}
 
   async getGraph(
@@ -418,8 +422,14 @@ export class OrderWorkflowGraphService {
           },
         });
       });
-      await this.pipeline.unlockReadyStages(productionOrderId);
-      await this.pipeline.rollupProgress(productionOrderId);
+      const facts = emptyPipelineFacts(productionOrderId);
+      facts.newlyReadyTasks = await this.pipeline.unlockReadyStages(productionOrderId);
+      const rollup = await this.pipeline.rollupProgress(productionOrderId);
+      facts.poBecameReadyForDelivery = rollup.poBecameReadyForDelivery;
+      facts.soBecameReadyForDelivery = rollup.soBecameReadyForDelivery;
+      facts.salesOrderId = rollup.salesOrderId;
+      facts.deliveryId = rollup.deliveryId;
+      await this.floorHandoff?.emitPipeline(facts, { actorUserId: userId });
     }
     return this.getGraph(productionOrderId, 'admin');
   }

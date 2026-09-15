@@ -11,6 +11,8 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  FilterChip,
+  FilterPanel,
   Input,
   PageHero,
   Select,
@@ -80,6 +82,7 @@ function SalesOrdersPageInner() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [holdId, setHoldId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     const fromUrl = searchParams.get('status') ?? '';
@@ -180,6 +183,34 @@ function SalesOrdersPageInner() {
             placeholder={tSales('searchPlaceholder')}
           />
         </label>
+        <button type="button" className="text-sm text-brand hover:underline" onClick={() => setFilterOpen(true)}>
+          {tCommon('filter')}
+        </button>
+        <FilterPanel
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          title={tCommon('filter')}
+          onApply={() => setFilterOpen(false)}
+          onClear={() => {
+            setStatus('');
+            setPage(1);
+          }}
+        >
+          <div className="flex flex-wrap gap-2">
+            {statusFilterOptions.map((opt) => (
+              <FilterChip
+                key={opt.value || 'all'}
+                selected={status === opt.value}
+                onClick={() => {
+                  setPage(1);
+                  setStatus(opt.value);
+                }}
+              >
+                {opt.label}
+              </FilterChip>
+            ))}
+          </div>
+        </FilterPanel>
         <Select
           value={status}
           onChange={(e) => {

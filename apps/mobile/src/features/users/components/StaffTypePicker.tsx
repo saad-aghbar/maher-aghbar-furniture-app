@@ -1,16 +1,14 @@
-import { useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import type { StaffTypeRow } from '@/api/modules/users';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { localizedRoleName } from '../display';
-import { groupedCodes } from '../permissionLabels';
 import { staffTypeIcon } from '../staffIcon';
+import { PermissionBoard } from './PermissionBoard';
 
 type Props = {
   types: StaffTypeRow[];
@@ -27,14 +25,12 @@ function permissionCodes(type: StaffTypeRow): string[] {
 }
 
 /**
- * Staff type cards for Add/Edit User — select one type; optional read-only permission preview.
+ * Staff type cards for Add/Edit User — select one type; read-only permission preview.
  */
 export function StaffTypePicker({ types, value, onChange, loading }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -57,17 +53,15 @@ export function StaffTypePicker({ types, value, onChange, loading }: Props) {
       {types.map((type) => {
         const selected = value === type.id;
         const codes = permissionCodes(type);
-        const expanded = expandedId === type.id;
         const description =
           locale === 'ar'
             ? type.descriptionAr
             : locale === 'he'
               ? type.descriptionHe
               : type.descriptionEn;
-        const groups = groupedCodes(codes, locale);
 
         return (
-          <View key={type.id} style={{ gap: theme.spacing.xs }}>
+          <View key={type.id} style={{ gap: theme.spacing.sm }}>
             <AnimatedPressable
               variant="card"
               accessibilityRole="button"
@@ -122,49 +116,28 @@ export function StaffTypePicker({ types, value, onChange, loading }: Props) {
               />
             </AnimatedPressable>
 
-            {codes.length > 0 ? (
-              <AnimatedPressable
-                variant="button"
-                onPress={() => {
-                  void haptics.selection();
-                  setExpandedId(expanded ? null : type.id);
+            {selected ? (
+              <View
+                style={{
+                  padding: theme.spacing.md,
+                  borderRadius: theme.radius.xl,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surface,
+                  gap: theme.spacing.sm,
+                  ...orderBoardShadow(colorScheme),
                 }}
-                style={{ paddingHorizontal: theme.spacing.sm, paddingVertical: 4 }}
               >
                 <AppText
                   variant="caption"
+                  weight={titleWeight}
                   color="brand"
                   style={{ textAlign: isRTL ? 'right' : 'left' }}
                 >
-                  {expanded ? t('users.hidePermissions') : t('users.viewPermissions')}
+                  {t('users.staffAccessPreview')}
                 </AppText>
-              </AnimatedPressable>
-            ) : null}
-
-            {expanded ? (
-              <Animated.View
-                entering={reduce ? undefined : FadeIn.duration(180)}
-                exiting={reduce ? undefined : FadeOut.duration(120)}
-                style={{
-                  padding: theme.spacing.md,
-                  borderRadius: theme.radius.lg,
-                  backgroundColor: colors.surfaceSecondary,
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {groups.map((group) => (
-                  <View key={group.group} style={{ gap: 4 }}>
-                    <AppText variant="caption" weight={titleWeight} color="brand">
-                      {group.label}
-                    </AppText>
-                    {group.items.map((item) => (
-                      <AppText key={item.code} variant="caption" color="secondary">
-                        {item.name}
-                      </AppText>
-                    ))}
-                  </View>
-                ))}
-              </Animated.View>
+                <PermissionBoard selected={codes} selectedOnly />
+              </View>
             ) : null}
           </View>
         );

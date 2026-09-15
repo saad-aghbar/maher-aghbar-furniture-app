@@ -25,6 +25,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useCodeScanner,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -81,6 +82,7 @@ type LoadSheetPiece = {
 
 type LoadSheetProduct = {
   inventoryLotId: string;
+  lotQrCode?: string | null;
   productNameEn: string;
   productNameAr: string;
   productNameHe?: string | null;
@@ -151,6 +153,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
   const tl = useTranslations('lifecycle');
   const ti = useTranslations('inventory');
   const queryClient = useQueryClient();
+  const { openScanner } = useCodeScanner();
 
   const [banner, setBanner] = useState<string | null>(null);
   const [failOpen, setFailOpen] = useState(false);
@@ -394,8 +397,35 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
       <div className="space-y-3 rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-text-primary">{ti('loadSheetTitle')}</h2>
+            <h2 className="text-lg font-medium text-text-primary">{ti('loadSheetTitle')}</h2>
             <p className="text-sm text-text-secondary">{ti('loadSheetHint')}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-2"
+              onClick={async () => {
+                const code = await openScanner({ title: ti('scanFinLot') });
+                if (!code || !sheet) return;
+                const needle = code.trim().toUpperCase();
+                const product = sheet.products.find(
+                  (p) => (p.lotQrCode ?? '').trim().toUpperCase() === needle,
+                );
+                if (!product) {
+                  setFormError(ti('scanUnknown'));
+                  return;
+                }
+                const next = [...product.pieces]
+                  .sort((a, b) => a.pieceIndex - b.pieceIndex)
+                  .find((p) => !p.loadedAt);
+                if (!next) {
+                  setFormError(ti('scanUnknown'));
+                  return;
+                }
+                pieceMutation.mutate({ pieceId: next.id, loaded: true });
+              }}
+            >
+              {ti('scanFinLot')}
+            </Button>
           </div>
           {sheet ? (
             <div className="text-end">

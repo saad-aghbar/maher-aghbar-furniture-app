@@ -26,7 +26,7 @@ import {
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type WorkflowRow = {
   id: string;
@@ -43,18 +43,26 @@ const STEP_KEYS = ['setup', 'lines', 'ready', 'released'] as const;
 
 type Props = {
   salesOrderId: string;
+  initialLineId?: string | null;
 };
 
-export function OrderProductionSetupView({ salesOrderId }: Props) {
+export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props) {
   const locale = useLocale();
   const t = useTranslations('sales');
+  const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
+  const tc = useTranslations('catalog');
   const qc = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedLineId, setExpandedLineId] = useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [preview, setPreview] = useState<OrderSetupReleasePreview | null>(null);
+
+  useEffect(() => {
+    if (!initialLineId) return;
+    setExpandedLineId(initialLineId);
+  }, [initialLineId]);
 
   const setupQuery = useQuery({
     queryKey: ['order-production-setup', salesOrderId],
@@ -139,18 +147,22 @@ export function OrderProductionSetupView({ salesOrderId }: Props) {
   if (setupQuery.isError || !setup) {
     return (
       <ErrorState
-        title={t('orderSetup.title')}
+        title={tNav('productionPlan')}
         onRetry={() => setupQuery.refetch()}
         retryLabel={tCommon('retry')}
       />
     );
   }
 
+  const resolvedExpanded =
+    setup.lines.find((line) => line.id === expandedLineId || line.salesOrderLineId === expandedLineId)
+      ?.id ?? expandedLineId;
+
   return (
     <div className="space-y-6">
       <PageHeader
         backHref={`/sales-orders/${salesOrderId}`}
-        title={t('orderSetup.title')}
+        title={tNav('productionPlan')}
         description={`${setup.salesOrder.number}${customerName ? ` · ${customerName}` : ''}`}
         actions={
           <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
@@ -247,29 +259,78 @@ export function OrderProductionSetupView({ salesOrderId }: Props) {
       </MotionSection>
 
       <div className="space-y-3">
-        <h2 className="text-base font-semibold">{t('orderSetup.lines')}</h2>
+        <h2 className="text-base font-medium">{t('orderSetup.lines')}</h2>
         {setup.lines.length === 0 ? (
           <Card className="p-4">
             <p className="text-sm text-text-secondary">{t('orderSetup.noLines')}</p>
           </Card>
         ) : (
-          setup.lines.map((line) => (
-            <OrderLineSetupPanel
-              key={line.id}
-              salesOrderId={salesOrderId}
-              line={line}
-              workflows={workflowsQuery.data ?? []}
-              readOnly={readOnly}
-              expanded={expandedLineId === line.id}
-              onToggle={() =>
-                setExpandedLineId((prev) => (prev === line.id ? null : line.id))
-              }
-              onUpdated={() => {
-                void invalidate();
-              }}
-            />
-          ))
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {setup.lines.map((line) => {
+              const complexity = line.manufacturingComplexity ?? 'STANDARD';
+              const kind =
+                complexity === 'CUSTOM'
+                  ? tc('lineKindCustom')
+                  : complexity === 'MODIFIED'
+                    ? tc('lineKindCustomized')
+                    : tc('lineKindStandard');
+              const image = line.product?.imageUrl;
+              const selected = resolvedExpanded === line.id;
+              return (
+                <button
+                  key={line.id}
+                  type="button"
+                  onClick={() => setExpandedLineId(line.id === resolvedExpanded ? null : line.id)}
+                  className={`rounded-xl border p-3 text-start ${
+                    selected
+                      ? 'border-[var(--maher-brand)] bg-[var(--maher-brand-soft)]'
+                      : 'border-border bg-surface'
+                  }`}
+                >
+                  <div className="flex gap-3">
+                    <div className="h-16 w-16 overflow-hidden rounded-lg bg-[var(--maher-surface-muted)]">
+                      {image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={image} alt="" className="h-full w-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
+                      {line.itemNumber ? (
+                        <p className="truncate text-[11px] text-text-tertiary" dir="ltr">
+                          {line.itemNumber}
+                        </p>
+                      ) : null}
+                      <p className="truncate font-medium">
+                        {line.manufacturingName ?? line.description ?? line.product?.nameEn ?? '—'}
+                      </p>
+                      <p className="text-xs text-text-secondary" dir="ltr">
+                        × {line.quantity}
+                      </p>
+                      <p className="text-[11px] text-[var(--maher-brand)]">{kind}</p>
+                      <StatusBadge status={line.status} />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
+        {setup.lines.map((line) => (
+          <OrderLineSetupPanel
+            key={line.id}
+            salesOrderId={salesOrderId}
+            line={line}
+            workflows={workflowsQuery.data ?? []}
+            readOnly={readOnly}
+            expanded={resolvedExpanded === line.id}
+            onToggle={() =>
+              setExpandedLineId((prev) => (prev === line.id ? null : line.id))
+            }
+            onUpdated={() => {
+              void invalidate();
+            }}
+          />
+        ))}
       </div>
 
       {!readOnly ? (

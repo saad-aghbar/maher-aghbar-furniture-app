@@ -39,6 +39,7 @@ describe('staff vs identity permission isolation', () => {
     const pack = [...SYSTEM_STAFF_PRESETS.WAREHOUSE_MANAGEMENT.permissionCodes];
     expect(hasPermission(pack, 'inventory.receive')).toBe(true);
     expect(hasPermission(pack, 'purchase-order.read')).toBe(true);
+    expect(hasPermission(pack, 'fabric.procurement.read')).toBe(true);
   });
 
   it('PURCHASING pack includes fabric procurement', () => {
@@ -50,10 +51,11 @@ describe('staff vs identity permission isolation', () => {
     expect(hasPermission(pack, 'supplier-payment.record')).toBe(true);
   });
 
-  it('PRODUCTION_MANAGEMENT can read fabric tracker and override holds', () => {
+  it('PRODUCTION_MANAGEMENT can read fabric tracker, override holds, and manage at-risk schedule', () => {
     const pack = [...SYSTEM_STAFF_PRESETS.PRODUCTION_MANAGEMENT.permissionCodes];
     expect(hasPermission(pack, 'fabric.procurement.read')).toBe(true);
     expect(hasPermission(pack, 'production.fabric.override')).toBe(true);
+    expect(hasPermission(pack, 'schedule.manage')).toBe(true);
     expect(hasPermission(pack, 'fabric.procurement.manage')).toBe(false);
   });
 
@@ -62,6 +64,13 @@ describe('staff vs identity permission isolation', () => {
     expect(hasPermission(ROLE_PERMISSIONS.CUSTOMER, 'inventory.receive')).toBe(false);
     expect(hasPermission(ROLE_PERMISSIONS.PRODUCTION_WORKER, 'purchase-order.read')).toBe(false);
     expect(hasPermission(ROLE_PERMISSIONS.PRODUCTION_WORKER, 'inventory.receive')).toBe(false);
+  });
+
+  it('SCHEDULING pack owns calendar settings', () => {
+    const pack = [...SYSTEM_STAFF_PRESETS.SCHEDULING.permissionCodes];
+    expect(hasPermission(pack, 'schedule.settings.manage')).toBe(true);
+    expect(hasPermission(pack, 'schedule.manage')).toBe(true);
+    expect(hasPermission(pack, 'invoice.read')).toBe(false);
   });
 
   it('keeps full access for system administrators except dealer accept', () => {

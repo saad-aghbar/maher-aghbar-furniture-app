@@ -902,7 +902,7 @@ async function assertPresentationReady(
     where: { projectName: 'Golden factory path', archivedAt: null },
     include: {
       lines: true,
-      productionOrders: { select: { id: true, salesOrderLineId: true, originType: true } },
+      productionOrders: { select: { id: true, number: true, salesOrderLineId: true, originType: true } },
     },
   });
   if (!golden) {
@@ -942,6 +942,12 @@ async function assertPresentationReady(
       if (pos.length !== 1) {
         fail(
           `${golden.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`,
+        );
+      } else if (!line.itemLetter) {
+        fail(`${golden.number}: line ${line.id} missing itemLetter`);
+      } else if (pos[0]!.number !== `${golden.number}.${line.itemLetter}`) {
+        fail(
+          `${golden.number}: SALES_ORDER PO ${pos[0]!.number} expected ${golden.number}.${line.itemLetter}`,
         );
       }
     }

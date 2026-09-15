@@ -3,10 +3,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { intervalsOverlap } from '../production/worker-recommend';
+import { DEFAULT_FACTORY_TIMEZONE } from './domain/dealer-request-lead';
+import { ymdInTimezone } from './domain/factory-replan';
 import { classifyPersistIssue, type PersistClass } from './domain/manual-control';
 import { WorkingCalendar } from './domain/working-calendar';
 import type { FactoryCalendarInput, TimeOfDayRange } from './domain/types';
@@ -111,7 +116,11 @@ function issueMessage(code: string, fallback: string): string {
 
 @Injectable()
 export class PlacementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
+  ) {}
 
   async placeTask(input: PlaceTaskInput): Promise<PlaceTaskResult> {
     const permissions = input.permissions ?? [];
@@ -231,6 +240,13 @@ export class PlacementService {
       actorUserId: input.actorUserId,
       reason: input.reason,
       override: input.override,
+    });
+
+    await this.notifyPlacementChange({
+      task,
+      nextEmployeeId: nextEmployeeId ?? null,
+      plannedStart,
+      actorUserId: input.actorUserId ?? null,
     });
 
     return { ...written, issues };
@@ -883,5 +899,53 @@ export class PlacementService {
         });
       }
     });
+  }
+
+  private async notifyPlacementChange(input: {
+    task: {
+      id: string;
+      name?: string | null;
+      assignedEmployeeId: string | null;
+      stageDefinition?: { nameEn?: string | null } | null;
+      productionOrder?: { number?: string | null; salesOrder?: { number?: string | null } | null } | null;
+    };
+    nextEmployeeId: string | null;
+    plannedStart: Date | null;
+    actorUserId: string | null;
+  }) {
+    const number =
+      input.task.productionOrder?.salesOrder?.number ?? input.task.productionOrder?.number ?? '';
+    const taskName = input.task.name ?? input.task.stageDefinition?.nameEn ?? 'Task';
+    if (
+      this.floorHandoff &&
+      input.nextEmployeeId &&
+      input.nextEmployeeId !== input.task.assignedEmployeeId
+    ) {
+      await this.floorHandoff
+        .onTaskAssigned({
+          taskId: input.task.id,
+          employeeId: input.nextEmployeeId,
+          taskName,
+          number,
+          actorUserId: input.actorUserId,
+        })
+        .catch(() => undefined);
+    }
+    if (this.opsNotify && input.nextEmployeeId && input.plannedStart) {
+      const calendar = await this.loadWorkingCalendar();
+      const tz = calendar?.timezone || DEFAULT_FACTORY_TIMEZONE;
+      const todayYmd = ymdInTimezone(new Date(), tz);
+      if (ymdInTimezone(input.plannedStart, tz) === todayYmd) {
+        await this.opsNotify
+          .onTaskScheduledToday({
+            taskId: input.task.id,
+            taskName,
+            number,
+            employeeId: input.nextEmployeeId,
+            dayYmd: todayYmd,
+          })
+          .catch(() => undefined);
+      }
+    }
   }
 }

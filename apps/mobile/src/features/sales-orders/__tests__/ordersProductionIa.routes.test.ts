@@ -85,6 +85,16 @@ describe('Orders / Production route map', () => {
     expect(String(href)).toBe('/(app)/(admin)/orders/so-2');
   });
 
+  it('In production CTA opens the line chooser, not the first production order', () => {
+    const href = resolveOrderPrimaryCtaHref({
+      salesOrderId: 'so-3',
+      lifecycle: 'in_production',
+      primaryProductionOrderId: 'po-only',
+    });
+    expect(String(href)).toBe('/(app)/(admin)/orders/so-3/production-plan');
+    expect(String(href)).not.toContain('po-only');
+  });
+
   it('Production plan route is only entered from Preparing CTA or order detail button', () => {
     expect('/(app)/(admin)/orders/so-1/production-plan').toContain('/production-plan');
   });

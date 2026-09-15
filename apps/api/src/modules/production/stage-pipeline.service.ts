@@ -4,6 +4,13 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { calculateWorkflowProgress } from './workflow/domain';
 import { resolveProductionOrderRollupStatus } from './factory-release';
+import {
+  collectNewlyReadyTasks,
+  emptyPipelineFacts,
+  type NewlyReadyTask,
+  type PipelineHandoffFacts,
+  type RollupNotifyFacts,
+} from './pipeline-handoff';
 
 type Tx = Prisma.TransactionClient;
 
@@ -92,8 +99,14 @@ export class StagePipelineService {
   }
 
   /** Unlock stages whose prerequisites are met (PENDING → READY, NOT_STARTED → READY). */
-  async unlockReadyStages(productionOrderId: string, tx?: Tx) {
+  async unlockReadyStages(productionOrderId: string, tx?: Tx): Promise<NewlyReadyTask[]> {
     const db = this.db(tx);
+    const po = await db.productionOrder.findUnique({
+      where: { id: productionOrderId },
+      select: { status: true },
+    });
+    if (po?.status === 'CANCELLED') return [];
+
     const stages = await db.productionStageInstance.findMany({
       where: { productionOrderId },
       include: {
@@ -102,6 +115,7 @@ export class StagePipelineService {
       },
     });
 
+    const newlyReady: NewlyReadyTask[] = [];
     for (const stage of stages) {
       if (stage.status !== 'PENDING') continue;
       const met = await this.arePrereqsMetForInstance(
@@ -117,6 +131,25 @@ export class StagePipelineService {
         data: { status: 'READY' },
       });
 
+      const unlocked = collectNewlyReadyTasks([
+        {
+          status: 'PENDING',
+          prereqsMet: true,
+          stageDefinition: {
+            code: stage.stageDefinition.code,
+            nameEn: stage.stageDefinition.nameEn,
+            executionKind: stage.stageDefinition.executionKind,
+          },
+          tasks: stage.tasks.map((task) => ({
+            id: task.id,
+            status: task.status,
+            assignedEmployeeId: task.assignedEmployeeId,
+            isRework: task.isRework,
+          })),
+        },
+      ]);
+      newlyReady.push(...unlocked);
+
       for (const task of stage.tasks) {
         if (task.status === 'NOT_STARTED' || task.status === 'READY') {
           await db.productionTask.update({
@@ -126,10 +159,11 @@ export class StagePipelineService {
         }
       }
     }
+    return newlyReady;
   }
 
   /** Sync stage progress from its tasks and roll up PO progress / current stage / completion. */
-  async rollupProgress(productionOrderId: string, tx?: Tx) {
+  async rollupProgress(productionOrderId: string, tx?: Tx): Promise<RollupNotifyFacts> {
     const db = this.db(tx);
     const stages = await db.productionStageInstance.findMany({
       where: { productionOrderId },
@@ -267,6 +301,7 @@ export class StagePipelineService {
       },
     });
     const poBefore = poForClose;
+    let deliveryId: string | null = null;
 
     let allComplete = manufacturingComplete;
     if (manufacturingComplete && poForClose?.salesOrderId) {
@@ -275,6 +310,7 @@ export class StagePipelineService {
         select: { id: true, status: true },
         orderBy: { createdAt: 'desc' },
       });
+      deliveryId = delivery?.id ?? null;
       // Missing Delivery is never completion for customer orders.
       allComplete = delivery?.status === 'DELIVERED';
 
@@ -317,7 +353,7 @@ export class StagePipelineService {
         if (so?.customerId && so.deliveryAddress) {
           const rfq = so.quotation?.request;
           const number = await this.sequences.next('DEL', 'DEL');
-          await db.delivery.create({
+          const created = await db.delivery.create({
             data: {
               number,
               customerId: so.customerId,
@@ -335,7 +371,9 @@ export class StagePipelineService {
                   })),
               },
             },
+            select: { id: true },
           });
+          deliveryId = created.id;
         }
       }
     } else if (manufacturingComplete && !poForClose?.salesOrderId) {
@@ -355,6 +393,13 @@ export class StagePipelineService {
         }
       }
     }
+
+    const poBecameReadyForDelivery =
+      Boolean(readyForDelivery) &&
+      !allComplete &&
+      poBefore?.status !== 'READY_FOR_DELIVERY' &&
+      poBefore?.status !== 'COMPLETED' &&
+      poBefore?.status !== 'CANCELLED';
 
     await db.productionOrder.update({
       where: { id: productionOrderId },
@@ -390,6 +435,7 @@ export class StagePipelineService {
             },
     });
 
+    let soBecameReadyForDelivery = false;
     const po = poBefore
       ? { salesOrderId: poBefore.salesOrderId }
       : await db.productionOrder.findUnique({
@@ -417,23 +463,35 @@ export class StagePipelineService {
         if (allCompleted) {
           const delivery = await db.delivery.findFirst({
             where: { salesOrderId: po.salesOrderId },
-            select: { status: true },
+            select: { id: true, status: true },
             orderBy: { createdAt: 'desc' },
           });
+          deliveryId = delivery?.id ?? deliveryId;
           if (delivery?.status === 'DELIVERED' && currentSo?.status !== 'DELIVERED') {
             await db.salesOrder.update({
               where: { id: po.salesOrderId },
               data: { status: 'DELIVERED' },
             });
           }
-        } else if (currentSo?.status !== 'DELIVERED') {
+        } else if (
+          currentSo &&
+          !['DELIVERED', 'READY_FOR_DELIVERY', 'CANCELLED', 'ON_HOLD'].includes(currentSo.status)
+        ) {
           await db.salesOrder.update({
             where: { id: po.salesOrderId },
             data: { status: 'READY_FOR_DELIVERY' },
           });
+          soBecameReadyForDelivery = true;
         }
       }
     }
+
+    return {
+      poBecameReadyForDelivery,
+      soBecameReadyForDelivery,
+      salesOrderId: po?.salesOrderId ?? null,
+      deliveryId,
+    };
   }
 
   async onTaskProgress(
@@ -455,8 +513,9 @@ export class StagePipelineService {
     await this.rollupProgress(productionOrderId, tx);
   }
 
-  async onTaskComplete(productionOrderId: string, stageInstanceId: string | null, tx?: Tx) {
+  async onTaskComplete(productionOrderId: string, stageInstanceId: string | null, tx?: Tx): Promise<PipelineHandoffFacts> {
     const db = this.db(tx);
+    const facts = emptyPipelineFacts(productionOrderId);
     if (stageInstanceId) {
       const stage = await db.productionStageInstance.findUnique({
         where: { id: stageInstanceId },
@@ -471,6 +530,14 @@ export class StagePipelineService {
           tx,
         );
         if (allDone && prereqsMet) {
+          if (stage.status !== 'COMPLETED') {
+            facts.completedStage = {
+              code: stage.stageDefinition.code,
+              nameEn: stage.stageDefinition.nameEn,
+            };
+            const packCode = stage.stageDefinition.code.toUpperCase();
+            facts.packagingStageCompleted = packCode === 'PACKAGING' || packCode === 'PACK';
+          }
           await db.productionStageInstance.update({
             where: { id: stageInstanceId },
             data: {
@@ -482,8 +549,13 @@ export class StagePipelineService {
         }
       }
     }
-    await this.unlockReadyStages(productionOrderId, tx);
-    await this.rollupProgress(productionOrderId, tx);
+    facts.newlyReadyTasks = await this.unlockReadyStages(productionOrderId, tx);
+    const rollup = await this.rollupProgress(productionOrderId, tx);
+    facts.poBecameReadyForDelivery = rollup.poBecameReadyForDelivery;
+    facts.soBecameReadyForDelivery = rollup.soBecameReadyForDelivery;
+    facts.salesOrderId = rollup.salesOrderId;
+    facts.deliveryId = rollup.deliveryId;
+    return facts;
   }
 
   async onTaskStart(productionOrderId: string, stageInstanceId: string | null, tx?: Tx) {

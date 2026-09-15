@@ -657,7 +657,6 @@ export function OrderProductionPlanEditorScreen({
     productionOrderId,
   );
   const assignWorkflowMutation = useAssignOrderWorkflowMutation(productionOrderId);
-  const workflowsQuery = useWorkflowsQuery(workflowOpen);
   const startMutation = useStartProductionMutation(productionOrderId);
   const suggestScheduleMutation = useSuggestPlanScheduleMutation(productionOrderId);
   const assignMutation = useAssignTaskMutation(productionOrderId);
@@ -669,6 +668,7 @@ export function OrderProductionPlanEditorScreen({
   const [dirty, setDirty] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
+  const workflowsQuery = useWorkflowsQuery(workflowOpen);
   const [matsExpanded, setMatsExpanded] = useState(false);
   const [editingStage, setEditingStage] = useState<ProductionSetupStage | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);

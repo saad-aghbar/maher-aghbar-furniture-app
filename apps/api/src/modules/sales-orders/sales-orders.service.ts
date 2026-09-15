@@ -4,9 +4,11 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
+import { formatSalesOrderItemNumber } from '../../common/sales-order-item-number';
 import {
   lineVisualFromOrderSpec,
   lineVisualIdentity,
@@ -15,6 +17,7 @@ import {
   type AuthUser,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import { resolveSalesOrderProductionNumber } from '../../common/resolve-sales-order-production-number';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
@@ -37,6 +40,7 @@ import {
   type OrderCostResult,
 } from '../../common/helpers/order-costing.util';
 import { ListReturnWorkDto, ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import { inferSalesOrderResumeStatus } from './sales-order-resume';
 import { summarizePieces } from '../contracts/return-case-aggregate';
 import {
   isPendingReturnLifecycle,
@@ -55,6 +59,8 @@ import {
 import { crossFilterOrderFacets } from './order-type-facets';
 import { buildJourneyLogisticsSummary } from './journey-logistics';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FloorHandoffService } from '../notifications/floor-handoff.service';
+import { OpsNotifyService } from '../notifications/ops-notify.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { WorkflowSnapshotService } from '../production/workflow/workflow-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -312,7 +318,7 @@ function resolveCurrentStage(
 export class SalesOrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sequences: SequenceService,
+    private readonly _sequences: SequenceService,
     private readonly notifications: NotificationsService,
     private readonly storage: LocalStorageService,
     private readonly scheduling: SchedulingService,
@@ -323,6 +329,8 @@ export class SalesOrdersService {
     private readonly manufacturingCost: ManufacturingCostService,
     @Inject(forwardRef(() => ProductionService))
     private readonly production: ProductionService,
+    @Optional() private readonly floorHandoff?: FloorHandoffService,
+    @Optional() private readonly opsNotify?: OpsNotifyService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -1594,8 +1602,13 @@ export class SalesOrdersService {
       });
     const orderedItems = order.lines.map((line) => {
       const extra = specDims(line.orderSpec);
+      const itemLetter = line.itemLetter?.trim() || null;
       return {
         id: line.id,
+        itemLetter,
+        itemNumber: itemLetter
+          ? formatSalesOrderItemNumber(order.number, itemLetter)
+          : null,
         productId: line.productId ?? null,
         productName: line.description,
         description: line.specifications,
@@ -1641,6 +1654,11 @@ export class SalesOrdersService {
               order.lines.find((row) => row.sortOrder === item.sortOrder) ?? order.lines[index];
             return {
               id: item.id,
+              itemLetter: soLine?.itemLetter?.trim() || null,
+              itemNumber:
+                soLine?.itemLetter?.trim()
+                  ? formatSalesOrderItemNumber(order.number, soLine.itemLetter)
+                  : null,
               productId: item.productId ?? null,
               productName: item.productName,
               description: item.description,
@@ -2144,7 +2162,7 @@ export class SalesOrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const line of productionLines) {
-        const poNumber = await this.sequences.next('PO', 'PO');
+        const poNumber = await resolveSalesOrderProductionNumber(tx, order, line);
         const productionOrder = await tx.productionOrder.create({
           data: {
             number: poNumber,
@@ -2203,6 +2221,16 @@ export class SalesOrdersService {
         })
         .catch(() => undefined);
 
+      if (updated.status === SalesOrderStatus.WAITING_FOR_MATERIALS) {
+        await this.opsNotify
+          ?.onShortageBlockingProduction({
+            salesOrderId: updated.id,
+            number: order.number,
+            actorUserId: userId,
+          })
+          .catch(() => undefined);
+      }
+
       // Piece 2: do not auto-schedule — worker assignment is Piece 3.
       return updated;
     });
@@ -2241,7 +2269,58 @@ export class SalesOrdersService {
         newValues: { reason: reason ?? null },
       },
     });
+    const workerUserIds = (await this.floorHandoff?.assignedWorkerIdsForSalesOrder(id)) ?? [];
+    await this.floorHandoff?.onOrderHold({
+      salesOrderId: id,
+      number: order.number,
+      customerId: order.customerId,
+      actorUserId: userId,
+      workerUserIds,
+      occurredAt: updated.updatedAt,
+    });
     return updated;
+  }
+
+  async resume(id: string, userId: string) {
+    const order = await this.getById(id);
+    if (order.status !== SalesOrderStatus.ON_HOLD) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: `Cannot resume sales order in status ${order.status}.`,
+      });
+    }
+    const next = await this.inferResumeStatus(id);
+    const updated = await this.prisma.salesOrder.update({
+      where: { id },
+      data: { status: next },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'sales-order.resume',
+        entityType: 'SalesOrder',
+        entityId: id,
+        newValues: { status: next },
+      },
+    });
+    const workerUserIds = (await this.floorHandoff?.assignedWorkerIdsForSalesOrder(id)) ?? [];
+    await this.floorHandoff?.onOrderResumed({
+      salesOrderId: id,
+      number: order.number,
+      customerId: order.customerId,
+      actorUserId: userId,
+      workerUserIds,
+      occurredAt: updated.updatedAt,
+    });
+    return updated;
+  }
+
+  private async inferResumeStatus(salesOrderId: string): Promise<SalesOrderStatus> {
+    const pos = await this.prisma.productionOrder.findMany({
+      where: { salesOrderId, archivedAt: null, status: { not: 'CANCELLED' } },
+      select: { status: true },
+    });
+    return inferSalesOrderResumeStatus(pos.map((p) => p.status));
   }
 
   /**
@@ -2580,6 +2659,7 @@ export class SalesOrdersService {
     }
 
     const cancellationReason = formatCancellationReason(reasonCode, opts.reason);
+    const workerUserIds = (await this.floorHandoff?.assignedWorkerIdsForSalesOrder(id)) ?? [];
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const cancelled = await tx.salesOrder.update({
@@ -2663,6 +2743,13 @@ export class SalesOrdersService {
         },
       });
       return cancelled;
+    });
+    await this.floorHandoff?.onOrderCancelled({
+      salesOrderId: id,
+      number: updated.number,
+      customerId: updated.customerId,
+      actorUserId: userId,
+      workerUserIds,
     });
     return updated;
   }

@@ -27,6 +27,30 @@ describe('selectNotification', () => {
     expect(selectNotificationCard(row, 'en').unread).toBe(true);
   });
 
+  it('passes topic, entityType, and entityId through for open mapping', () => {
+    const card = selectNotificationCard(
+      {
+        ...row,
+        topic: 'order.confirmed',
+        entityType: 'salesOrder',
+        entityId: 'so-99',
+      },
+      'en',
+    );
+    expect(card.topic).toBe('order.confirmed');
+    expect(card.entityType).toBe('salesOrder');
+    expect(card.entityId).toBe('so-99');
+  });
+
+  it('uses Hebrew inbox copy when present', () => {
+    expect(
+      selectNotificationCard(
+        { ...row, titleHe: 'הזמנה חדשה', bodyHe: 'RFQ-1 הוגשה' },
+        'he',
+      ).title,
+    ).toBe('הזמנה חדשה');
+  });
+
   it('normalizes array and paginated payloads', () => {
     expect(normalizeNotificationList([row])).toHaveLength(1);
     expect(normalizeNotificationList({ data: [row] })).toHaveLength(1);

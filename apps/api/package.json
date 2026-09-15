@@ -18,6 +18,7 @@
     "@maher/database": "workspace:*",
     "@maher/integrations": "workspace:*",
     "@maher/logging": "workspace:*",
+    "@maher/notifications": "workspace:*",
     "@maher/permissions": "workspace:*",
     "@maher/types": "workspace:*",
     "@maher/validation": "workspace:*",

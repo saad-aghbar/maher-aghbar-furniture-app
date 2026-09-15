@@ -9,6 +9,8 @@ export function useAuthMe() {
     queryKey: ['auth-me'],
     queryFn: () => apiFetch<AuthUser>('/api/v1/auth/me'),
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }

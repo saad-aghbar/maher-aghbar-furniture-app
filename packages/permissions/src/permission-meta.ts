@@ -1,23 +1,25 @@
 import { PERMISSIONS, type Permission } from './catalog';
 
 export const PERMISSION_GROUPS = [
+  'sales',
+  'production',
+  'scheduling',
   'inventory',
   'warehouses',
   'purchasing',
-  'production',
+  'fabric',
   'quality',
   'delivery',
-  'catalog',
-  'customers',
-  'sales',
-  'users',
+  'returns',
   'finance',
   'reports',
+  'catalog',
+  'customers',
+  'users',
+  'ai',
   'settings',
   'documents',
   'notifications',
-  'scheduling',
-  'ai',
 ] as const;
 
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
@@ -40,23 +42,25 @@ export const PERMISSION_GROUP_LABELS: Record<
   PermissionGroup,
   { nameEn: string; nameAr: string; nameHe: string }
 > = {
+  sales: { nameEn: 'Orders / Sales', nameAr: 'الطلبات والمبيعات', nameHe: 'הזמנות ומכירות' },
+  production: { nameEn: 'Production', nameAr: 'الإنتاج', nameHe: 'ייצור' },
+  scheduling: { nameEn: 'Scheduling', nameAr: 'الجدولة', nameHe: 'תזמון' },
   inventory: { nameEn: 'Inventory', nameAr: 'المخزون', nameHe: 'מלאי' },
   warehouses: { nameEn: 'Warehouses', nameAr: 'المستودعات', nameHe: 'מחסנים' },
   purchasing: { nameEn: 'Purchasing', nameAr: 'المشتريات', nameHe: 'רכש' },
-  production: { nameEn: 'Production', nameAr: 'الإنتاج', nameHe: 'ייצור' },
+  fabric: { nameEn: 'Fabric', nameAr: 'الأقمشة', nameHe: 'בד' },
   quality: { nameEn: 'Quality', nameAr: 'الجودة', nameHe: 'איכות' },
   delivery: { nameEn: 'Delivery', nameAr: 'التوصيل', nameHe: 'משלוחים' },
-  catalog: { nameEn: 'Catalog', nameAr: 'الكتالوج', nameHe: 'קטלוג' },
-  customers: { nameEn: 'Dealers', nameAr: 'التجار', nameHe: 'סוחרים' },
-  sales: { nameEn: 'Sales', nameAr: 'المبيعات', nameHe: 'מכירות' },
-  users: { nameEn: 'Users', nameAr: 'المستخدمون', nameHe: 'משתמשים' },
+  returns: { nameEn: 'Returns', nameAr: 'المرتجعات', nameHe: 'החזרות' },
   finance: { nameEn: 'Finance', nameAr: 'المالية', nameHe: 'כספים' },
-  reports: { nameEn: 'Reports', nameAr: 'التقارير', nameHe: 'דוחות' },
+  reports: { nameEn: 'Reports / Cost', nameAr: 'التقارير والتكلفة', nameHe: 'דוחות ועלות' },
+  catalog: { nameEn: 'Catalog', nameAr: 'الكتالوج', nameHe: 'קטלוג' },
+  customers: { nameEn: 'Dealers / Customers', nameAr: 'التجار والعملاء', nameHe: 'סוחרים ולקוחות' },
+  users: { nameEn: 'People / Access', nameAr: 'الأشخاص والصلاحيات', nameHe: 'אנשים וגישה' },
+  ai: { nameEn: 'AI / Integrations', nameAr: 'الذكاء الاصطناعي والربط', nameHe: 'בינה מלאכותית ואינטגרציות' },
   settings: { nameEn: 'Settings', nameAr: 'الإعدادات', nameHe: 'הגדרות' },
   documents: { nameEn: 'Documents', nameAr: 'المستندات', nameHe: 'מסמכים' },
   notifications: { nameEn: 'Notifications', nameAr: 'الإشعارات', nameHe: 'התראות' },
-  scheduling: { nameEn: 'Scheduling', nameAr: 'الجدولة', nameHe: 'תזמון' },
-  ai: { nameEn: 'AI', nameAr: 'الذكاء الاصطناعي', nameHe: 'בינה מלאכותית' },
 };
 
 function m(
@@ -262,7 +266,7 @@ export const PERMISSION_META = {
     { requires: ['sales-order.read'] },
   ),
   'return.read': m(
-    'sales',
+    'returns',
     'View returns',
     'عرض المرتجعات',
     'צפייה בהחזרות',
@@ -271,7 +275,7 @@ export const PERMISSION_META = {
     'צפייה בבקשות החזרה של סוחרים ובמסלולן.',
   ),
   'return.create': m(
-    'sales',
+    'returns',
     'Create returns',
     'إنشاء مرتجعات',
     'יצירת החזרות',
@@ -281,7 +285,7 @@ export const PERMISSION_META = {
     { requires: ['return.read'] },
   ),
   'return.approve': m(
-    'sales',
+    'returns',
     'Approve returns',
     'اعتماد المرتجعات',
     'אישור החזרות',
@@ -291,7 +295,7 @@ export const PERMISSION_META = {
     { requires: ['return.read'] },
   ),
   'return.receive': m(
-    'sales',
+    'returns',
     'Receive returns',
     'استلام المرتجعات',
     'קבלת החזרות',
@@ -301,7 +305,7 @@ export const PERMISSION_META = {
     { requires: ['return.read'] },
   ),
   'return.inspect': m(
-    'sales',
+    'returns',
     'Inspect returns',
     'فحص المرتجعات',
     'בדיקת החזרות',
@@ -311,7 +315,7 @@ export const PERMISSION_META = {
     { requires: ['return.read'] },
   ),
   'return.work': m(
-    'sales',
+    'returns',
     'Plan return work',
     'تخطيط عمل المرتجع',
     'תכנון עבודת החזרה',
@@ -321,7 +325,7 @@ export const PERMISSION_META = {
     { requires: ['return.read'] },
   ),
   'return.scrap.approve': m(
-    'sales',
+    'returns',
     'Approve scrap',
     'اعتماد الإتلاف',
     'אישור גריטה',
@@ -331,7 +335,7 @@ export const PERMISSION_META = {
     { requires: ['return.inspect'] },
   ),
   'return.replacement.create': m(
-    'sales',
+    'returns',
     'Create replacement orders',
     'إنشاء أوامر الاستبدال',
     'יצירת הזמנות החלפה',
@@ -341,7 +345,7 @@ export const PERMISSION_META = {
     { requires: ['return.work'] },
   ),
   'return.recovery.post': m(
-    'sales',
+    'returns',
     'Post recovery movements',
     'ترحيل حركات الاسترداد',
     'רישום תנועות שחזור',
@@ -437,7 +441,7 @@ export const PERMISSION_META = {
     { ...SENSITIVE, requires: ['purchase-order.read'] },
   ),
   'fabric.procurement.read': m(
-    'purchasing',
+    'fabric',
     'View fabric procurement',
     'عرض توريد الأقمشة',
     'צפייה ברכש בדים',
@@ -446,7 +450,7 @@ export const PERMISSION_META = {
     'צפייה ברכש בדים המקושר להזמנות.',
   ),
   'fabric.procurement.manage': m(
-    'purchasing',
+    'fabric',
     'Manage fabric procurement',
     'إدارة توريد الأقمشة',
     'ניהול רכש בדים',
@@ -1192,6 +1196,19 @@ export function expandPermissionDependencies(codes: readonly string[]): Permissi
   }
 
   return PERMISSIONS.filter((code) => selected.has(code));
+}
+
+/** Select or clear every code in a permission group, then expand dependencies. */
+export function toggleGroupPermissionSelection(
+  selected: readonly string[],
+  groupCodes: readonly string[],
+): Permission[] {
+  const set = new Set(selected);
+  const allOn = groupCodes.length > 0 && groupCodes.every((code) => set.has(code));
+  const next = allOn
+    ? selected.filter((code) => !groupCodes.includes(code))
+    : [...selected, ...groupCodes.filter((code) => !set.has(code))];
+  return expandPermissionDependencies(next);
 }
 
 export type GroupedPermissionCatalog = Array<{

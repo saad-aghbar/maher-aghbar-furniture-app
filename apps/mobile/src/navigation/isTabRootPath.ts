@@ -33,6 +33,12 @@ export function isTabRootPath(pathname: string, surface: AppSurface): boolean {
 
   if (segments.length === 0) return true;
 
+  const leaf = segments.filter((s) => s !== 'index');
+  if (leaf.length === 1 && leaf[0] === 'search') return false;
+  if (leaf.length === 1 && leaf[0] === 'notifications' && surface !== 'employee') {
+    return false;
+  }
+
   const tabsIdx = raw.indexOf('(tabs)');
   if (tabsIdx >= 0) {
     const after = raw.slice(tabsIdx + 1).filter((s) => !s.startsWith('('));

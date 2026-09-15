@@ -129,8 +129,8 @@ export async function seedReplacementProductionOrder(
     });
     materialCount += 1;
   }
-  const fabricCount = await ensureFabricProcurementsForProductionOrder(db, productionOrderId);
-  return { materialCount, fabricCount };
+  const created = await ensureFabricProcurementsForProductionOrder(db, productionOrderId);
+  return { materialCount, fabricCount: created.length };
 }
 
 export const LINE_SEED_INCLUDE = {
