@@ -13,8 +13,8 @@ import { completedTasksFixture, openTasksFixture, taskDetailFixture } from '../f
 describe('selectTask', () => {
   it('maps list fields without progress percentages', () => {
     const card = selectTaskCard(openTasksFixture[0], 'en');
-    expect(card.orderNumber).toBe('ORD-1256');
-    expect(card.factoryOrderNumber).toBe('PO-220');
+    expect(card.orderNumber).toBe('SO-DEMO-0001');
+    expect(card.factoryOrderNumber).toBe('SO-DEMO-0001.A');
     expect(card.requiredWork).toBe('Cutting');
     expect(card.priority).toBe('urgent');
     expect(card.emphasize).toBe(true);
@@ -26,7 +26,7 @@ describe('selectTask', () => {
     const card = selectTaskCard(openTasksFixture[0], 'ar');
     expect(card.requiredWork).toBe('القص');
     expect(card.productTitle).toBe('طاولة طعام');
-    expect(card.orderNumber).toBe('ORD-1256');
+    expect(card.orderNumber).toBe('SO-DEMO-0001');
   });
 
   it('shows variant labels and the factory production-order number', () => {
@@ -36,8 +36,8 @@ describe('selectTask', () => {
     );
     expect(card.productTitle).toBe('Dining Table · Ukrainian');
     expect(card.variantLabel).toBe('Ukrainian');
-    expect(card.orderNumber).toBe('ORD-1256');
-    expect(card.factoryOrderNumber).toBe('PO-220');
+    expect(card.orderNumber).toBe('SO-DEMO-0001');
+    expect(card.factoryOrderNumber).toBe('SO-DEMO-0001.A');
   });
 
   it('sorts urgent before normal', () => {
@@ -68,7 +68,7 @@ describe('selectTask', () => {
     const vm = selectTaskDetail({ ...taskDetailFixture, variantLabel: 'Ukrainian' }, 'en');
     expect(vm.orderInstructions).toBe('Simple wrap');
     expect(vm.productTitle).toBe('Dining Table · Ukrainian');
-    expect(vm.factoryOrderNumber).toBe('PO-220');
+    expect(vm.factoryOrderNumber).toBe('SO-DEMO-0001.A');
   });
 
   it('marks COMPLETED as terminal with dock actions off', () => {
@@ -109,7 +109,7 @@ describe('selectTask', () => {
     const vm = selectTaskDetail(taskDetailFixture, 'ar');
     expect(vm.requiredWork).toBe('القص');
     expect(vm.productTitle).toBe('طاولة طعام');
-    expect(vm.orderNumber).toBe('ORD-1256');
+    expect(vm.orderNumber).toBe('SO-DEMO-0001');
     expect(vm.instructions).toContain('طاولة طعام');
     expect(vm.orderInstructions).toBe('لف بسيط');
     expect(vm.instructions).toMatch(/اتبع|القص|المواصفات|الرسم/);
@@ -321,12 +321,12 @@ describe('selectTask', () => {
       'en',
     );
     expect(cards).toHaveLength(2);
-    const sideboard = cards.find((card) => card.number === 'ORD-1240');
+    const sideboard = cards.find((card) => card.number === 'SO-DEMO-0003');
     expect(sideboard?.taskCount).toBe(2);
     expect(sideboard?.tasks.map((task) => task.id)).toEqual(['task-done-1', 'task-done-2']);
     expect(sideboard?.salesOrderId).toBe('so-3');
     expect(workerCompletedSalesOrderHref(sideboard!)).toBe(
-      '/(app)/(employee)/completed-orders/so-3?number=ORD-1240',
+      '/(app)/(employee)/completed-orders/so-3?number=SO-DEMO-0003',
     );
   });
 

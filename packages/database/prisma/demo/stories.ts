@@ -1,5 +1,4 @@
 import { ReturnReason } from '@prisma/client';
-import { EXTRA_PROJECT_NAMES } from './extra-project-names';
 
 export type StoryKind =
   | 'delivered'
@@ -32,6 +31,13 @@ export type DemoStoryLine = {
   depth?: number;
   notes?: string;
   name?: string;
+  /**
+   * Per-line factory progress override (stage code).
+   * - `string` — complete through that stage on this sub-order
+   * - `null` — force no progress (do not inherit story-level completeThrough)
+   * - omitted — inherit story-level / kind defaults
+   */
+  completeThrough?: string | null;
 };
 
 export type DemoStory = {
@@ -61,51 +67,39 @@ export type DemoStory = {
   physicalOutputQty?: number;
 };
 
-const DEALERS = [
-  'nile',
-  'oasis',
-  'balqis',
-  'cedar',
-  'zaatar',
-  'qasr',
-  'rawnaq',
-  'diwan',
-  'noor',
-  'jabal',
-] as const;
-
-const SKUS = [
-  'SOF-3S-STD',
-  'SOF-3S-LUX',
-  'SOF-2S',
-  'SOF-L-SEC',
-  'SOF-CORN',
-  'CUS-BANQ',
-  'ARM-01',
-  'ARM-02',
-  'ARM-WING',
-  'CHAIR-DIN',
-  'CHAIR-DIN-W',
-  'TABLE-DIN-6',
-  'TABLE-DIN-8',
-  'TABLE-CF',
-  'TABLE-SIDE',
-  'TABLE-CONS',
-  'BED-Q',
-  'BED-K',
-  'BED-HEAD',
-  'CUS-OTT',
-  'CHAIR-BENCH',
-] as const;
-
-function pick<T>(arr: readonly T[], i: number): T {
-  return arr[i % arr.length]!;
-}
-
 /** Compress the old two-month story days into the 21-day window. */
 function windowDay(old: number): number {
   return Math.min(20, Math.max(0, Math.round((old * 20) / 62)));
 }
+
+const GOLDEN_EXTRA_LINES: DemoStoryLine[] = [
+  {
+    sku: 'SOF-3S-STD',
+    variantCode: 'KARINA',
+    qty: 1,
+    fabric: 'Velvet Navy',
+    wood: 'Beech',
+    complexity: 'STANDARD',
+  },
+  {
+    sku: 'SOF-3S-STD',
+    variantCode: 'STD',
+    qty: 1,
+    fabric: 'Velvet Sand',
+    wood: 'Beech',
+    complexity: 'MODIFIED',
+    width: 280,
+  },
+  {
+    sku: 'CUSTOM',
+    custom: true,
+    complexity: 'CUSTOM',
+    qty: 1,
+    fabric: 'Boucle Cream',
+    notes: 'Bespoke corner bench to the sketch.',
+    name: 'Custom corner bench',
+  },
+];
 
 export function storyLinesOf(story: DemoStory): DemoStoryLine[] {
   return [
@@ -115,13 +109,20 @@ export function storyLinesOf(story: DemoStory): DemoStoryLine[] {
       qty: story.qty,
       fabric: story.fabric,
       wood: story.wood,
+      ...(story.completeThrough
+        ? { completeThrough: story.completeThrough }
+        : {}),
     },
     ...(story.extraLines ?? []),
   ];
 }
 
+/**
+ * Curated flagship cast only — no generated “Amman Residence” flood.
+ * Cost twin (`SO-COST-GOLDEN`) is seeded in cost-performance-uat.ts, not here.
+ */
 export function buildDemoStories(): DemoStory[] {
-  const flagship: DemoStory[] = [
+  return [
     {
       id: 'nile-abdoun-lounge',
       dealer: 'nile',
@@ -154,7 +155,22 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(42),
       deliveryLeadDays: 18,
-      extraLines: [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 2, fabric: 'Velvet Sand' }],
+      extraLines: [
+        {
+          sku: 'CUS-OTT',
+          variantCode: 'SAND',
+          qty: 2,
+          fabric: 'Velvet Sand',
+          completeThrough: 'MATERIAL_PREP',
+        },
+        {
+          sku: 'TABLE-SIDE',
+          variantCode: 'STD',
+          qty: 1,
+          wood: 'Oak',
+          completeThrough: 'MATERIAL_PREP',
+        },
+      ],
     },
     {
       id: 'nile-fresh-production-blank',
@@ -167,6 +183,7 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(62),
       deliveryLeadDays: 30,
+      extraLines: [{ sku: 'TABLE-SIDE', variantCode: 'STD', qty: 1, wood: 'Oak' }],
       notes:
         'Just entered production — empty materials, WIP, and floor progress. Use for production hub / setup checks.',
     },
@@ -182,50 +199,42 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(18),
       deliveryLeadDays: 21,
-      extraLines: [
-        {
-          sku: 'SOF-3S-STD',
-          variantCode: 'KARINA',
-          qty: 1,
-          fabric: 'Velvet Navy',
-          wood: 'Beech',
-          complexity: 'STANDARD',
-        },
-        {
-          sku: 'SOF-3S-STD',
-          variantCode: 'STD',
-          qty: 1,
-          fabric: 'Velvet Sand',
-          wood: 'Beech',
-          complexity: 'MODIFIED',
-          width: 280,
-        },
-        {
-          sku: 'CUSTOM',
-          custom: true,
-          complexity: 'CUSTOM',
-          qty: 1,
-          fabric: 'Boucle Cream',
-          notes: 'Bespoke corner bench to the sketch.',
-          name: 'Custom corner bench',
-        },
-      ],
-      notes: 'Golden factory path — four manufacturing kinds on one sales order.',
+      extraLines: GOLDEN_EXTRA_LINES,
+      notes: 'Golden factory path — four manufacturing kinds on one sales order (preparing).',
     },
     {
-      id: 'noor-banquette-partial-frames',
-      dealer: 'noor',
-      sku: 'CUS-BANQ',
-      qty: 6,
+      id: 'nile-golden-floor-lounge',
+      dealer: 'nile',
+      sku: 'SOF-3S-STD',
+      variantCode: 'STD',
+      qty: 2,
       kind: 'in_production',
+      /** Primary line A: carpentry finished → carpenter remaining can be zero on this PO. */
       completeThrough: 'CARPENTRY',
-      physicalOutputQty: 4,
-      projectName: 'Noor banquettes 4 of 6 frames',
-      fabric: 'Velvet Navy',
+      projectName: 'Golden floor lounge',
+      fabric: 'Velvet Sand',
       wood: 'Beech',
-      orderDay: windowDay(44),
-      deliveryLeadDays: 32,
-      notes: 'Partial SEMI: 4 of 6 frames produced; remaining 2 still open.',
+      orderDay: windowDay(40),
+      deliveryLeadDays: 21,
+      extraLines: [
+        {
+          ...GOLDEN_EXTRA_LINES[0]!,
+          /** Line B: only materials done → later stages locked for carpentry workers. */
+          completeThrough: 'MATERIAL_PREP',
+        },
+        {
+          ...GOLDEN_EXTRA_LINES[1]!,
+          /** Line C: materials done → carpentry READY/actionable. */
+          completeThrough: 'MATERIAL_PREP',
+        },
+        {
+          ...GOLDEN_EXTRA_LINES[2]!,
+          /** Line D: nothing done — do not inherit story CARPENTRY. */
+          completeThrough: null,
+        },
+      ],
+      notes:
+        'Released twin of Golden path — multi-item My Tasks board (done / locked / open sub-orders).',
     },
     {
       id: 'balqis-abdali-banquettes',
@@ -239,6 +248,9 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(18),
       deliveryLeadDays: 16,
+      extraLines: [
+        { sku: 'TABLE-CONS', variantCode: 'STD', qty: 2, wood: 'Oak' },
+      ],
     },
     {
       id: 'cedar-italian-velvet',
@@ -252,6 +264,7 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(50),
       deliveryLeadDays: 30,
+      extraLines: [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 1, fabric: 'Italian velvet' }],
       notes: 'Waiting inbound Italian velvet PO (SUP-FABRIC).',
     },
     {
@@ -260,7 +273,6 @@ export function buildDemoStories(): DemoStory[] {
       sku: 'ARM-WING',
       qty: 2,
       kind: 'at_risk_wip',
-      // Honest WIP_NOT_READY: materials prepped, frames (SEMI) not produced yet.
       completeThrough: 'MATERIAL_PREP',
       projectName: 'Diwan wingback frame gate',
       fabric: 'Velvet Navy',
@@ -280,6 +292,7 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Oak',
       orderDay: windowDay(20),
       deliveryLeadDays: 22,
+      extraLines: [{ sku: 'CHAIR-DIN', variantCode: 'STD', qty: 8, fabric: 'Linen Olive' }],
     },
     {
       id: 'oasis-armchair-rework',
@@ -292,19 +305,6 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(38),
       deliveryLeadDays: 24,
-    },
-    {
-      id: 'nile-loveseat-recovered',
-      dealer: 'nile',
-      sku: 'SOF-2S',
-      qty: 1,
-      kind: 'rework_historical',
-      payment: 'partial',
-      projectName: 'Nile loveseat recovered',
-      fabric: 'Linen Natural',
-      wood: 'Beech',
-      orderDay: windowDay(8),
-      deliveryLeadDays: 30,
     },
     {
       id: 'zaatar-ottoman-return',
@@ -329,6 +329,10 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Oak',
       orderDay: windowDay(58),
       deliveryLeadDays: 28,
+      extraLines: [
+        { sku: 'CHAIR-DIN', variantCode: 'STD', qty: 6, fabric: 'Linen Olive' },
+        { sku: 'TABLE-SIDE', variantCode: 'STD', qty: 2, wood: 'Oak' },
+      ],
     },
     {
       id: 'noor-chair-draft',
@@ -340,81 +344,7 @@ export function buildDemoStories(): DemoStory[] {
       fabric: 'Leatherette Black',
       orderDay: windowDay(60),
       deliveryLeadDays: 25,
-    },
-    {
-      id: 'rawnaq-dining-chairs',
-      dealer: 'rawnaq',
-      sku: 'CHAIR-DIN',
-      qty: 6,
-      kind: 'not_started',
-      projectName: 'Rawnaq dining six',
-      fabric: 'Linen Olive',
-      wood: 'Beech',
-      orderDay: windowDay(55),
-      deliveryLeadDays: 26,
-      extraLines: [{ sku: 'TABLE-DIN-6', variantCode: 'STD', qty: 1, wood: 'Oak' }],
+      extraLines: [{ sku: 'TABLE-CF', variantCode: 'WAL', qty: 1, wood: 'Oak' }],
     },
   ];
-
-  const extra: DemoStory[] = [];
-  let n = 0;
-  const push = (kind: StoryKind, partial: Partial<DemoStory> = {}) => {
-    const dealer = pick(DEALERS, n + 3);
-    const sku = pick(SKUS, n + 7);
-    extra.push({
-      id: `${kind}-${n}`,
-      dealer,
-      sku,
-      variantCode: n % 3 === 0 ? 'STD' : undefined,
-      qty: sku.startsWith('CHAIR') ? 4 : 1,
-      kind,
-      projectName: EXTRA_PROJECT_NAMES[n] ?? `Amman Residence ${n + 1}`,
-      orderDay: n % 21,
-      deliveryLeadDays: 12 + (n % 8),
-      fabric: 'Velvet Sand',
-      wood: 'Beech',
-      extraLines:
-        n % 5 === 1 && sku !== 'TABLE-SIDE'
-          ? [{ sku: 'TABLE-SIDE', variantCode: 'STD', qty: 1 }]
-          : n % 5 === 3 && sku !== 'CUS-OTT' && sku !== 'ARM-01'
-            ? [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 1, fabric: 'Velvet Sand' }]
-            : undefined,
-      ...partial,
-    });
-    n += 1;
-  };
-
-  // 20 delivered: 2 flagship delivered + 1 historical rework + 16 generated.
-  for (let i = 0; i < 16; i += 1) {
-    push('delivered', {
-      payment: i % 3 === 0 ? 'paid' : i % 3 === 1 ? 'partial' : 'outstanding',
-      returnInfo:
-        i === 1
-          ? { reason: ReturnReason.INCORRECT_COLOR, qty: 1, approval: 'PENDING' }
-          : i === 4
-            ? { reason: ReturnReason.CUSTOMER_REQUEST, qty: 1, approval: 'REJECTED' }
-            : undefined,
-    });
-  }
-
-  for (let i = 0; i < 3; i += 1) push('ready_delivery');
-  for (let i = 0; i < 4; i += 1) push('packaging');
-  for (let i = 0; i < 4; i += 1) push('qc');
-
-  const prodThrough = ['MATERIAL_PREP', 'CARPENTRY', 'PAINTING', 'FOAM', 'UPHOLSTERY', 'ASSEMBLY'] as const;
-  for (let i = 0; i < 17; i += 1) {
-    push('in_production', { completeThrough: prodThrough[i % prodThrough.length] });
-  }
-
-  for (let i = 0; i < 7; i += 1) push('not_started');
-  push('proposed');
-  push('draft');
-
-  if (extra.length !== EXTRA_PROJECT_NAMES.length) {
-    throw new Error(
-      `extra project names (${EXTRA_PROJECT_NAMES.length}) do not match extras (${extra.length})`,
-    );
-  }
-
-  return [...flagship, ...extra];
 }

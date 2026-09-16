@@ -12,7 +12,7 @@ export const dealerHomeSuccessFixture: DealerHomePayload = {
   recentOrders: [
     {
       id: 'so1',
-      number: 'ORD-1258',
+      number: 'SO-DEMO-0002',
       status: 'IN_PRODUCTION',
       title: 'Lobby Sofa',
       imageUrl: null,
@@ -24,7 +24,7 @@ export const dealerHomeSuccessFixture: DealerHomePayload = {
     },
     {
       id: 'so2',
-      number: 'ORD-1260',
+      number: 'SO-DEMO-0004',
       status: 'READY_FOR_DELIVERY',
       title: 'Dining Chairs',
       imageUrl: null,

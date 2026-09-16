@@ -10,15 +10,13 @@ export const FLAGSHIP_PROJECT_NAMES = [
   'Abdali hotel banquettes',
   'Cedar Italian velvet recliner',
   'Diwan wingback frame gate',
-  'Noor banquettes 4 of 6 frames',
   'Jabal contract dining',
   'Oasis club armchair QC',
-  'Nile loveseat recovered',
   'Zaatar ottoman scuff',
   'Qasr suite dining',
   'Noor club chair hold',
-  'Rawnaq dining six',
   'Golden factory path',
+  'Golden floor lounge',
 ];
 
 function ymd(value: Date | string | null | undefined): string | null {
@@ -94,31 +92,29 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     'Abdoun lounge set':
       '**Delivered commercial history.** Admin: sales order → production snapshot → QC pass → delivery → paid invoice. Dealer `nile`: Schedule tab shows Delivered on the actual day. Worker: completed tasks. **Inventory:** historical FIN receipt then `DELIVERY_ISSUE` when the truck left — no finished lot left in factory.',
     'Sweifieh sectional':
-      '**Live production + hybrid material usage.** Oasis L-sectional mid-flow (carpentry done → SEMI frames exist). Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates. **Inventory:** SEMI lots for this PO; carpentry task has seeded expected/actual usage (equal + return/scrap on a second line).',
+      '**Live production + multi-item basket.** Oasis L-sectional + ottomans + side table mid-flow. Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates.',
     'Nile blank production start':
-      '**Just entered production — empty floor.** Sales order and PO are in production, but nothing has started: first stage READY, **0%** progress, no material issues, no WIP kits, no usage. Use Admin Orders → In production → this SO, then Production hub Materials / WIP / Tasks to see what is still missing and walk production setup yourself.',
+      '**Just entered production — empty floor.** Two-line basket; first stages READY, **0%** progress. Use Admin Orders → In production → this SO for production setup checks.',
     'Abdali hotel banquettes':
-      '**Ready for delivery + FIN waiting for truck.** Balqis hospitality qty 6. Admin deliveries planned; dealer Schedule calendar uses the planned logistics day, not production completion. **Inventory:** FIN lots RESERVED in finished warehouse until truck goes OUT_FOR_DELIVERY.',
+      '**Ready for delivery + FIN waiting for truck.** Balqis hospitality banquettes + consoles. Admin deliveries planned; dealer Schedule calendar uses the planned logistics day.',
     'Cedar Italian velvet recliner':
-      '**Material at-risk.** Waiting for inbound Italian velvet PO. Admin may-be-late / materials. Dealer has no committed date yet — Requested / Expected · not confirmed. Factory workers and capacity stay hidden. No started floor tasks. **No FIN** — truthful material wait only.\n\n**Warehouse scan (identify only).** Inventory → Scan → `MAT-ITAL-VEL`. Photo + 0 on hand + inbound fabric purchase PO (24 m, sequential `PORD-…`). Stop before Confirm receive — or `pnpm demo:reset` after a mutation demo.',
+      '**Material at-risk.** Waiting for inbound Italian velvet PO. Admin may-be-late / materials. Dealer has no committed date yet.',
     'Diwan wingback frame gate':
-      '**WIP at-risk.** Materials prepped; carpentry frames (SEMI lots) not produced yet. Scheduling NEEDS_REVIEW with WIP_NOT_READY — matches missing SEMI, not a status-only flag. **Inventory:** 0 SEMI lots for this PO.',
-    'Noor banquettes 4 of 6 frames':
-      '**Partial quantity.** Order qty 6; carpentry completedQty 4; SEMI lot qty 4. Remaining 2 frames still open — status never claims 6 physical frames.',
+      '**WIP at-risk.** Materials prepped; carpentry frames (SEMI lots) not produced yet. Scheduling NEEDS_REVIEW with WIP_NOT_READY.',
     'Jabal contract dining':
-      '**Committed date vs capacity.** Approved plan cannot meet the committed delivery. Late chip from canonical classifier. Dealer calendar stays on the committed day. A past factory earliest-available date is not shown as current expected — copy is Delayed · Schedule being updated.',
+      '**Committed date vs capacity.** Dining table + chairs. Approved plan cannot meet the committed delivery. Late chip from canonical classifier.',
     'Oasis club armchair QC':
-      '**Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered. **Inventory:** no deliverable FIN for this PO.',
-    'Nile loveseat recovered':
-      '**Historical rework.** Fail → completed rework → later pass → delivered. Partial payment.',
+      '**Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered.',
     'Zaatar ottoman scuff':
       '**Dealer return.** Delivered ottomans with an approved delivery-damage return.',
     'Qasr suite dining':
-      '**Schedule awaiting approval.** Proposed plan — dealer Schedule shows Requested / Expected · not confirmed, not a fake confirmed date.',
+      '**Schedule awaiting approval.** Multi-line proposed plan — dealer Schedule shows Requested / Expected · not confirmed.',
     'Noor club chair hold':
-      '**Dealer accept still pending.** Quote is SENT. Noor has not accepted — **اعتماد** (internal Approve) already happened at the factory; **قبول** (dealer Accept) has not. **No sales order** and no production.',
-    'Rawnaq dining six':
-      '**Confirmed, not started.** READY_FOR_PRODUCTION with no started floor tasks.',
+      '**Dealer accept still pending.** Quote is SENT (chairs + coffee table). **No sales order** and no production yet.',
+    'Golden factory path':
+      '**Preparing / Production Plan.** Four manufacturing kinds on one sales order (STD, KARINA, MODIFIED width 280, CUSTOM photo). Not released — use for admin Production Plan item boards.',
+    'Golden floor lounge':
+      '**Worker My Tasks multi-item board.** Same four-line mix as Golden path, **released** with staggered sub-order progress (done / locked / open) so nested item badges and sibling view-only rows work.',
   };
 
   let n = 1;

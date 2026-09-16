@@ -412,7 +412,7 @@ const DEALERS: Array<{
     code: 'CUS-0110',
     nameEn: 'Jabal Contract',
     nameAr: 'جبل للعقود',
-    nameHe: 'ג'בל לחוזים',
+    nameHe: "ג'בל לחוזים",
     city: 'Amman',
     area: 'Shmeisani',
     street: 'Sharif Naser 4',

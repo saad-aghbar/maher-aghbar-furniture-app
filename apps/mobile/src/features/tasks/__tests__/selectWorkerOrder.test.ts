@@ -12,10 +12,10 @@ import type { WorkerMyOrder, WorkerMySalesOrder, WorkerOrderLaneNode } from '../
 
 const order: WorkerMyOrder = {
   id: 'po-1',
-  number: 'PO-1',
+  number: 'SO-DEMO-0009.A',
   salesOrderId: 'so-1',
   salesOrderLineId: 'line-1',
-  salesOrderNumber: 'ORD-9',
+  salesOrderNumber: 'SO-DEMO-0009',
   variantLabel: null,
   variantSku: null,
   status: 'IN_PROGRESS',
@@ -35,8 +35,8 @@ describe('selectWorkerOrderCard', () => {
     const card = selectWorkerOrderCard(order, 'en');
     expect(card).not.toHaveProperty('department');
     expect(card).not.toHaveProperty('stageName');
-    expect(card.number).toBe('ORD-9');
-    expect(card.factoryOrderNumber).toBe('PO-1');
+    expect(card.number).toBe('SO-DEMO-0009');
+    expect(card.factoryOrderNumber).toBe('SO-DEMO-0009.A');
     expect(card.productTitle).toBe('Dining table');
     expect(card.blockedCount).toBe(1);
   });
@@ -56,7 +56,7 @@ describe('worker list sales-order grouping', () => {
   const ukrainian: WorkerMyOrder = {
     ...order,
     id: 'po-2',
-    number: 'PO-2',
+    number: 'SO-DEMO-0009.B',
     salesOrderLineId: 'line-2',
     variantLabel: 'Ukrainian',
     myTaskCount: 1,
@@ -66,7 +66,7 @@ describe('worker list sales-order grouping', () => {
   const classic: WorkerMyOrder = {
     ...order,
     id: 'po-3',
-    number: 'PO-3',
+    number: 'SO-DEMO-0009.C',
     salesOrderLineId: 'line-3',
     variantLabel: 'Classic',
     myTaskCount: 1,
@@ -87,7 +87,7 @@ describe('worker list sales-order grouping', () => {
     expect(card.items[1]?.variantLabel).toBe('Ukrainian');
     expect(card.items[1]?.productTitle).toBe('Dining table · Ukrainian');
     expect(card.productTitle).toBe('Dining table · Standard · Ukrainian · Classic');
-    expect(card.number).toBe('ORD-9');
+    expect(card.number).toBe('SO-DEMO-0009');
     expect(card.factoryOrderNumber).toBeNull();
     expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/orders/so-1');
   });
@@ -97,7 +97,7 @@ describe('worker list sales-order grouping', () => {
       orders: [
         {
           salesOrderId: 'so-1',
-          salesOrderNumber: 'ORD-9',
+          salesOrderNumber: 'SO-DEMO-0009',
           deadline: order.deadline,
           priority: 'HIGH',
           myTaskCount: 2,
@@ -110,7 +110,7 @@ describe('worker list sales-order grouping', () => {
     });
     const card = selectWorkerSalesOrderCard(grouped[0]!, 'en');
     expect(card.itemCount).toBe(1);
-    expect(card.factoryOrderNumber).toBe('PO-1');
+    expect(card.factoryOrderNumber).toBe('SO-DEMO-0009.A');
     expect(workerSalesOrderHref(card)).toBe('/(app)/(employee)/orders/so-1');
   });
 
@@ -205,9 +205,9 @@ describe('workerOrderMatchesQuery', () => {
   });
 
   it('matches sales-order number, PO number, and product names in any locale', () => {
-    expect(workerOrderMatchesQuery(order, 'ord-9')).toBe(true);
-    expect(workerOrderMatchesQuery(order, 'PO-1')).toBe(true);
-    expect(workerOrderMatchesQuery(order, 'ord9')).toBe(true);
+    expect(workerOrderMatchesQuery(order, 'so-demo-0009')).toBe(true);
+    expect(workerOrderMatchesQuery(order, 'SO-DEMO-0009.A')).toBe(true);
+    expect(workerOrderMatchesQuery(order, 'demo0009')).toBe(true);
     expect(workerOrderMatchesQuery(order, 'dining')).toBe(true);
     expect(workerOrderMatchesQuery(order, 'طاولة')).toBe(true);
     expect(workerOrderMatchesQuery(order, 'שולחן')).toBe(true);
@@ -233,8 +233,8 @@ describe('workerOrderMatchesQuery', () => {
   });
 
   it('requires every token to hit the haystack', () => {
-    expect(workerOrderMatchesQuery(order, 'ord dining')).toBe(true);
-    expect(workerOrderMatchesQuery(order, 'ord sofa')).toBe(false);
+    expect(workerOrderMatchesQuery(order, 'demo dining')).toBe(true);
+    expect(workerOrderMatchesQuery(order, 'demo sofa')).toBe(false);
     expect(workerOrderMatchesQuery(order, 'wardrobe')).toBe(false);
   });
 });

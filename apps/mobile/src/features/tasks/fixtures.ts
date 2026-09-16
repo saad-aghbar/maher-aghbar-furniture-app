@@ -1,5 +1,6 @@
 import type { TaskDetail, TaskListItem } from './api';
 
+/** Hermetic lab fixtures — lettered sub-order numbers match live demo shape. */
 export const openTasksFixture: TaskListItem[] = [
   {
     id: 'task-urgent-1',
@@ -10,18 +11,19 @@ export const openTasksFixture: TaskListItem[] = [
     priority: 'URGENT',
     plannedCompletion: '2026-08-05T14:00:00.000Z',
     productImageUrl: null,
-    factoryOrderNumber: 'PO-220',
-    salesOrderNumber: 'ORD-1256',
+    factoryOrderNumber: 'SO-DEMO-0001.A',
+    salesOrderNumber: 'SO-DEMO-0001',
+    salesOrderId: 'so-1',
     productionOrder: {
       id: 'po-220',
-      number: 'PO-220',
+      number: 'SO-DEMO-0001.A',
       productDescription: 'Dining Table',
       product: {
         nameEn: 'Dining Table',
         nameAr: 'طاولة طعام',
         imageUrl: null,
       },
-      salesOrder: { id: 'so-1', number: 'ORD-1256' },
+      salesOrder: { id: 'so-1', number: 'SO-DEMO-0001' },
     },
     stageDefinition: {
       code: 'CUT',
@@ -39,14 +41,15 @@ export const openTasksFixture: TaskListItem[] = [
     priority: 'NORMAL',
     plannedCompletion: '2026-08-05T17:00:00.000Z',
     productImageUrl: null,
-    factoryOrderNumber: 'PO-221',
-    salesOrderNumber: 'ORD-1258',
+    factoryOrderNumber: 'SO-DEMO-0002.A',
+    salesOrderNumber: 'SO-DEMO-0002',
+    salesOrderId: 'so-2',
     productionOrder: {
       id: 'po-221',
-      number: 'PO-221',
+      number: 'SO-DEMO-0002.A',
       productDescription: 'Dining Chair',
       product: { nameEn: 'Dining Chair', imageUrl: null },
-      salesOrder: { id: 'so-2', number: 'ORD-1258' },
+      salesOrder: { id: 'so-2', number: 'SO-DEMO-0002' },
     },
     stageDefinition: { code: 'ASM', nameEn: 'Assembly', requiresPhotos: true },
   },
@@ -63,14 +66,15 @@ export const completedTasksFixture: TaskListItem[] = [
     priority: 'HIGH',
     plannedCompletion: '2026-08-04T16:00:00.000Z',
     productImageUrl: null,
-    factoryOrderNumber: 'PO-210',
-    salesOrderNumber: 'ORD-1240',
+    factoryOrderNumber: 'SO-DEMO-0003.A',
+    salesOrderNumber: 'SO-DEMO-0003',
+    salesOrderId: 'so-3',
     productionOrder: {
       id: 'po-210',
-      number: 'PO-210',
+      number: 'SO-DEMO-0003.A',
       productDescription: 'Sideboard',
       product: { nameEn: 'Sideboard', imageUrl: null },
-      salesOrder: { id: 'so-3', number: 'ORD-1240' },
+      salesOrder: { id: 'so-3', number: 'SO-DEMO-0003' },
     },
     stageDefinition: { code: 'FIN', nameEn: 'Finishing' },
   },
@@ -101,14 +105,14 @@ export const taskDetailFixture: TaskDetail = {
   ],
   productionOrder: {
     id: 'po-220',
-    number: 'PO-220',
+    number: 'SO-DEMO-0001.A',
     productDescription: 'Dining Table',
     product: {
       nameEn: 'Dining Table',
       nameAr: 'طاولة طعام',
       imageUrl: null,
     },
-    salesOrder: { id: 'so-1', number: 'ORD-1256' },
+    salesOrder: { id: 'so-1', number: 'SO-DEMO-0001' },
     quantity: 4,
     specifications: 'Please assemble the pieces according to the dimensions in the drawing.',
     instructionsAr: 'لف بسيط',

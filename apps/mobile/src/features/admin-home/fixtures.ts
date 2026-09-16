@@ -19,7 +19,7 @@ export const adminHomeSuccessFixture: AdminHomePayload = {
   recentOrders: [
     {
       id: 'so1',
-      number: 'ORD-1258',
+      number: 'SO-DEMO-0002',
       status: 'IN_PRODUCTION',
       title: 'Lobby Sofa',
       imageUrl: null,
@@ -30,7 +30,7 @@ export const adminHomeSuccessFixture: AdminHomePayload = {
     },
     {
       id: 'so2',
-      number: 'ORD-1260',
+      number: 'SO-DEMO-0004',
       status: 'READY_FOR_DELIVERY',
       title: 'Dining Set',
       imageUrl: null,
@@ -41,7 +41,7 @@ export const adminHomeSuccessFixture: AdminHomePayload = {
     },
     {
       id: 'so3',
-      number: 'ORD-1261',
+      number: 'SO-DEMO-0005',
       status: 'DELIVERED',
       title: 'Office Desk',
       imageUrl: null,
@@ -56,7 +56,7 @@ export const adminHomeSuccessFixture: AdminHomePayload = {
     peerCount: 7,
     order: {
       id: 'so1',
-      number: 'ORD-1258',
+      number: 'SO-DEMO-0002',
       status: 'IN_PRODUCTION',
       title: 'Lobby Sofa',
       imageUrl: null,

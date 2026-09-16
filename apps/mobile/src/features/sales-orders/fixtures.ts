@@ -112,7 +112,7 @@ function buildAdminFixture(rounds = 6): SalesOrderListItem[] {
         productionOrders: [
           {
             id: `po-vol-${n}`,
-            number: `FO-${String(n).padStart(4, '0')}`,
+            number: `SO-VOL-${String(n).padStart(4, '0')}.A`,
             status: spec.status,
             progressPercent: spec.progress,
           },

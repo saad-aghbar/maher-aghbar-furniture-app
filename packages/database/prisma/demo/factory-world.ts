@@ -101,47 +101,61 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     rawWhId: stock.rawWhId,
   });
 
-  console.log('Seeding Piece 1 order lifecycle examples…');
-  await seedPiece1LifecycleExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-  });
+  /**
+   * Piece 1–14 UAT islands re-flood dozens of SOs. Curated demo runs without them
+   * unless DEMO_PIECES=1 (or true/yes).
+   */
+  const seedPieces =
+    process.env.DEMO_PIECES === '1' ||
+    process.env.DEMO_PIECES === 'true' ||
+    process.env.DEMO_PIECES === 'yes';
 
-  console.log('Seeding Piece 2 production setup examples…');
-  await seedPiece2ProductionSetupExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-  });
+  if (seedPieces) {
+    console.log('Seeding Piece 1–14 UAT examples (DEMO_PIECES=1)…');
+    console.log('Seeding Piece 1 order lifecycle examples…');
+    await seedPiece1LifecycleExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+    });
 
-  console.log('Seeding Piece 3 production plan examples…');
-  await seedPiece3ProductionPlanExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-  });
+    console.log('Seeding Piece 2 production setup examples…');
+    await seedPiece2ProductionSetupExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+    });
 
-  console.log('Seeding Piece 4 manufacturing spec examples…');
-  await seedPiece4ManufacturingSpecExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-  });
+    console.log('Seeding Piece 3 production plan examples…');
+    await seedPiece3ProductionPlanExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+    });
 
-  console.log('Seeding Piece 5 manufacturing cost examples…');
-  await seedPiece5ManufacturingCostExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-  });
+    console.log('Seeding Piece 4 manufacturing spec examples…');
+    await seedPiece4ManufacturingSpecExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+    });
 
-  console.log('Seeding Piece 6 purchasing / receiving examples…');
-  await seedPiece6PurchasingReceivingExamples(prisma, {
-    adminUserId: people.adminId,
-  });
+    console.log('Seeding Piece 5 manufacturing cost examples…');
+    await seedPiece5ManufacturingCostExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+    });
+
+    console.log('Seeding Piece 6 purchasing / receiving examples…');
+    await seedPiece6PurchasingReceivingExamples(prisma, {
+      adminUserId: people.adminId,
+    });
+  } else {
+    console.log('Skipping Piece 1–6 UAT islands (set DEMO_PIECES=1 to enable)…');
+  }
 
   console.log('Seeding fabric procurement examples…');
   await seedDemoFabricProcurement(prisma, {
@@ -150,50 +164,54 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     adminUserId: people.adminId,
   });
 
-  console.log('Seeding Piece 7 dealer commercial finance examples…');
-  await seedPiece7DealerFinanceExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-  });
+  if (seedPieces) {
+    console.log('Seeding Piece 7 dealer commercial finance examples…');
+    await seedPiece7DealerFinanceExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+    });
 
-  console.log('Seeding Piece 8 factory floor SEMI handoff examples…');
-  await seedPiece8FactoryFloorExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-  });
+    console.log('Seeding Piece 8 factory floor SEMI handoff examples…');
+    await seedPiece8FactoryFloorExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+    });
 
-  console.log('Seeding Piece 9 quality / rework / packaging examples…');
-  await seedPiece9QualityPackagingExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-  });
+    console.log('Seeding Piece 9 quality / rework / packaging examples…');
+    await seedPiece9QualityPackagingExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+    });
 
-  console.log('Seeding Piece 10 finished outbound / dealer receipt examples…');
-  await seedPiece10FinishedOutboundExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-    driverId: people.driverId,
-  });
+    console.log('Seeding Piece 10 finished outbound / dealer receipt examples…');
+    await seedPiece10FinishedOutboundExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+      driverId: people.driverId,
+    });
 
-  console.log('Seeding Piece 11 exceptions / returns / cancel examples…');
-  await seedPiece11ExceptionsReturnsExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-    driverId: people.driverId,
-  });
+    console.log('Seeding Piece 11 exceptions / returns / cancel examples…');
+    await seedPiece11ExceptionsReturnsExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+      driverId: people.driverId,
+    });
+  } else {
+    console.log('Skipping Piece 7–11 UAT islands (set DEMO_PIECES=1 to enable)…');
+  }
 
   console.log('Seeding Cost & Performance ledger examples…');
   await seedCostPerformanceWorld(prisma, {
@@ -221,17 +239,21 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     driverId: people.driverId,
   });
 
-  console.log('Seeding Piece 12 management dashboard mapping log…');
-  await seedPiece12ManagementDashboardExamples(prisma);
+  if (seedPieces) {
+    console.log('Seeding Piece 12 management dashboard mapping log…');
+    await seedPiece12ManagementDashboardExamples(prisma);
 
-  console.log('Seeding Piece 14 full-system walkthrough examples…');
-  await seedPiece14FullSystemExamples(prisma, {
-    dealers: people.dealers,
-    products: catalog.products,
-    adminUserId: people.adminId,
-    workerIds: people.workers.map((w) => w.id),
-    workers: people.workers,
-  });
+    console.log('Seeding Piece 14 full-system walkthrough examples…');
+    await seedPiece14FullSystemExamples(prisma, {
+      dealers: people.dealers,
+      products: catalog.products,
+      adminUserId: people.adminId,
+      workerIds: people.workers.map((w) => w.id),
+      workers: people.workers,
+    });
+  } else {
+    console.log('Skipping Piece 12/14 UAT islands (set DEMO_PIECES=1 to enable)…');
+  }
 
   console.log('Seeding extras…');
   await seedDemoExtras(prisma, {

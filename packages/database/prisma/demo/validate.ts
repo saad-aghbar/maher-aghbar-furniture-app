@@ -276,7 +276,11 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   }
 
   const schedules = await prisma.productionSchedule.findMany({
-    include: { productionOrder: true },
+    include: {
+      productionOrder: {
+        include: { salesOrder: { select: { projectName: true } } },
+      },
+    },
   });
   const latest = new Map<string, (typeof schedules)[number]>();
   for (const s of schedules) {
@@ -284,6 +288,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     if (!prev || s.version > prev.version) latest.set(s.productionOrderId, s);
   }
   let mayBeLate = 0;
+  const mayBeLateProjects = new Set<string>();
   for (const s of latest.values()) {
     if (!activeSched.has(s.status)) continue;
     const classification = classifyScheduleRisk({
@@ -298,15 +303,22 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
       materialRisk: s.materialRisk,
       now: asOf,
     });
-    if (classification.contributesToMayBeLate) mayBeLate += 1;
+    if (classification.contributesToMayBeLate) {
+      mayBeLate += 1;
+      mayBeLateProjects.add(
+        s.productionOrder.salesOrder?.projectName ?? s.productionOrder.number,
+      );
+    }
     if (s.productionOrder.committedDeliveryDate && s.committedDeliveryDate) {
       if (s.productionOrder.committedDeliveryDate.getTime() !== s.committedDeliveryDate.getTime()) {
         fail(`${s.productionOrder.number}: PO committed date ≠ schedule committed date`);
       }
     }
   }
-  if (mayBeLate !== 3) {
-    fail(`expected exactly 3 may-be-late schedules, found ${mayBeLate}`);
+  if (mayBeLateProjects.size !== 3) {
+    fail(
+      `expected exactly 3 may-be-late projects, found ${mayBeLateProjects.size} (${[...mayBeLateProjects].join(', ')}; ${mayBeLate} schedules)`,
+    );
   }
 
   const products = await prisma.product.findMany({ select: { sku: true, nameEn: true, nameAr: true, bomDefaults: true } });
@@ -415,8 +427,16 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   const completedCount = await prisma.salesOrder.count({
     where: { status: { in: ['COMPLETED', 'DELIVERED'] } },
   });
-  if (soCount < 50) fail(`expected ~65 sales orders, found ${soCount}`);
-  if (inProdCount + completedCount < 20) fail('dashboard production/completed counts look empty');
+  /** Curated cast (+ cost/unique-floor/returns). Pieces off by default — keep the world small. */
+  if (soCount < 12) fail(`expected curated sales orders (≥12), found ${soCount}`);
+  const piecesEnabledForCount =
+    process.env.DEMO_PIECES === '1' ||
+    process.env.DEMO_PIECES === 'true' ||
+    process.env.DEMO_PIECES === 'yes';
+  if (!piecesEnabledForCount && soCount > 80) {
+    fail(`expected curated world (≤80 sales orders without DEMO_PIECES), found ${soCount}`);
+  }
+  if (inProdCount + completedCount < 8) fail('dashboard production/completed counts look empty');
 
   const workerWithoutSkill = await prisma.user.findMany({
     where: {
@@ -502,8 +522,13 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     where: { number: 'RT-DEMO-PIECE-001' },
     select: { pieces: { select: { decision: true } } },
   });
-  if (!pieceDemo) fail('RT-DEMO-PIECE-001 is missing');
-  else {
+  const piecesEnabled =
+    process.env.DEMO_PIECES === '1' ||
+    process.env.DEMO_PIECES === 'true' ||
+    process.env.DEMO_PIECES === 'yes';
+  if (!pieceDemo) {
+    if (piecesEnabled) fail('RT-DEMO-PIECE-001 is missing');
+  } else {
     const decisions = new Set(pieceDemo.pieces.map((p) => p.decision));
     for (const decision of ['REPAIR', 'REPLACEMENT', 'SCRAP_RECOVERY'] as const) {
       if (!decisions.has(decision)) fail(`RT-DEMO-PIECE-001 missing ${decision} piece`);
@@ -514,7 +539,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     select: { pieces: { select: { decision: true } } },
   });
   if (!recoveryDemo?.pieces.some((p) => p.decision === 'SCRAP_RECOVERY')) {
-    fail('RT-DEMO-RECOVERY-001 recovery-only case is missing');
+    if (piecesEnabled) fail('RT-DEMO-RECOVERY-001 recovery-only case is missing');
   }
 
   await assertPresentationReady(prisma, asOf, fail);
@@ -537,13 +562,11 @@ const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: strin
   'Diwan wingback frame gate': { so: '*', status: 'IN_PRODUCTION' },
   'Jabal contract dining': { so: '*', status: 'IN_PRODUCTION' },
   'Oasis club armchair QC': { so: '*', status: 'IN_PRODUCTION' },
-  'Nile loveseat recovered': { so: '*', status: 'DELIVERED' },
   'Zaatar ottoman scuff': { so: '*', status: 'DELIVERED' },
   'Qasr suite dining': { so: '*', status: 'READY_FOR_PRODUCTION' },
   'Noor club chair hold': { so: null, status: 'SENT' },
-  'Noor banquettes 4 of 6 frames': { so: '*', status: 'IN_PRODUCTION' },
-  'Rawnaq dining six': { so: '*', status: 'READY_FOR_PRODUCTION' },
   'Golden factory path': { so: '*', status: 'READY_FOR_PRODUCTION' },
+  'Golden floor lounge': { so: '*', status: 'IN_PRODUCTION' },
 };
 
 function isSyntheticProjectName(name: string): boolean {
@@ -860,7 +883,9 @@ async function assertPresentationReady(
     },
   });
   for (const po of releasedPos) {
-    if (!po.variantId) fail(`${po.number}: released PO missing variantId`);
+    if (!po.variantId && po.productId != null) {
+      fail(`${po.number}: released catalog PO missing variantId`);
+    }
     if (!po.instructionsAr?.trim()) fail(`${po.number}: released PO missing instructionsAr`);
     if (po.plannedMaterialCost == null) fail(`${po.number}: released PO missing plannedMaterialCost`);
     if (po.plannedLaborCost == null) fail(`${po.number}: released PO missing plannedLaborCost`);
@@ -948,6 +973,76 @@ async function assertPresentationReady(
       } else if (pos[0]!.number !== `${golden.number}.${line.itemLetter}`) {
         fail(
           `${golden.number}: SALES_ORDER PO ${pos[0]!.number} expected ${golden.number}.${line.itemLetter}`,
+        );
+      }
+    }
+  }
+
+  const goldenFloor = await prisma.salesOrder.findFirst({
+    where: { projectName: 'Golden floor lounge', archivedAt: null },
+    include: {
+      lines: true,
+      productionOrders: {
+        select: {
+          id: true,
+          number: true,
+          salesOrderLineId: true,
+          originType: true,
+          releasedToFactoryAt: true,
+        },
+      },
+    },
+  });
+  if (!goldenFloor) {
+    fail('Golden floor lounge sales order missing');
+  } else {
+    if (goldenFloor.lines.length !== 4) {
+      fail(`Golden floor lounge: expected 4 lines, got ${goldenFloor.lines.length}`);
+    }
+    const released = goldenFloor.productionOrders.filter(
+      (po) => po.originType === 'SALES_ORDER' && po.releasedToFactoryAt,
+    );
+    if (released.length < 4) {
+      fail(
+        `Golden floor lounge: expected ≥4 released SALES_ORDER POs, got ${released.length}`,
+      );
+    }
+    for (const line of goldenFloor.lines) {
+      if (!line.productionRequired) continue;
+      const pos = goldenFloor.productionOrders.filter(
+        (po) => po.salesOrderLineId === line.id && po.originType === 'SALES_ORDER',
+      );
+      if (pos.length !== 1) {
+        fail(
+          `${goldenFloor.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`,
+        );
+      } else if (!line.itemLetter) {
+        fail(`${goldenFloor.number}: line ${line.id} missing itemLetter`);
+      } else if (pos[0]!.number !== `${goldenFloor.number}.${line.itemLetter}`) {
+        fail(
+          `${goldenFloor.number}: SALES_ORDER PO ${pos[0]!.number} expected ${goldenFloor.number}.${line.itemLetter}`,
+        );
+      }
+    }
+
+    const carpenter = await prisma.user.findFirst({
+      where: { username: 'carpenter' },
+      select: { id: true },
+    });
+    if (!carpenter) {
+      fail('carpenter demo user missing');
+    } else {
+      const carpenterPos = await prisma.productionOrder.findMany({
+        where: {
+          salesOrderId: goldenFloor.id,
+          originType: 'SALES_ORDER',
+          tasks: { some: { assignedEmployeeId: carpenter.id } },
+        },
+        select: { id: true },
+      });
+      if (carpenterPos.length < 2) {
+        fail(
+          `Golden floor lounge: carpenter should see ≥2 sibling items, got ${carpenterPos.length}`,
         );
       }
     }

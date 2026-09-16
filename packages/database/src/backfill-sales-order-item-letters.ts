@@ -13,8 +13,8 @@ export async function backfillSalesOrderItemLetters(prisma: PrismaClient): Promi
       id: true,
       number: true,
       lines: {
-        select: { id: true, itemLetter: true, sortOrder: true, createdAt: true },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        select: { id: true, itemLetter: true, sortOrder: true },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       },
       productionOrders: {
         select: {

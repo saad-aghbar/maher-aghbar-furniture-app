@@ -264,7 +264,17 @@ function poStatusFor(kind: StoryKind): ProductionOrderStatus {
   }
 }
 
-function completeThroughFor(kind: StoryKind, story: DemoStory, includedCodes: string[]): string | null {
+function completeThroughFor(
+  kind: StoryKind,
+  story: DemoStory,
+  includedCodes: string[],
+  lineCompleteThrough?: string | null,
+  lineHasCompleteThrough = false,
+): string | null {
+  if (lineHasCompleteThrough) {
+    if (lineCompleteThrough == null) return null;
+    if (includedCodes.includes(lineCompleteThrough)) return lineCompleteThrough;
+  }
   if (kind === 'delivered' || kind === 'rework_historical') return includedCodes[includedCodes.length - 1] ?? null;
   if (kind === 'ready_delivery') return includedCodes.includes('PACKAGING') ? 'PACKAGING' : includedCodes.at(-2) ?? null;
   if (kind === 'packaging') return includedCodes.includes('INSPECTION') ? 'INSPECTION' : story.completeThrough ?? null;
@@ -648,7 +658,13 @@ export async function seedDemoOrders(
     );
     const included = [...compiled.included].sort((a, b) => a.sortOrder - b.sortOrder);
     const codes = included.map((n) => n.stageCode);
-    const through = completeThroughFor(story.kind, story, codes);
+    const through = completeThroughFor(
+      story.kind,
+      story,
+      codes,
+      pricedLine.completeThrough,
+      Object.prototype.hasOwnProperty.call(pricedLine, 'completeThrough'),
+    );
     const done = completedCodes(through, included, compiled.edges);
     const nextReady = included.find((n) => {
       if (done.has(n.stageCode)) return false;
@@ -658,6 +674,14 @@ export async function seedDemoOrders(
         return !pred || done.has(pred.stageCode);
       });
     });
+
+    const instructionsAr =
+      variant?.factoryNotesAr ??
+      (pricedLine.custom ? 'اتبع الرسم والمواصفات.' : null);
+    const instructionsEn =
+      variant?.factoryNotesEn ??
+      (pricedLine.custom ? 'Follow the sketch and specifications.' : null);
+    const instructionsHe = variant?.factoryNotesHe ?? null;
 
     const po = await prisma.productionOrder.create({
       data: {
@@ -677,9 +701,9 @@ export async function seedDemoOrders(
         priority: so.priority,
         progressPercent: Math.round((done.size / Math.max(included.length, 1)) * 100),
         plannedStartDate: createdAt,
-        instructionsAr: variant?.factoryNotesAr ?? null,
-        instructionsEn: variant?.factoryNotesEn ?? null,
-        instructionsHe: variant?.factoryNotesHe ?? null,
+        instructionsAr,
+        instructionsEn,
+        instructionsHe,
         createdById: opts.adminId,
         createdAt,
         updatedAt: createdAt,
@@ -690,11 +714,14 @@ export async function seedDemoOrders(
 
     const released =
       story.kind !== 'draft' && story.kind !== 'proposed' && story.kind !== 'not_started';
-    if (released && product && variant) {
-      const profile = await prisma.productProductionProfile.findFirst({
-        where: { productId: product.id, variantId: variant.id },
-      });
-      const laborHours = ((profile?.totalStandardMinutes ?? 0) * lineQty) / 60;
+    if (released) {
+      const profile =
+        product && variant
+          ? await prisma.productProductionProfile.findFirst({
+              where: { productId: product.id, variantId: variant.id },
+            })
+          : null;
+      const laborHours = ((profile?.totalStandardMinutes ?? 180) * lineQty) / 60;
       await prisma.productionOrder.update({
         where: { id: po.id },
         data: {
@@ -723,10 +750,10 @@ export async function seedDemoOrders(
     await prisma.salesOrderLineSetup.upsert({
       where: { salesOrderLineId: line.id },
       update: {
-        instructionsAr: variant?.factoryNotesAr ?? null,
-        instructionsEn: variant?.factoryNotesEn ?? null,
-        instructionsHe: variant?.factoryNotesHe ?? null,
-        factoryNotes: variant?.factoryNotesAr ?? null,
+        instructionsAr,
+        instructionsEn,
+        instructionsHe,
+        factoryNotes: instructionsAr,
       },
       create: {
         productionSetupId: productionSetup.id,
@@ -735,10 +762,10 @@ export async function seedDemoOrders(
         manufacturingName:
           pricedLine.name || variant?.nameAr || variant?.nameEn || line.description,
         manufacturingComplexity: lineComplexity(pricedLine),
-        factoryNotes: variant?.factoryNotesAr ?? null,
-        instructionsAr: variant?.factoryNotesAr ?? null,
-        instructionsEn: variant?.factoryNotesEn ?? null,
-        instructionsHe: variant?.factoryNotesHe ?? null,
+        factoryNotes: instructionsAr,
+        instructionsAr,
+        instructionsEn,
+        instructionsHe,
       },
     });
 
@@ -842,9 +869,9 @@ export async function seedDemoOrders(
           consumeInventoryItemIds:
             consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
           defaultWarehouseId: resolved.warehouseId ?? undefined,
-          instructionsAr: variant?.factoryNotesAr ?? null,
-          instructionsEn: variant?.factoryNotesEn ?? null,
-          instructionsHe: variant?.factoryNotesHe ?? null,
+          instructionsAr,
+          instructionsEn,
+          instructionsHe,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,
@@ -1523,6 +1550,54 @@ export async function seedDemoOrders(
     dealerUserByCustomerId,
   });
 
+  await pinGoldenFloorLoungeWorkers(prisma);
+
   console.log(`  sales: ${salesOrders} SO · ${productionOrders} PO`);
   return { salesOrders, productionOrders };
+}
+
+/**
+ * Prefer primary demo logins (carpenter / cutter) on Golden floor lounge so
+ * My Tasks shows a multi-item board with done / locked / open siblings.
+ */
+async function pinGoldenFloorLoungeWorkers(prisma: PrismaClient) {
+  const preferredByStage: Record<string, string> = {
+    CARPENTRY: 'carpenter',
+    MATERIAL_PREP: 'cutter',
+  };
+  const usernames = [...new Set(Object.values(preferredByStage))];
+  const users = await prisma.user.findMany({
+    where: { username: { in: usernames } },
+    select: { id: true, username: true },
+  });
+  const idByUsername = new Map(users.map((u) => [u.username, u.id]));
+  const floorPos = await prisma.productionOrder.findMany({
+    where: {
+      originType: 'SALES_ORDER',
+      salesOrder: { projectName: 'Golden floor lounge', archivedAt: null },
+    },
+    select: {
+      id: true,
+      tasks: {
+        select: {
+          id: true,
+          stageDefinition: { select: { code: true } },
+        },
+      },
+    },
+  });
+  for (const po of floorPos) {
+    for (const task of po.tasks) {
+      const code = task.stageDefinition?.code;
+      if (!code) continue;
+      const username = preferredByStage[code];
+      if (!username) continue;
+      const employeeId = idByUsername.get(username);
+      if (!employeeId) continue;
+      await prisma.productionTask.update({
+        where: { id: task.id },
+        data: { assignedEmployeeId: employeeId },
+      });
+    }
+  }
 }
