@@ -13,8 +13,22 @@ mkdir -p "$ROOT/.run" "$ROOT/logs"
 API_URL="http://127.0.0.1:4000/api/v1/health"
 ADMIN_URL="http://127.0.0.1:3000/ar/login"
 METRO_URL="http://127.0.0.1:8081/status"
+STOP_LATCH="$ROOT/.run/dev-stack.stopped"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+stack_is_latched() {
+  [[ -f "$STOP_LATCH" ]]
+}
+
+write_stop_latch() {
+  mkdir -p "$ROOT/.run"
+  date -u +"%Y-%m-%dT%H:%M:%SZ intentionally stopped — clear with /start" >"$STOP_LATCH"
+}
+
+clear_stop_latch() {
+  rm -f "$STOP_LATCH"
+}
 
 need_pnpm() {
   command -v pnpm >/dev/null 2>&1 || die "pnpm not found. Install pnpm, then retry."
@@ -198,6 +212,9 @@ restart_if_bad() {
 print_status() {
   echo ""
   echo "==> Status"
+  if stack_is_latched; then
+    echo "Latch  STOPPED  ($STOP_LATCH) — only /start clears this"
+  fi
   if api_ok; then
     echo "API    OK   http://127.0.0.1:4000   $API_URL"
   else
@@ -217,10 +234,20 @@ print_status() {
 
 cmd_status() {
   print_status
+  if stack_is_latched; then
+    return 1
+  fi
   api_ok && admin_ok && metro_ok
 }
 
 cmd_run() {
+  if stack_is_latched; then
+    echo "==> /run blocked — stack is intentionally stopped"
+    echo "    Latch: $STOP_LATCH"
+    echo "    Use /start to clear the latch and bring API + admin + Metro up."
+    print_status
+    return 1
+  fi
   echo "==> /run  API + admin + Metro  ($ROOT)"
   echo "NOTE: prefer Cursor background Shells (block_until_ms 0). This script detaches with a new session."
   local rc=0
@@ -238,7 +265,22 @@ cmd_run() {
   return "$rc"
 }
 
+cmd_start() {
+  echo "==> /start  clearing stop latch, then bringing stack up"
+  clear_stop_latch
+  cmd_run
+}
+
 cmd_fix() {
+  if stack_is_latched; then
+    echo "==> /fix blocked — stack is intentionally stopped (will not restart)"
+    echo "    Latch: $STOP_LATCH"
+    echo "    Use /start when you want the stack back."
+    # Ensure nothing is listening while latched
+    cmd_stop_kill_only
+    print_status
+    return 1
+  fi
   echo "==> /fix  check API + admin + Metro  ($ROOT)"
   local rc=0
   if ! redis-cli ping >/dev/null 2>&1; then
@@ -251,24 +293,45 @@ cmd_fix() {
   return "$rc"
 }
 
-cmd_stop() {
-  echo "==> /stop  API + admin + Metro"
+cmd_stop_kill_only() {
   stop_named api
   stop_named admin
   stop_named metro
+  pkill -f "${ROOT}.*/(pnpm )?dev:api|${ROOT}.*/@maher/api" 2>/dev/null || true
+  pkill -f "${ROOT}.*/(pnpm )?dev:admin|${ROOT}.*/@maher/admin-web|next dev -p 3000" 2>/dev/null || true
+  pkill -f "${ROOT}.*/@maher/mobile|expo start --host lan" 2>/dev/null || true
+  pkill -f 'pnpm (dev:api|dev:admin)' 2>/dev/null || true
+  pkill -f 'pnpm --filter @maher/(api|admin-web|mobile)' 2>/dev/null || true
   kill_port 4000
   kill_port 3000
   kill_port 8081
-  echo "Stopped  :4000  :3000  :8081"
+  pkill -f 'next dev -p 300[12]' 2>/dev/null || true
+  kill_port 3001
+  kill_port 3002
+  sleep 0.4
+  kill_port 4000
+  kill_port 3000
+  kill_port 8081
+  kill_port 3001
+  kill_port 3002
+}
+
+cmd_stop() {
+  echo "==> /stop  API + admin + Metro (+ orphan Cursor shells)"
+  cmd_stop_kill_only
+  write_stop_latch
+  echo "Stopped  :4000  :3000  :8081  (:3001/:3002 portals if any)"
+  echo "Latch set — other chats /run /fix will refuse until /start"
 }
 
 usage() {
-  echo "Usage: stack.sh run | fix | stop | status"
+  echo "Usage: stack.sh run | start | fix | stop | status"
   exit 2
 }
 
 case "${1:-}" in
   run) cmd_run ;;
+  start) cmd_start ;;
   fix) cmd_fix ;;
   stop) cmd_stop ;;
   status) cmd_status ;;

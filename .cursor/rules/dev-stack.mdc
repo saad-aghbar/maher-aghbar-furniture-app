@@ -1,11 +1,15 @@
 ---
-description: Slash commands /run /fix /stop for local API, admin-web, and Expo Metro
+description: Slash commands /run /start /fix /stop for local API, admin-web, and Expo Metro
 alwaysApply: true
 ---
 
-When the user types `/run`, `/fix`, or `/stop`, follow `.cursor/skills/dev-stack/SKILL.md` immediately.
+When the user types `/run`, `/start`, `/fix`, or `/stop`, follow `.cursor/skills/dev-stack/SKILL.md` immediately.
 
-- `/run` and `/fix`: start missing API / admin / Metro as **three background Shells** (`block_until_ms: 0`). Do not rely on `stack.sh run` alone — those children die when the command ends.
-- `/stop`: `bash .cursor/skills/dev-stack/scripts/stack.sh stop`
+**Stop latch:** `/stop` writes `.run/dev-stack.stopped`. While that file exists, `/run` and `/fix` must NOT start or restart API/admin/Metro. Only `/start` clears the latch and starts the stack. Check `bash .cursor/skills/dev-stack/scripts/stack.sh status` before spawning Shells.
+
+- `/start`: clear latch + start missing API / admin / Metro as **three background Shells** (`block_until_ms: 0`)
+- `/run`: if latched, refuse; else same three Shells as `/start`
+- `/fix`: if latched, keep down; else restart only what is unhealthy
+- `/stop`: `bash .cursor/skills/dev-stack/scripts/stack.sh stop` — free `:4000` `:3000` `:8081`, kill orphan shells, write latch
 - Health: `bash .cursor/skills/dev-stack/scripts/stack.sh status`
 - Do not ask first.
