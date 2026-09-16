@@ -13,6 +13,8 @@ export type TaskCardModel = {
   title: string;
   requiredWork: string;
   orderNumber: string;
+  /** Sales-order id when the API provides it — used to group completed cards. */
+  salesOrderId: string | null;
   factoryOrderNumber: string | null;
   variantLabel: string | null;
   productTitle: string;
@@ -28,6 +30,17 @@ export type TaskCardModel = {
   plannedStart: string | null;
   /** True when plannedStart (or, absent that, the deadline) falls today. */
   isScheduledToday: boolean;
+};
+
+export type CompletedSalesOrderCardModel = {
+  id: string;
+  salesOrderId: string | null;
+  number: string;
+  imageUrl: string | null;
+  priority: PriorityLevel;
+  deadline: string | null;
+  taskCount: number;
+  tasks: TaskCardModel[];
 };
 
 export type TaskProblem = {
@@ -194,6 +207,14 @@ function orderNumber(item: TaskListItem): string {
   );
 }
 
+function taskSalesOrderId(item: TaskListItem): string | null {
+  return (
+    item.salesOrderId?.trim() ||
+    item.productionOrder?.salesOrder?.id?.trim() ||
+    null
+  );
+}
+
 function imageUrl(item: TaskListItem): string | null {
   return collectImageUrls(item)[0] ?? null;
 }
@@ -229,6 +250,7 @@ export function selectTaskCard(
     title: stageLabel(item, locale),
     requiredWork: stageLabel(item, locale),
     orderNumber: orderNumber(item),
+    salesOrderId: taskSalesOrderId(item),
     factoryOrderNumber: secondaryFactoryOrderNumber(orderNumber(item), taskFactoryOrderNumber(item)),
     variantLabel: taskVariantLabel(item),
     productTitle: productTitle(item, locale),
@@ -367,4 +389,85 @@ export function sortUrgentFirst(items: TaskCardModel[]): TaskCardModel[] {
     low: 3,
   };
   return [...items].sort((a, b) => rank[a.priority] - rank[b.priority]);
+}
+
+function completedGroupKey(item: TaskListItem): string {
+  return (
+    taskSalesOrderId(item) ||
+    item.salesOrderNumber?.trim() ||
+    item.productionOrder?.salesOrder?.number?.trim() ||
+    `task:${item.id}`
+  );
+}
+
+function maxPriority(tasks: TaskCardModel[]): PriorityLevel {
+  const rank: Record<PriorityLevel, number> = {
+    urgent: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+  return tasks.reduce<PriorityLevel>((best, task) => {
+    return rank[task.priority] < rank[best] ? task.priority : best;
+  }, 'low');
+}
+
+/**
+ * Group finished tasks into sales-order boards (same shape as open My Tasks).
+ */
+export function selectCompletedSalesOrderCards(
+  items: TaskListItem[],
+  locale: Locale = 'en',
+): CompletedSalesOrderCardModel[] {
+  const groups: TaskListItem[][] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = completedGroupKey(item);
+    const idx = indexByKey.get(key);
+    if (idx == null) {
+      indexByKey.set(key, groups.length);
+      groups.push([item]);
+      continue;
+    }
+    groups[idx]!.push(item);
+  }
+
+  return groups.map((rows) => {
+    const tasks = sortUrgentFirst(rows.map((row) => selectTaskCard(row, locale)));
+    const first = tasks[0]!;
+    const salesOrderId = taskSalesOrderId(rows[0]!) ?? first.salesOrderId;
+    return {
+      id: salesOrderId || completedGroupKey(rows[0]!),
+      salesOrderId,
+      number: first.orderNumber,
+      imageUrl: tasks.find((task) => task.imageUrl)?.imageUrl ?? first.imageUrl,
+      priority: maxPriority(tasks),
+      deadline: tasks.map((task) => task.deadline).find(Boolean) ?? null,
+      taskCount: tasks.length,
+      tasks,
+    };
+  });
+}
+
+export function workerCompletedSalesOrderHref(
+  order: Pick<CompletedSalesOrderCardModel, 'id' | 'number'>,
+  extras?: { q?: string },
+): string {
+  const qs = new URLSearchParams();
+  if (order.number) qs.set('number', order.number);
+  const needle = extras?.q?.trim();
+  if (needle) qs.set('q', needle);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return `/(app)/(employee)/completed-orders/${order.id}${suffix}`;
+}
+
+export function completedTaskMatchesSalesOrder(
+  task: TaskCardModel,
+  salesOrderId: string,
+  orderNumber?: string,
+): boolean {
+  if (task.salesOrderId && task.salesOrderId === salesOrderId) return true;
+  if (salesOrderId.startsWith('task:')) return task.id === salesOrderId.slice(5);
+  if (orderNumber && task.orderNumber === orderNumber) return true;
+  return task.orderNumber === salesOrderId;
 }

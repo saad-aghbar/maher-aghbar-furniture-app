@@ -1,12 +1,22 @@
 import { PERMISSIONS, ROLE_PERMISSIONS, SYSTEM_STAFF_PRESETS } from '@maher/permissions';
 import { TOPICS } from '../topics';
-import { eligibleTopicsForUser, isEligibleForTopic } from '../eligibility';
+import {
+  canPauseAllDevices,
+  eligibleTopicsForUser,
+  isEligibleForTopic,
+} from '../eligibility';
 import type { RecipientUser } from '../types';
 
 const KNOWN = new Set<string>(PERMISSIONS);
 
-function asUser(id: string, roles: string[], permissions: readonly string[], customerId?: string): RecipientUser {
-  return { id, roles, permissions: [...permissions], customerId };
+function asUser(
+  id: string,
+  roles: string[],
+  permissions: readonly string[],
+  customerId?: string,
+  stageSkillCodes?: string[],
+): RecipientUser {
+  return { id, roles, permissions: [...permissions], customerId, stageSkillCodes };
 }
 
 describe('notification topic / permission parity', () => {
@@ -57,6 +67,8 @@ describe('notification topic / permission parity', () => {
     expect(finTopics).not.toContain('grn.posted');
     const lowStock = TOPICS.find((t) => t.code === 'inventory.lowStock')!;
     expect(isEligibleForTopic(finance, lowStock)).toBe(false);
+    expect(canPauseAllDevices(warehouse)).toBe(false);
+    expect(canPauseAllDevices(finance)).toBe(false);
   });
 
   it('dealer never sees factory purchasing/QC/schedule/IAM topics', () => {
@@ -71,11 +83,36 @@ describe('notification topic / permission parity', () => {
   });
 
   it('worker is not eligible for purchasing, IAM, or finance topics by permission', () => {
-    const worker = asUser('w', ['PRODUCTION_WORKER'], ROLE_PERMISSIONS.PRODUCTION_WORKER);
+    const worker = asUser(
+      'w',
+      ['PRODUCTION_WORKER'],
+      ROLE_PERMISSIONS.PRODUCTION_WORKER,
+      undefined,
+      ['CARPENTRY'],
+    );
     const codes = eligibleTopicsForUser(worker, TOPICS).map((t) => t.code);
     expect(codes).not.toContain('po.late');
     expect(codes).not.toContain('invoice.overdue');
     expect(codes).not.toContain('user.roleChanged');
     expect(codes).toContain('task.ready');
+  });
+
+  it('pause-on-every-device is system administrator only', () => {
+    expect(
+      canPauseAllDevices(asUser('a', ['SYSTEM_ADMINISTRATOR'], ['notification.read'])),
+    ).toBe(true);
+    expect(
+      canPauseAllDevices(
+        asUser('wh', ['WAREHOUSE_MANAGEMENT'], SYSTEM_STAFF_PRESETS.WAREHOUSE_MANAGEMENT.permissionCodes),
+      ),
+    ).toBe(false);
+    expect(
+      canPauseAllDevices(
+        asUser('w', ['PRODUCTION_WORKER'], ROLE_PERMISSIONS.PRODUCTION_WORKER, undefined, ['CARPENTRY']),
+      ),
+    ).toBe(false);
+    expect(
+      canPauseAllDevices(asUser('d', ['CUSTOMER'], ROLE_PERMISSIONS.CUSTOMER, 'cust-1')),
+    ).toBe(false);
   });
 });

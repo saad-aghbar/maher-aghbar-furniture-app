@@ -5,7 +5,7 @@ import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reani
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 
 export type DealerScheduleSegment = 'upcoming' | 'calendar';
 
@@ -86,7 +86,8 @@ export function DealerScheduleRail({ value, onChange }: Props) {
     borderColor: interpolateColor(hoverIndex.value, [0, 1], [...borders]),
   }));
 
-  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD_Y * 2 + pillH;
 
   return (
     <GestureDetector gesture={gesture}>
@@ -114,9 +115,9 @@ export function DealerScheduleRail({ value, onChange }: Props) {
             {
               position: 'absolute',
               top: SHELL_PAD_Y,
-              height: PILL_HEIGHT,
+              height: pillH,
               left: 0,
-              borderRadius: PILL_HEIGHT / 2,
+              borderRadius: pillH / 2,
               borderWidth: 1.5,
               shadowColor: dark ? '#000000' : '#1E1A1B',
               shadowOffset: { width: 0, height: 1 },
@@ -145,7 +146,7 @@ export function DealerScheduleRail({ value, onChange }: Props) {
               }}
               style={{
                 flex: 1,
-                height: PILL_HEIGHT,
+                height: pillH,
                 paddingHorizontal: 2,
                 alignItems: 'center',
                 justifyContent: 'center',

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LocaleProvider } from '@/i18n';
-import { ThemeProvider } from '@/theme';
+import { FontScaleProvider, ThemeProvider } from '@/theme';
 import { OrderBasketProvider } from '@/features/requests/OrderBasketProvider';
 import { HARNESS_SAFE_AREA } from './harnessScopes';
 
@@ -28,11 +28,13 @@ export function HarnessProviders({
   return (
     <SafeAreaProvider initialMetrics={HARNESS_SAFE_AREA}>
       <ThemeProvider initialMode="light">
-        <LocaleProvider initialLocale={locale}>
-          <QueryClientProvider client={client}>
-            <OrderBasketProvider>{children}</OrderBasketProvider>
-          </QueryClientProvider>
-        </LocaleProvider>
+        <FontScaleProvider>
+          <LocaleProvider initialLocale={locale}>
+            <QueryClientProvider client={client}>
+              <OrderBasketProvider>{children}</OrderBasketProvider>
+            </QueryClientProvider>
+          </LocaleProvider>
+        </FontScaleProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -474,6 +474,7 @@
     "appearanceSection": "Appearance",
     "themeHint": "Light or dark for this device",
     "languageHint": "Arabic, English, or Hebrew",
+    "fontScaleHint": "Smaller or larger type on this device",
     "securitySection": "Security",
     "biometricLabel": "Biometric unlock",
     "biometricHint": "Require Face ID / fingerprint when opening the app",
@@ -571,6 +572,14 @@
   "scaffoldDemoTitle": "Localization demo",
   "scaffoldDemoBody": "Switch language to verify Arabic, English, and Hebrew. Direction, dates, numbers, and currency update together.",
   "themeMode": "Theme",
+  "fontScale": {
+    "label": "Text size",
+    "hint": "Make type smaller or larger on this device",
+    "a11y": "Text size",
+    "smaller": "Smaller",
+    "larger": "Larger",
+    "default": "Default"
+  },
   "hapticsButton": "Tap for haptics",
   "loadingSession": "Restoring your session…",
   "welcomeBack": "Welcome back",
@@ -1093,6 +1102,7 @@
     "appearanceSection": "Appearance",
     "themeHint": "Light or dark for this device",
     "languageHint": "Arabic, English, or Hebrew",
+    "fontScaleHint": "Smaller or larger type on this device",
     "signOutHint": "Production floor account"
   },
   "deliveryLoad": {
@@ -1473,6 +1483,10 @@
     "orderItemsTitle": "Order items",
     "viewOnly": "View only",
     "orderItemsCount": "{count} items",
+    "orderTasksCount": "{count} tasks",
+    "finishedWork": "Finished work",
+    "itemStatusDone": "Done",
+    "itemStatusLocked": "Locked",
     "laneGraphTitle": "Workflow",
     "laneGraphHint": "This station, then the next. Connected stations must finish first.",
     "nextYouCanWork": "You can work {stage}",

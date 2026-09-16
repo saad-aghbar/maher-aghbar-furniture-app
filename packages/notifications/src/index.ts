@@ -8,6 +8,7 @@ export * from './privacy';
 export * from './live-routes';
 export * from './href';
 export * from './eligibility';
+export * from './worker-topic-skills';
 export * from './outbox-claim';
 export * from './device-token';
 export * from './pending-intent';

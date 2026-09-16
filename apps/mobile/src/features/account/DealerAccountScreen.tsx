@@ -6,6 +6,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
+import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
@@ -14,7 +15,7 @@ import { useDealerHomeQuery } from '@/features/dealer-home/query';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 import { DealerAiSpotlight } from './components/DealerAiSpotlight';
 import { DealerIdentityBoard } from './components/DealerIdentityBoard';
 import { DealerPlacesDock } from './components/DealerPlacesDock';
@@ -28,6 +29,7 @@ export function DealerAccountScreen() {
   const router = useRouter();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const pip = useChromeSize(16);
   const { showOfflineBanner } = useNetwork();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -91,7 +93,17 @@ export function DealerAccountScreen() {
           </AppText>
         </View>
 
-        {canNotify ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            gap: theme.spacing.sm,
+            marginTop: 2,
+            zIndex: 40,
+          }}
+        >
+          <FontScaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
+          {canNotify ? (
           <AnimatedPressable
             variant="button"
             accessibilityRole="button"
@@ -109,7 +121,6 @@ export function DealerAccountScreen() {
               backgroundColor: colors.surface,
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: 2,
             }}
           >
             <Ionicons name="notifications-outline" size={20} color={colors.brand} />
@@ -119,9 +130,9 @@ export function DealerAccountScreen() {
                   position: 'absolute',
                   top: 4,
                   ...(isRTL ? { left: 4 } : { right: 4 }),
-                  minWidth: 16,
-                  height: 16,
-                  borderRadius: 8,
+                  minWidth: pip,
+                  height: pip,
+                  borderRadius: pip / 2,
                   backgroundColor: colors.warning,
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -139,6 +150,7 @@ export function DealerAccountScreen() {
             ) : null}
           </AnimatedPressable>
         ) : null}
+        </View>
       </View>
 
       <View style={{ gap: theme.spacing.lg }}>

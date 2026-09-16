@@ -4,6 +4,7 @@ import {
   mySalesOrdersFromResponse,
   selectWorkerOrderCard,
   selectWorkerSalesOrderCard,
+  workerItemWorkState,
   workerOrderMatchesQuery,
   workerSalesOrderHref,
 } from '../selectWorkerOrder';
@@ -81,6 +82,10 @@ describe('worker list sales-order grouping', () => {
     expect(grouped[0]?.items).toHaveLength(3);
     const card = selectWorkerSalesOrderCard(grouped[0]!, 'en');
     expect(card.itemCount).toBe(3);
+    expect(card.items).toHaveLength(3);
+    expect(card.items.map((item) => item.id)).toEqual(['po-1', 'po-2', 'po-3']);
+    expect(card.items[1]?.variantLabel).toBe('Ukrainian');
+    expect(card.items[1]?.productTitle).toBe('Dining table · Ukrainian');
     expect(card.productTitle).toBe('Dining table · Standard · Ukrainian · Classic');
     expect(card.number).toBe('ORD-9');
     expect(card.factoryOrderNumber).toBeNull();
@@ -112,6 +117,85 @@ describe('worker list sales-order grouping', () => {
   it('marks sibling production orders as view-only', () => {
     const card = selectWorkerOrderCard({ ...order, assignedToMe: false }, 'en');
     expect(card.assignedToMe).toBe(false);
+  });
+});
+
+describe('workerItemWorkState', () => {
+  it('is done when assigned with no remaining stages', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: true,
+        myTaskCount: 0,
+        actionableCount: 0,
+        blockedCount: 0,
+      }),
+    ).toBe('done');
+  });
+
+  it('is locked when blockedCount > 0 (same as Locked)', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: true,
+        myTaskCount: 2,
+        actionableCount: 0,
+        blockedCount: 2,
+      }),
+    ).toBe('locked');
+  });
+
+  it('stays open when some stages are actionable even if others are blocked', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: true,
+        myTaskCount: 2,
+        actionableCount: 1,
+        blockedCount: 1,
+      }),
+    ).toBe('open');
+  });
+
+  it('is locked when remaining work exists but nothing is actionable', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: true,
+        myTaskCount: 2,
+        actionableCount: 0,
+        blockedCount: 0,
+      }),
+    ).toBe('locked');
+  });
+
+  it('is open when there is actionable work', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: true,
+        myTaskCount: 2,
+        actionableCount: 2,
+        blockedCount: 0,
+      }),
+    ).toBe('open');
+  });
+
+  it('does not treat view-only alone as locked', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: false,
+        myTaskCount: 0,
+        actionableCount: 0,
+        blockedCount: 0,
+      }),
+    ).toBe('open');
+  });
+
+  it('locks view-only siblings that still report blocked remaining work', () => {
+    expect(
+      workerItemWorkState({
+        assignedToMe: false,
+        myTaskCount: 1,
+        actionableCount: 0,
+        blockedCount: 1,
+      }),
+    ).toBe('locked');
   });
 });
 

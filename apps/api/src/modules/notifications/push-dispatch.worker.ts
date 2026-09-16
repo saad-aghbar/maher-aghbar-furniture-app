@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { getTopic, isDevicePushDeliverable } from '@maher/notifications';
+import { getTopic, isDevicePushDeliverable, isSystemAdministrator } from '@maher/notifications';
 import { DeviceTokensService } from './device-tokens.service';
 import { ExpoPushClient } from './expo-push.client';
 import { NotificationOutboxService } from './notification-outbox.service';
@@ -67,11 +67,19 @@ export class PushDispatchWorker implements OnModuleInit, OnModuleDestroy {
     data: unknown;
     attempts: number;
   }) {
-    const settings = await this.prisma.userPushSettings.findUnique({
-      where: { userId: row.userId },
-      select: { masterEnabled: true },
+    const account = await this.prisma.user.findUnique({
+      where: { id: row.userId },
+      select: {
+        roles: { select: { role: { select: { code: true } } } },
+        pushSettings: { select: { masterEnabled: true } },
+      },
     });
-    const masterEnabled = settings?.masterEnabled ?? true;
+    const pauseAll = isSystemAdministrator({
+      id: row.userId,
+      roles: account?.roles.map((r) => r.role.code) ?? [],
+      permissions: [],
+    });
+    const masterEnabled = pauseAll ? (account?.pushSettings?.masterEnabled ?? true) : true;
     const tokens = await this.devices.listDeliverable(row.userId);
     const live = tokens.filter((token) =>
       isDevicePushDeliverable({

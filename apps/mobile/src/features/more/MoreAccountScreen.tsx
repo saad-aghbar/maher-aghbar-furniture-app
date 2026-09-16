@@ -25,6 +25,7 @@ import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
+import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
 import { isolateLtr } from '@/i18n/format';
@@ -533,6 +534,14 @@ export function MoreAccountScreen({
               titleWeight={titleWeight}
               control={<ExpandableLocaleSwitcher expandToward={isRTL ? 'start' : 'end'} />}
             />
+            <Divider compact />
+            <PrefRow
+              label={t('mobile.fontScale.label')}
+              hint={t('mobile.more.fontScaleHint')}
+              isRTL={isRTL}
+              titleWeight={titleWeight}
+              control={<FontScaleSwitcher expandToward={isRTL ? 'start' : 'end'} />}
+            />
           </MoreBoard>
         </Animated.View>
 
@@ -793,18 +802,20 @@ function PrefRow({
   isRTL,
   titleWeight,
   control,
+  align = 'center',
 }: {
   label: string;
   hint: string;
   isRTL: boolean;
   titleWeight: 'medium' | 'semibold';
   control: ReactNode;
+  align?: 'center' | 'start';
 }) {
   return (
     <View
       style={{
         flexDirection: isRTL ? 'row-reverse' : 'row',
-        alignItems: 'center',
+        alignItems: align === 'start' ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: 12,
       }}

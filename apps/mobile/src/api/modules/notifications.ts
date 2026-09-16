@@ -30,6 +30,7 @@ export type NotificationTopicRow = {
 };
 
 export type NotificationTopicsResponse = {
+  canPauseAllDevices?: boolean;
   masterEnabled: boolean;
   device: {
     token: string;

@@ -10,11 +10,13 @@ import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import type { MyOrderSegment } from './api';
 import { WorkerOrderCard } from './components/WorkerOrderCard';
+import { WorkerSalesOrderIdentityBoard } from './components/WorkerSalesOrderIdentityBoard';
 import { useMyOrdersQuery } from './query';
 import {
   findMySalesOrder,
   mySalesOrdersFromResponse,
   selectWorkerOrderCard,
+  selectWorkerSalesOrderCard,
 } from './selectWorkerOrder';
 
 function parseSegment(raw?: string): MyOrderSegment {
@@ -42,6 +44,7 @@ export function WorkerSalesOrderItemsScreen() {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const query = useMyOrdersQuery(segment, needle, Boolean(id));
   const group = findMySalesOrder(mySalesOrdersFromResponse(query.data), id);
+  const salesOrder = group ? selectWorkerSalesOrderCard(group, locale) : null;
   const items = (group?.items ?? []).map((item) => selectWorkerOrderCard(item, locale));
 
   if (query.isError && !query.data) {
@@ -76,7 +79,7 @@ export function WorkerSalesOrderItemsScreen() {
           />
         }
         ListHeaderComponent={
-          <View style={{ marginBottom: theme.spacing.md, gap: theme.spacing.sm }}>
+          <View style={{ marginBottom: theme.spacing.md, gap: theme.spacing.md }}>
             <View
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -92,13 +95,26 @@ export function WorkerSalesOrderItemsScreen() {
                 <AppText variant="largeTitle" weight={titleWeight}>
                   {t('mobile.tasks.orderItemsTitle')}
                 </AppText>
-                {group?.salesOrderNumber ? (
+                {salesOrder?.number ? (
                   <AppText variant="bodySecondary" color="secondary" dir="ltr">
-                    {group.salesOrderNumber}
+                    {salesOrder.number}
                   </AppText>
                 ) : null}
               </View>
             </View>
+
+            {salesOrder ? (
+              <WorkerSalesOrderIdentityBoard
+                orderNumber={salesOrder.number}
+                imageUrl={salesOrder.imageUrl}
+                priority={salesOrder.priority}
+                deadline={salesOrder.deadline}
+                itemCount={salesOrder.itemCount}
+                myTaskCount={salesOrder.myTaskCount}
+                blockedCount={salesOrder.blockedCount}
+                factoryOrderNumber={salesOrder.factoryOrderNumber}
+              />
+            ) : null}
           </View>
         }
         renderItem={({ item, index }) => (

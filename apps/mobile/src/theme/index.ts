@@ -37,6 +37,26 @@ export { motion } from './motion';
 export { sizes } from './sizes';
 export { createTheme, lightTheme, darkTheme } from './themes';
 export { ThemeProvider, THEME_STORAGE_KEY } from './ThemeProvider';
+export {
+  FONT_SCALE_DEFAULT,
+  FONT_SCALE_DEFAULT_SNAP,
+  FONT_SCALE_DEFAULT_SNAP_IN,
+  FONT_SCALE_DEFAULT_SNAP_OUT,
+  FONT_SCALE_MAX,
+  FONT_SCALE_MIN,
+  FONT_SCALE_STORAGE_KEY,
+  applyDefaultSnap,
+  chromeSize,
+  clampFontScale,
+  fontScaleToProgress,
+  isNearDefaultProgress,
+  parseStoredFontScale,
+  progressToFontScale,
+  roundFontScale,
+  scaleTextStyle,
+} from './fontScale';
+export { FontScaleProvider, useChromeSize, useFontScale } from './FontScaleProvider';
+export type { FontScaleContextValue } from './FontScaleProvider';
 export { EmployeeThemeOverride } from './EmployeeThemeOverride';
 export {
   employeeIndustrialColors,

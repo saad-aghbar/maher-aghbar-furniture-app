@@ -28,6 +28,27 @@ export type WorkerSalesOrderCardModel = WorkerOrderCardModel & {
   items: WorkerOrderCardModel[];
 };
 
+/** Nested item glance state on My Tasks / items picker. */
+export type WorkerItemWorkState = 'done' | 'locked' | 'open';
+
+/**
+ * Done = no remaining stages for me.
+ * Locked = waiting on predecessors (same as Locked stamp) — cannot start yet.
+ * Open = at least one actionable stage (even if other stages are still blocked).
+ */
+export function workerItemWorkState(
+  item: Pick<
+    WorkerOrderCardModel,
+    'assignedToMe' | 'myTaskCount' | 'actionableCount' | 'blockedCount'
+  >,
+): WorkerItemWorkState {
+  if (item.assignedToMe && item.myTaskCount === 0) return 'done';
+  if (item.actionableCount > 0) return 'open';
+  if (item.blockedCount > 0) return 'locked';
+  if (item.assignedToMe && item.myTaskCount > 0) return 'locked';
+  return 'open';
+}
+
 export function workerProductTitle(order: WorkerMyOrder, locale: Locale): string {
   const base =
     (order.product ? localizedName(locale, order.product) : '') ||

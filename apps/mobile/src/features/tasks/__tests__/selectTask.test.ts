@@ -1,12 +1,14 @@
 import {
   assertNoProgressLeak,
   formatWaitingOnStages,
+  selectCompletedSalesOrderCards,
   selectTaskCard,
   selectTaskDetail,
   sortUrgentFirst,
   toPriorityLevel,
+  workerCompletedSalesOrderHref,
 } from '../selectTask';
-import { openTasksFixture, taskDetailFixture } from '../fixtures';
+import { completedTasksFixture, openTasksFixture, taskDetailFixture } from '../fixtures';
 
 describe('selectTask', () => {
   it('maps list fields without progress percentages', () => {
@@ -290,5 +292,49 @@ describe('selectTask', () => {
       resolution: 'Use the spare tin',
       resolutionVoiceDocumentId: 'doc-ans',
     });
+  });
+
+  it('groups completed tasks into sales-order boards with nested tasks', () => {
+    const sibling = {
+      ...completedTasksFixture[0]!,
+      id: 'task-done-2',
+      number: 'PT-0991',
+      name: 'Packing — Sideboard',
+      salesOrderId: 'so-3',
+      stageDefinition: { code: 'PACK', nameEn: 'Packing' },
+    };
+    const other = {
+      ...completedTasksFixture[0]!,
+      id: 'task-done-3',
+      number: 'PT-0992',
+      salesOrderNumber: 'ORD-9999',
+      salesOrderId: 'so-9',
+      productionOrder: {
+        ...completedTasksFixture[0]!.productionOrder!,
+        id: 'po-999',
+        number: 'PO-999',
+        salesOrder: { id: 'so-9', number: 'ORD-9999' },
+      },
+    };
+    const cards = selectCompletedSalesOrderCards(
+      [{ ...completedTasksFixture[0]!, salesOrderId: 'so-3' }, sibling, other],
+      'en',
+    );
+    expect(cards).toHaveLength(2);
+    const sideboard = cards.find((card) => card.number === 'ORD-1240');
+    expect(sideboard?.taskCount).toBe(2);
+    expect(sideboard?.tasks.map((task) => task.id)).toEqual(['task-done-1', 'task-done-2']);
+    expect(sideboard?.salesOrderId).toBe('so-3');
+    expect(workerCompletedSalesOrderHref(sideboard!)).toBe(
+      '/(app)/(employee)/completed-orders/so-3?number=ORD-1240',
+    );
+  });
+
+  it('carries salesOrderId onto the task card model', () => {
+    const card = selectTaskCard(
+      { ...completedTasksFixture[0]!, salesOrderId: 'so-3' },
+      'en',
+    );
+    expect(card.salesOrderId).toBe('so-3');
   });
 });

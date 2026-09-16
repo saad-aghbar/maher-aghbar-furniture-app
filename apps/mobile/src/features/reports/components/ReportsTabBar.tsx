@@ -10,7 +10,7 @@ import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 import type { ReportsCategory } from '../selectReports';
 
 const SHELL_PAD_Y = 6;
@@ -64,7 +64,8 @@ export function ReportsTabBar({ tabs, value, onChange }: Props) {
   const fills = dark ? FILL_DARK : FILL_LIGHT;
   const borders = dark ? BORDER_DARK : BORDER_LIGHT;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD_Y * 2 + pillH;
 
   const [layouts, setLayouts] = useState<Partial<Record<ReportsCategory, ChipLayout>>>({});
 
@@ -168,9 +169,9 @@ export function ReportsTabBar({ tabs, value, onChange }: Props) {
               {
                 position: 'absolute',
                 top: SHELL_PAD_Y,
-                height: PILL_HEIGHT,
+                height: pillH,
                 left: 0,
-                borderRadius: PILL_HEIGHT / 2,
+                borderRadius: pillH / 2,
                 borderWidth: 1.5,
                 shadowColor: dark ? '#000000' : '#1E1A1B',
                 shadowOffset: { width: 0, height: 1 },
@@ -197,7 +198,7 @@ export function ReportsTabBar({ tabs, value, onChange }: Props) {
                 }}
                 style={{
                   flex: 1,
-                  height: PILL_HEIGHT,
+                  height: pillH,
                   paddingHorizontal: 4,
                   alignItems: 'center',
                   justifyContent: 'center',

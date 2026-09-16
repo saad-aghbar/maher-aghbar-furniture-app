@@ -19,7 +19,7 @@ import { AppText } from '@/components/AppText';
 import { DealerNewOrderButton, DEALER_FAB_SIZE } from '@/features/dealer-ui/DealerNewOrderButton';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useTheme, useChromeSize } from '@/theme';
 import { can } from '@maher/permissions';
 import { activeTabFromPath } from './activeTabFromPath';
 import { navigateToTab } from './navigateToTab';
@@ -80,7 +80,7 @@ function TabItemContent({
   isRTL,
   color,
   iconSize = 22,
-  slotHeight = ACTIVE_HEIGHT,
+  slotHeight,
   iconsOnly = false,
   hugContent = false,
 }: {
@@ -97,18 +97,21 @@ function TabItemContent({
   hugContent?: boolean;
 }) {
   const showLabel = !iconsOnly && expanded;
+  const activeH = useChromeSize(ACTIVE_HEIGHT);
+  const inactiveSlot = useChromeSize(INACTIVE_SLOT);
+  const height = slotHeight ?? activeH;
   return (
     <View
       style={{
-        height: slotHeight,
+        height,
         paddingHorizontal: showLabel ? 14 : 0,
         width: hugContent
           ? undefined
           : showLabel
             ? undefined
             : iconsOnly
-              ? slotHeight
-              : INACTIVE_SLOT,
+              ? height
+              : inactiveSlot,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -127,6 +130,8 @@ function TabItemContent({
             variant="caption"
             weight="semibold"
             numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
             style={{
               color,
               fontSize: 13,
@@ -152,6 +157,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   const { isRTL, t } = useLocale();
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
+  const activeH = useChromeSize(ACTIVE_HEIGHT);
   const router = useRouter();
   const pathname = usePathname();
   const [layouts, setLayouts] = useState<Record<string, { x: number; width: number }>>({});
@@ -185,13 +191,13 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       }
       if (!iconsOnly) return layout;
       // Equal pill centered in each flex slot.
-      const pill = ACTIVE_HEIGHT;
+      const pill = activeH;
       return {
         x: layout.x + Math.max(0, (layout.width - pill) / 2),
         width: pill,
       };
     });
-  }, [contentWidths, iconsOnly, layouts, staffAdaptive, tabs]);
+  }, [activeH, contentWidths, iconsOnly, layouts, staffAdaptive, tabs]);
   const activeLayout = tabInBar ? orderedLayouts[activeIndex] : undefined;
   const layoutsReady =
     tabs.length > 0 && orderedLayouts.every((l) => l != null && l.width > 0);
@@ -328,7 +334,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       alignItems: 'center' as const,
       // Visible so the glass capsule shadow isn’t clipped.
       overflow: 'visible' as const,
-      borderRadius: ACTIVE_HEIGHT / 2,
+      borderRadius: activeH / 2,
     };
 
     const renderTabSlot = (tab: (typeof tabs)[number], index: number) => {
@@ -362,7 +368,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       const slotStyle = equalSlots
         ? {
             flex: 1 as const,
-            minHeight: ACTIVE_HEIGHT,
+            minHeight: activeH,
             alignItems: 'center' as const,
             justifyContent: 'center' as const,
             overflow: (staffAdaptive ? 'visible' : 'hidden') as 'visible' | 'hidden',
@@ -397,7 +403,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       />
     );
 
-    const shellHeight = SHELL_PAD * 2 + ACTIVE_HEIGHT;
+    const shellHeight = SHELL_PAD * 2 + activeH;
     const shellRadius = shellHeight / 2;
 
     return (
@@ -486,7 +492,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
                         top: 0,
                         bottom: 0,
                         left: 0,
-                        borderRadius: ACTIVE_HEIGHT / 2,
+                        borderRadius: activeH / 2,
                         overflow: 'visible',
                         zIndex: 0,
                       },
@@ -501,7 +507,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
                           right: 0,
                           bottom: 0,
                           left: 0,
-                          borderRadius: ACTIVE_HEIGHT / 2,
+                          borderRadius: activeH / 2,
                           backgroundColor: bubbleFill,
                           borderWidth: StyleSheet.hairlineWidth * 2,
                           borderColor: bubbleBorder,

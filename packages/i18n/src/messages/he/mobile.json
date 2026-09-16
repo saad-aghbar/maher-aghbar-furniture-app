@@ -474,6 +474,7 @@
     "appearanceSection": "מראה",
     "themeHint": "בהיר או כהה למכשיר זה",
     "languageHint": "ערבית, אנגלית או עברית",
+    "fontScaleHint": "טקסט קטן או גדול יותר במכשיר זה",
     "securitySection": "אבטחה",
     "biometricLabel": "ביומטריה",
     "biometricHint": "דרוש Face ID / טביעת אצבע בפתיחה",
@@ -571,6 +572,14 @@
   "scaffoldDemoTitle": "הדגמת תרגום",
   "scaffoldDemoBody": "החלף שפה כדי לבדוק ערבית, אנגלית ועברית. כיוון, תאריכים, מספרים ומטבע מתעדכנים יחד.",
   "themeMode": "ערכת נושא",
+  "fontScale": {
+    "label": "גודל טקסט",
+    "hint": "הקטן או הגדל את הטקסט במכשיר זה",
+    "a11y": "גודל טקסט",
+    "smaller": "קטן יותר",
+    "larger": "גדול יותר",
+    "default": "ברירת מחדל"
+  },
   "hapticsButton": "הקש לרטט",
   "loadingSession": "משחזר את ההפעלה…",
   "welcomeBack": "ברוך שובך",
@@ -1093,6 +1102,7 @@
     "appearanceSection": "מראה",
     "themeHint": "בהיר או כהה למכשיר זה",
     "languageHint": "ערבית, אנגלית או עברית",
+    "fontScaleHint": "טקסט קטן או גדול יותר במכשיר זה",
     "signOutHint": "חשבון רצפת ייצור"
   },
   "deliveryLoad": {
@@ -1440,6 +1450,10 @@
     "orderItemsTitle": "פריטי ההזמנה",
     "viewOnly": "לצפייה בלבד",
     "orderItemsCount": "{count} פריטים",
+    "orderTasksCount": "{count} משימות",
+    "finishedWork": "עבודה שהושלמה",
+    "itemStatusDone": "הושלם",
+    "itemStatusLocked": "נעול",
     "laneGraphTitle": "תהליך העבודה",
     "laneGraphHint": "התחנה הזו, ואז הבאה. תחנות מחוברות חייבות להסתיים קודם.",
     "nextYouCanWork": "אפשר לעבוד ב-{stage}",

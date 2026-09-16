@@ -7,7 +7,7 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 
 type DealerHomeHeaderProps = {
   unreadNotifications: number;
@@ -21,6 +21,7 @@ export function DealerHomeHeader({
 }: DealerHomeHeaderProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const pip = useChromeSize(18);
   const router = useRouter();
   const dark = colorScheme === 'dark';
   const chromeBg = dark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.55)';
@@ -83,9 +84,9 @@ export function DealerHomeHeader({
                   position: 'absolute',
                   top: -2,
                   ...(isRTL ? { left: -2 } : { right: -2 }),
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
+                  minWidth: pip,
+                  height: pip,
+                  borderRadius: pip / 2,
                   backgroundColor: colors.error,
                   alignItems: 'center',
                   justifyContent: 'center',

@@ -12,7 +12,7 @@ import { BlurView } from 'expo-blur';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
-import { useTheme } from '@/theme';
+import { useTheme, useChromeSize } from '@/theme';
 import type { Locale } from '@maher/types';
 
 const PILL_HEIGHT = 36;
@@ -44,6 +44,7 @@ function doneLabel(
 function DonePill() {
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const pillH = useChromeSize(PILL_HEIGHT);
   const label = doneLabel(t, locale);
 
   return (
@@ -65,7 +66,10 @@ function DonePill() {
           void haptics.selection();
           Keyboard.dismiss();
         }}
-        style={({ pressed }) => [styles.pill, { opacity: pressed ? 0.72 : 1 }]}
+        style={({ pressed }) => [
+          styles.pill,
+          { minHeight: pillH, borderRadius: pillH / 2, opacity: pressed ? 0.72 : 1 },
+        ]}
       >
         {Platform.OS === 'ios' ? (
           <BlurView

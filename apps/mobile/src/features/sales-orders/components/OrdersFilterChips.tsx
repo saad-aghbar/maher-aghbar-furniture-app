@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { localeRow, useLocale } from '@/i18n';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 
 export type StatusChipKey =
   | 'all'
@@ -252,7 +252,8 @@ export function OrdersFilterChips({ value, onChange, chips = CHIPS }: OrdersFilt
     ),
   }));
 
-  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD_Y * 2 + pillH;
 
   return (
     <View
@@ -288,7 +289,7 @@ export function OrdersFilterChips({ value, onChange, chips = CHIPS }: OrdersFilt
               flexDirection: localeRow(isRTL),
               alignItems: 'center',
               gap: CHIP_GAP,
-              minHeight: PILL_HEIGHT,
+              minHeight: pillH,
               flexGrow: 1,
             }}
           >
@@ -298,9 +299,9 @@ export function OrdersFilterChips({ value, onChange, chips = CHIPS }: OrdersFilt
                 {
                   position: 'absolute',
                   top: 0,
-                  height: PILL_HEIGHT,
+                  height: pillH,
                   left: 0,
-                  borderRadius: PILL_HEIGHT / 2,
+                  borderRadius: pillH / 2,
                   borderWidth: 1.5,
                   shadowColor: dark ? '#000000' : '#1E1A1B',
                   shadowOffset: { width: 0, height: 1 },
@@ -329,7 +330,7 @@ export function OrdersFilterChips({ value, onChange, chips = CHIPS }: OrdersFilt
                     onChange(chip);
                   }}
                   style={{
-                    height: PILL_HEIGHT,
+                    height: pillH,
                     minWidth: CHIP_MIN_WIDTH,
                     paddingHorizontal: CHIP_PAD_X,
                     alignItems: 'center',

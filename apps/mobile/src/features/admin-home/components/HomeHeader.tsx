@@ -7,7 +7,7 @@ import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
 import { haptics, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 
 type HomeHeaderProps = {
   userName: string;
@@ -28,6 +28,7 @@ export function HomeHeader({
 }: HomeHeaderProps) {
   const { t, formatDate, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const pip = useChromeSize(16);
   const router = useRouter();
   const reduce = useReducedMotion();
   const period = greetingPeriod(new Date().getHours());
@@ -87,9 +88,9 @@ export function HomeHeader({
                     position: 'absolute',
                     top: 4,
                     ...(isRTL ? { left: 4 } : { right: 4 }),
-                    minWidth: 16,
-                    height: 16,
-                    borderRadius: 8,
+                    minWidth: pip,
+                    height: pip,
+                    borderRadius: pip / 2,
                     backgroundColor: colors.error,
                     alignItems: 'center',
                     justifyContent: 'center',

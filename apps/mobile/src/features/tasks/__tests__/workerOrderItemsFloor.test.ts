@@ -18,7 +18,12 @@ describe('Worker sales-order items floor', () => {
   const files = [
     'TasksListScreen.tsx',
     'WorkerSalesOrderItemsScreen.tsx',
+    'WorkerCompletedSalesOrderItemsScreen.tsx',
     'components/WorkerSalesOrderCard.tsx',
+    'components/WorkerSalesOrderItemRow.tsx',
+    'components/WorkerSalesOrderIdentityBoard.tsx',
+    'components/WorkerCompletedSalesOrderCard.tsx',
+    'components/WorkerCompletedTaskRow.tsx',
   ];
 
   it('keeps parchment boards and forbids SaaS cards', () => {
@@ -34,8 +39,32 @@ describe('Worker sales-order items floor', () => {
     const items = read('WorkerSalesOrderItemsScreen.tsx');
     expect(list).toContain('WorkerSalesOrderCard');
     expect(card).toContain('workerSalesOrderHref');
+    expect(card).toContain('WorkerSalesOrderItemRow');
+    expect(card).toContain('order.items');
     expect(href).toContain('/(app)/(employee)/orders/');
     expect(href).not.toContain('itemCount <= 1');
     expect(items).toContain('WorkerOrderCard');
+    expect(items).toContain('WorkerSalesOrderIdentityBoard');
+  });
+
+  it('nested item rows open the same sales-order items picker', () => {
+    const card = read('components/WorkerSalesOrderCard.tsx');
+    expect(card).toContain('onPress={goToPicker}');
+    expect(card).toContain('workerSalesOrderHref');
+    expect(card).not.toContain('/(app)/(employee)/lane/');
+  });
+
+  it('completed tab uses order boards with nested tasks and a photo identity picker', () => {
+    const list = read('TasksListScreen.tsx');
+    const card = read('components/WorkerCompletedSalesOrderCard.tsx');
+    const items = read('WorkerCompletedSalesOrderItemsScreen.tsx');
+    const select = read('selectTask.ts');
+    expect(list).toContain('WorkerCompletedSalesOrderCard');
+    expect(card).toContain('WorkerCompletedTaskRow');
+    expect(card).toContain('workerCompletedSalesOrderHref');
+    expect(select).toContain('/(app)/(employee)/completed-orders/');
+    expect(items).toContain('WorkerSalesOrderIdentityBoard');
+    expect(items).toContain('completed');
+    expect(items).toContain('TaskCard');
   });
 });

@@ -474,6 +474,7 @@
     "appearanceSection": "المظهر",
     "themeHint": "فاتح أو داكن لهذا الجهاز",
     "languageHint": "العربية أو الإنجليزية أو العبرية",
+    "fontScaleHint": "نص أصغر أو أكبر على هذا الجهاز",
     "securitySection": "الأمان",
     "biometricLabel": "فتح بالبصمة",
     "biometricHint": "اطلب Face ID أو البصمة عند فتح التطبيق",
@@ -571,6 +572,14 @@
   "scaffoldDemoTitle": "تجربة التعريب",
   "scaffoldDemoBody": "بدّل اللغة للتحقق من العربية والإنجليزية والعبرية. يتحدّث الاتجاه والتواريخ والأرقام والعملة معاً.",
   "themeMode": "المظهر",
+  "fontScale": {
+    "label": "حجم النص",
+    "hint": "صغّر أو كبّر النص على هذا الجهاز",
+    "a11y": "حجم النص",
+    "smaller": "أصغر",
+    "larger": "أكبر",
+    "default": "الافتراضي"
+  },
   "hapticsButton": "اضغط للاهتزاز",
   "loadingSession": "جارٍ استعادة الجلسة…",
   "welcomeBack": "مرحباً بعودتك",
@@ -1093,6 +1102,7 @@
     "appearanceSection": "المظهر",
     "themeHint": "فاتح أو داكن لهذا الجهاز",
     "languageHint": "العربية أو الإنجليزية أو العبرية",
+    "fontScaleHint": "نص أصغر أو أكبر على هذا الجهاز",
     "signOutHint": "حساب أرضية الإنتاج"
   },
   "deliveryLoad": {
@@ -1440,6 +1450,10 @@
     "orderItemsTitle": "أصناف الطلب",
     "viewOnly": "للعرض فقط",
     "orderItemsCount": "{count} أصناف",
+    "orderTasksCount": "{count} مهام",
+    "finishedWork": "عمل منتهٍ",
+    "itemStatusDone": "منتهٍ",
+    "itemStatusLocked": "مقفل",
     "laneGraphTitle": "مسار العمل",
     "laneGraphHint": "هذه المرحلة ثم التالية. المراحل المتصلة يجب أن تنتهي أولاً.",
     "nextYouCanWork": "يمكنك العمل على {stage}",

@@ -8,7 +8,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 import type { InvoicePurchasingKind } from '../invoiceFilters';
 
 const KINDS: InvoicePurchasingKind[] = ['FABRIC', 'RAW'];
@@ -75,7 +75,8 @@ export function InvoicePurchasingRail({ value, onChange }: Props) {
     borderColor: interpolateColor(hoverIndex.value, [0, 1], [...borders]),
   }));
 
-  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD_Y * 2 + pillH;
 
   return (
     <GestureDetector gesture={gesture}>
@@ -98,9 +99,9 @@ export function InvoicePurchasingRail({ value, onChange }: Props) {
             {
               position: 'absolute',
               top: SHELL_PAD_Y,
-              height: PILL_HEIGHT,
+              height: pillH,
               left: 0,
-              borderRadius: PILL_HEIGHT / 2,
+              borderRadius: pillH / 2,
               borderWidth: 1.5,
             },
             pillStyle,
@@ -123,7 +124,7 @@ export function InvoicePurchasingRail({ value, onChange }: Props) {
               }}
               style={{
                 flex: 1,
-                height: PILL_HEIGHT,
+                height: pillH,
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 2,

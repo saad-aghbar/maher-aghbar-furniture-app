@@ -38,6 +38,7 @@ const worker: RecipientUser = {
   id: 'worker-1',
   roles: ['PRODUCTION_WORKER'],
   permissions: ['production-task.read', 'production-task.update-own', 'notification.read'],
+  stageSkillCodes: ['CARPENTRY'],
 };
 
 describe('topic catalog privacy', () => {

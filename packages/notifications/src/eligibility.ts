@@ -1,6 +1,7 @@
 import { hasPermission } from '@maher/permissions';
 import type { Permission } from '@maher/permissions';
 import type { RecipientUser, TopicDefinition } from './types';
+import { workerSkillsMatchTopic } from './worker-topic-skills';
 
 export function isSystemAdministrator(user: RecipientUser): boolean {
   return user.roles.includes('SYSTEM_ADMINISTRATOR');
@@ -9,6 +10,16 @@ export function isSystemAdministrator(user: RecipientUser): boolean {
 export function isDealerIdentity(user: RecipientUser): boolean {
   if (user.customerId) return true;
   return user.roles.includes('CUSTOMER');
+}
+
+export function isWorkerIdentity(user: RecipientUser): boolean {
+  if (isSystemAdministrator(user) || isDealerIdentity(user)) return false;
+  return user.roles.includes('PRODUCTION_WORKER');
+}
+
+/** Pause on every device — system administrator only. */
+export function canPauseAllDevices(user: RecipientUser): boolean {
+  return isSystemAdministrator(user);
 }
 
 function requiredPermissions(topic: TopicDefinition): Permission[] {
@@ -31,6 +42,13 @@ export function topicMatchesPermission(user: RecipientUser, topic: TopicDefiniti
 export function isEligibleForTopic(user: RecipientUser, topic: TopicDefinition): boolean {
   if (isSystemAdministrator(user)) return true;
   if (isDealerIdentity(user)) return topic.audiences.includes('dealer');
+  if (isWorkerIdentity(user)) {
+    return (
+      topic.audiences.includes('worker') &&
+      topicMatchesPermission(user, topic) &&
+      workerSkillsMatchTopic(user.stageSkillCodes, topic.code)
+    );
+  }
   if (topic.audiences.includes('staff') && topicMatchesPermission(user, topic)) return true;
   if (topic.audiences.includes('worker') && topicMatchesPermission(user, topic)) return true;
   return false;

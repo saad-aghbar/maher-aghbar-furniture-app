@@ -14,7 +14,7 @@ import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { TabIndicator, haptics, useReducedMotion } from '@/motion';
 import { springs } from '@/motion/presets';
-import { useTheme } from '@/theme';
+import { useTheme, useChromeSize } from '@/theme';
 import { visibleTabsForUser, type TabName } from './tabConfig';
 
 type SurfaceTabBarProps = BottomTabBarProps & {
@@ -47,6 +47,9 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
   const { isRTL, t } = useLocale();
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
+  const adminBarH = useChromeSize(64);
+  const adminTabH = useChromeSize(52);
+  const touchMin = useChromeSize(theme.sizes.touch.min);
   const [layouts, setLayouts] = useState<Record<string, { x: number; width: number }>>({});
   const pillX = useSharedValue(0);
   const pillW = useSharedValue(0);
@@ -102,7 +105,7 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            minHeight: 64,
+            minHeight: adminBarH,
             borderRadius: 32,
             backgroundColor:
               colorScheme === 'dark' ? 'rgba(42,36,37,0.92)' : 'rgba(255,255,255,0.92)',
@@ -161,7 +164,7 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
                 }}
                 style={{
                   flex: focused ? 1.35 : 1,
-                  minHeight: 52,
+                  minHeight: adminTabH,
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -180,6 +183,8 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
                     variant="caption"
                     weight="semibold"
                     numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
                     style={{ color: colors.onBrand }}
                   >
                     {label}
@@ -206,7 +211,7 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          minHeight: theme.sizes.touch.min,
+          minHeight: touchMin,
           position: 'relative',
         }}
       >
@@ -246,7 +251,7 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
               }}
               style={{
                 flex: 1,
-                minHeight: theme.sizes.touch.min,
+                minHeight: touchMin,
                 alignItems: 'center',
                 justifyContent: 'center',
                 paddingHorizontal: theme.spacing.xs,
@@ -259,6 +264,8 @@ export function SurfaceTabBar({ state, descriptors, navigation, surface }: Surfa
                 color={focused ? 'brand' : 'secondary'}
                 align="center"
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
               >
                 {label}
               </AppText>

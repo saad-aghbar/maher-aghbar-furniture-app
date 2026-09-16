@@ -27,7 +27,7 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { resolveAppFontStyle, useTheme } from '@/theme';
+import { resolveAppFontStyle, useChromeSize, useTheme } from '@/theme';
 import { orderBoardShadow } from './orderFloorStyle';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
@@ -136,7 +136,8 @@ export function MaterialPickerSheet({
   const fills = dark ? FILL_DARK : FILL_LIGHT;
   const borders = dark ? BORDER_DARK : BORDER_LIGHT;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD_Y * 2 + pillH;
 
   const orderedLayouts = useMemo(
     () => CATEGORIES.map((key) => layouts[key]),
@@ -270,9 +271,9 @@ export function MaterialPickerSheet({
                 {
                   position: 'absolute',
                   top: SHELL_PAD_Y,
-                  height: PILL_HEIGHT,
+                  height: pillH,
                   left: 0,
-                  borderRadius: PILL_HEIGHT / 2,
+                  borderRadius: pillH / 2,
                   borderWidth: 1.5,
                   shadowColor: dark ? '#000000' : '#1E1A1B',
                   shadowOffset: { width: 0, height: 1 },
@@ -303,7 +304,7 @@ export function MaterialPickerSheet({
                   }}
                   style={{
                     flex: 1,
-                    height: PILL_HEIGHT,
+                    height: pillH,
                     paddingHorizontal: 4,
                     alignItems: 'center',
                     justifyContent: 'center',

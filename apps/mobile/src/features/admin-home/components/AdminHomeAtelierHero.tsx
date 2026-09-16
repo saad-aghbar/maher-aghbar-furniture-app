@@ -22,7 +22,7 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
 import { rowDirection } from '@/i18n/rtl';
 import { CountUp, haptics, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 import { useAtelierScrollY } from '../AtelierScrollContext';
 
 type Props = {
@@ -49,6 +49,7 @@ export function AdminHomeAtelierHero({
 }: Props) {
   const { t, formatDate, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const pip = useChromeSize(16);
   const router = useRouter();
   const reduce = useReducedMotion();
   const { width } = useWindowDimensions();
@@ -228,9 +229,9 @@ export function AdminHomeAtelierHero({
                       position: 'absolute',
                       top: 4,
                       ...(isRTL ? { left: 4 } : { right: 4 }),
-                      minWidth: 16,
-                      height: 16,
-                      borderRadius: 8,
+                      minWidth: pip,
+                      height: pip,
+                      borderRadius: pip / 2,
                       backgroundColor: colors.warning,
                       alignItems: 'center',
                       justifyContent: 'center',

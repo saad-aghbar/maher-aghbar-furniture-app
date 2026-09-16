@@ -12,7 +12,7 @@ import { OrderBasketProvider } from '@/features/requests/OrderBasketProvider';
 import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
 import { AccessoryCameraProvider } from '@/features/inventory/components/AccessoryCameraProvider';
 import { LocaleProvider } from '@/i18n';
-import { ThemeProvider } from '@/theme';
+import { FontScaleProvider, ThemeProvider } from '@/theme';
 import { FontProvider } from './FontProvider';
 import { QueryProvider } from './QueryProvider';
 
@@ -24,28 +24,30 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <LocaleProvider>
           <FontProvider>
             <ThemeProvider>
-              <NetworkProvider>
-                <ToastProvider>
-                  <QueryProvider>
-                    <AuthProvider>
-                      <NotificationIntentProvider>
-                      <OrderBasketProvider>
-                        <CodeScannerProvider>
-                          <AccessoryCameraProvider>
-                            <LocationMapVisibilityProvider>
-                              <SheetOverlayYieldProvider>
-                                {children}
-                                <KeyboardDismissAccessory />
-                              </SheetOverlayYieldProvider>
-                            </LocationMapVisibilityProvider>
-                          </AccessoryCameraProvider>
-                        </CodeScannerProvider>
-                      </OrderBasketProvider>
-                      </NotificationIntentProvider>
-                    </AuthProvider>
-                  </QueryProvider>
-                </ToastProvider>
-              </NetworkProvider>
+              <FontScaleProvider>
+                <NetworkProvider>
+                  <ToastProvider>
+                    <QueryProvider>
+                      <AuthProvider>
+                        <NotificationIntentProvider>
+                        <OrderBasketProvider>
+                          <CodeScannerProvider>
+                            <AccessoryCameraProvider>
+                              <LocationMapVisibilityProvider>
+                                <SheetOverlayYieldProvider>
+                                  {children}
+                                  <KeyboardDismissAccessory />
+                                </SheetOverlayYieldProvider>
+                              </LocationMapVisibilityProvider>
+                            </AccessoryCameraProvider>
+                          </CodeScannerProvider>
+                        </OrderBasketProvider>
+                        </NotificationIntentProvider>
+                      </AuthProvider>
+                    </QueryProvider>
+                  </ToastProvider>
+                </NetworkProvider>
+              </FontScaleProvider>
             </ThemeProvider>
           </FontProvider>
         </LocaleProvider>

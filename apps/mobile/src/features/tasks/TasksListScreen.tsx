@@ -30,6 +30,7 @@ import {
   TasksSegmentRail,
   type TasksSegment,
 } from './components/TasksSegmentRail';
+import { WorkerCompletedSalesOrderCard } from './components/WorkerCompletedSalesOrderCard';
 import { WorkerSalesOrderCard } from './components/WorkerSalesOrderCard';
 import { TasksListSkeleton } from './components/TasksListSkeleton';
 import type { TaskListItem } from './api';
@@ -40,7 +41,11 @@ import {
   useTasksInfiniteQuery,
   type TasksListQueryFilters,
 } from './query';
-import { selectTaskCard, sortUrgentFirst } from './selectTask';
+import {
+  selectCompletedSalesOrderCards,
+  selectTaskCard,
+  sortUrgentFirst,
+} from './selectTask';
 import {
   mySalesOrdersFromResponse,
   selectWorkerSalesOrderCard,
@@ -162,6 +167,19 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
         ? []
         : sortUrgentFirst(fixtureItems)
       : sortUrgentFirst(liveItems);
+
+  const completedSource =
+    forceState === 'success' || forceState === 'empty' || forceState === 'offline'
+      ? forceState === 'empty'
+        ? []
+        : (fixture ?? []).filter((item) => item.stageDefinition?.code !== 'DELIVERY')
+      : flattenTasksPages(query.data).filter(
+          (item) => item.stageDefinition?.code !== 'DELIVERY',
+        );
+
+  const completedOrderCards = isCompleted
+    ? selectCompletedSalesOrderCards(completedSource, locale)
+    : [];
 
   const orderCards = mySalesOrdersFromResponse(ordersQuery.data)
     .filter((row) => workerSalesOrderMatchesQuery(row, debouncedSearch))
@@ -434,6 +452,49 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
           extraData={`${segment}:${debouncedSearch}:${animateEnter}:${isFilterUpdating}`}
           keyboardShouldPersistTaps="handled"
         />
+      ) : isCompleted ? (
+        <FlatList
+          data={completedOrderCards}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{
+            paddingBottom: listBottomPad,
+            flexGrow: 1,
+          }}
+          style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={Boolean(pullRefreshing)}
+              onRefresh={() => void query.refetch()}
+              tintColor={colors.brand}
+            />
+          }
+          ListHeaderComponent={header}
+          renderItem={({ item, index }) => (
+            <WorkerCompletedSalesOrderCard
+              order={item}
+              q={debouncedCompletedQ}
+              index={index}
+              animateEnter={animateEnter}
+            />
+          )}
+          ListEmptyComponent={
+            isFilterUpdating ? (
+              <View style={{ paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.brand} />
+              </View>
+            ) : (
+              <EmptyState title={emptyTitle} description={emptyBody} />
+            )
+          }
+          onEndReached={() => {
+            if (query.hasNextPage && !query.isFetchingNextPage) {
+              void query.fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          extraData={`done:${animateEnter}:${isFilterUpdating}`}
+          keyboardShouldPersistTaps="handled"
+        />
       ) : (
         <FlatList
           data={items}
@@ -455,7 +516,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
             <TaskCard
               task={item}
               index={index}
-              completed={isCompleted}
+              completed={false}
               animateEnter={animateEnter}
             />
           )}
@@ -474,7 +535,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
             }
           }}
           onEndReachedThreshold={0.4}
-          extraData={`${isCompleted ? 'done' : segment}:${animateEnter}:${isFilterUpdating}`}
+          extraData={`${segment}:${animateEnter}:${isFilterUpdating}`}
           keyboardShouldPersistTaps="handled"
         />
       )}

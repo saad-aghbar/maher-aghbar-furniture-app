@@ -29,6 +29,8 @@ export type IndustrialFloorTaskCardModel = {
   isScheduledToday?: boolean;
   /** Predecessor wait / blocked remaining work (order cards). */
   blocked?: boolean;
+  /** Nested / picker item glance: done check or locked X on media. */
+  workState?: 'done' | 'locked' | 'open';
 };
 
 type Props = {
@@ -82,22 +84,26 @@ export function IndustrialFloorTaskCard({
   const href = hrefOverride ?? (`/(app)/(employee)/tasks/${task.id}` as Href);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
+  const workState = task.workState;
   const urgent = task.priority === 'urgent' || task.priority === 'high';
-  const blocked = Boolean(task.blocked) && !task.completed;
-  const late = Boolean(task.emphasize) && !task.completed;
+  const locked = workState === 'locked';
+  const blocked =
+    (Boolean(task.blocked) || locked) && !task.completed && workState !== 'done';
+  const late = Boolean(task.emphasize) && !task.completed && workState !== 'done';
+  const done = Boolean(task.completed) || workState === 'done';
   const mediaUri = resolveOrderMediaUri(task.imageUrl);
 
-  const accent = task.completed
+  const accent = done
     ? colors.success
-    : late
+    : late || locked
       ? colors.error
       : urgent || blocked
         ? colors.warning
         : colors.brand;
 
-  const borderColor = task.completed
+  const borderColor = done
     ? colors.success
-    : late
+    : late || locked
       ? colors.error
       : urgent || blocked
         ? colors.warning
@@ -107,27 +113,33 @@ export function IndustrialFloorTaskCard({
     ? formatDateTime(task.deadline)
     : t('mobile.workerHome.noDeadline');
 
-  const cta = task.completed
+  const cta = done
     ? t('mobile.workerHome.viewTask')
     : t('mobile.workerHome.openTask');
 
-  const statusStamp = task.completed
+  const statusStamp = done
     ? { soft: colors.successSoft, ink: colors.success, label: t('mobile.tasks.segments.done') }
     : late
       ? { soft: colors.errorSoft, ink: colors.error, label: t('mobile.production.late') }
-        : urgent
+      : locked
         ? {
-            soft: colors.warningSoft,
-            ink: colors.warning,
-            label: priorityStampLabel(task.priority, t),
+            soft: colors.errorSoft,
+            ink: colors.error,
+            label: t('mobile.tasks.lockLocked'),
           }
-        : blocked
+        : urgent
           ? {
               soft: colors.warningSoft,
               ink: colors.warning,
-              label: t('mobile.tasks.lockLocked'),
+              label: priorityStampLabel(task.priority, t),
             }
-        : null;
+          : blocked
+            ? {
+                soft: colors.warningSoft,
+                ink: colors.warning,
+                label: t('mobile.tasks.lockLocked'),
+              }
+            : null;
 
   const open = () => {
     void haptics.selection();
@@ -166,7 +178,7 @@ export function IndustrialFloorTaskCard({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: late || urgent || blocked || task.completed ? 0.95 : 0.55,
+            opacity: late || urgent || blocked || done ? 0.95 : 0.55,
           }}
         />
 
@@ -314,6 +326,32 @@ export function IndustrialFloorTaskCard({
               </AppText>
             </View>
           </View>
+
+          {workState === 'done' || workState === 'locked' ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: theme.spacing.sm,
+                ...(isRTL ? { left: theme.spacing.sm } : { right: theme.spacing.sm }),
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor:
+                  workState === 'done' ? colors.successSoft : colors.errorSoft,
+                borderWidth: 1.5,
+                borderColor: workState === 'done' ? colors.success : colors.error,
+              }}
+            >
+              <Ionicons
+                name={workState === 'done' ? 'checkmark' : 'close'}
+                size={16}
+                color={workState === 'done' ? colors.success : colors.error}
+              />
+            </View>
+          ) : null}
           </View>
         </View>
 
@@ -357,7 +395,7 @@ export function IndustrialFloorTaskCard({
             >
               <Ionicons
                 name={
-                  task.completed
+                  done
                     ? 'checkmark-circle-outline'
                     : late
                       ? 'alert-circle-outline'
@@ -426,7 +464,7 @@ export function IndustrialFloorTaskCard({
               isRTL={isRTL}
               danger={late}
             />
-            {task.isScheduledToday && !task.completed ? (
+            {task.isScheduledToday && !done ? (
               <>
                 <Divider compact />
                 <MetaRow

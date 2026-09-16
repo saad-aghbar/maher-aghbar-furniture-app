@@ -7,6 +7,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
+import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
@@ -16,7 +17,7 @@ import { normalizeNotificationList, unreadCount } from '@/features/notifications
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { useTheme } from '@/theme';
+import { useChromeSize, useTheme } from '@/theme';
 import { MoreFloorCommand } from './components/MoreFloorCommand';
 import { MoreIdentityBoard } from './components/MoreIdentityBoard';
 import { MorePreferencesBoard } from './components/MorePreferencesBoard';
@@ -26,6 +27,7 @@ export function MoreHubScreen() {
   const { user, logout } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const pip = useChromeSize(16);
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
@@ -73,7 +75,17 @@ export function MoreHubScreen() {
           </AppText>
         </View>
 
-        {canNotify ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            gap: theme.spacing.sm,
+            marginTop: 2,
+            zIndex: 40,
+          }}
+        >
+          <FontScaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
+          {canNotify ? (
           <AnimatedPressable
             variant="button"
             accessibilityRole="button"
@@ -91,7 +103,6 @@ export function MoreHubScreen() {
               backgroundColor: colors.surface,
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: 2,
             }}
           >
             <Ionicons name="notifications-outline" size={20} color={colors.brand} />
@@ -101,9 +112,9 @@ export function MoreHubScreen() {
                   position: 'absolute',
                   top: 4,
                   ...(isRTL ? { left: 4 } : { right: 4 }),
-                  minWidth: 16,
-                  height: 16,
-                  borderRadius: 8,
+                  minWidth: pip,
+                  height: pip,
+                  borderRadius: pip / 2,
                   backgroundColor: colors.warning,
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -121,6 +132,7 @@ export function MoreHubScreen() {
             ) : null}
           </AnimatedPressable>
         ) : null}
+        </View>
       </View>
 
       <View style={{ gap: theme.spacing.lg }}>

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Put, Query, BadRequestException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -13,6 +23,7 @@ import type { AuthUser } from '@maher/types';
 import {
   TOPIC_GROUP_LABELS,
   TOPICS,
+  canPauseAllDevices,
   eligibleTopicsForUser,
   getTopic,
   pickLocaleCopy,
@@ -101,8 +112,10 @@ export class NotificationsController {
       where: { userId: user.id },
     });
     const device = await this.devices.getForUser(user.id, token);
+    const pauseAll = canPauseAllDevices(user);
     return {
-      masterEnabled: settings?.masterEnabled ?? true,
+      canPauseAllDevices: pauseAll,
+      masterEnabled: pauseAll ? (settings?.masterEnabled ?? true) : true,
       device: device
         ? {
             token: device.token,
@@ -132,6 +145,12 @@ export class NotificationsController {
   async putPreferences(@Body() dto: PutPreferencesDto, @CurrentUser() user: AuthUser) {
     const eligible = new Set(eligibleTopicsForUser(user, TOPICS).map((t) => t.code));
     if (dto.masterEnabled != null) {
+      if (!canPauseAllDevices(user)) {
+        throw new ForbiddenException({
+          code: 'MASTER_PAUSE_NOT_ALLOWED',
+          message: 'Pause on every device is only available to system administrators.',
+        });
+      }
       await this.prisma.userPushSettings.upsert({
         where: { userId: user.id },
         create: { userId: user.id, masterEnabled: dto.masterEnabled },
@@ -165,8 +184,15 @@ export class NotificationsController {
   @Get()
   @RequirePermissions('notification.read')
   list(@CurrentUser() user: AuthUser) {
+    const eligible = eligibleTopicsForUser(user, TOPICS).map((topic) => topic.code);
     return this.prisma.notification.findMany({
-      where: { userId: user.id },
+      where: {
+        userId: user.id,
+        OR:
+          eligible.length > 0
+            ? [{ topic: null }, { topic: { in: eligible } }]
+            : [{ topic: null }],
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });

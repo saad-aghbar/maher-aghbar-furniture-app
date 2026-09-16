@@ -122,6 +122,10 @@ export class RecipientResolverService {
             },
           },
         },
+        workerSkills: {
+          where: { isActive: true },
+          select: { stageDefinition: { select: { code: true } } },
+        },
       },
       take: 500,
     });
@@ -151,10 +155,18 @@ function flattenUser(row: {
       permissions: Array<{ permission: { code: string } }>;
     };
   }>;
+  workerSkills?: Array<{ stageDefinition?: { code: string } | null }>;
 }): LoadedUser {
   const roles = row.roles.map((r) => r.role.code);
   const permissions = [
     ...new Set(row.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code))),
+  ];
+  const stageSkillCodes = [
+    ...new Set(
+      (row.workerSkills ?? [])
+        .map((skill) => skill.stageDefinition?.code)
+        .filter((code): code is string => Boolean(code)),
+    ),
   ];
   return {
     id: row.id,
@@ -162,5 +174,6 @@ function flattenUser(row: {
     preferredLanguage: row.preferredLanguage,
     roles,
     permissions,
+    stageSkillCodes,
   };
 }

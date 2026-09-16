@@ -74,6 +74,9 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
   const topics = draft?.topics ?? query.data?.topics ?? [];
   const pushEnabled = draft?.pushEnabled ?? query.data?.device?.pushEnabled ?? true;
   const masterEnabled = draft?.masterEnabled ?? query.data?.masterEnabled ?? true;
+  const canPauseAll =
+    query.data?.canPauseAllDevices === true ||
+    (query.data?.canPauseAllDevices == null && Boolean(user?.roles.includes('SYSTEM_ADMINISTRATOR')));
 
   const grouped = useMemo(
     () => groupLocalizedNotificationTopics(topics, query.data?.groups ?? [], locale),
@@ -84,7 +87,7 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
     mutationFn: async () => {
       const token = await getStoredPushToken();
       return putNotificationPreferences({
-        masterEnabled,
+        ...(canPauseAll ? { masterEnabled } : {}),
         topics: Object.fromEntries(topics.map((row) => [row.code, row.enabled])),
         device: token ? { token, pushEnabled } : undefined,
       });
@@ -199,21 +202,23 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
           />
         </ListItemEnter>
 
-        <ListItemEnter index={1} enabled={!reduce}>
-          <ToggleBoard
-            label={t('mobile.notifications.prefs.pauseAll')}
-            hint={t('mobile.notifications.prefs.pauseAllHint')}
-            checked={!masterEnabled}
-            isRTL={isRTL}
-            titleWeight={titleWeight}
-            onToggle={() => {
-              void haptics.selection();
-              setDraft((prev) =>
-                prev ? { ...prev, masterEnabled: !prev.masterEnabled } : prev,
-              );
-            }}
-          />
-        </ListItemEnter>
+        {canPauseAll ? (
+          <ListItemEnter index={1} enabled={!reduce}>
+            <ToggleBoard
+              label={t('mobile.notifications.prefs.pauseAll')}
+              hint={t('mobile.notifications.prefs.pauseAllHint')}
+              checked={!masterEnabled}
+              isRTL={isRTL}
+              titleWeight={titleWeight}
+              onToggle={() => {
+                void haptics.selection();
+                setDraft((prev) =>
+                  prev ? { ...prev, masterEnabled: !prev.masterEnabled } : prev,
+                );
+              }}
+            />
+          </ListItemEnter>
+        ) : null}
 
         {osDenied ? (
           <AnimatedPressable
@@ -298,7 +303,7 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
         )}
       </ScrollView>
 
-      <FloatingActionDock>
+      <FloatingActionDock floating tabClearance={SURFACE_TAB_BAR_CLEARANCE}>
         <PrimaryButton
           label={t('mobile.notifications.prefs.confirm')}
           onPress={() => save.mutate()}

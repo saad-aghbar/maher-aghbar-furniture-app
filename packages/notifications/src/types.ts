@@ -67,6 +67,8 @@ export type RecipientUser = {
   roles: string[];
   permissions: string[];
   customerId?: string | null;
+  /** Active floor stage skill codes (CARPENTRY, PACKAGING, DELIVERY, …). */
+  stageSkillCodes?: string[];
 };
 
 export type NotificationHrefIds = {

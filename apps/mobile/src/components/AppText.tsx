@@ -3,6 +3,8 @@ import { useLocale } from '@/i18n/useLocale';
 import {
   applyAppTypeface,
   resolveArabicTextMetrics,
+  scaleTextStyle,
+  useFontScale,
   useTheme,
   type TypographyVariantName,
 } from '@/theme';
@@ -37,6 +39,7 @@ export function AppText({
   ...rest
 }: AppTextProps) {
   const { colors, theme } = useTheme();
+  const { fontScale } = useFontScale();
   const { isRTL, locale } = useLocale();
   const v = theme.typography.variants[variant];
 
@@ -74,12 +77,14 @@ export function AppText({
     locale === 'ar' ? { letterSpacing: 0 } : null,
   ];
   const typed = applyAppTypeface(locale, composed, { weight, variant, face });
-  const metrics = face === 'latin' ? undefined : resolveArabicTextMetrics(locale, typed);
+  const scaled = scaleTextStyle(typed, fontScale);
+  const metrics = face === 'latin' ? undefined : resolveArabicTextMetrics(locale, scaled);
 
   return (
     <Text
       {...rest}
-      style={[typed, metrics]}
+      allowFontScaling={false}
+      style={[scaled, metrics]}
     />
   );
 }

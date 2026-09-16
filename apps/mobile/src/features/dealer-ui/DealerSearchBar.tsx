@@ -1,7 +1,7 @@
 import { Pressable, View, type TextInputProps } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/i18n';
-import { resolveAppFontStyle, useTheme } from '@/theme';
+import { resolveAppFontStyle, useChromeSize, useTheme } from '@/theme';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
@@ -32,7 +32,8 @@ export function DealerSearchBar({
   const { isRTL, locale, t } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const dark = colorScheme === 'dark';
-  const shellH = SHELL_PAD * 2 + PILL_HEIGHT;
+  const pillH = useChromeSize(PILL_HEIGHT);
+  const shellH = SHELL_PAD * 2 + pillH;
 
   return (
     <View
@@ -57,8 +58,8 @@ export function DealerSearchBar({
           flex: 1,
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
-          height: PILL_HEIGHT,
-          borderRadius: PILL_HEIGHT / 2,
+          height: pillH,
+          borderRadius: pillH / 2,
           backgroundColor: colors.surface,
           borderWidth: 1,
           borderColor: colors.border,
@@ -85,7 +86,7 @@ export function DealerSearchBar({
           style={{
             flex: 1,
             minWidth: 0,
-            height: PILL_HEIGHT,
+            height: pillH,
             paddingVertical: 0,
             color: colors.textPrimary,
             fontSize: 15,
