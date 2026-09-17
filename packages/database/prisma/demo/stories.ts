@@ -57,7 +57,7 @@ export type DemoStory = {
   notes?: string;
   /** Extra basket lines on the same sales order. */
   extraLines?: DemoStoryLine[];
-  /** Days after 2026-08-22. */
+  /** Days after demo window start. */
   orderDay: number;
   deliveryLeadDays: number;
   /**
@@ -67,11 +67,15 @@ export type DemoStory = {
   physicalOutputQty?: number;
 };
 
-/** Compress the old two-month story days into the 21-day window. */
+/** Compress older story day indices into the 21-day window. */
 function windowDay(old: number): number {
   return Math.min(20, Math.max(0, Math.round((old * 20) / 62)));
 }
 
+/**
+ * Golden SO lines (4 total with primary STD qty 2):
+ * STD · KARINA · MODIFIED · CUSTOM (null productId).
+ */
 const GOLDEN_EXTRA_LINES: DemoStoryLine[] = [
   {
     sku: 'SOF-3S-STD',
@@ -118,7 +122,8 @@ export function storyLinesOf(story: DemoStory): DemoStoryLine[] {
 }
 
 /**
- * Curated flagship cast only — no generated “Amman Residence” flood.
+ * Minimal flagship cast — nile + oasis only, slim catalog SKUs only
+ * (SOF-3S-STD, SOF-LUNA, ARM-01, BED-Q + CUSTOM).
  * Cost twin (`SO-COST-GOLDEN`) is seeded in cost-performance-uat.ts, not here.
  */
 export function buildDemoStories(): DemoStory[] {
@@ -137,16 +142,16 @@ export function buildDemoStories(): DemoStory[] {
       orderDay: windowDay(4),
       deliveryLeadDays: 14,
       extraLines: [
-        { sku: 'ARM-01', variantCode: 'SAND', qty: 2, fabric: 'Velvet Sand', wood: 'Beech' },
-        { sku: 'TABLE-CF', variantCode: 'WAL', qty: 1, wood: 'Oak' },
+        { sku: 'ARM-01', variantCode: 'STD', qty: 2, fabric: 'Velvet Sand', wood: 'Beech' },
+        { sku: 'BED-Q', variantCode: 'STD', qty: 1, fabric: 'Linen Natural', wood: 'Pine' },
       ],
       notes: 'Match sand velvet lot from the showroom swatch.',
     },
     {
       id: 'oasis-sweifieh-sectional',
       dealer: 'oasis',
-      sku: 'SOF-L-SEC',
-      variantCode: 'CREAM',
+      sku: 'SOF-LUNA',
+      variantCode: 'CORNER',
       qty: 1,
       kind: 'in_production',
       completeThrough: 'CARPENTRY',
@@ -157,17 +162,17 @@ export function buildDemoStories(): DemoStory[] {
       deliveryLeadDays: 18,
       extraLines: [
         {
-          sku: 'CUS-OTT',
-          variantCode: 'SAND',
+          sku: 'ARM-01',
+          variantCode: 'STD',
           qty: 2,
           fabric: 'Velvet Sand',
           completeThrough: 'MATERIAL_PREP',
         },
         {
-          sku: 'TABLE-SIDE',
+          sku: 'BED-Q',
           variantCode: 'STD',
           qty: 1,
-          wood: 'Oak',
+          wood: 'Pine',
           completeThrough: 'MATERIAL_PREP',
         },
       ],
@@ -183,7 +188,7 @@ export function buildDemoStories(): DemoStory[] {
       wood: 'Beech',
       orderDay: windowDay(62),
       deliveryLeadDays: 30,
-      extraLines: [{ sku: 'TABLE-SIDE', variantCode: 'STD', qty: 1, wood: 'Oak' }],
+      extraLines: [{ sku: 'BED-Q', variantCode: 'STD', qty: 1, wood: 'Pine' }],
       notes:
         'Just entered production — empty materials, WIP, and floor progress. Use for production hub / setup checks.',
     },
@@ -193,106 +198,48 @@ export function buildDemoStories(): DemoStory[] {
       sku: 'SOF-3S-STD',
       variantCode: 'STD',
       qty: 2,
-      kind: 'not_started',
+      kind: 'in_production',
+      /** Primary STD qty2: carpentry finished → carpenter remaining can be zero on this PO. */
+      completeThrough: 'CARPENTRY',
       projectName: 'Golden factory path',
       fabric: 'Velvet Sand',
       wood: 'Beech',
       orderDay: windowDay(18),
       deliveryLeadDays: 21,
-      extraLines: GOLDEN_EXTRA_LINES,
-      notes: 'Golden factory path — four manufacturing kinds on one sales order (preparing).',
-    },
-    {
-      id: 'nile-golden-floor-lounge',
-      dealer: 'nile',
-      sku: 'SOF-3S-STD',
-      variantCode: 'STD',
-      qty: 2,
-      kind: 'in_production',
-      /** Primary line A: carpentry finished → carpenter remaining can be zero on this PO. */
-      completeThrough: 'CARPENTRY',
-      projectName: 'Golden floor lounge',
-      fabric: 'Velvet Sand',
-      wood: 'Beech',
-      orderDay: windowDay(40),
-      deliveryLeadDays: 21,
       extraLines: [
         {
           ...GOLDEN_EXTRA_LINES[0]!,
-          /** Line B: only materials done → later stages locked for carpentry workers. */
+          /** KARINA: only materials done → later stages locked. */
           completeThrough: 'MATERIAL_PREP',
         },
         {
           ...GOLDEN_EXTRA_LINES[1]!,
-          /** Line C: materials done → carpentry READY/actionable. */
+          /** MODIFIED: materials done → carpentry READY/actionable. */
           completeThrough: 'MATERIAL_PREP',
         },
         {
           ...GOLDEN_EXTRA_LINES[2]!,
-          /** Line D: nothing done — do not inherit story CARPENTRY. */
+          /** CUSTOM: nothing done — do not inherit story CARPENTRY. */
           completeThrough: null,
         },
       ],
       notes:
-        'Released twin of Golden path — multi-item My Tasks board (done / locked / open sub-orders).',
+        'SO-GOLDEN-001 — four manufacturing kinds on one sales order (done / locked / open sub-orders for My Tasks).',
     },
     {
-      id: 'balqis-abdali-banquettes',
-      dealer: 'balqis',
-      sku: 'CUS-BANQ',
-      variantCode: 'NAVY',
-      qty: 6,
-      kind: 'ready_delivery',
-      projectName: 'Abdali hotel banquettes',
-      fabric: 'Velvet Navy',
-      wood: 'Beech',
-      orderDay: windowDay(18),
-      deliveryLeadDays: 16,
-      extraLines: [
-        { sku: 'TABLE-CONS', variantCode: 'STD', qty: 2, wood: 'Oak' },
-      ],
-    },
-    {
-      id: 'cedar-italian-velvet',
-      dealer: 'cedar',
-      sku: 'SOF-RECL',
-      variantCode: 'ITAL',
+      id: 'oasis-italian-velvet',
+      dealer: 'oasis',
+      sku: 'SOF-3S-STD',
+      variantCode: 'XL',
       qty: 1,
       kind: 'at_risk_material',
-      projectName: 'Cedar Italian velvet recliner',
+      projectName: 'Oasis Italian velvet sofa',
       fabric: 'Italian velvet',
       wood: 'Beech',
       orderDay: windowDay(50),
       deliveryLeadDays: 30,
-      extraLines: [{ sku: 'CUS-OTT', variantCode: 'SAND', qty: 1, fabric: 'Italian velvet' }],
+      extraLines: [{ sku: 'ARM-01', variantCode: 'STD', qty: 1, fabric: 'Italian velvet' }],
       notes: 'Waiting inbound Italian velvet PO (SUP-FABRIC).',
-    },
-    {
-      id: 'diwan-wingback-foam',
-      dealer: 'diwan',
-      sku: 'ARM-WING',
-      qty: 2,
-      kind: 'at_risk_wip',
-      completeThrough: 'MATERIAL_PREP',
-      projectName: 'Diwan wingback frame gate',
-      fabric: 'Velvet Navy',
-      wood: 'Beech',
-      orderDay: windowDay(46),
-      deliveryLeadDays: 28,
-      notes: 'Waiting on carpentry frames (SEMI lots) before foam/upholstery.',
-    },
-    {
-      id: 'jabal-dining-late',
-      dealer: 'jabal',
-      sku: 'TABLE-DIN-8',
-      qty: 1,
-      kind: 'at_risk_committed',
-      completeThrough: 'PAINTING',
-      projectName: 'Jabal contract dining',
-      wood: 'Oak',
-      orderDay: windowDay(20),
-      deliveryLeadDays: 22,
-      extraLines: [{ sku: 'CHAIR-DIN', variantCode: 'STD', qty: 8, fabric: 'Linen Olive' }],
     },
     {
       id: 'oasis-armchair-rework',
@@ -307,44 +254,45 @@ export function buildDemoStories(): DemoStory[] {
       deliveryLeadDays: 24,
     },
     {
-      id: 'zaatar-ottoman-return',
-      dealer: 'zaatar',
-      sku: 'CUS-OTT',
+      id: 'oasis-ottoman-return',
+      dealer: 'oasis',
+      sku: 'ARM-01',
       qty: 2,
       kind: 'delivered',
       payment: 'paid',
       returnInfo: { reason: ReturnReason.DELIVERY_DAMAGE, qty: 1, approval: 'APPROVED' },
-      projectName: 'Zaatar ottoman scuff',
+      projectName: 'Oasis armchair scuff',
       fabric: 'Velvet Sand',
       orderDay: windowDay(12),
       deliveryLeadDays: 21,
     },
     {
-      id: 'qasr-dining-proposed',
-      dealer: 'qasr',
-      sku: 'TABLE-DIN-6',
+      id: 'nile-partial-invoice',
+      dealer: 'nile',
+      sku: 'ARM-01',
       qty: 2,
-      kind: 'proposed',
-      projectName: 'Qasr suite dining',
-      wood: 'Oak',
-      orderDay: windowDay(58),
-      deliveryLeadDays: 28,
-      extraLines: [
-        { sku: 'CHAIR-DIN', variantCode: 'STD', qty: 6, fabric: 'Linen Olive' },
-        { sku: 'TABLE-SIDE', variantCode: 'STD', qty: 2, wood: 'Oak' },
-      ],
+      kind: 'delivered',
+      payment: 'partial',
+      projectName: 'Nile partial payment set',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: windowDay(8),
+      deliveryLeadDays: 16,
+      notes: 'Delivered with partial payment — finance partial path.',
     },
     {
-      id: 'noor-chair-draft',
-      dealer: 'noor',
-      sku: 'ARM-02',
-      qty: 4,
-      kind: 'draft',
-      projectName: 'Noor club chair hold',
-      fabric: 'Leatherette Black',
-      orderDay: windowDay(60),
-      deliveryLeadDays: 25,
-      extraLines: [{ sku: 'TABLE-CF', variantCode: 'WAL', qty: 1, wood: 'Oak' }],
+      id: 'oasis-overdue-invoice',
+      dealer: 'oasis',
+      sku: 'BED-Q',
+      qty: 1,
+      kind: 'delivered',
+      payment: 'outstanding',
+      projectName: 'Oasis overdue bed',
+      fabric: 'Linen Natural',
+      wood: 'Pine',
+      orderDay: windowDay(6),
+      deliveryLeadDays: 14,
+      notes: 'Delivered unpaid / overdue — finance outstanding path.',
     },
   ];
 }

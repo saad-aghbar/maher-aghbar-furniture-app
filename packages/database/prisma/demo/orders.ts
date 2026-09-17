@@ -42,7 +42,7 @@ import { WorkingCalendar } from '../../../../apps/api/src/modules/scheduling/dom
 import { buildStageTaskInstructions } from '../stage-task-instructions';
 import { STANDARD_FURNITURE_WORKFLOW_CODE } from '../seed/workflow';
 import { VAT, lineTotals, money } from '../seed/util';
-import { addDays, ammanLocal, demoAsOf, demoWindowStart } from './clock';
+import { addDays, daysAgo, demoAsOf, demoWindowStart } from './clock';
 import { buildOrderLineSpecSnapshot } from '../../../../packages/types/src/manufacturing-complexity';
 import { MATERIAL_PHOTO_BY_SKU } from './material-photo-pool';
 import { buildDemoStories, storyLinesOf, type DemoStory, type DemoStoryLine, type StoryKind } from './stories';
@@ -407,10 +407,15 @@ export async function seedDemoOrders(
   }> = [];
 
   for (const story of stories) {
-    const dealer = dealerByUser.get(story.dealer);
+    const dealer =
+      dealerByUser.get(story.dealer) ??
+      dealerByUser.get('nile') ??
+      dealerByUser.get('oasis');
     if (!dealer) {
-      throw new Error(`Story ${story.id} missing dealer ${story.dealer}`);
+      throw new Error(`Story ${story.id} missing dealer ${story.dealer} (nile/oasis fallbacks empty)`);
     }
+    const isGolden =
+      story.id === 'nile-golden-factory-path' || story.projectName === 'Golden factory path';
     const resolvedLines = storyLinesOf(story).map((storyLine, sortOrder) => {
       if (storyLine.custom) {
         return { ...storyLine, product: null, variant: null, sortOrder };
@@ -462,7 +467,7 @@ export async function seedDemoOrders(
     const soStatus = soStatusFor(story.kind);
     const needsQuote = true;
 
-    const rfqNumber = await nextDoc(prisma, 'rfq', opts.counters);
+    const rfqNumber = isGolden ? 'RFQ-GOLDEN-001' : await nextDoc(prisma, 'rfq', opts.counters);
     const rfq = await prisma.requestForQuotation.create({
       data: {
         number: rfqNumber,
@@ -500,7 +505,7 @@ export async function seedDemoOrders(
       },
     });
 
-    const qNumber = await nextDoc(prisma, 'quotation', opts.counters);
+    const qNumber = isGolden ? 'Q-GOLDEN-001' : await nextDoc(prisma, 'quotation', opts.counters);
     const isDraftQuote = story.kind === 'draft';
     const dealerUserId = dealerUserByCustomerId.get(dealer.id);
     if (!isDraftQuote && !dealerUserId) {
@@ -524,7 +529,7 @@ export async function seedDemoOrders(
         subtotal: money(totals.subtotal),
         taxTotal: money(totals.taxAmount),
         total: money(totals.lineTotal),
-        paymentTerms: `${dealer.username === 'qasr' ? 60 : 30} days`,
+        paymentTerms: '30 days',
         createdAt: sentAt,
         updatedAt: createdAt,
         lines: {
@@ -566,9 +571,7 @@ export async function seedDemoOrders(
     });
     void needsQuote;
 
-    if (story.projectName === 'Noor club chair hold') continue;
-
-    const soNumber = await nextDoc(prisma, 'sales_order', opts.counters);
+    const soNumber = isGolden ? 'SO-GOLDEN-001' : await nextDoc(prisma, 'sales_order', opts.counters);
     const address = `${dealer.street}, ${dealer.area}, ${dealer.city}`;
     const so = await prisma.salesOrder.create({
       data: {
@@ -1096,7 +1099,7 @@ export async function seedDemoOrders(
     const committedLate = story.kind === 'at_risk_committed';
     const deliveredLike = isHistoricalDemoKind(story.kind);
     const committedDate = committedLate
-      ? ammanLocal(2026, 9, 5, 16, 0)
+      ? daysAgo(12, 16, 0)
       : deliveredLike
         ? atOrBefore(result.earliestCompletion ?? requiredDelivery, asOf)
         : null;
@@ -1336,7 +1339,8 @@ export async function seedDemoOrders(
             customerId: dealer.id,
             salesOrderId: so.id,
             invoiceDate: deliveredAt,
-            dueDate: addDays(deliveredAt, 30),
+            dueDate:
+              paymentKind === 'outstanding' ? addDays(asOf, -7) : addDays(deliveredAt, 30),
             currency: 'ILS',
             status: invStatus,
             subtotal: money(totals.subtotal),
@@ -1509,15 +1513,15 @@ export async function seedDemoOrders(
 
   const extraRfq = await nextDoc(prisma, 'rfq', opts.counters);
   const nile = dealerByUser.get('nile')!;
-  const sofa = productBySku.get('SOF-3S-LUX')!;
-  const sofaVariant = resolveVariant('SOF-3S-LUX', 'NAVY');
+  const sofa = productBySku.get('SOF-LUNA')!;
+  const sofaVariant = resolveVariant('SOF-LUNA', 'CORNER');
   await prisma.requestForQuotation.create({
     data: {
       number: extraRfq,
       customerId: nile.id,
       source: RequestSource.WHATSAPP,
       status: RequestStatus.READY_FOR_QUOTATION,
-      projectName: 'Nile luxury sofa enquiry',
+      projectName: 'Nile Luna corner enquiry',
       requiredDeliveryDate: addDays(asOf, 30),
       requestDate: addDays(asOf, -2),
       submittedAt: addDays(asOf, -1),
@@ -1532,8 +1536,8 @@ export async function seedDemoOrders(
             variantLabel: sofaVariant.nameAr || sofaVariant.nameEn,
             productName: sofaVariant.nameEn,
             quantity: money(1),
-            fabricType: 'Velvet Navy',
-            woodType: 'Walnut',
+            fabricType: 'Boucle Cream',
+            woodType: 'Beech',
             notes: 'Need quote for Abdoun penthouse.',
           },
         ],
@@ -1550,20 +1554,21 @@ export async function seedDemoOrders(
     dealerUserByCustomerId,
   });
 
-  await pinGoldenFloorLoungeWorkers(prisma);
+  await pinGoldenFactoryPathWorkers(prisma);
 
   console.log(`  sales: ${salesOrders} SO · ${productionOrders} PO`);
   return { salesOrders, productionOrders };
 }
 
 /**
- * Prefer primary demo logins (carpenter / cutter) on Golden floor lounge so
+ * Prefer primary demo login (carpenter) on Golden factory path so
  * My Tasks shows a multi-item board with done / locked / open siblings.
  */
-async function pinGoldenFloorLoungeWorkers(prisma: PrismaClient) {
+async function pinGoldenFactoryPathWorkers(prisma: PrismaClient) {
   const preferredByStage: Record<string, string> = {
     CARPENTRY: 'carpenter',
-    MATERIAL_PREP: 'cutter',
+    MATERIAL_PREP: 'carpenter',
+    ASSEMBLY: 'carpenter',
   };
   const usernames = [...new Set(Object.values(preferredByStage))];
   const users = await prisma.user.findMany({
@@ -1571,10 +1576,10 @@ async function pinGoldenFloorLoungeWorkers(prisma: PrismaClient) {
     select: { id: true, username: true },
   });
   const idByUsername = new Map(users.map((u) => [u.username, u.id]));
-  const floorPos = await prisma.productionOrder.findMany({
+  const goldenPos = await prisma.productionOrder.findMany({
     where: {
       originType: 'SALES_ORDER',
-      salesOrder: { projectName: 'Golden floor lounge', archivedAt: null },
+      salesOrder: { projectName: 'Golden factory path', archivedAt: null },
     },
     select: {
       id: true,
@@ -1586,7 +1591,7 @@ async function pinGoldenFloorLoungeWorkers(prisma: PrismaClient) {
       },
     },
   });
-  for (const po of floorPos) {
+  for (const po of goldenPos) {
     for (const task of po.tasks) {
       const code = task.stageDefinition?.code;
       if (!code) continue;

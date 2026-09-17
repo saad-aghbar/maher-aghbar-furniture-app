@@ -3,20 +3,15 @@ import path from 'path';
 import type { PrismaClient } from '@prisma/client';
 import { demoAsOf } from './clock';
 
+/** Compact flagship cast — matches stories.ts / EXPECTED_FLAGSHIP in validate.ts. */
 export const FLAGSHIP_PROJECT_NAMES = [
   'Abdoun lounge set',
   'Sweifieh sectional',
   'Nile blank production start',
-  'Abdali hotel banquettes',
-  'Cedar Italian velvet recliner',
-  'Diwan wingback frame gate',
-  'Jabal contract dining',
-  'Oasis club armchair QC',
-  'Zaatar ottoman scuff',
-  'Qasr suite dining',
-  'Noor club chair hold',
   'Golden factory path',
-  'Golden floor lounge',
+  'Oasis Italian velvet sofa',
+  'Oasis club armchair QC',
+  'Oasis armchair scuff',
 ];
 
 function ymd(value: Date | string | null | undefined): string | null {
@@ -79,9 +74,9 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     '',
     `**As of:** ${asOf} (Asia/Amman) · password \`123\``,
     '',
-    'Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (factory), `nile` / `oasis` / `balqis` (dealers), `carpenter` / `inspector` (floor).',
+    'Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (factory), `nile` / `oasis` (dealers), `carpenter` / `inspector` (floor).',
     '',
-    '**Physical inventory storyline (factory truth):** Inventory → Semi-finished shows Sweifieh / Noor (4 of 6) frames as lots tied to POs. Finished shows Balqis banquettes waiting for truck (days waiting / RESERVED). Nile delivered has FIN receipt + departure issue (0 left in factory). Oasis QC hold has no deliverable FIN. Diwan has **0** SEMI while WIP_NOT_READY. Worker finish on materials opens Confirm materials (scan is identify-only). Item report PDF includes usage / return / scrap when seeded (Sweifieh carpentry).',
+    '**Compact demo world:** nile + oasis only · Model 204 / Luna / Classic Chair / Queen bed · `SO-GOLDEN-001` · `SO-FB1042` · `RT-DEMO-001` · `PORD-DEMO-LATE` · low-stock `MAT-BEECH`.',
     '',
     '## Scenarios',
     '',
@@ -90,31 +85,19 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
   const byName = new Map(rows.map((r) => [r.projectName ?? '', r]));
   const scenarioText: Record<string, string> = {
     'Abdoun lounge set':
-      '**Delivered commercial history.** Admin: sales order → production snapshot → QC pass → delivery → paid invoice. Dealer `nile`: Schedule tab shows Delivered on the actual day. Worker: completed tasks. **Inventory:** historical FIN receipt then `DELIVERY_ISSUE` when the truck left — no finished lot left in factory.',
+      '**Delivered commercial history.** Admin: sales order → production snapshot → QC pass → delivery → paid invoice. Dealer `nile`: Schedule tab shows Delivered on the actual day.',
     'Sweifieh sectional':
-      '**Live production + multi-item basket.** Oasis L-sectional + ottomans + side table mid-flow. Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates.',
+      '**Live production + multi-item basket.** Oasis Luna corner + chairs + bed mid-flow. Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates.',
     'Nile blank production start':
       '**Just entered production — empty floor.** Two-line basket; first stages READY, **0%** progress. Use Admin Orders → In production → this SO for production setup checks.',
-    'Abdali hotel banquettes':
-      '**Ready for delivery + FIN waiting for truck.** Balqis hospitality banquettes + consoles. Admin deliveries planned; dealer Schedule calendar uses the planned logistics day.',
-    'Cedar Italian velvet recliner':
-      '**Material at-risk.** Waiting for inbound Italian velvet PO. Admin may-be-late / materials. Dealer has no committed date yet.',
-    'Diwan wingback frame gate':
-      '**WIP at-risk.** Materials prepped; carpentry frames (SEMI lots) not produced yet. Scheduling NEEDS_REVIEW with WIP_NOT_READY.',
-    'Jabal contract dining':
-      '**Committed date vs capacity.** Dining table + chairs. Approved plan cannot meet the committed delivery. Late chip from canonical classifier.',
+    'Golden factory path':
+      '**Released multi-kind basket (`SO-GOLDEN-001`).** Four manufacturing kinds on one sales order (STD qty2, KARINA STANDARD, MODIFIED width 280, CUSTOM photo). Staggered sub-order progress for My Tasks.',
+    'Oasis Italian velvet sofa':
+      '**Material at-risk / may-be-late.** Waiting for inbound Italian velvet. Admin may-be-late / materials. Dealer has no committed date yet.',
     'Oasis club armchair QC':
       '**Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered.',
-    'Zaatar ottoman scuff':
-      '**Dealer return.** Delivered ottomans with an approved delivery-damage return.',
-    'Qasr suite dining':
-      '**Schedule awaiting approval.** Multi-line proposed plan — dealer Schedule shows Requested / Expected · not confirmed.',
-    'Noor club chair hold':
-      '**Dealer accept still pending.** Quote is SENT (chairs + coffee table). **No sales order** and no production yet.',
-    'Golden factory path':
-      '**Preparing / Production Plan.** Four manufacturing kinds on one sales order (STD, KARINA, MODIFIED width 280, CUSTOM photo). Not released — use for admin Production Plan item boards.',
-    'Golden floor lounge':
-      '**Worker My Tasks multi-item board.** Same four-line mix as Golden path, **released** with staggered sub-order progress (done / locked / open) so nested item badges and sibling view-only rows work.',
+    'Oasis armchair scuff':
+      '**Dealer return.** Delivered armchairs with an approved delivery-damage return.',
   };
 
   let n = 1;
@@ -185,25 +168,20 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     'Internal **Approve** (AR **اعتماد**) is a send gate only — it never writes `ACCEPTED`, never creates a sales order, and never starts production. Dealer **Accept** (AR **قبول**) is the only commercial acceptance. Admin/Sales have no Accept button and `quotation.accept` is dealer-only. Quotations live under **Orders** / Account Places / portal `/quotations` — **Schedule / الجدول is unchanged**.',
   );
   lines.push('');
-  const noorQuote = quoteRows.find((q) => q.request?.projectName === 'Noor club chair hold');
-  if (noorQuote) {
-    lines.push(
-      `- **Noor** quote **${noorQuote.number}** v${noorQuote.version} is \`${noorQuote.status}\`${noorQuote.salesOrders[0] ? ` with SO ${noorQuote.salesOrders[0].number}` : ' with **no sales order**'}. Log in as \`noor\` to Accept.`,
-    );
-  }
   const oasisAccepted = await prisma.quotation.findFirst({
-    where: { status: 'ACCEPTED', request: { projectName: 'Oasis revised quote accepted' } },
+    where: { status: 'ACCEPTED', request: { projectName: { in: [...FLAGSHIP_PROJECT_NAMES] } } },
     select: {
       number: true,
       version: true,
       acceptedBy: { select: { username: true } },
       parentQuotation: { select: { number: true, version: true, status: true } },
       salesOrders: { select: { number: true, status: true } },
+      request: { select: { projectName: true } },
     },
   });
   if (oasisAccepted) {
     lines.push(
-      `- **Oasis** revised quote **${oasisAccepted.number}** v${oasisAccepted.version} ACCEPTED by \`${oasisAccepted.acceptedBy?.username ?? '—'}\`; v1 ${oasisAccepted.parentQuotation?.status ?? 'CANCELLED'}; SO ${oasisAccepted.salesOrders[0]?.number ?? '—'} (${oasisAccepted.salesOrders[0]?.status ?? 'none'}).`,
+      `- **${oasisAccepted.request?.projectName ?? 'Flagship'}** quote **${oasisAccepted.number}** v${oasisAccepted.version} ACCEPTED by \`${oasisAccepted.acceptedBy?.username ?? '—'}\`; SO ${oasisAccepted.salesOrders[0]?.number ?? '—'} (${oasisAccepted.salesOrders[0]?.status ?? 'none'}).`,
     );
   }
   lines.push('');
@@ -219,37 +197,28 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
   );
   lines.push('');
   const nile = byName.get('Abdoun lounge set');
-  const balqis = byName.get('Abdali hotel banquettes');
-  const qasr = byName.get('Qasr suite dining');
-  const cedar = byName.get('Cedar Italian velvet recliner');
-  const jabal = byName.get('Jabal contract dining');
+  const golden = byName.get('Golden factory path');
+  const oasisAtRisk = byName.get('Oasis Italian velvet sofa');
   const nileDel = nile?.deliveries[0];
-  const balqisDel = balqis?.deliveries[0];
-  const jabalSch = jabal?.productionOrders[0]?.schedules[0];
+  const oasisSch = oasisAtRisk?.productionOrders[0]?.schedules[0];
   lines.push(
     `- **Nile** ${nile?.number ?? 'SO-…'} — delivered chrome on the actual day (${ymd(nileDel?.status === 'DELIVERED' ? nileDel.deliveryDate : null) ?? 'see actual above'}).`,
   );
   lines.push(
-    `- **Balqis** ${balqis?.number ?? 'SO-…'} / ${balqisDel?.number ?? 'DLV-…'} — ready; planned logistics ${ymd(balqisDel?.deliveryDate) ?? '—'}. Calendar marker is the truck day, not production suggested.`,
+    `- **Golden** ${golden?.number ?? 'SO-GOLDEN-001'} — in production with four-line STD / KARINA / MODIFIED / CUSTOM mix.`,
   );
   lines.push(
-    `- **Qasr** ${qasr?.number ?? 'SO-…'} — unconfirmed. Copy is Requested / Expected · not confirmed.`,
-  );
-  lines.push(
-    `- **Cedar** ${cedar?.number ?? 'SO-…'} / **Jabal** ${jabal?.number ?? 'SO-…'} — Cedar is unconfirmed (no committed date). Jabal is delayed: calendar stays on committed ${ymd(jabalSch?.committedDeliveryDate) ?? '—'}; no current expected (factory earliest available is stale); copy is Delayed · Schedule being updated.`,
+    `- **Oasis Italian velvet** ${oasisAtRisk?.number ?? 'SO-…'} — material at-risk / may-be-late; requested ${ymd(oasisSch?.requestedDeliveryDate) ?? ymd(oasisAtRisk?.requiredDeliveryDate) ?? '—'}; committed ${ymd(oasisSch?.committedDeliveryDate) ?? '—'}.`,
   );
   lines.push('- Isolation: `oasis` must not see Nile sales orders.');
   lines.push('- Arabic pass: nav **الجدول**; requested labels are not **مؤكد**.');
   lines.push('- Do not invent extra demo orders for this walkthrough.');
   lines.push('');
 
-  const out = path.join(process.cwd(), 'docs/father-demo-walkthrough.md');
-  // When run from packages/database, cwd is that package — write to repo docs.
   const repoDocs = path.resolve(__dirname, '../../../../docs/father-demo-walkthrough.md');
   const target = repoDocs;
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, lines.join('\n'), 'utf8');
-  void out;
   console.log(`Wrote ${target}`);
   return target;
 }

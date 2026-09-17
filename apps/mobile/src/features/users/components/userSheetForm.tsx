@@ -4,11 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { TextField } from '@/components/forms/TextField';
 
 export function UserFormSection({
   icon,
@@ -233,6 +233,7 @@ export function HourlyRateField({
   titleWeight: 'medium' | 'semibold';
 }) {
   const { t, isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
 
   return (
     <UserFormSection
@@ -241,21 +242,36 @@ export function HourlyRateField({
       titleWeight={titleWeight}
       uppercase={locale !== 'ar'}
     >
-      <TextField
-        label={t('users.hourlyRate')}
-        value={value}
-        onChangeText={onChange}
-        keyboardType="decimal-pad"
-        dir="ltr"
-        testID="user-hourly-rate"
-      />
-      <AppText
-        variant="caption"
-        color="muted"
-        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      <View testID="user-hourly-rate">
+        <QtyStepperField
+          accessibilityLabel={t('users.hourlyRate')}
+          value={value}
+          onChangeText={onChange}
+          min={0}
+          step={1}
+          decimals={2}
+          unit="₪"
+          placeholder="0"
+        />
+      </View>
+      <View
+        style={{
+          borderRadius: theme.radius.lg,
+          backgroundColor: colors.surfaceSecondary,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm + 2,
+        }}
       >
-        {t('users.hourlyRateHint')}
-      </AppText>
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {t('users.hourlyRateHint')}
+        </AppText>
+      </View>
     </UserFormSection>
   );
 }

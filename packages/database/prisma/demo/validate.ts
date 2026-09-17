@@ -1,3 +1,4 @@
+import { compareSync } from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { classifyScheduleRisk, isInternalScheduleReason } from '../../../../apps/api/src/modules/scheduling/domain/at-risk';
 import {
@@ -11,12 +12,14 @@ import {
   STANDARD_FURNITURE_STAGE_CODES,
 } from '../seed/workflow';
 import { demoAsOf } from './clock';
-import { CEDAR_VELVET_SKU, MATERIAL_PHOTO_BY_SKU, isHttpImageUrl } from './material-photo-pool';
+import { MATERIAL_PHOTO_BY_SKU, isHttpImageUrl } from './material-photo-pool';
 import { COST_UAT } from './cost-performance-uat';
 import { assembleActualProduction, saleValueFromCommercial } from '../../../../apps/api/src/modules/reports/production-cost';
 import { summarizeLaborEntries } from '../../../../apps/api/src/modules/production/labor-costing';
 import { marginFrom } from '../../../../apps/api/src/modules/reports/order-cost-ledger';
 import { isInventoryConsumption } from '../../../../apps/api/src/modules/reports/inventory-economics';
+import { DEMO_EXPECTED_USERNAMES } from './people';
+import { DEMO_RETURN_NUMBER } from './returns';
 
 export class DemoValidationError extends Error {
   constructor(readonly failures: string[]) {
@@ -26,12 +29,370 @@ export class DemoValidationError extends Error {
 }
 
 const FORBIDDEN = /\b(UAT|DRUAT|TEST|MOCK|SAMPLE|Lorem)\b/i;
+const DEMO_PASSWORD = '123';
+
+const EXPECTED_PRODUCTS = ['SOF-3S-STD', 'SOF-LUNA', 'ARM-01', 'BED-Q'] as const;
+const EXPECTED_VARIANTS: Record<string, string[]> = {
+  'SOF-3S-STD': ['STD', 'KARINA', 'XL'],
+  'SOF-LUNA': ['STD', 'CORNER'],
+  'ARM-01': ['STD'],
+  'BED-Q': ['STD'],
+};
+const EXPECTED_MATERIALS = Object.keys(MATERIAL_PHOTO_BY_SKU);
+const EXPECTED_BINS = ['RAW-MAIN', 'SEMI-MAIN', 'FIN-MAIN', 'FABRIC-HOLD'] as const;
+const EXPECTED_POS = ['PORD-DEMO-LATE', 'PORD-DEMO-OPEN', 'PORD-DEMO-PARTIAL', 'PORD-DEMO-RCVD'] as const;
+const EXPECTED_DEALERS = ['nile', 'oasis'] as const;
+
+const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: string }> = {
+  'Abdoun lounge set': { so: '*', status: 'DELIVERED' },
+  'Sweifieh sectional': { so: '*', status: 'IN_PRODUCTION' },
+  'Nile blank production start': { so: '*', status: 'IN_PRODUCTION' },
+  'Golden factory path': { so: 'SO-GOLDEN-001', status: 'IN_PRODUCTION' },
+  'Oasis Italian velvet sofa': { so: '*', status: 'WAITING_FOR_MATERIALS' },
+  'Oasis club armchair QC': { so: '*', status: 'IN_PRODUCTION' },
+  'Oasis armchair scuff': { so: '*', status: 'DELIVERED' },
+  'Nile partial payment set': { so: '*', status: 'DELIVERED' },
+  'Oasis overdue bed': { so: '*', status: 'DELIVERED' },
+};
+
+const REQUIRED_PERSONAS: Array<{ username: string; roleCode: string }> = [
+  { username: 'admin', roleCode: 'SYSTEM_ADMINISTRATOR' },
+  { username: 'production', roleCode: 'PRODUCTION_MANAGEMENT' },
+  { username: 'scheduling', roleCode: 'SCHEDULING' },
+  { username: 'sales', roleCode: 'SALES' },
+  { username: 'purchasing', roleCode: 'PURCHASING' },
+  { username: 'warehouse', roleCode: 'WAREHOUSE_MANAGEMENT' },
+  { username: 'qc', roleCode: 'QUALITY_CONTROL' },
+  { username: 'finance', roleCode: 'FINANCE' },
+  { username: 'delivery', roleCode: 'DELIVERY_OPERATIONS' },
+  { username: 'carpenter', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'foam', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'upholsterer', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'inspector', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'packer', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'recovery', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'driver', roleCode: 'PRODUCTION_WORKER' },
+  { username: 'nile', roleCode: 'CUSTOMER' },
+  { username: 'oasis', roleCode: 'CUSTOMER' },
+];
+
+const SYNTHETIC_KIND_SUFFIX =
+  /\s(not_started|in_production|fresh_production|ready_delivery|waiting_materials|at_risk_material|at_risk_wip|at_risk_committed|delivered|packaging|qc|proposed|draft)$/;
+const DEALER_SKU_PROJECT =
+  /^(nile|oasis|balqis|cedar|zaatar|qasr|rawnaq|diwan|noor|jabal)\s+[A-Z0-9]+(?:-[A-Z0-9]+)+\s/i;
+
+function isSyntheticProjectName(name: string): boolean {
+  return FORBIDDEN.test(name) || SYNTHETIC_KIND_SUFFIX.test(name) || DEALER_SKU_PROJECT.test(name);
+}
 
 export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   const asOf = demoAsOf();
   const failures: string[] = [];
   const fail = (msg: string) => failures.push(msg);
 
+  await assertPeople(prisma, fail);
+  await assertDealers(prisma, fail);
+  await assertCatalog(prisma, fail);
+  await assertBinsAndStock(prisma, fail);
+  await assertPurchaseOrders(prisma, fail);
+  await assertLifecycleIntegrity(prisma, asOf, fail);
+  await assertSchedulesAndAtRisk(prisma, asOf, fail);
+  await assertReturnsAndWorkflows(prisma, fail);
+  await assertFinance(prisma, asOf, fail);
+  await assertNotifications(prisma, fail);
+  await assertOrphans(prisma, fail);
+  await assertPresentationReady(prisma, asOf, fail);
+  await validateCostPerformanceWorld(prisma, fail);
+
+  const soCount = await prisma.salesOrder.count({ where: { archivedAt: null } });
+  if (soCount < 6) fail(`expected ≥6 sales orders in compact world, found ${soCount}`);
+  if (soCount > 40) fail(`expected ≤40 sales orders in compact world (no piece islands), found ${soCount}`);
+
+  if (failures.length) throw new DemoValidationError(failures);
+  console.log(`demo:validate passed (${soCount} sales orders)`);
+}
+
+async function assertPeople(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: {
+      username: true,
+      passwordHash: true,
+      roles: { select: { role: { select: { code: true } } } },
+    },
+  });
+  const byName = new Map(users.map((u) => [u.username, u]));
+  const allowed = new Set<string>([...DEMO_EXPECTED_USERNAMES, COST_UAT.unpricedUser]);
+
+  for (const username of DEMO_EXPECTED_USERNAMES) {
+    const user = byName.get(username);
+    if (!user) {
+      fail(`missing demo login ${username}`);
+      continue;
+    }
+    if (!user.passwordHash || !compareSync(DEMO_PASSWORD, user.passwordHash)) {
+      fail(`${username}: password must be ${DEMO_PASSWORD}`);
+    }
+  }
+
+  for (const user of users) {
+    if (!allowed.has(user.username)) {
+      fail(`unexpected active user ${user.username} (compact cast is DEMO_EXPECTED_USERNAMES + ${COST_UAT.unpricedUser})`);
+    }
+  }
+
+  const admins = users.filter((u) => u.roles.some((r) => r.role.code === 'SYSTEM_ADMINISTRATOR'));
+  if (admins.length !== 1) {
+    fail(`expected exactly 1 SYSTEM_ADMINISTRATOR, found ${admins.length}`);
+  } else if (admins[0]!.username !== 'admin') {
+    fail(`SYSTEM_ADMINISTRATOR must be admin, found ${admins[0]!.username}`);
+  }
+
+  for (const expected of REQUIRED_PERSONAS) {
+    const user = byName.get(expected.username);
+    if (!user) continue;
+    if (!user.roles.some((r) => r.role.code === expected.roleCode)) {
+      fail(`${expected.username} is missing role ${expected.roleCode}`);
+    }
+  }
+
+  const workerWithoutSkill = await prisma.user.findMany({
+    where: {
+      roles: { some: { role: { code: 'PRODUCTION_WORKER' } } },
+      workerSkills: { none: { isActive: true } },
+      username: { not: COST_UAT.unpricedUser },
+    },
+    select: { username: true },
+  });
+  for (const w of workerWithoutSkill) fail(`worker ${w.username} has no WorkerSkill`);
+
+  const dismantle = await prisma.productionStageDefinition.findUnique({
+    where: { code: 'DISMANTLE_RECOVER' },
+    select: { id: true, isActive: true },
+  });
+  if (!dismantle?.isActive) fail('DISMANTLE_RECOVER stage is missing or inactive');
+  else {
+    const recoverSkills = await prisma.workerSkill.count({
+      where: { stageDefinitionId: dismantle.id, isActive: true },
+    });
+    if (recoverSkills < 1) fail(`DISMANTLE_RECOVER needs ≥1 skilled worker, found ${recoverSkills}`);
+  }
+}
+
+async function assertDealers(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const dealers = await prisma.customer.findMany({
+    where: { archivedAt: null },
+    select: {
+      code: true,
+      users: { select: { username: true } },
+    },
+  });
+  const dealerUsernames = new Set(
+    dealers.flatMap((d) => d.users.map((u) => u.username.toLowerCase())),
+  );
+  for (const username of EXPECTED_DEALERS) {
+    if (!dealerUsernames.has(username)) fail(`missing dealer login ${username}`);
+  }
+  for (const username of dealerUsernames) {
+    if (!EXPECTED_DEALERS.includes(username as (typeof EXPECTED_DEALERS)[number])) {
+      fail(`unexpected dealer ${username} (compact world is nile + oasis only)`);
+    }
+  }
+  if (dealers.length !== 2) fail(`expected 2 dealers, found ${dealers.length}`);
+}
+
+async function assertCatalog(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const products = await prisma.product.findMany({
+    where: { archivedAt: null, isActive: true },
+    include: { variants: { where: { archivedAt: null, isActive: true } } },
+  });
+  const bySku = new Map(products.map((p) => [p.sku, p]));
+  if (products.length !== EXPECTED_PRODUCTS.length) {
+    fail(`expected ${EXPECTED_PRODUCTS.length} active products, found ${products.length}`);
+  }
+  for (const sku of EXPECTED_PRODUCTS) {
+    const product = bySku.get(sku);
+    if (!product) {
+      fail(`missing product ${sku}`);
+      continue;
+    }
+    if (FORBIDDEN.test(`${product.sku} ${product.nameEn} ${product.nameAr}`)) {
+      fail(`forbidden presentation string on product ${sku}`);
+    }
+    const codes = new Set(product.variants.map((v) => v.code));
+    for (const code of EXPECTED_VARIANTS[sku] ?? []) {
+      if (!codes.has(code)) fail(`${sku}: missing variant ${code}`);
+    }
+    const defaults = product.variants.filter((v) => v.isDefault);
+    if (defaults.length !== 1) {
+      fail(`${sku}: expected 1 default variant, found ${defaults.length}`);
+    }
+    const bom = product.bomDefaults as { materials?: Array<{ sku: string }> } | null;
+    const itemSkus = new Set(
+      (await prisma.inventoryItem.findMany({ select: { sku: true } })).map((i) => i.sku),
+    );
+    for (const line of bom?.materials ?? []) {
+      if (!itemSkus.has(line.sku)) fail(`${sku}: BOM sku ${line.sku} missing as inventory item`);
+    }
+  }
+
+  const model204 = bySku.get('SOF-3S-STD');
+  if (model204 && !/Model 204/i.test(model204.nameEn)) {
+    fail(`SOF-3S-STD should be Model 204, found "${model204.nameEn}"`);
+  }
+
+  const rawItems = await prisma.inventoryItem.findMany({
+    where: { itemClass: 'RAW_MATERIAL', archivedAt: null },
+    select: { sku: true, imageUrl: true, qrCode: true, minStock: true },
+  });
+  const rawBySku = new Map(rawItems.map((i) => [i.sku, i]));
+  if (new Set(Object.values(MATERIAL_PHOTO_BY_SKU)).size !== EXPECTED_MATERIALS.length) {
+    fail('curated raw-material photos are not unique per SKU');
+  }
+  for (const sku of EXPECTED_MATERIALS) {
+    const row = rawBySku.get(sku);
+    if (!row) {
+      fail(`curated raw-material ${sku} missing as inventory item`);
+      continue;
+    }
+    if (!isHttpImageUrl(row.imageUrl)) {
+      fail(`${sku}: missing or invalid imageUrl`);
+    } else if (row.imageUrl !== MATERIAL_PHOTO_BY_SKU[sku]) {
+      fail(`${sku}: imageUrl does not match curated demo photo`);
+    }
+    if (row.qrCode !== sku) fail(`${sku}: qrCode must equal sku for printed identity`);
+  }
+
+  const beech = await prisma.inventoryItem.findUnique({
+    where: { sku: 'MAT-BEECH' },
+    include: { balances: true },
+  });
+  if (!beech) {
+    fail('MAT-BEECH missing');
+  } else {
+    const available = beech.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+    const floor = Math.max(Number(beech.minStock ?? 0), Number(beech.reorderQty ?? 0));
+    if (!(available < floor)) {
+      fail(`MAT-BEECH available ${available} should be < reorder/minStock ${floor}`);
+    }
+  }
+
+  for (const variant of await prisma.productVariant.findMany({
+    where: { archivedAt: null, isActive: true },
+  })) {
+    if (!variant.factoryNotesAr?.trim()) {
+      fail(`${variant.sku}: sellable variant missing factoryNotesAr`);
+    }
+  }
+}
+
+async function assertBinsAndStock(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const warehouses = await prisma.warehouse.findMany({
+    select: { code: true, locations: { select: { code: true, isDefault: true, qrCode: true } } },
+  });
+  for (const wh of warehouses) {
+    const defaults = wh.locations.filter((l) => l.isDefault);
+    if (defaults.length !== 1) {
+      fail(`warehouse ${wh.code} has ${defaults.length} default bins (expected 1)`);
+    }
+  }
+
+  const binCodes = new Set(
+    warehouses.flatMap((wh) => wh.locations.map((l) => l.code)),
+  );
+  for (const code of EXPECTED_BINS) {
+    if (!binCodes.has(code)) fail(`missing bin ${code}`);
+  }
+
+  const missingBinQr = await prisma.warehouseLocation.count({ where: { qrCode: null } });
+  if (missingBinQr) fail(`${missingBinQr} bins missing qrCode`);
+
+  const nullBalances = await prisma.inventoryBalance.count({ where: { locationId: null } });
+  const nullLots = await prisma.inventoryLot.count({ where: { locationId: null } });
+  const nullTxs = await prisma.inventoryTransaction.count({ where: { locationId: null } });
+  const nullKits = await prisma.wipKit.count({ where: { locationId: null } });
+  if (nullBalances) fail(`${nullBalances} balances still have locationId null`);
+  if (nullLots) fail(`${nullLots} lots still have locationId null`);
+  if (nullTxs) fail(`${nullTxs} transactions still have locationId null`);
+  if (nullKits) fail(`${nullKits} WIP kits still have locationId null`);
+
+  const balances = await prisma.inventoryBalance.findMany();
+  const txs = await prisma.inventoryTransaction.findMany();
+  const txSum = new Map<string, number>();
+  for (const tx of txs) {
+    const key = `${tx.inventoryItemId}|${tx.warehouseId}|${tx.locationId ?? ''}`;
+    txSum.set(key, (txSum.get(key) ?? 0) + Number(tx.quantity));
+  }
+  for (const b of balances) {
+    const key = `${b.inventoryItemId}|${b.warehouseId}|${b.locationId ?? ''}`;
+    const sum = txSum.get(key) ?? 0;
+    if (Math.abs(sum - Number(b.availableQty)) > 0.02) {
+      fail(`balance ${b.inventoryItemId} avail ${b.availableQty} ≠ tx sum ${sum}`);
+    }
+  }
+
+  const leftoverWh = await prisma.warehouse.findMany({
+    where: { isActive: true },
+    select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+  });
+  const leftoverWhName = /\b(TEST|UAT|DRUAT|SAMPLE|MOCK)\b/i;
+  const leftoverWhCodes = new Set(['TEST', 'TEST-2', 'SA', 'RAW-2', 'SEMI-2', 'FIN-2']);
+  for (const w of leftoverWh) {
+    if (['RAW', 'SEMI', 'FIN'].includes(w.code)) continue;
+    if (
+      leftoverWhCodes.has(w.code) ||
+      leftoverWhName.test(`${w.code} ${w.nameEn} ${w.nameAr} ${w.nameHe ?? ''}`)
+    ) {
+      fail(`active leftover warehouse ${w.code} (${w.nameEn})`);
+    }
+  }
+}
+
+async function assertPurchaseOrders(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  for (const number of EXPECTED_POS) {
+    const po = await prisma.purchaseOrder.findUnique({ where: { number }, select: { id: true } });
+    if (!po) fail(`missing purchase order ${number}`);
+  }
+
+  const receipts = await prisma.goodsReceipt.findMany({
+    include: { purchaseOrder: true, lines: true },
+  });
+  for (const grn of receipts) {
+    if (grn.receiptDate < grn.purchaseOrder.orderDate) {
+      fail(`${grn.number}: GRN before PO date`);
+    }
+    const ordered = await prisma.purchaseOrderLine.findMany({
+      where: { purchaseOrderId: grn.purchaseOrderId },
+    });
+    for (const line of grn.lines) {
+      const poLine = ordered.find((l) => l.inventoryItemId === line.inventoryItemId);
+      if (poLine && Number(line.receivedQty) - Number(poLine.quantity) > 0.001) {
+        fail(`${grn.number}: received ${line.receivedQty} > ordered ${poLine.quantity}`);
+      }
+    }
+  }
+}
+
+async function assertLifecycleIntegrity(
+  prisma: PrismaClient,
+  asOf: Date,
+  fail: (msg: string) => void,
+): Promise<void> {
   const delivered = await prisma.salesOrder.findMany({
     where: { status: 'DELIVERED' },
     include: {
@@ -40,7 +401,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     },
   });
   for (const so of delivered) {
-    if (so.number.startsWith('SO-NILE-RET-')) continue;
+    if (so.number.startsWith('SO-NILE-RET-') || so.number.startsWith('SO-COST-')) continue;
     const okDelivery = so.deliveries.some((d) => d.status === 'DELIVERED');
     if (!okDelivery) fail(`${so.number}: DELIVERED SO without DELIVERED delivery`);
     const active = so.productionOrders.flatMap((po) => {
@@ -72,8 +433,11 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   });
   for (const so of inProd) {
     if (so.projectName === 'Nile blank production start') continue;
+    if (so.number.startsWith('SO-COST-')) continue;
     const started = so.productionOrders.flatMap((po) =>
-      po.tasks.filter((t) => ['IN_PROGRESS', 'PAUSED', 'COMPLETED', 'READY_FOR_INSPECTION', 'BLOCKED'].includes(t.status)),
+      po.tasks.filter((t) =>
+        ['IN_PROGRESS', 'PAUSED', 'COMPLETED', 'READY_FOR_INSPECTION', 'BLOCKED'].includes(t.status),
+      ),
     );
     if (!started.length) fail(`${so.number}: IN_PRODUCTION with zero started tasks`);
   }
@@ -133,7 +497,8 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     const skipQc =
       ['PLANNED', 'WAITING_FOR_MATERIALS'].includes(po.status) ||
       po.originType === 'REPLACEMENT' ||
-      po.originType === 'RETURN_RECOVERY';
+      po.originType === 'RETURN_RECOVERY' ||
+      po.number.startsWith('PO-COST-');
     if (deliveredSo && !skipQc) {
       const passed = po.inspections.some((i) => i.result === 'PASSED' || i.result === 'PASSED_WITH_NOTES');
       const failed = po.inspections.some((i) => i.result === 'FAILED_REWORK_REQUIRED' || i.result === 'BLOCKED');
@@ -192,89 +557,64 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     }
   }
 
-  const warehouses = await prisma.warehouse.findMany({
-    select: { code: true, locations: { select: { isDefault: true, qrCode: true } } },
+  const allowedStageCodes = new Set<string>([
+    ...STANDARD_FURNITURE_STAGE_CODES,
+    ...PROTECTED_STAGE_CODES,
+  ]);
+  const extraStages = await prisma.productionStageDefinition.findMany({
+    where: { isActive: true, code: { notIn: [...allowedStageCodes] } },
+    select: { code: true },
   });
-  for (const wh of warehouses) {
-    const defaults = wh.locations.filter((l) => l.isDefault);
-    if (defaults.length !== 1) {
-      fail(`warehouse ${wh.code} has ${defaults.length} default bins (expected 1)`);
-    }
+  if (extraStages.length) {
+    fail(`extra active stage library codes: ${extraStages.map((s) => s.code).join(',')}`);
   }
-  const missingBinQr = await prisma.warehouseLocation.count({ where: { qrCode: null } });
-  if (missingBinQr) fail(`${missingBinQr} bins missing qrCode`);
-  const nullBalances = await prisma.inventoryBalance.count({ where: { locationId: null } });
-  const nullLots = await prisma.inventoryLot.count({ where: { locationId: null } });
-  const nullTxs = await prisma.inventoryTransaction.count({ where: { locationId: null } });
-  const nullKits = await prisma.wipKit.count({ where: { locationId: null } });
-  if (nullBalances) fail(`${nullBalances} balances still have locationId null`);
-  if (nullLots) fail(`${nullLots} lots still have locationId null`);
-  if (nullTxs) fail(`${nullTxs} transactions still have locationId null`);
-  if (nullKits) fail(`${nullKits} WIP kits still have locationId null`);
-
-  const balances = await prisma.inventoryBalance.findMany();
-  const txs = await prisma.inventoryTransaction.findMany();
-  const txSum = new Map<string, number>();
-  for (const tx of txs) {
-    const key = `${tx.inventoryItemId}|${tx.warehouseId}|${tx.locationId ?? ''}`;
-    txSum.set(key, (txSum.get(key) ?? 0) + Number(tx.quantity));
-  }
-  for (const b of balances) {
-    const key = `${b.inventoryItemId}|${b.warehouseId}|${b.locationId ?? ''}`;
-    const sum = txSum.get(key) ?? 0;
-    if (Math.abs(sum - Number(b.availableQty)) > 0.02) {
-      fail(`balance ${b.inventoryItemId} avail ${b.availableQty} ≠ tx sum ${sum}`);
-    }
-  }
-
-  const receipts = await prisma.goodsReceipt.findMany({
-    include: { purchaseOrder: true, lines: true },
-  });
-  for (const grn of receipts) {
-    if (grn.receiptDate < grn.purchaseOrder.orderDate) {
-      fail(`${grn.number}: GRN before PO date`);
-    }
-    const ordered = await prisma.purchaseOrderLine.findMany({
-      where: { purchaseOrderId: grn.purchaseOrderId },
+  for (const code of PROTECTED_STAGE_CODES) {
+    const stage = await prisma.productionStageDefinition.findUnique({
+      where: { code },
+      select: { isActive: true },
     });
-    for (const line of grn.lines) {
-      const poLine = ordered.find((l) => l.inventoryItemId === line.inventoryItemId);
-      if (poLine && Number(line.receivedQty) - Number(poLine.quantity) > 0.001) {
-        fail(`${grn.number}: received ${line.receivedQty} > ordered ${poLine.quantity}`);
-      }
-    }
+    if (!stage?.isActive) fail(`protected stage ${code} is missing or inactive`);
   }
 
-  const invoices = await prisma.invoice.findMany({
-    include: { payments: true, allocations: true, salesOrder: { include: { lines: true } } },
+  const activeWorkflows = await prisma.productionWorkflow.findMany({
+    where: { status: 'ACTIVE', activeVersionId: { not: null } },
+    include: {
+      versions: {
+        include: { nodes: { include: { stageDefinition: true } }, edges: true },
+      },
+    },
   });
-  for (const inv of invoices) {
-    const paySum = inv.allocations.length
-      ? inv.allocations.reduce((s, a) => s + Number(a.amount), 0)
-      : inv.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (paySum - Number(inv.total) > 0.02) fail(`${inv.number}: payments exceed invoice total`);
-    if (Math.abs(paySum - Number(inv.paidAmount)) > 0.02) {
-      fail(`${inv.number}: paidAmount ${inv.paidAmount} ≠ payment sum ${paySum}`);
-    }
-    if (inv.salesOrder) {
-      const soTotal = Number(inv.salesOrder.total);
-      if (Math.abs(soTotal - Number(inv.total)) > 0.05) {
-        fail(`${inv.number}: invoice total ${inv.total} ≠ SO ${soTotal}`);
-      }
+  for (const w of activeWorkflows) {
+    const version = w.versions.find((v) => v.id === w.activeVersionId);
+    if (!version) continue;
+    const terminals = version.nodes
+      .filter((n) => !version.edges.some((e) => e.fromNodeId === n.id))
+      .map((n) => n.stageDefinition.code);
+    if (terminals.length !== 1) {
+      fail(`${w.code}: expected 1 terminal, found ${terminals.join(',') || '(none)'}`);
     }
   }
 
-  const returns = await prisma.returnRequest.findMany({ include: { salesOrder: { include: { lines: true } } } });
-  for (const r of returns) {
-    if (!r.salesOrder) {
-      fail(`${r.number}: return without sales order`);
-      continue;
+  const named = await prisma.salesOrder.findMany({ select: { number: true, projectName: true, notes: true } });
+  for (const so of named) {
+    if (FORBIDDEN.test(`${so.projectName ?? ''} ${so.notes ?? ''}`)) {
+      fail(`${so.number}: forbidden presentation string`);
     }
-    if (r.salesOrder.status !== 'DELIVERED') fail(`${r.number}: return on non-delivered SO`);
-    const ordered = r.salesOrder.lines.reduce((s, l) => s + Number(l.quantity), 0);
-    if (Number(r.quantity) - ordered > 0.001) fail(`${r.number}: return qty > ordered`);
+  }
+  const wfs = await prisma.productionWorkflow.findMany({ select: { code: true, nameEn: true } });
+  for (const w of wfs) {
+    if (FORBIDDEN.test(`${w.code} ${w.nameEn}`)) fail(`forbidden workflow ${w.code}`);
   }
 
+  void asOf;
+}
+
+async function assertSchedulesAndAtRisk(
+  prisma: PrismaClient,
+  asOf: Date,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const activeSched = new Set(['APPROVED', 'PROPOSED', 'NEEDS_REVIEW']);
   const schedules = await prisma.productionSchedule.findMany({
     include: {
       productionOrder: {
@@ -287,10 +627,12 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     const prev = latest.get(s.productionOrderId);
     if (!prev || s.version > prev.version) latest.set(s.productionOrderId, s);
   }
+
   let mayBeLate = 0;
   const mayBeLateProjects = new Set<string>();
   for (const s of latest.values()) {
     if (!activeSched.has(s.status)) continue;
+    if (['CANCELLED', 'COMPLETED'].includes(s.productionOrder.status)) continue;
     const classification = classifyScheduleRisk({
       productionOrderStatus: s.productionOrder.status,
       scheduleStatus: s.status,
@@ -315,166 +657,32 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
       }
     }
   }
-  if (mayBeLateProjects.size !== 3) {
+
+  if (mayBeLate < 1) {
+    fail(`expected ≥1 may-be-late/at-risk schedule, found ${mayBeLate}`);
+  }
+  if (!mayBeLateProjects.has('Oasis Italian velvet sofa')) {
     fail(
-      `expected exactly 3 may-be-late projects, found ${mayBeLateProjects.size} (${[...mayBeLateProjects].join(', ')}; ${mayBeLate} schedules)`,
+      `may-be-late missing Oasis Italian velvet sofa (found: ${[...mayBeLateProjects].join(', ') || 'none'})`,
     );
   }
+}
 
-  const products = await prisma.product.findMany({ select: { sku: true, nameEn: true, nameAr: true, bomDefaults: true } });
-  const itemSkus = new Set((await prisma.inventoryItem.findMany({ select: { sku: true } })).map((i) => i.sku));
-  const rawItems = await prisma.inventoryItem.findMany({
-    where: { itemClass: 'RAW_MATERIAL', archivedAt: null },
-    select: { sku: true, imageUrl: true, qrCode: true, barcode: true },
+async function assertReturnsAndWorkflows(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const returns = await prisma.returnRequest.findMany({
+    include: { salesOrder: { include: { lines: true } } },
   });
-  const rawBySku = new Map(rawItems.map((i) => [i.sku, i]));
-  const curatedSkus = Object.keys(MATERIAL_PHOTO_BY_SKU);
-  if (new Set(Object.values(MATERIAL_PHOTO_BY_SKU)).size !== curatedSkus.length) {
-    fail('curated raw-material photos are not unique per SKU');
-  }
-  for (const sku of curatedSkus) {
-    const row = rawBySku.get(sku);
-    if (!row) {
-      fail(`curated raw-material ${sku} missing as inventory item`);
+  for (const r of returns) {
+    if (!r.salesOrder) {
+      fail(`${r.number}: return without sales order`);
       continue;
     }
-    if (!isHttpImageUrl(row.imageUrl)) {
-      fail(`${sku}: missing or invalid imageUrl`);
-    } else     if (row.imageUrl !== MATERIAL_PHOTO_BY_SKU[sku]) {
-      fail(`${sku}: imageUrl does not match curated demo photo`);
-    }
-    if (row.qrCode !== sku) {
-      fail(`${sku}: qrCode must equal sku for printed identity`);
-    }
-  }
-  const cedar = rawBySku.get(CEDAR_VELVET_SKU);
-  if (!cedar || !isHttpImageUrl(cedar.imageUrl)) {
-    fail(`${CEDAR_VELVET_SKU}: Cedar Italian velvet must have a dedicated image`);
-  }
-  for (const p of products) {
-    const bom = p.bomDefaults as { materials?: Array<{ sku: string }> } | null;
-    for (const line of bom?.materials ?? []) {
-      if (!itemSkus.has(line.sku)) fail(`${p.sku}: BOM sku ${line.sku} missing as inventory item`);
-    }
-    if (FORBIDDEN.test(`${p.sku} ${p.nameEn} ${p.nameAr}`)) fail(`forbidden presentation string on product ${p.sku}`);
-  }
-  const named = await prisma.salesOrder.findMany({ select: { number: true, projectName: true, notes: true } });
-  for (const so of named) {
-    if (FORBIDDEN.test(`${so.projectName ?? ''} ${so.notes ?? ''}`)) fail(`${so.number}: forbidden presentation string`);
-  }
-  const wfs = await prisma.productionWorkflow.findMany({ select: { code: true, nameEn: true } });
-  for (const w of wfs) {
-    if (FORBIDDEN.test(`${w.code} ${w.nameEn}`)) fail(`forbidden workflow ${w.code}`);
-  }
-  const leftoverWh = await prisma.warehouse.findMany({
-    where: { isActive: true },
-    select: { code: true, nameEn: true, nameAr: true, nameHe: true },
-  });
-  const leftoverWhName = /\b(TEST|UAT|DRUAT|SAMPLE|MOCK)\b/i;
-  const leftoverWhCodes = new Set(['TEST', 'TEST-2', 'SA', 'RAW-2', 'SEMI-2', 'FIN-2']);
-  for (const w of leftoverWh) {
-    if (['RAW', 'SEMI', 'FIN'].includes(w.code)) continue;
-    if (
-      leftoverWhCodes.has(w.code) ||
-      leftoverWhName.test(`${w.code} ${w.nameEn} ${w.nameAr} ${w.nameHe ?? ''}`)
-    ) {
-      fail(`active leftover warehouse ${w.code} (${w.nameEn})`);
-    }
-  }
-
-  const allowedStageCodes = new Set<string>([
-    ...STANDARD_FURNITURE_STAGE_CODES,
-    ...PROTECTED_STAGE_CODES,
-  ]);
-  const extraStages = await prisma.productionStageDefinition.findMany({
-    where: { isActive: true, code: { notIn: [...allowedStageCodes] } },
-    select: { code: true },
-  });
-  if (extraStages.length) {
-    fail(`extra active stage library codes: ${extraStages.map((s) => s.code).join(',')}`);
-  }
-
-  for (const code of PROTECTED_STAGE_CODES) {
-    const stage = await prisma.productionStageDefinition.findUnique({
-      where: { code },
-      select: { isActive: true },
-    });
-    if (!stage?.isActive) fail(`protected stage ${code} is missing or inactive`);
-  }
-  const activeWorkflows = await prisma.productionWorkflow.findMany({
-    where: { status: 'ACTIVE', activeVersionId: { not: null } },
-    include: {
-      versions: {
-        include: { nodes: { include: { stageDefinition: true } }, edges: true },
-      },
-    },
-  });
-  for (const w of activeWorkflows) {
-    const version = w.versions.find((v) => v.id === w.activeVersionId);
-    if (!version) continue;
-    const terminals = version.nodes
-      .filter((n) => !version.edges.some((e) => e.fromNodeId === n.id))
-      .map((n) => n.stageDefinition.code);
-    if (terminals.length !== 1) {
-      fail(`${w.code}: expected 1 terminal, found ${terminals.join(',') || '(none)'}`);
-    }
-  }
-
-  const soCount = await prisma.salesOrder.count();
-  const inProdCount = await prisma.salesOrder.count({
-    where: { status: { in: ['READY_FOR_PRODUCTION', 'IN_PRODUCTION', 'WAITING_FOR_MATERIALS'] } },
-  });
-  const completedCount = await prisma.salesOrder.count({
-    where: { status: { in: ['COMPLETED', 'DELIVERED'] } },
-  });
-  /** Curated cast (+ cost/unique-floor/returns). Pieces off by default — keep the world small. */
-  if (soCount < 12) fail(`expected curated sales orders (≥12), found ${soCount}`);
-  const piecesEnabledForCount =
-    process.env.DEMO_PIECES === '1' ||
-    process.env.DEMO_PIECES === 'true' ||
-    process.env.DEMO_PIECES === 'yes';
-  if (!piecesEnabledForCount && soCount > 80) {
-    fail(`expected curated world (≤80 sales orders without DEMO_PIECES), found ${soCount}`);
-  }
-  if (inProdCount + completedCount < 8) fail('dashboard production/completed counts look empty');
-
-  const workerWithoutSkill = await prisma.user.findMany({
-    where: {
-      roles: { some: { role: { code: 'PRODUCTION_WORKER' } } },
-      workerSkills: { none: { isActive: true } },
-    },
-    select: { username: true },
-  });
-  for (const w of workerWithoutSkill) fail(`worker ${w.username} has no WorkerSkill`);
-
-  const dismantle = await prisma.productionStageDefinition.findUnique({
-    where: { code: 'DISMANTLE_RECOVER' },
-    select: { id: true, isActive: true },
-  });
-  if (!dismantle?.isActive) fail('DISMANTLE_RECOVER stage is missing or inactive');
-  else {
-    const recoverSkills = await prisma.workerSkill.count({
-      where: { stageDefinitionId: dismantle.id, isActive: true },
-    });
-    if (recoverSkills < 2) fail(`DISMANTLE_RECOVER needs ≥2 skilled workers, found ${recoverSkills}`);
-  }
-
-  const requiredStaff: Array<{ username: string; roleCode: string }> = [
-    { username: 'qc2', roleCode: 'QUALITY_CONTROL' },
-    { username: 'returnsdesk', roleCode: 'WAREHOUSE_MANAGEMENT' },
-    { username: 'finance', roleCode: 'FINANCE' },
-    { username: 'recovery1', roleCode: 'PRODUCTION_WORKER' },
-    { username: 'recovery2', roleCode: 'PRODUCTION_WORKER' },
-  ];
-  for (const expected of requiredStaff) {
-    const user = await prisma.user.findUnique({
-      where: { username: expected.username },
-      select: { roles: { select: { role: { select: { code: true } } } } },
-    });
-    if (!user) fail(`missing returns account ${expected.username}`);
-    else if (!user.roles.some((r) => r.role.code === expected.roleCode)) {
-      fail(`${expected.username} is missing role ${expected.roleCode}`);
-    }
+    if (r.salesOrder.status !== 'DELIVERED') fail(`${r.number}: return on non-delivered SO`);
+    const ordered = r.salesOrder.lines.reduce((s, l) => s + Number(l.quantity), 0);
+    if (Number(r.quantity) - ordered > 0.001) fail(`${r.number}: return qty > ordered`);
   }
 
   const returnWorkflows = await prisma.productionWorkflow.findMany({
@@ -519,58 +727,108 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   }
 
   const pieceDemo = await prisma.returnRequest.findUnique({
-    where: { number: 'RT-DEMO-PIECE-001' },
+    where: { number: DEMO_RETURN_NUMBER },
     select: { pieces: { select: { decision: true } } },
   });
-  const piecesEnabled =
-    process.env.DEMO_PIECES === '1' ||
-    process.env.DEMO_PIECES === 'true' ||
-    process.env.DEMO_PIECES === 'yes';
   if (!pieceDemo) {
-    if (piecesEnabled) fail('RT-DEMO-PIECE-001 is missing');
+    fail(`${DEMO_RETURN_NUMBER} is missing`);
   } else {
     const decisions = new Set(pieceDemo.pieces.map((p) => p.decision));
     for (const decision of ['REPAIR', 'REPLACEMENT', 'SCRAP_RECOVERY'] as const) {
-      if (!decisions.has(decision)) fail(`RT-DEMO-PIECE-001 missing ${decision} piece`);
+      if (!decisions.has(decision)) fail(`${DEMO_RETURN_NUMBER} missing ${decision} piece`);
     }
   }
-  const recoveryDemo = await prisma.returnRequest.findUnique({
-    where: { number: 'RT-DEMO-RECOVERY-001' },
-    select: { pieces: { select: { decision: true } } },
-  });
-  if (!recoveryDemo?.pieces.some((p) => p.decision === 'SCRAP_RECOVERY')) {
-    if (piecesEnabled) fail('RT-DEMO-RECOVERY-001 recovery-only case is missing');
-  }
-
-  await assertPresentationReady(prisma, asOf, fail);
-
-  if (failures.length) throw new DemoValidationError(failures);
-  console.log(`demo:validate passed (${soCount} sales orders, ${mayBeLate} may-be-late)`);
 }
 
-const SYNTHETIC_KIND_SUFFIX =
-  /\s(not_started|in_production|fresh_production|ready_delivery|waiting_materials|at_risk_material|at_risk_wip|at_risk_committed|delivered|packaging|qc|proposed|draft)$/;
-const DEALER_SKU_PROJECT =
-  /^(nile|oasis|balqis|cedar|zaatar|qasr|rawnaq|diwan|noor|jabal)\s+[A-Z0-9]+(?:-[A-Z0-9]+)+\s/i;
+async function assertFinance(
+  prisma: PrismaClient,
+  asOf: Date,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const invoices = await prisma.invoice.findMany({
+    include: {
+      payments: true,
+      allocations: true,
+      salesOrder: { include: { lines: true } },
+      customer: { include: { users: { select: { username: true } } } },
+    },
+  });
+  for (const inv of invoices) {
+    const paySum = inv.allocations.length
+      ? inv.allocations.reduce((s, a) => s + Number(a.amount), 0)
+      : inv.payments.reduce((s, p) => s + Number(p.amount), 0);
+    if (paySum - Number(inv.total) > 0.02) fail(`${inv.number}: payments exceed invoice total`);
+    if (Math.abs(paySum - Number(inv.paidAmount)) > 0.02) {
+      fail(`${inv.number}: paidAmount ${inv.paidAmount} ≠ payment sum ${paySum}`);
+    }
+    if (inv.salesOrder) {
+      const soTotal = Number(inv.salesOrder.total);
+      if (Math.abs(soTotal - Number(inv.total)) > 0.05) {
+        fail(`${inv.number}: invoice total ${inv.total} ≠ SO ${soTotal}`);
+      }
+    }
+  }
 
-const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: string }> = {
-  'Abdoun lounge set': { so: '*', status: 'DELIVERED' },
-  'Sweifieh sectional': { so: '*', status: 'IN_PRODUCTION' },
-  'Nile blank production start': { so: '*', status: 'IN_PRODUCTION' },
-  'Abdali hotel banquettes': { so: '*', status: 'READY_FOR_DELIVERY' },
-  'Cedar Italian velvet recliner': { so: '*', status: 'WAITING_FOR_MATERIALS' },
-  'Diwan wingback frame gate': { so: '*', status: 'IN_PRODUCTION' },
-  'Jabal contract dining': { so: '*', status: 'IN_PRODUCTION' },
-  'Oasis club armchair QC': { so: '*', status: 'IN_PRODUCTION' },
-  'Zaatar ottoman scuff': { so: '*', status: 'DELIVERED' },
-  'Qasr suite dining': { so: '*', status: 'READY_FOR_PRODUCTION' },
-  'Noor club chair hold': { so: null, status: 'SENT' },
-  'Golden factory path': { so: '*', status: 'READY_FOR_PRODUCTION' },
-  'Golden floor lounge': { so: '*', status: 'IN_PRODUCTION' },
-};
+  const dealerInvoices = invoices.filter((inv) =>
+    inv.customer.users.some((u) => EXPECTED_DEALERS.includes(u.username as (typeof EXPECTED_DEALERS)[number])),
+  );
+  const hasPaid = dealerInvoices.some((i) => i.status === 'PAID');
+  const hasPartial = dealerInvoices.some((i) => i.status === 'PARTIALLY_PAID');
+  const hasOverdueOrUnpaid = dealerInvoices.some(
+    (i) =>
+      i.status === 'OVERDUE' ||
+      (i.status === 'ISSUED' && Number(i.outstandingAmount) > 0.01) ||
+      (i.status === 'PARTIALLY_PAID' &&
+        Number(i.outstandingAmount) > 0.01 &&
+        i.dueDate != null &&
+        i.dueDate.getTime() < asOf.getTime()),
+  );
+  if (!hasPaid) fail('dealer invoices: expected at least one PAID');
+  if (!hasPartial) fail('dealer invoices: expected at least one PARTIALLY_PAID');
+  if (!hasOverdueOrUnpaid) fail('dealer invoices: expected at least one overdue/unpaid');
+}
 
-function isSyntheticProjectName(name: string): boolean {
-  return FORBIDDEN.test(name) || SYNTHETIC_KIND_SUFFIX.test(name) || DEALER_SKU_PROJECT.test(name);
+async function assertNotifications(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const [notifications, outbox, pushTokens] = await Promise.all([
+    prisma.notification.count(),
+    prisma.notificationOutbox.count(),
+    prisma.devicePushToken.count(),
+  ]);
+  if (notifications !== 0) fail(`Notification count must be 0, found ${notifications}`);
+  if (outbox !== 0) fail(`NotificationOutbox count must be 0, found ${outbox}`);
+  if (pushTokens !== 0) fail(`DevicePushToken count must be 0, found ${pushTokens}`);
+}
+
+async function assertOrphans(
+  prisma: PrismaClient,
+  fail: (msg: string) => void,
+): Promise<void> {
+  const orphanLines = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT sol.id FROM "sales_order_lines" sol
+    LEFT JOIN "sales_orders" so ON so.id = sol."salesOrderId"
+    WHERE so.id IS NULL
+  `;
+  if (orphanLines.length) fail(`${orphanLines.length} sales order lines without parent SO`);
+
+  const orphanTasks = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT t.id FROM "production_tasks" t
+    LEFT JOIN "production_orders" po ON po.id = t."productionOrderId"
+    WHERE po.id IS NULL
+  `;
+  if (orphanTasks.length) fail(`${orphanTasks.length} production tasks without parent PO`);
+
+  const orphanPieces = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT rp.id FROM "return_pieces" rp
+    LEFT JOIN "return_requests" rr ON rr.id = rp."returnRequestId"
+    WHERE rr.id IS NULL
+  `;
+  if (orphanPieces.length) fail(`${orphanPieces.length} return pieces without parent request`);
+
+  const orphanDeliveries = await prisma.delivery.count({ where: { salesOrderId: null } });
+  if (orphanDeliveries) fail(`${orphanDeliveries} deliveries without sales order`);
 }
 
 async function assertPresentationReady(
@@ -587,6 +845,7 @@ async function assertPresentationReady(
     },
   });
   for (const so of salesOrders) {
+    if (so.number.startsWith('SO-COST-') || so.number.startsWith('SO-RT-')) continue;
     const name = so.projectName ?? '';
     if (!name || isSyntheticProjectName(name)) {
       fail(`${so.number}: synthetic or empty projectName "${name}"`);
@@ -604,7 +863,12 @@ async function assertPresentationReady(
   }
 
   const deliveries = await prisma.delivery.findMany({
-    select: { number: true, status: true, deliveryDate: true, salesOrder: { select: { number: true, projectName: true } } },
+    select: {
+      number: true,
+      status: true,
+      deliveryDate: true,
+      salesOrder: { select: { number: true, projectName: true } },
+    },
   });
   for (const d of deliveries) {
     if (!d.deliveryDate) {
@@ -623,12 +887,19 @@ async function assertPresentationReady(
     }
   }
 
-  const OPEN_TASK = ['NOT_STARTED', 'READY', 'IN_PROGRESS', 'PAUSED', 'BLOCKED', 'READY_FOR_INSPECTION'];
+  const OPEN_TASK = [
+    'NOT_STARTED',
+    'READY',
+    'IN_PROGRESS',
+    'PAUSED',
+    'BLOCKED',
+    'READY_FOR_INSPECTION',
+  ] as const;
   const staleAlloc = await prisma.scheduleAllocation.findMany({
     where: {
       plannedEnd: { lt: asOf },
       schedule: { status: { in: ['APPROVED', 'PROPOSED', 'NEEDS_REVIEW'] } },
-      productionTask: { status: { in: OPEN_TASK } },
+      productionTask: { status: { in: [...OPEN_TASK] } },
     },
     include: {
       productionTask: {
@@ -644,13 +915,18 @@ async function assertPresentationReady(
       },
     },
   });
+  const justifiedPastDue = new Set(['Oasis Italian velvet sofa']);
   const unjustified = staleAlloc.filter(
-    (a) => a.productionTask?.productionOrder.salesOrder?.projectName !== 'Jabal contract dining',
+    (a) => !justifiedPastDue.has(a.productionTask?.productionOrder.salesOrder?.projectName ?? ''),
   );
   if (unjustified.length) {
     const sample = unjustified
       .slice(0, 8)
-      .map((a) => a.productionTask?.productionOrder.salesOrder?.number ?? a.productionTask?.productionOrder.number)
+      .map(
+        (a) =>
+          a.productionTask?.productionOrder.salesOrder?.number ??
+          a.productionTask?.productionOrder.number,
+      )
       .join(', ');
     fail(`${unjustified.length} stale open allocations before as-of (e.g. ${sample})`);
   }
@@ -660,7 +936,8 @@ async function assertPresentationReady(
       !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(so.status) &&
       so.requiredDeliveryDate != null &&
       so.requiredDeliveryDate.getTime() < asOf.getTime() &&
-      so.projectName !== 'Jabal contract dining',
+      !justifiedPastDue.has(so.projectName ?? '') &&
+      !so.number.startsWith('SO-COST-'),
   );
   for (const so of incompletePastDue) {
     fail(`${so.number}: incomplete with requiredDeliveryDate before as-of`);
@@ -675,6 +952,7 @@ async function assertPresentationReady(
           schedules: { orderBy: { version: 'desc' }, take: 1 },
         },
       },
+      lines: true,
       deliveries: true,
     },
   });
@@ -682,17 +960,6 @@ async function assertPresentationReady(
   for (const name of Object.keys(EXPECTED_FLAGSHIP)) {
     const expected = EXPECTED_FLAGSHIP[name]!;
     const so = byName.get(name);
-    if (expected.so == null) {
-      if (so) fail(`${name}: expected no sales order, found ${so.number}`);
-      const quote = await prisma.quotation.findFirst({
-        where: { request: { projectName: name }, archivedAt: null },
-        select: { number: true, status: true, salesOrders: { select: { id: true } } },
-      });
-      if (!quote) fail(`walkthrough missing quotation for ${name}`);
-      else if (quote.status !== 'SENT') fail(`${name}: expected SENT quote, found ${quote.status}`);
-      else if (quote.salesOrders.length) fail(`${name}: SENT quote must not have a sales order`);
-      continue;
-    }
     if (!so) {
       fail(`walkthrough missing ${name}`);
       continue;
@@ -701,9 +968,11 @@ async function assertPresentationReady(
       fail(`${name}: expected ${expected.so}, found ${so.number}`);
     }
     if (so.status !== expected.status) fail(`${name}: expected ${expected.status}, found ${so.status}`);
+
     if (name === 'Abdoun lounge set' && so.productionOrders.length < 3) {
       fail(`${name}: expected a 3-line basket, found ${so.productionOrders.length} POs`);
     }
+
     if (name === 'Nile blank production start') {
       const po = so.productionOrders[0];
       if (!po) {
@@ -724,6 +993,13 @@ async function assertPresentationReady(
         if (kits > 0) fail(`${name}: expected 0 WIP kits, found ${kits}`);
       }
     }
+
+    if (name === 'Oasis Italian velvet sofa') {
+      const reason = so.productionOrders[0]?.schedules[0]?.reason;
+      if (isInternalScheduleReason(reason)) {
+        fail(`Oasis Italian velvet schedule reason leaks ${reason}`);
+      }
+    }
   }
 
   const accepted = await prisma.quotation.findMany({
@@ -737,23 +1013,6 @@ async function assertPresentationReady(
     }
   }
 
-  const abdali = byName.get('Abdali hotel banquettes');
-  const abdaliDlv = abdali?.deliveries[0];
-  if (!abdaliDlv || abdaliDlv.status !== 'PLANNED' || abdaliDlv.deliveryDate.getTime() < asOf.getTime()) {
-    fail(
-      `Abdali delivery must be PLANNED on/after as-of (found ${abdaliDlv?.status ?? 'none'} ${abdaliDlv?.deliveryDate.toISOString() ?? ''})`,
-    );
-  }
-
-  const diwan = byName.get('Diwan wingback frame gate');
-  for (const task of diwan?.productionOrders.flatMap((po) => po.tasks) ?? []) {
-    const code = task.stageDefinition?.code;
-    if ((code === 'FOAM' || code === 'UPHOLSTERY' || code === 'CARPENTRY') && task.status === 'IN_PROGRESS') {
-      fail(`Diwan ${code} is IN_PROGRESS; walkthrough says frames (SEMI) gated`);
-    }
-  }
-
-  // Physical inventory honesty: READY_FOR_DELIVERY with FIN tracking must have FIN lots.
   const readySos = await prisma.salesOrder.findMany({
     where: { status: 'READY_FOR_DELIVERY' },
     include: {
@@ -780,85 +1039,6 @@ async function assertPresentationReady(
       if (finLots < 1) {
         fail(`${so.number} (${so.projectName}): READY_FOR_DELIVERY without FIN lots`);
       }
-    }
-  }
-
-  // Diwan WIP_NOT_READY must match missing SEMI (no AVAILABLE/RESERVED SEMI lots).
-  for (const po of diwan?.productionOrders ?? []) {
-    const schedule = po.schedules?.[0];
-    if (schedule?.unschedulableReason === 'WIP_NOT_READY') {
-      const semi = await prisma.inventoryLot.count({
-        where: {
-          productionOrderId: po.id,
-          status: { in: ['AVAILABLE', 'RESERVED'] },
-          inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' },
-        },
-      });
-      if (semi > 0) {
-        fail(`${po.number}: WIP_NOT_READY but SEMI lots exist`);
-      }
-    }
-  }
-
-  const cedar = byName.get('Cedar Italian velvet recliner');
-  const cedarReason = cedar?.productionOrders[0]?.schedules[0]?.reason;
-  if (isInternalScheduleReason(cedarReason)) {
-    fail(`Cedar schedule reason leaks ${cedarReason}`);
-  }
-
-  const mayBeLateNames = new Set<string>();
-  const schedules = await prisma.productionSchedule.findMany({
-    where: { status: { in: ['APPROVED', 'PROPOSED', 'NEEDS_REVIEW'] } },
-    include: { productionOrder: { include: { salesOrder: { select: { projectName: true } } } } },
-  });
-  const latest = new Map<string, (typeof schedules)[number]>();
-  for (const s of schedules) {
-    const prev = latest.get(s.productionOrderId);
-    if (!prev || s.version > prev.version) latest.set(s.productionOrderId, s);
-  }
-  for (const s of latest.values()) {
-    if (['CANCELLED', 'COMPLETED'].includes(s.productionOrder.status)) continue;
-    const classification = classifyScheduleRisk({
-      productionOrderStatus: s.productionOrder.status,
-      scheduleStatus: s.status,
-      committedDeliveryDate: s.committedDeliveryDate,
-      requestedDeliveryDate: s.requestedDeliveryDate,
-      projectedCompletion: s.suggestedDeliveryDate,
-      requestedDateFeasible: s.requestedDateFeasible,
-      unschedulableReason: s.unschedulableReason,
-      requiresAdminEstimateReview: s.requiresAdminEstimateReview,
-      materialRisk: s.materialRisk,
-      now: asOf,
-    });
-    if (classification.contributesToMayBeLate) {
-      mayBeLateNames.add(s.productionOrder.salesOrder?.projectName ?? s.productionOrder.number);
-    }
-  }
-  const expectedLate = ['Cedar Italian velvet recliner', 'Diwan wingback frame gate', 'Jabal contract dining'];
-  for (const name of expectedLate) {
-    if (!mayBeLateNames.has(name)) fail(`may-be-late missing ${name}`);
-  }
-  for (const name of mayBeLateNames) {
-    if (!expectedLate.includes(name)) fail(`unexpected may-be-late ${name}`);
-  }
-
-  const activeProducts = await prisma.product.findMany({
-    where: { archivedAt: null, isActive: true },
-    include: { variants: { where: { archivedAt: null } } },
-  });
-  for (const product of activeProducts) {
-    const defaults = product.variants.filter((v) => v.isDefault);
-    if (defaults.length !== 1) {
-      fail(`${product.sku}: expected 1 default variant, found ${defaults.length}`);
-    }
-  }
-
-  const sellableVariants = await prisma.productVariant.findMany({
-    where: { archivedAt: null, isActive: true },
-  });
-  for (const variant of sellableVariants) {
-    if (!variant.factoryNotesAr?.trim()) {
-      fail(`${variant.sku}: sellable variant missing factoryNotesAr`);
     }
   }
 
@@ -901,7 +1081,7 @@ async function assertPresentationReady(
   const pricedLines = await prisma.salesOrderLine.findMany({
     where: {
       variantId: { not: null },
-      salesOrder: { archivedAt: null },
+      salesOrder: { archivedAt: null, number: { not: { startsWith: 'SO-COST-' } } },
     },
     select: {
       variantId: true,
@@ -933,12 +1113,29 @@ async function assertPresentationReady(
   if (!golden) {
     fail('Golden factory path sales order missing');
   } else {
+    if (golden.number !== 'SO-GOLDEN-001') {
+      fail(`Golden factory path: expected SO-GOLDEN-001, found ${golden.number}`);
+    }
+    if (golden.status !== 'IN_PRODUCTION') {
+      fail(`Golden factory path: expected IN_PRODUCTION, found ${golden.status}`);
+    }
     if (golden.lines.length !== 4) {
       fail(`Golden factory path: expected 4 lines, got ${golden.lines.length}`);
     }
-    const kinds = golden.lines.map((l) => l.manufacturingComplexity).sort();
+    const kinds = golden.lines.map((l) => l.manufacturingComplexity);
     if (kinds.filter((k) => k === 'STANDARD').length < 2) {
-      fail('Golden factory path: expected two STANDARD lines (STD + named variant)');
+      fail('Golden factory path: expected two STANDARD lines (STD + named KARINA)');
+    }
+    const karinaByVariant = await prisma.salesOrderLine.findFirst({
+      where: {
+        salesOrderId: golden.id,
+        manufacturingComplexity: 'STANDARD',
+        variant: { code: 'KARINA' },
+      },
+      select: { id: true },
+    });
+    if (!karinaByVariant) {
+      fail('Golden factory path: missing named STANDARD variant KARINA');
     }
     if (!golden.lines.some((l) => l.manufacturingComplexity === 'MODIFIED')) {
       fail('Golden factory path: missing MODIFIED line');
@@ -965,9 +1162,7 @@ async function assertPresentationReady(
         (po) => po.salesOrderLineId === line.id && po.originType === 'SALES_ORDER',
       );
       if (pos.length !== 1) {
-        fail(
-          `${golden.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`,
-        );
+        fail(`${golden.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`);
       } else if (!line.itemLetter) {
         fail(`${golden.number}: line ${line.id} missing itemLetter`);
       } else if (pos[0]!.number !== `${golden.number}.${line.itemLetter}`) {
@@ -978,77 +1173,31 @@ async function assertPresentationReady(
     }
   }
 
-  const goldenFloor = await prisma.salesOrder.findFirst({
-    where: { projectName: 'Golden floor lounge', archivedAt: null },
+  const fabric = await prisma.salesOrder.findUnique({
+    where: { number: 'SO-FB1042' },
     include: {
-      lines: true,
-      productionOrders: {
-        select: {
-          id: true,
-          number: true,
-          salesOrderLineId: true,
-          originType: true,
-          releasedToFactoryAt: true,
-        },
+      lines: { select: { specifications: true, description: true } },
+      fabricProcurements: {
+        include: { requirement: { select: { requestedFabricLabel: true, displayName: true } } },
       },
     },
   });
-  if (!goldenFloor) {
-    fail('Golden floor lounge sales order missing');
+  if (!fabric) {
+    fail('SO-FB1042 fabric order missing');
   } else {
-    if (goldenFloor.lines.length !== 4) {
-      fail(`Golden floor lounge: expected 4 lines, got ${goldenFloor.lines.length}`);
-    }
-    const released = goldenFloor.productionOrders.filter(
-      (po) => po.originType === 'SALES_ORDER' && po.releasedToFactoryAt,
-    );
-    if (released.length < 4) {
-      fail(
-        `Golden floor lounge: expected ≥4 released SALES_ORDER POs, got ${released.length}`,
-      );
-    }
-    for (const line of goldenFloor.lines) {
-      if (!line.productionRequired) continue;
-      const pos = goldenFloor.productionOrders.filter(
-        (po) => po.salesOrderLineId === line.id && po.originType === 'SALES_ORDER',
-      );
-      if (pos.length !== 1) {
-        fail(
-          `${goldenFloor.number}: line ${line.id} expected 1 SALES_ORDER PO, got ${pos.length}`,
-        );
-      } else if (!line.itemLetter) {
-        fail(`${goldenFloor.number}: line ${line.id} missing itemLetter`);
-      } else if (pos[0]!.number !== `${goldenFloor.number}.${line.itemLetter}`) {
-        fail(
-          `${goldenFloor.number}: SALES_ORDER PO ${pos[0]!.number} expected ${goldenFloor.number}.${line.itemLetter}`,
-        );
-      }
-    }
-
-    const carpenter = await prisma.user.findFirst({
-      where: { username: 'carpenter' },
-      select: { id: true },
-    });
-    if (!carpenter) {
-      fail('carpenter demo user missing');
-    } else {
-      const carpenterPos = await prisma.productionOrder.findMany({
-        where: {
-          salesOrderId: goldenFloor.id,
-          originType: 'SALES_ORDER',
-          tasks: { some: { assignedEmployeeId: carpenter.id } },
-        },
-        select: { id: true },
-      });
-      if (carpenterPos.length < 2) {
-        fail(
-          `Golden floor lounge: carpenter should see ≥2 sibling items, got ${carpenterPos.length}`,
-        );
+    const blob = [
+      ...fabric.lines.map((l) => `${l.specifications ?? ''} ${l.description}`),
+      ...fabric.fabricProcurements.map(
+        (fp) =>
+          `${fp.requirement?.requestedFabricLabel ?? ''} ${fp.requirement?.displayName ?? ''}`,
+      ),
+    ].join(' ');
+    for (const label of ['Velvet 302', 'Linen 180', 'Bouclé 611'] as const) {
+      if (!blob.includes(label) && !(label === 'Bouclé 611' && /Boucle\s*611/i.test(blob))) {
+        fail(`SO-FB1042 missing fabric ${label}`);
       }
     }
   }
-
-  await validateCostPerformanceWorld(prisma, fail);
 }
 
 async function validateCostPerformanceWorld(
@@ -1086,11 +1235,19 @@ async function validateCostPerformanceWorld(
     const taskIds = order.productionOrders.flatMap((po) => po.tasks.map((t) => t.id));
     const txs = await prisma.inventoryTransaction.findMany({
       where: {
-        OR: [{ productionOrderId: { in: poIds } }, { salesOrderId: order.id, type: { in: ['PRODUCTION_ISSUE', 'PRODUCTION_RETURN', 'SCRAP', 'DAMAGE'] } }],
+        OR: [
+          { productionOrderId: { in: poIds } },
+          {
+            salesOrderId: order.id,
+            type: { in: ['PRODUCTION_ISSUE', 'PRODUCTION_RETURN', 'SCRAP', 'DAMAGE'] },
+          },
+        ],
       },
       include: { inventoryItem: { select: { category: true, materialGroup: true } } },
     });
-    const reworkByTask = new Map(order.productionOrders.flatMap((po) => po.tasks.map((t) => [t.id, t.isRework] as const)));
+    const reworkByTask = new Map(
+      order.productionOrders.flatMap((po) => po.tasks.map((t) => [t.id, t.isRework] as const)),
+    );
     const entries = await prisma.taskTimeEntry.findMany({ where: { taskId: { in: taskIds } } });
     const labor = summarizeLaborEntries({
       rates,
@@ -1122,7 +1279,9 @@ async function validateCostPerformanceWorld(
   if (golden) {
     if (golden.mix.total !== 294) fail(`${COST_UAT.golden}: actual ${golden.mix.total} ≠ 294`);
     if (golden.sale !== 630) fail(`${COST_UAT.golden}: sale ${golden.sale} ≠ 630`);
-    if (golden.margin.grossMargin !== 336) fail(`${COST_UAT.golden}: margin ${golden.margin.grossMargin} ≠ 336`);
+    if (golden.margin.grossMargin !== 336) {
+      fail(`${COST_UAT.golden}: margin ${golden.margin.grossMargin} ≠ 336`);
+    }
     if (!golden.mix.complete) fail(`${COST_UAT.golden}: expected complete coverage`);
     const custom = golden.order.lines.find((l) => l.manufacturingComplexity === 'CUSTOM');
     if (!custom || custom.productId) fail(`${COST_UAT.golden}: CUSTOM line must have null productId`);
@@ -1142,8 +1301,16 @@ async function validateCostPerformanceWorld(
   const low = await mixFor(COST_UAT.low);
   if (low) {
     if (!low.mix.complete) fail(`${COST_UAT.low}: expected complete costing`);
-    if (!(low.margin.grossMargin != null && low.margin.grossMargin > 0 && (low.margin.marginPct ?? 0) < 20)) {
-      fail(`${COST_UAT.low}: expected low positive margin, got ${low.margin.grossMargin} / ${low.margin.marginPct}%`);
+    if (
+      !(
+        low.margin.grossMargin != null &&
+        low.margin.grossMargin > 0 &&
+        (low.margin.marginPct ?? 0) < 20
+      )
+    ) {
+      fail(
+        `${COST_UAT.low}: expected low positive margin, got ${low.margin.grossMargin} / ${low.margin.marginPct}%`,
+      );
     }
   }
 
@@ -1161,30 +1328,12 @@ async function validateCostPerformanceWorld(
     if (partial.mix.labor === 0) fail(`${COST_UAT.partial}: missing labor rate must not become 0`);
   }
 
-  const unused = await mixFor(COST_UAT.unused);
-  if (unused) {
-    const txs = await prisma.inventoryTransaction.findMany({
-      where: { salesOrderId: unused.order.id, type: { in: ['PRODUCTION_ISSUE', 'PRODUCTION_RETURN'] } },
-    });
-    const issued = txs.filter((t) => t.type === 'PRODUCTION_ISSUE').reduce((s, t) => s + Math.abs(Number(t.quantity)), 0);
-    const returned = txs.filter((t) => t.type === 'PRODUCTION_RETURN').reduce((s, t) => s + Math.abs(Number(t.quantity)), 0);
-    if (issued !== 10 || returned !== 2) fail(`${COST_UAT.unused}: expected issue 10 return 2, got ${issued}/${returned}`);
-  }
-
-  const transfers = await prisma.inventoryTransaction.findMany({ where: { type: 'WAREHOUSE_TRANSFER' } });
+  const transfers = await prisma.inventoryTransaction.findMany({
+    where: { type: 'WAREHOUSE_TRANSFER' },
+  });
   if (transfers.length < 2) fail('COST warehouse transfer txs missing');
   for (const tx of transfers) {
     if (isInventoryConsumption(tx.type)) fail(`${tx.number}: transfer counted as consumption`);
-  }
-
-  const recovery = await prisma.returnRequest.findUnique({
-    where: { number: COST_UAT.recovery },
-    include: { pieces: { include: { recoveryLines: true } } },
-  });
-  if (!recovery) fail(`${COST_UAT.recovery}: missing`);
-  else {
-    const recovered = recovery.pieces.flatMap((p) => p.recoveryLines).filter((l) => l.outcome === 'RECOVER_TO_INVENTORY' && l.postedAt);
-    if (!recovered.length) fail(`${COST_UAT.recovery}: recovered value rows missing`);
   }
 
   const gap = await prisma.inventoryItem.findUnique({ where: { sku: COST_UAT.gapSku } });

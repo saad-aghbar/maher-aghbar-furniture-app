@@ -1,9 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
+import { preservedRoleCodes } from '../seed/foundation';
 
 /**
  * Operational + leftover config wipe for launch seed and demo:reset.
- * Preserves permissions, roles, branches, warehouses RAW/SEMI/FIN, departments,
- * stage library, QC templates, notification templates, system_settings.
+ * Preserves permissions, system roles/presets, branches, warehouses RAW/SEMI/FIN,
+ * departments, stage library, QC templates, notification templates, system_settings.
  */
 export const DEMO_WIPE_TABLES = [
   'ai_chat_messages',
@@ -12,7 +13,10 @@ export const DEMO_WIPE_TABLES = [
   'ai_extraction_jobs',
   'audit_events',
   'idempotency_records',
+  'notification_outbox',
   'device_push_tokens',
+  'user_notification_preferences',
+  'user_push_settings',
   'communication_logs',
   'notifications',
   'documents',
@@ -100,6 +104,7 @@ export const DEMO_WIPE_TABLES = [
   'customer_addresses',
   'customer_contacts',
   'customers',
+  'labor_rates',
   'sessions',
   'user_roles',
   'worker_skills',
@@ -115,6 +120,15 @@ export async function wipeOperationalData(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${DEMO_WIPE_TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
   );
+
+  // Drop experimental / leftover custom staff types. Foundation reseed restores system presets.
+  const keepRoles = preservedRoleCodes();
+  await prisma.rolePermission.deleteMany({
+    where: { role: { code: { notIn: keepRoles } } },
+  });
+  await prisma.role.deleteMany({
+    where: { code: { notIn: keepRoles } },
+  });
 
   const leftovers = await prisma.warehouse.findMany({
     where: {

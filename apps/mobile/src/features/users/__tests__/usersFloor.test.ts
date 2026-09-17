@@ -28,4 +28,30 @@ describe('Users floor', () => {
       expect(source).toMatch(/UserFormSection|HourlyRateField/);
     }
   });
+
+  it('uses the shared plus-minus stepper for hourly rate', () => {
+    const source = read('components/userSheetForm.tsx');
+    expect(source).toContain('QtyStepperField');
+    expect(source).toContain('unit="₪"');
+    expect(source).not.toContain('TextField');
+  });
+
+  it('marks selected stage skills with a start rail, not a checkmark', () => {
+    const source = read('components/StageSkillsPicker.tsx');
+    assertFloor(source);
+    expect(source).toContain('width: 3');
+    expect(source).toContain('colors.brandSoft');
+    expect(source).toContain("locale === 'ar' ? 'medium' : 'semibold'");
+    expect(source).toContain('theme.radius.lg');
+    expect(source).not.toContain("'✓ '");
+  });
+
+  it('calls useChromeSize before RolesTouchBar can return null', () => {
+    const source = read('components/RolesTouchBar.tsx');
+    const chrome = source.indexOf('useChromeSize(PILL_HEIGHT)');
+    const early = source.indexOf('if (roles.length === 0) return null');
+    expect(chrome).toBeGreaterThan(-1);
+    expect(early).toBeGreaterThan(-1);
+    expect(chrome).toBeLessThan(early);
+  });
 });

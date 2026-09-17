@@ -8,7 +8,7 @@ import {
   Priority,
 } from '@prisma/client';
 import { VAT, money } from '../seed/util';
-import { ammanLocal } from './clock';
+import { daysAgo } from './clock';
 import type { MaterialRef } from './catalog';
 import { nextDoc, type SeqBag } from './seq';
 import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
@@ -105,14 +105,30 @@ export async function applyDemoMovement(
 }
 
 const SUPPLIERS = [
-  { code: 'SUP-TIMBER', nameEn: 'Zarqa Timber Yard', nameAr: 'ساحة أخشاب الزرقاء', nameHe: 'חצר עץ זרקא', phone: '+96253990001', email: 'sales@zarqa-timber.jo', skus: ['MAT-BEECH', 'MAT-OAK', 'MAT-PLY', 'MAT-MDF', 'MAT-PINE'] },
-  { code: 'SUP-FOAM', nameEn: 'Jordan Foam Industries', nameAr: 'صناعات الإسفنج الأردنية', nameHe: 'תעשיות ספוג ירדן', phone: '+96265551002', email: 'orders@jo-foam.jo', skus: ['MAT-FOAM-HD', 'MAT-FOAM-MD', 'MAT-FOAM-LD', 'MAT-FOAM-HR'] },
-  { code: 'SUP-FABRIC', nameEn: 'Abdali Textile Mill', nameAr: 'مصنع أقمشة العبدلي', nameHe: 'מפעל טקסטיל עבדלי', phone: '+96265661003', email: 'b2b@abdali-textile.jo', skus: ['MAT-VEL-SAND', 'MAT-VEL-NAVY', 'MAT-LIN-NAT', 'MAT-BOU-CRM'] },
-  { code: 'SUP-HW', nameEn: 'Sahab Hardware Co', nameAr: 'شركة سحاب للمعدات', nameHe: 'סחאב לחומרה', phone: '+96264001004', email: 'desk@sahab-hw.jo', skus: ['MAT-HW-KIT', 'MAT-HW-SCREW', 'MAT-SPRING', 'MAT-MECH-RECL'] },
-  { code: 'SUP-FINISH', nameEn: 'Marka Coatings', nameAr: 'دهانات ماركا', nameHe: 'מרקה לציפויים', phone: '+96264881005', email: 'sales@marka-coatings.jo', skus: ['MAT-LACQ', 'MAT-STAIN-WAL', 'MAT-PRIMER'] },
-  { code: 'SUP-PACK', nameEn: 'East Pack Packaging', nameAr: 'إيست باك للتغليف', nameHe: 'איסט פק לאריזה', phone: '+96265111006', email: 'ops@eastpack.jo', skus: ['MAT-FOIL', 'MAT-CARTON', 'MAT-CORNER'] },
-  { code: 'SUP-SPRING', nameEn: 'Irbid Spring Works', nameAr: 'أعمال النوابض إربد', nameHe: 'עבודות קפיצים אירביד', phone: '+96227221007', email: 'sales@irbid-spring.jo', skus: ['MAT-SPRING', 'MAT-CASTER'] },
-  { code: 'SUP-ADH', nameEn: 'Aqaba Adhesives', nameAr: 'لواصق العقبة', nameHe: 'דבקים עקבה', phone: '+96232001008', email: 'orders@aqaba-adh.jo', skus: ['MAT-GLUE', 'MAT-SPRAY-ADH'] },
+  {
+    code: 'SUP-TIMBER',
+    nameEn: 'Zarqa Timber Yard',
+    nameAr: 'ساحة أخشاب الزرقاء',
+    nameHe: 'חצר עץ זרקא',
+    phone: '+96253990001',
+    email: 'sales@zarqa-timber.jo',
+  },
+  {
+    code: 'SUP-FABRIC',
+    nameEn: 'Abdali Textile Mill',
+    nameAr: 'مصنع أقمشة العبدلي',
+    nameHe: 'מפעל טקסטיל עבדלי',
+    phone: '+96265661003',
+    email: 'b2b@abdali-textile.jo',
+  },
+  {
+    code: 'SUP-FOAM',
+    nameEn: 'Jordan Foam & Hardware',
+    nameAr: 'إسفنج ومعدات الأردن',
+    nameHe: 'ספוג וחומרה',
+    phone: '+96265551002',
+    email: 'orders@jo-foam.jo',
+  },
 ];
 
 export async function seedDemoStock(
@@ -126,23 +142,9 @@ export async function seedDemoStock(
 ) {
   const rawWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'RAW' } });
   const finWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'FIN' } });
-  await prisma.warehouseLocation.upsert({
-    where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-A1' } },
-    update: {},
-    create: { warehouseId: rawWh.id, code: 'RAW-A1', name: 'Raw aisle A1' },
-  });
-  await prisma.warehouseLocation.upsert({
-    where: { warehouseId_code: { warehouseId: rawWh.id, code: 'RAW-B2' } },
-    update: {},
-    create: { warehouseId: rawWh.id, code: 'RAW-B2', name: 'Raw aisle B2' },
-  });
-  await prisma.warehouseLocation.upsert({
-    where: { warehouseId_code: { warehouseId: finWh.id, code: 'FIN-DOCK' } },
-    update: {},
-    create: { warehouseId: finWh.id, code: 'FIN-DOCK', name: 'Finished dock' },
-  });
+  const semiWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'SEMI' } });
 
-  const openingAt = ammanLocal(2026, 6, 1, 8, 0);
+  const openingAt = daysAgo(35, 8, 0);
   for (const m of opts.materials) {
     if (m.opening <= 0) continue;
     await applyDemoMovement(prisma, {
@@ -153,7 +155,7 @@ export async function seedDemoStock(
       unitCost: m.unitCost,
       userId: opts.adminId,
       at: openingAt,
-      notes: 'Factory opening stock 1 Jun 2026',
+      notes: 'Factory opening stock',
       counters: opts.counters,
     });
   }
@@ -189,31 +191,61 @@ export async function seedDemoStock(
     lines: Array<{ sku: string; qty: number; receive?: number }>;
     pay?: 'full' | 'partial' | 'none';
     note: string;
+    number: string;
+    /** Days after orderDate for expected delivery. Negative = already overdue. */
+    expectedOffsetDays: number;
   };
 
   const pos: PoSpec[] = [
-    { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 6, 18, 10), lines: [{ sku: 'MAT-BEECH', qty: 80 }, { sku: 'MAT-PLY', qty: 40 }], pay: 'full', note: 'June timber restock' },
-    { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 8, 10), lines: [{ sku: 'MAT-OAK', qty: 50 }, { sku: 'MAT-MDF', qty: 30 }], pay: 'full', note: 'Oak for dining tables' },
-    { supplier: 'SUP-FOAM', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 6, 22, 11), lines: [{ sku: 'MAT-FOAM-HD', qty: 20 }, { sku: 'MAT-FOAM-MD', qty: 16 }], pay: 'full', note: 'Foam cycle June' },
-    { supplier: 'SUP-FOAM', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 20, 11), lines: [{ sku: 'MAT-FOAM-HD', qty: 18 }, { sku: 'MAT-FOAM-HR', qty: 8 }], pay: 'partial', note: 'July foam' },
-    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 6, 25, 9), lines: [{ sku: 'MAT-VEL-SAND', qty: 60 }, { sku: 'MAT-LIN-NAT', qty: 40 }], pay: 'full', note: 'Velvet / linen' },
-    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 14, 9), lines: [{ sku: 'MAT-VEL-NAVY', qty: 40 }, { sku: 'MAT-BOU-CRM', qty: 30 }], pay: 'partial', note: 'Navy + boucle' },
-    { supplier: 'SUP-HW', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 6, 20, 14), lines: [{ sku: 'MAT-HW-KIT', qty: 40 }, { sku: 'MAT-HW-SCREW', qty: 800 }], pay: 'full', note: 'Hardware June' },
-    { supplier: 'SUP-HW', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 28, 14), lines: [{ sku: 'MAT-MECH-RECL', qty: 12 }, { sku: 'MAT-SPRING', qty: 10 }], pay: 'none', note: 'Recliner kits' },
-    { supplier: 'SUP-FINISH', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 6, 28, 10), lines: [{ sku: 'MAT-LACQ', qty: 24 }, { sku: 'MAT-STAIN-WAL', qty: 12 }], pay: 'full', note: 'Coatings June' },
-    { supplier: 'SUP-PACK', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 2, 10), lines: [{ sku: 'MAT-CARTON', qty: 120 }, { sku: 'MAT-FOIL', qty: 20 }], pay: 'full', note: 'Packaging' },
-    { supplier: 'SUP-SPRING', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 10, 10), lines: [{ sku: 'MAT-SPRING', qty: 16 }, { sku: 'MAT-CASTER', qty: 20 }], pay: 'partial', note: 'Springs' },
-    { supplier: 'SUP-ADH', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 7, 6, 10), lines: [{ sku: 'MAT-GLUE', qty: 30 }, { sku: 'MAT-SPRAY-ADH', qty: 18 }], pay: 'full', note: 'Adhesives' },
-    { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 8, 4, 10), lines: [{ sku: 'MAT-BEECH', qty: 60 }, { sku: 'MAT-OAK', qty: 20 }], pay: 'none', note: 'August timber' },
-    { supplier: 'SUP-FOAM', status: PurchaseOrderStatus.RECEIVED, day: ammanLocal(2026, 8, 6, 10), lines: [{ sku: 'MAT-FOAM-MD', qty: 12 }], pay: 'none', note: 'August foam top-up' },
-    { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 10, 10), lines: [{ sku: 'MAT-PLY', qty: 40, receive: 18 }, { sku: 'MAT-WALNUT', qty: 20, receive: 8 }], pay: 'none', note: 'Partial ply / veneer' },
-    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 11, 10), lines: [{ sku: 'MAT-CHE-GRY', qty: 40, receive: 16 }], pay: 'none', note: 'Chenille partial' },
-    { supplier: 'SUP-HW', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 12, 10), lines: [{ sku: 'MAT-HW-KIT', qty: 30, receive: 12 }], pay: 'none', note: 'Hardware partial' },
-    { supplier: 'SUP-PACK', status: PurchaseOrderStatus.PARTIALLY_RECEIVED, day: ammanLocal(2026, 8, 13, 10), lines: [{ sku: 'MAT-STRAP', qty: 20, receive: 8 }], pay: 'none', note: 'Strap partial' },
-    { supplier: 'SUP-FABRIC', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 28, 10), lines: [{ sku: 'MAT-ITAL-VEL', qty: 24 }], pay: 'none', note: 'Italian velvet inbound — Cedar recliner' },
-    { supplier: 'SUP-FINISH', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 14, 10), lines: [{ sku: 'MAT-WHT-PAINT', qty: 16 }], pay: 'none', note: 'White enamel inbound' },
-    { supplier: 'SUP-FOAM', status: PurchaseOrderStatus.SENT, day: ammanLocal(2026, 8, 15, 10), lines: [{ sku: 'MAT-DACRON', qty: 40 }], pay: 'none', note: 'Dacron inbound' },
-    { supplier: 'SUP-TIMBER', status: PurchaseOrderStatus.APPROVED, day: ammanLocal(2026, 8, 15, 15), lines: [{ sku: 'MAT-TEAK', qty: 12 }], pay: 'none', note: 'Teak approved not sent' },
+    {
+      supplier: 'SUP-TIMBER',
+      status: PurchaseOrderStatus.RECEIVED,
+      day: daysAgo(20, 10),
+      lines: [
+        { sku: 'MAT-PINE', qty: 40 },
+        { sku: 'MAT-BEECH', qty: 10 },
+      ],
+      pay: 'full',
+      note: 'Fully received timber restock',
+      number: 'PORD-DEMO-RCVD',
+      expectedOffsetDays: 7,
+    },
+    {
+      supplier: 'SUP-FABRIC',
+      status: PurchaseOrderStatus.PARTIALLY_RECEIVED,
+      day: daysAgo(10, 10),
+      lines: [
+        { sku: 'MAT-VEL-SAND', qty: 40, receive: 18 },
+        { sku: 'MAT-LIN-NAT', qty: 24, receive: 12 },
+      ],
+      pay: 'none',
+      note: 'Partially received fabric',
+      number: 'PORD-DEMO-PARTIAL',
+      expectedOffsetDays: 7,
+    },
+    {
+      supplier: 'SUP-FOAM',
+      status: PurchaseOrderStatus.SENT,
+      day: daysAgo(3, 10),
+      lines: [
+        { sku: 'MAT-FOAM-HD', qty: 12 },
+        { sku: 'MAT-HW-KIT', qty: 20 },
+      ],
+      pay: 'none',
+      note: 'Open inbound foam / hardware',
+      number: 'PORD-DEMO-OPEN',
+      expectedOffsetDays: 10,
+    },
+    {
+      supplier: 'SUP-TIMBER',
+      status: PurchaseOrderStatus.SENT,
+      day: daysAgo(18, 10),
+      lines: [{ sku: 'MAT-BEECH', qty: 50 }],
+      pay: 'none',
+      note: 'Late beech PO — past expected delivery',
+      number: 'PORD-DEMO-LATE',
+      expectedOffsetDays: -5,
+    },
   ];
 
   for (const spec of pos) {
@@ -228,7 +260,8 @@ export async function seedDemoStock(
     const subtotal = lineData.reduce((s, l) => s + l.subtotal, 0);
     const taxAmount = lineData.reduce((s, l) => s + l.tax, 0);
     const prNumber = await nextDoc(prisma, 'purchase_request', opts.counters);
-    const poNumber = await nextDoc(prisma, 'purchase_order', opts.counters);
+    const poNumber = spec.number;
+    const expectedDeliveryDate = new Date(spec.day.getTime() + spec.expectedOffsetDays * 86400000);
 
     const po = await prisma.purchaseOrder.create({
       data: {
@@ -236,7 +269,7 @@ export async function seedDemoStock(
         supplierId,
         warehouseId: rawWh.id,
         orderDate: spec.day,
-        expectedDeliveryDate: new Date(spec.day.getTime() + 10 * 86400000),
+        expectedDeliveryDate,
         currency: 'ILS',
         status: spec.status,
         subtotal: money(subtotal),
@@ -282,9 +315,10 @@ export async function seedDemoStock(
     });
 
     const shouldReceive =
-      spec.status === PurchaseOrderStatus.RECEIVED || spec.status === PurchaseOrderStatus.PARTIALLY_RECEIVED;
+      spec.status === PurchaseOrderStatus.RECEIVED ||
+      spec.status === PurchaseOrderStatus.PARTIALLY_RECEIVED;
     if (shouldReceive) {
-      const receiptDate = new Date(spec.day.getTime() + 7 * 86400000);
+      const receiptDate = new Date(spec.day.getTime() + 5 * 86400000);
       const grnNumber = await nextDoc(prisma, 'grn', opts.counters);
       const grn = await prisma.goodsReceipt.create({
         data: {
@@ -324,7 +358,7 @@ export async function seedDemoStock(
       }
 
       if (spec.status === PurchaseOrderStatus.RECEIVED && spec.pay) {
-        const invNumber = `SINV-${poNumber.slice(5)}`;
+        const invNumber = `SINV-${poNumber.replace(/^PORD-/, '')}`;
         const paid =
           spec.pay === 'full'
             ? subtotal + taxAmount
@@ -367,7 +401,7 @@ export async function seedDemoStock(
         if (paid > 0) {
           await prisma.supplierPayment.create({
             data: {
-              number: `SPAY-${poNumber.slice(5)}`,
+              number: `SPAY-${poNumber.replace(/^PORD-/, '')}`,
               supplierId,
               supplierInvoiceId: sinv.id,
               paymentDate: new Date(receiptDate.getTime() + 5 * 86400000),
@@ -405,30 +439,69 @@ export async function seedDemoStock(
     }
   }
 
+  const beech = bySku.get('MAT-BEECH')!;
   const openPr = await nextDoc(prisma, 'purchase_request', opts.counters);
-  const foam = bySku.get('MAT-FOAM-HD')!;
   await prisma.purchaseRequest.create({
     data: {
       number: openPr,
       status: PurchaseRequestStatus.SUBMITTED,
       priority: Priority.HIGH,
-      requiredDate: ammanLocal(2026, 8, 22, 10),
-      reason: 'HD foam reorder before sectional wave',
+      requiredDate: daysAgo(0, 10),
+      reason: 'Low-stock beech reorder (MAT-BEECH)',
       requestedById: opts.purchasingId,
       warehouseId: rawWh.id,
-      preferredSupplierId: supplierIds['SUP-FOAM'],
-      createdAt: ammanLocal(2026, 8, 14, 11),
+      preferredSupplierId: supplierIds['SUP-TIMBER'],
+      createdAt: daysAgo(1, 11),
       lines: {
         create: [
           {
-            inventoryItemId: foam.id,
-            description: foam.nameEn,
-            quantity: money(24),
-            unit: foam.unit,
+            inventoryItemId: beech.id,
+            description: beech.nameEn,
+            quantity: money(60),
+            unit: beech.unit,
           },
         ],
       },
     },
+  });
+
+  // Transfer must not become consumption (signed move RAW→SEMI).
+  const pine = bySku.get('MAT-PINE')!;
+  await applyDemoMovement(prisma, {
+    type: InventoryTxType.WAREHOUSE_TRANSFER,
+    itemId: pine.id,
+    warehouseId: rawWh.id,
+    quantity: 5,
+    unitCost: pine.unitCost,
+    userId: opts.adminId,
+    at: daysAgo(2, 9),
+    notes: 'Transfer sample outbound RAW→SEMI (not consumption)',
+    outbound: true,
+    counters: opts.counters,
+  });
+  await applyDemoMovement(prisma, {
+    type: InventoryTxType.WAREHOUSE_TRANSFER,
+    itemId: pine.id,
+    warehouseId: semiWh.id,
+    quantity: 5,
+    unitCost: pine.unitCost,
+    userId: opts.adminId,
+    at: daysAgo(2, 9),
+    notes: 'Transfer sample inbound SEMI',
+    outbound: false,
+    counters: opts.counters,
+  });
+  await applyDemoMovement(prisma, {
+    type: InventoryTxType.INVENTORY_ADJUSTMENT,
+    itemId: beech.id,
+    warehouseId: rawWh.id,
+    quantity: -1,
+    unitCost: beech.unitCost,
+    userId: opts.adminId,
+    at: daysAgo(1, 15),
+    notes: 'Cycle-count adjustment sample',
+    outbound: true,
+    counters: opts.counters,
   });
 
   console.log(`  purchasing: ${SUPPLIERS.length} suppliers · ${pos.length} POs + 1 open PR`);

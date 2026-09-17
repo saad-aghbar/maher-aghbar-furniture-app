@@ -18,12 +18,6 @@ import {
   ProductionOrderStatus,
   QualityResult,
   QuotationStatus,
-  ReturnLifecycleState,
-  ReturnPieceDecision,
-  ReturnPieceState,
-  ReturnReason,
-  ReturnRecoveryOutcome,
-  ReturnResolution,
   SalesOrderStatus,
   TaskStatus,
 } from '@prisma/client';
@@ -36,34 +30,26 @@ import { MATERIAL_PHOTO_BY_SKU } from './material-photo-pool';
 import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 import type { SeqBag } from './seq';
 
+/** Slim A–J cost desk fixtures. Returns live in returns.ts (RT-DEMO-001). */
 export const COST_UAT = {
+  // A
   golden: 'SO-COST-GOLDEN',
+  // B–D
   profit: 'SO-COST-PROFIT',
   low: 'SO-COST-LOW',
   loss: 'SO-COST-LOSS',
+  // E — timed labor missing rate
   partial: 'SO-COST-PARTIAL',
   norate: 'SO-COST-NORATE',
-  unused: 'SO-COST-UNUSED',
+  // F
   waste: 'SO-COST-WASTE',
   rework: 'SO-COST-REWORK',
-  fabricOld: 'SO-COST-FAB-OLD',
-  fabricNew: 'SO-COST-FAB-NEW',
-  life: 'SO-COST-LIFE',
+  // H
   customA: 'SO-COST-CUSTOM-A',
-  customB: 'SO-COST-CUSTOM-B',
-  customC: 'SO-COST-CUSTOM-C',
+  // I — 3 variant rows (J = costPeriodAnchors dates)
   varStd1: 'SO-COST-VAR-STD-1',
-  varStd2: 'SO-COST-VAR-STD-2',
   varKar1: 'SO-COST-VAR-KAR-1',
-  varKar2: 'SO-COST-VAR-KAR-2',
-  varUkr1: 'SO-COST-VAR-UKR-1',
-  varUkr2: 'SO-COST-VAR-UKR-2',
-  noMat: 'SO-COST-NOMAT',
-  noFab: 'SO-COST-NOFAB',
-  repair: 'RT-COST-REPAIR',
-  replacement: 'RT-COST-REPL',
-  recovery: 'RT-COST-RECOVERY',
-  incompleteReturn: 'RT-COST-INCOMPLETE',
+  varXl1: 'SO-COST-VAR-XL-1',
   transfer: 'WHT-COST-1',
   gapSku: 'COST-GAP-TRIM',
   semiSku: 'SEMI-COST-FRAME',
@@ -630,7 +616,7 @@ export async function seedCostPerformanceWorld(
   await buildOrder({
     soNumber: COST_UAT.loss,
     projectName: 'Cost negative margin',
-    dealerUsername: 'cedar',
+    dealerUsername: 'nile',
     orderDate: anchors.weekNotToday,
     activityAt: anchors.weekNotToday,
     deliveredAt: anchors.weekNotToday,
@@ -638,7 +624,7 @@ export async function seedCostPerformanceWorld(
     lines: [
       {
         key: 'A',
-        variantCode: 'UKR',
+        variantCode: 'XL',
         qty: 1,
         lineTotal: 400,
         complexity: ManufacturingComplexity.STANDARD,
@@ -652,7 +638,7 @@ export async function seedCostPerformanceWorld(
   await buildOrder({
     soNumber: COST_UAT.partial,
     projectName: 'Cost partial labor rate',
-    dealerUsername: 'balqis',
+    dealerUsername: 'nile',
     orderDate: anchors.monthNotWeek,
     activityAt: anchors.monthNotWeek,
     deliveredAt: anchors.monthNotWeek,
@@ -677,7 +663,7 @@ export async function seedCostPerformanceWorld(
   await buildOrder({
     soNumber: COST_UAT.norate,
     projectName: 'Cost labor rate missing',
-    dealerUsername: 'balqis',
+    dealerUsername: 'oasis',
     orderDate: anchors.today,
     activityAt: anchors.today,
     deliveredAt: anchors.today,
@@ -697,34 +683,9 @@ export async function seedCostPerformanceWorld(
   });
 
   await buildOrder({
-    soNumber: COST_UAT.unused,
-    projectName: 'Cost unused material return',
-    dealerUsername: 'zaatar',
-    orderDate: anchors.asOf,
-    activityAt: anchors.asOf,
-    deliveredAt: anchors.asOf,
-    payment: 'paid',
-    lines: [
-      {
-        key: 'A',
-        variantCode: 'STD',
-        qty: 1,
-        lineTotal: 500,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [
-          { sku: wood, qty: 10, unitCost: 8 },
-          { sku: wood, qty: 2, unitCost: 8, type: InventoryTxType.PRODUCTION_RETURN },
-        ],
-        laborMinutes: 48,
-        laborUser: 'priced',
-      },
-    ],
-  });
-
-  await buildOrder({
     soNumber: COST_UAT.waste,
     projectName: 'Cost waste scrap',
-    dealerUsername: 'qasr',
+    dealerUsername: 'oasis',
     orderDate: anchors.monthNotWeek,
     activityAt: anchors.monthNotWeek,
     deliveredAt: anchors.monthNotWeek,
@@ -749,7 +710,7 @@ export async function seedCostPerformanceWorld(
   await buildOrder({
     soNumber: COST_UAT.rework,
     projectName: 'Cost rework',
-    dealerUsername: 'rawnaq',
+    dealerUsername: 'nile',
     orderDate: anchors.asOf,
     activityAt: anchors.asOf,
     deliveredAt: anchors.asOf,
@@ -773,107 +734,33 @@ export async function seedCostPerformanceWorld(
   });
 
   await buildOrder({
-    soNumber: COST_UAT.fabricOld,
-    projectName: 'Cost fabric historic lot',
-    dealerUsername: 'diwan',
-    orderDate: anchors.historical,
-    activityAt: anchors.historical,
-    deliveredAt: anchors.historical,
-    payment: 'paid',
-    lines: [
-      {
-        key: 'A',
-        variantCode: 'KARINA',
-        qty: 1,
-        lineTotal: 720,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [{ sku: fabricNavy, qty: 4, unitCost: 9 }],
-        laborMinutes: 40,
-        laborUser: 'priced',
-      },
-    ],
-  });
-
-  await buildOrder({
-    soNumber: COST_UAT.fabricNew,
-    projectName: 'Cost fabric current lot',
-    dealerUsername: 'diwan',
+    soNumber: COST_UAT.customA,
+    projectName: 'Cost custom banquettes',
+    dealerUsername: 'nile',
     orderDate: anchors.today,
     activityAt: anchors.today,
     deliveredAt: anchors.today,
     payment: 'paid',
     lines: [
       {
-        key: 'A',
-        variantCode: 'KARINA',
+        key: 'C',
+        custom: true,
+        customName: 'Cost custom banquettes',
         qty: 1,
-        lineTotal: 760,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [{ sku: fabricNavy, qty: 4, unitCost: 18 }],
-        laborMinutes: 40,
+        lineTotal: 420,
+        complexity: ManufacturingComplexity.CUSTOM,
+        movements: [{ sku: wood, qty: 5, unitCost: 11 }],
+        laborMinutes: 90,
         laborUser: 'priced',
       },
     ],
   });
 
-  const life = await buildOrder({
-    soNumber: COST_UAT.life,
-    projectName: 'Cost lifetime factory cost',
-    dealerUsername: 'nile',
-    orderDate: anchors.historical,
-    activityAt: anchors.historical,
-    deliveredAt: anchors.historical,
-    payment: 'paid',
-    lines: [
-      {
-        key: 'A',
-        variantCode: 'STD',
-        qty: 1,
-        lineTotal: 900,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [{ sku: wood, qty: 8, unitCost: 12 }],
-        laborMinutes: 72,
-        laborUser: 'priced',
-      },
-    ],
-  });
-
-  for (const [soNumber, name, dealerName, at] of [
-    [COST_UAT.customA, 'Cost custom banquettes', 'jabal', anchors.today],
-    [COST_UAT.customB, 'Cost custom reception desk', 'jabal', anchors.weekNotToday],
-    [COST_UAT.customC, 'Cost custom wall panel', 'noor', anchors.monthNotWeek],
-  ] as const) {
-    await buildOrder({
-      soNumber,
-      projectName: name,
-      dealerUsername: dealerName,
-      orderDate: at,
-      activityAt: at,
-      deliveredAt: at,
-      payment: 'paid',
-      lines: [
-        {
-          key: 'C',
-          custom: true,
-          customName: name,
-          qty: 1,
-          lineTotal: 420,
-          complexity: ManufacturingComplexity.CUSTOM,
-          movements: [{ sku: wood, qty: 5, unitCost: 11 }],
-          laborMinutes: 90,
-          laborUser: 'priced',
-        },
-      ],
-    });
-  }
-
+  // I — 3 variant rows across period anchors (J)
   const variantRows: Array<[string, string, string, Date, number, number]> = [
     [COST_UAT.varStd1, 'STD', 'nile', anchors.today, 1100, 8],
-    [COST_UAT.varStd2, 'STD', 'oasis', anchors.monthNotWeek, 1050, 10],
-    [COST_UAT.varKar1, 'KARINA', 'nile', anchors.weekNotToday, 980, 12],
-    [COST_UAT.varKar2, 'KARINA', 'oasis', anchors.asOf, 990, 14],
-    [COST_UAT.varUkr1, 'UKR', 'cedar', anchors.today, 940, 9],
-    [COST_UAT.varUkr2, 'UKR', 'zaatar', anchors.historical, 920, 11],
+    [COST_UAT.varKar1, 'KARINA', 'oasis', anchors.weekNotToday, 980, 12],
+    [COST_UAT.varXl1, 'XL', 'nile', anchors.historical, 940, 9],
   ];
   for (const [soNumber, variantCode, dealerName, at, sale, woodQty] of variantRows) {
     await buildOrder({
@@ -898,68 +785,6 @@ export async function seedCostPerformanceWorld(
       ],
     });
   }
-
-  await buildOrder({
-    soNumber: COST_UAT.noMat,
-    projectName: 'Cost missing material price',
-    dealerUsername: 'qasr',
-    orderDate: anchors.today,
-    activityAt: anchors.today,
-    deliveredAt: anchors.today,
-    payment: 'unpaid',
-    lines: [
-      {
-        key: 'A',
-        variantCode: 'STD',
-        qty: 1,
-        lineTotal: 500,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [{ sku: wood, qty: 3, unitCost: null }],
-        laborMinutes: 30,
-        laborUser: 'priced',
-      },
-    ],
-  });
-
-  await buildOrder({
-    soNumber: COST_UAT.noFab,
-    projectName: 'Cost missing fabric price',
-    dealerUsername: 'rawnaq',
-    orderDate: anchors.weekNotToday,
-    activityAt: anchors.weekNotToday,
-    deliveredAt: anchors.weekNotToday,
-    payment: 'unpaid',
-    lines: [
-      {
-        key: 'A',
-        variantCode: 'KARINA',
-        qty: 1,
-        lineTotal: 520,
-        complexity: ManufacturingComplexity.STANDARD,
-        movements: [{ sku: fabricSand, qty: 3, unitCost: null }],
-        laborMinutes: 30,
-        laborUser: 'priced',
-      },
-    ],
-  });
-
-  await seedReturns(prisma, {
-    life,
-    dealer: dealer('nile'),
-    adminId: opts.adminId,
-    inspectorId: opts.inspectorId,
-    warehouseUserId: opts.warehouseUserId,
-    carpenterId: carpenter.id,
-    woodSku: wood,
-    foamSku: foam,
-    rawWhId: rawWh.id,
-    finWhId: finWh.id,
-    sofa,
-    counters: opts.counters,
-    at: anchors.asOf,
-    weekAt: anchors.weekNotToday,
-    monthAt: anchors.monthNotWeek,
-  });
 
   await seedInventoryEconomics(prisma, {
     adminId: opts.adminId,
@@ -986,7 +811,7 @@ export async function seedCostPerformanceWorld(
   });
 
   console.log(
-    `  Cost world: ${COST_UAT.golden} 294/630/336 · ${COST_UAT.low} · ${COST_UAT.loss} · ${COST_UAT.partial}`,
+    `  Cost world: ${COST_UAT.golden} 294/630/336 · ${COST_UAT.profit} · ${COST_UAT.low} · ${COST_UAT.loss} · ${COST_UAT.partial}/${COST_UAT.norate} · ${COST_UAT.waste}/${COST_UAT.rework} · ${COST_UAT.customA} · variants`,
   );
 }
 
@@ -1018,238 +843,6 @@ async function ensureUnpricedWorker(prisma: PrismaClient, passwordHash: string) 
     });
   }
   return user.id;
-}
-
-async function seedReturns(
-  prisma: PrismaClient,
-  opts: {
-    life: { so: { id: string; number: string }; lines: Array<{ lineId: string; poId: string }>; customer: DealerRef };
-    dealer: DealerRef;
-    adminId: string;
-    inspectorId: string;
-    warehouseUserId: string;
-    carpenterId: string;
-    woodSku: string;
-    foamSku: string;
-    rawWhId: string;
-    finWhId: string;
-    sofa: ProductRef;
-    counters: SeqBag;
-    at: Date;
-    weekAt: Date;
-    monthAt: Date;
-  },
-) {
-  const wood = await prisma.inventoryItem.findUniqueOrThrow({ where: { sku: opts.woodSku } });
-  const foam = await prisma.inventoryItem.findUniqueOrThrow({ where: { sku: opts.foamSku } });
-  const lifeLine = opts.life.lines[0]!;
-
-  async function makeReturn(args: {
-    number: string;
-    decision: ReturnPieceDecision;
-    origin: ProductionOrderOriginType;
-    resolution: ReturnResolution;
-    at: Date;
-    withCost: boolean;
-    recover?: boolean;
-    incomplete?: boolean;
-  }) {
-    const ret = await prisma.returnRequest.create({
-      data: {
-        number: args.number,
-        customerId: opts.dealer.id,
-        salesOrderId: opts.life.so.id,
-        salesOrderLineId: lifeLine.lineId,
-        productId: opts.sofa.id,
-        variantId: opts.sofa.defaultVariantId,
-        sourceProductionOrderId: lifeLine.poId,
-        productDesc: opts.sofa.nameEn,
-        quantity: money(1),
-        reason: ReturnReason.MANUFACTURING_DEFECT,
-        description: args.number,
-        approvalStatus: 'APPROVED',
-        physicalStatus: args.incomplete ? 'RETURNED' : 'RESOLVED',
-        lifecycleState: args.incomplete ? ReturnLifecycleState.RECEIVED : ReturnLifecycleState.COMPLETED,
-        resolution: args.resolution,
-        receivedAt: args.at,
-        receivedById: opts.adminId,
-        createdAt: args.at,
-      },
-    });
-    const piece = await prisma.returnPiece.create({
-      data: {
-        returnRequestId: ret.id,
-        pieceNo: 1,
-        code: `${args.number}-P1`,
-        salesOrderId: opts.life.so.id,
-        salesOrderLineId: lifeLine.lineId,
-        productId: opts.sofa.id,
-        variantId: opts.sofa.defaultVariantId,
-        productDesc: opts.sofa.nameEn,
-        state: args.recover ? ReturnPieceState.RECOVERED : ReturnPieceState.READY_TO_RETURN,
-        decision: args.decision,
-        receivedAt: args.at,
-        receivedById: opts.adminId,
-      },
-    });
-    if (args.incomplete) return;
-
-    const po = await prisma.productionOrder.create({
-      data: {
-        number: `PO-${args.number}`,
-        salesOrderId: opts.life.so.id,
-        salesOrderLineId: lifeLine.lineId,
-        customerId: opts.dealer.id,
-        productId: opts.sofa.id,
-        variantId: opts.sofa.defaultVariantId,
-        productDescription: `${args.number} work`,
-        quantity: money(1),
-        status: ProductionOrderStatus.COMPLETED,
-        progressPercent: 100,
-        originType: args.origin,
-        returnRequestId: ret.id,
-        returnPieceId: piece.id,
-        actualStartDate: args.at,
-        actualCompletionDate: args.at,
-        createdById: opts.adminId,
-      },
-    });
-    await attachMinimalWorkflowSnapshot(prisma, po.id, `cost-${args.number}`);
-    const task = await prisma.productionTask.create({
-      data: {
-        number: `TSK-${args.number}`,
-        productionOrderId: po.id,
-        name: `${args.number} work`,
-        status: TaskStatus.COMPLETED,
-        progressPercent: 100,
-        assignedEmployeeId: opts.carpenterId,
-        isRework: args.origin === ProductionOrderOriginType.RETURN_WORK,
-      },
-    });
-    await prisma.qualityInspection.create({
-      data: {
-        number: `QC-${args.number}`,
-        productionOrderId: po.id,
-        inspectorId: opts.inspectorId,
-        inspectedAt: args.at,
-        result: QualityResult.PASSED,
-      },
-    });
-    if (args.withCost) {
-      await applyDemoMovement(prisma, {
-        type: InventoryTxType.PRODUCTION_ISSUE,
-        itemId: wood.id,
-        warehouseId: opts.rawWhId,
-        quantity: 2,
-        unitCost: 14,
-        userId: opts.warehouseUserId,
-        at: args.at,
-        notes: `COST ${args.number} repair issue`,
-        referenceType: 'ProductionOrder',
-        referenceId: po.id,
-        productionOrderId: po.id,
-        productionTaskId: task.id,
-        salesOrderId: opts.life.so.id,
-        counters: opts.counters,
-      });
-      await prisma.taskTimeEntry.create({
-        data: {
-          taskId: task.id,
-          userId: opts.carpenterId,
-          startedAt: args.at,
-          endedAt: new Date(args.at.getTime() + 48 * 60_000),
-          minutes: 48,
-        },
-      });
-    }
-    if (args.recover) {
-      await prisma.returnRecoveryLine.create({
-        data: {
-          returnPieceId: piece.id,
-          productionTaskId: task.id,
-          inventoryItemId: foam.id,
-          label: foam.nameEn,
-          quantity: money(2),
-          unit: foam.unit || 'pcs',
-          outcome: ReturnRecoveryOutcome.RECOVER_TO_INVENTORY,
-          destinationWarehouseId: opts.rawWhId,
-          unitCost: money(15),
-          recordedById: opts.adminId,
-          recordedAt: args.at,
-          postedAt: args.at,
-          idempotencyKey: `${args.number}-rec-1`,
-        },
-      });
-      await applyDemoMovement(prisma, {
-        type: InventoryTxType.CUSTOMER_RETURN,
-        itemId: foam.id,
-        warehouseId: opts.rawWhId,
-        quantity: 2,
-        unitCost: 15,
-        userId: opts.warehouseUserId,
-        at: args.at,
-        notes: `COST ${args.number} recovered foam`,
-        salesOrderId: opts.life.so.id,
-        counters: opts.counters,
-      });
-      await prisma.returnRecoveryLine.create({
-        data: {
-          returnPieceId: piece.id,
-          label: 'Disposed foam scrap',
-          quantity: money(1),
-          unit: 'pcs',
-          outcome: ReturnRecoveryOutcome.DISPOSE,
-          unitCost: money(8),
-          recordedById: opts.adminId,
-          recordedAt: args.at,
-          postedAt: args.at,
-          idempotencyKey: `${args.number}-disp-1`,
-        },
-      });
-    }
-    await prisma.returnPiece.update({
-      where: { id: piece.id },
-      data: {
-        productionOrderId: args.origin === ProductionOrderOriginType.RETURN_RECOVERY ? null : po.id,
-        recoveryOrderId: args.origin === ProductionOrderOriginType.RETURN_RECOVERY ? po.id : null,
-      },
-    });
-  }
-
-  await makeReturn({
-    number: COST_UAT.repair,
-    decision: ReturnPieceDecision.REPAIR,
-    origin: ProductionOrderOriginType.RETURN_WORK,
-    resolution: ReturnResolution.REPAIR,
-    at: opts.at,
-    withCost: true,
-  });
-  await makeReturn({
-    number: COST_UAT.replacement,
-    decision: ReturnPieceDecision.REPLACEMENT,
-    origin: ProductionOrderOriginType.REPLACEMENT,
-    resolution: ReturnResolution.REPLACEMENT,
-    at: opts.weekAt,
-    withCost: true,
-  });
-  await makeReturn({
-    number: COST_UAT.recovery,
-    decision: ReturnPieceDecision.SCRAP_RECOVERY,
-    origin: ProductionOrderOriginType.RETURN_RECOVERY,
-    resolution: ReturnResolution.CREDIT_NOTE,
-    at: opts.monthAt,
-    withCost: true,
-    recover: true,
-  });
-  await makeReturn({
-    number: COST_UAT.incompleteReturn,
-    decision: ReturnPieceDecision.REPAIR,
-    origin: ProductionOrderOriginType.RETURN_WORK,
-    resolution: ReturnResolution.REPAIR,
-    at: opts.at,
-    withCost: false,
-    incomplete: true,
-  });
 }
 
 async function seedInventoryEconomics(

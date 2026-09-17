@@ -127,9 +127,10 @@ export function RolesTouchBar({ roles, value, onChange }: Props) {
     ),
   }));
 
+  const pillH = useChromeSize(PILL_HEIGHT);
+
   if (roles.length === 0) return null;
 
-  const pillH = useChromeSize(PILL_HEIGHT);
   const shellH = SHELL_PAD_Y * 2 + pillH;
 
   return (

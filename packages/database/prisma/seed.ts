@@ -6,16 +6,13 @@ import { preservedRoleCodes, seedFoundation } from './seed/foundation';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding Maher Al-Aghbar ERP…');
+  console.log('Seeding Maher Al-Aghbar ERP (launch / empty ops)…');
 
   await seedFoundation(prisma);
 
-  // Wipe operational rows (keeps foundation tables above).
   console.log('Wiping operational data…');
   await wipeOperationalData(prisma);
 
-  // Drop legacy roles that are no longer in the three-account model.
-  // Keep system staff presets (e.g. WAREHOUSE_MANAGEMENT) — full demo people need them.
   const keepRoles = preservedRoleCodes();
   await prisma.rolePermission.deleteMany({
     where: { role: { code: { notIn: keepRoles } } },
@@ -25,26 +22,12 @@ async function main() {
   });
 
   const passwordHash = hashSync('123', 12);
+  // Launch world only — presentation factory is `pnpm demo:reset`.
   await seedDemoWorld(prisma, passwordHash);
 
-  if (process.env.SEED_FACTORY_UAT === '1') {
-    const { seedFactoryUat } = await import('./seed/factory-uat');
-    await seedFactoryUat(prisma);
-  }
-
-  if (process.env.SEED_FLOOR_UAT === '1') {
-    const { seedFloorWorkerUat } = await import('./seed/floor-worker-uat');
-    await seedFloorWorkerUat(prisma, passwordHash);
-  }
-
   console.log('Seed complete.');
-  if (process.env.SEED_FULL_DEMO === '1') {
-    console.log('Full demo logins (password: 123): admin | nile | oasis | balqis | cutter | carpenter | …');
-  } else {
-    console.log('Launch logins (password: 123): admin | nile | oasis | balqis | floor');
-    console.log('  Empty catalog, inventory, orders, and invoices. Presentation dataset: pnpm demo:reset');
-    console.log('  (pnpm db:seed:demo is a legacy 14-day world — do not use for owner demos)');
-  }
+  console.log('Launch logins (password: 123): admin | nile | oasis | balqis | warehouse | floor');
+  console.log('  Empty catalog / orders. For the clean deterministic factory: pnpm demo:reset');
 }
 
 main()
