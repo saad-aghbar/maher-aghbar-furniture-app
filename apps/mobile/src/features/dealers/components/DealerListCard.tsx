@@ -14,13 +14,14 @@ import { dealerIdentitySubtitle, hasVisibleContact } from '../dealerDetailDispla
 type Props = {
   dealer: CustomerListItem;
   onPress: () => void;
+  selected?: boolean;
 };
 
 /**
  * Dealer list floor card — same board language as invoices / returns / purchasing:
  * header band, identity row, inset meta boards, money hierarchy.
  */
-export function DealerListCard({ dealer, onPress }: Props) {
+export function DealerListCard({ dealer, onPress, selected = false }: Props) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const name = localizedName(locale, dealer, dealer.code || '—');
@@ -71,8 +72,8 @@ export function DealerListCard({ dealer, onPress }: Props) {
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surface,
+        borderColor: selected ? colors.brand : colors.borderStrong,
+        backgroundColor: selected ? colors.brandSoft : colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
       }}
@@ -86,7 +87,7 @@ export function DealerListCard({ dealer, onPress }: Props) {
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
           backgroundColor: colors.brand,
-          opacity: 0.55,
+          opacity: selected ? 1 : 0.55,
         }}
       />
 

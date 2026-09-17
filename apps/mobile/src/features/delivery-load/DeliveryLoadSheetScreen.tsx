@@ -16,13 +16,12 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { CodeField } from '@/components/forms/CodeField';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
-import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
@@ -30,7 +29,6 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useSmartBack } from '@/navigation/useSmartBack';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   DELIVERY_FLOOR_CHARCOAL,
@@ -40,6 +38,7 @@ import {
 import { selectDeliveryHumanPhase } from './deliveryHumanPhase';
 import { nextUnloadPieceForLotQr } from './deliveryLoadScan';
 import { useDeliveryLoadMutations, useDeliveryLoadSheetQuery } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   deliveryId: string;
@@ -257,14 +256,14 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const goBack = useSmartBack('/(app)/(employee)/(tabs)/tasks');
-  const { openScanner } = useCodeScanner();
   const allowed = can(user, 'delivery.read');
   const [busyPieceId, setBusyPieceId] = useState<string | null>(null);
   const [departConfirmOpen, setDepartConfirmOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const [typedLot, setTypedLot] = useState('');
 
   const query = useDeliveryLoadSheetQuery(deliveryId, allowed);
   const mutations = useDeliveryLoadMutations(deliveryId);
@@ -324,14 +323,8 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
     [mutations.check, mutations.uncheck, showToast, t],
   );
 
-  const onScanLotQr = useCallback(async () => {
-    if (departed || scanning) return;
-    setScanning(true);
-    try {
-      const code = await openScanner({
-        title: t('mobile.deliveryLoad.scanPackageTitle'),
-        hint: t('mobile.deliveryLoad.scanPackageHint'),
-      });
+  const applyLotQr = useCallback(
+    async (code: string) => {
       if (!code || !sheet) return;
       void haptics.selection();
       const match = nextUnloadPieceForLotQr(sheet, code);
@@ -352,10 +345,9 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
         return;
       }
       await onToggle(match.pieceId, false);
-    } finally {
-      setScanning(false);
-    }
-  }, [departed, onToggle, openScanner, scanning, sheet, showToast, t]);
+    },
+    [onToggle, sheet, showToast, t],
+  );
 
   const onDepart = useCallback(async () => {
     try {
@@ -436,7 +428,7 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         }}
         refreshControl={
           <RefreshControl
@@ -677,16 +669,24 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
             {t('mobile.deliveryLoad.packagesHint')}
           </AppText>
           {!departed ? (
-            <SecondaryButton
-              label={
-                scanning
-                  ? t('mobile.deliveryLoad.scanning')
-                  : t('mobile.deliveryLoad.scanPackageCta')
-              }
-              onPress={() => void onScanLotQr()}
-              disabled={scanning || Boolean(busyPieceId)}
-              style={{ marginTop: theme.spacing.sm, alignSelf: 'stretch' }}
-            />
+            <View style={{ marginTop: theme.spacing.sm }}>
+              <CodeField
+                value={typedLot}
+                onChangeText={setTypedLot}
+                label={t('mobile.deliveryLoad.scanPackageTitle')}
+                placeholder={t('mobile.deliveryLoad.scanPackageHint')}
+                autoCapitalize="characters"
+                returnKeyType="go"
+                editable={!busyPieceId}
+                onSubmitEditing={() => {
+                  if (!typedLot.trim() || Boolean(busyPieceId)) return;
+                  void applyLotQr(typedLot);
+                }}
+                onScanned={(code) => void applyLotQr(code)}
+                scanTitle={t('mobile.deliveryLoad.scanPackageTitle')}
+                scanHint={t('mobile.deliveryLoad.scanPackageHint')}
+              />
+            </View>
           ) : null}
         </View>
 

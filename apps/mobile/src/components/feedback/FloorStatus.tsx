@@ -3,8 +3,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, FadeIn, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   /** Page landmark (Gendy) — sits above the error line when set. */
@@ -30,6 +30,7 @@ export function FloorStatus({
   const { isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const isError = tone === 'error';
 
@@ -41,7 +42,7 @@ export function FloorStatus({
           flexGrow: 1,
           justifyContent: 'center',
           paddingTop: theme.spacing.md,
-          paddingBottom: SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
+          paddingBottom: surfaceClearance,
           alignItems: isRTL ? 'flex-end' : 'flex-start',
           gap: theme.spacing.md,
         }}

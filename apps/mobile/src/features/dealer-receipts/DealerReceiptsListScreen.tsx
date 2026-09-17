@@ -16,7 +16,6 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { OrdersListSkeleton } from '@/features/sales-orders/components/OrdersListSkeleton';
 import { useOwnDeliveriesQuery } from '@/features/scheduling/query';
 import { useLocale } from '@/i18n';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { DealerReceiptCard } from './components/DealerReceiptCard';
 import { DealerReceiptsHubBoard } from './components/DealerReceiptsHubBoard';
@@ -27,6 +26,7 @@ import {
   type DealerReceiptTileKey,
 } from './selectDealerReceipts';
 import { useDealerReceiptConfirm } from './useDealerReceiptConfirm';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   detailHref: (salesOrderId: string) => Href;
@@ -79,6 +79,7 @@ export function DealerReceiptsListScreen({
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const allowed = can(user, 'sales-order.read');
@@ -132,7 +133,7 @@ export function DealerReceiptsListScreen({
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance,
         }}
         refreshControl={
           <RefreshControl

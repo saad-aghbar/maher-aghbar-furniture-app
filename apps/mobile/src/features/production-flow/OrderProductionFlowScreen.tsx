@@ -11,7 +11,6 @@ import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { OrderFlowItemCard } from './components/OrderFlowItemCard';
 import { ProductionFlowScreen } from './ProductionFlowScreen';
@@ -20,6 +19,7 @@ import {
   dealerOrderFlowHref,
 } from './flowRoutes';
 import type { ProductionFlowRole } from './selectProductionFlow';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   selectOrderFlowItems,
   shouldSkipOrderFlowList,
@@ -43,6 +43,7 @@ export function OrderProductionFlowScreen({
 }: Props) {
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const query = useSalesOrderQuery(salesOrderId, Boolean(salesOrderId));
@@ -103,7 +104,7 @@ export function OrderProductionFlowScreen({
         style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         }}
         refreshControl={
           <RefreshControl

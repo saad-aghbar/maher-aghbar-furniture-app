@@ -7,6 +7,8 @@ type TaskCardProps = {
   completed?: boolean;
   /** Disable enter animation after first paint (filter changes). */
   animateEnter?: boolean;
+  selected?: boolean;
+  onPress?: () => void;
 };
 
 export function TaskCard({
@@ -14,11 +16,13 @@ export function TaskCard({
   index = 0,
   completed = false,
   animateEnter = true,
+  onPress,
 }: TaskCardProps) {
   return (
     <IndustrialFloorTaskCard
       index={index}
       animateEnter={animateEnter}
+      onPress={onPress}
       task={{
         id: task.id,
         department: task.requiredWork,

@@ -321,6 +321,7 @@ export function CreateTransferSheet({
                       resultScanned={verifyScanned}
                       resultFabric={verifyFabric}
                       onScanPress={() => void runLabelVerify()}
+                      onTypedCode={(code) => void runLabelVerify(undefined, code)}
                       onClearResult={clearLabelVerify}
                       onScanAgain={() => void runLabelVerify()}
                       onUseScanned={(picked) => {

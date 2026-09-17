@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useLocale } from '@/i18n';
-import { InventorySignatureHome } from './components/InventorySignatureHome';
+import { InventoryHubHost } from './InventoryHubHost';
 import { INVENTORY_COMPOSITION } from './inventoryComposition';
 import { isValidCategoryGroup } from './selectInventory';
 import { InventoryGroupsClassicScreen } from './InventoryGroupsClassicScreen';
@@ -57,7 +57,7 @@ export function InventoryGroupsScreen() {
 
   if (INVENTORY_COMPOSITION === 'signature') {
     return (
-      <InventorySignatureHome
+      <InventoryHubHost
         initialGroup={initialGroup}
         initialLifecycle={initialLifecycle}
         initialScope={initialScope}

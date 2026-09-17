@@ -32,7 +32,6 @@ import { BomMaterialPickerSheet } from '@/features/catalog/components/BomMateria
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   useProductProductionSetupQuery,
@@ -47,6 +46,7 @@ import {
 } from './productionSetupBehavior';
 import { ProductionStageSetupSheet } from './components/ProductionStageSetupSheet';
 import { WorkflowPageHeader, WorkflowStatusPill } from './components/WorkflowPageHeader';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   productId: string;
@@ -622,6 +622,7 @@ export function ProductionSetupScreen({
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const dark = colorScheme === 'dark';
   const { showToast } = useToast();
   const qc = useQueryClient();
@@ -648,7 +649,7 @@ export function ProductionSetupScreen({
   }
 
   /** Extra scroll room for FloatingActionDock. */
-  const stickyPad = SURFACE_TAB_BAR_CLEARANCE + theme.spacing.lg + 108;
+  const stickyPad = tabBarReserve + theme.spacing.lg + 108;
 
   async function saveAll() {
     if (bomDraft) {

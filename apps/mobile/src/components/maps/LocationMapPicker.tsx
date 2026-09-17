@@ -24,6 +24,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { TextField } from '@/components/forms/TextField';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { useLocationMapVisibility } from '@/components/maps/LocationMapVisibility';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -221,6 +222,7 @@ export function LocationMapPicker({
   const [busy, setBusy] = useState(false);
   const [mapAvailable, setMapAvailable] = useState(true);
   const [pinKey, setPinKey] = useState(0);
+  const [addressDraft, setAddressDraft] = useState('');
   /** Delayed so host BottomSheet Modal can yield first (iOS nested-Modal race). */
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -267,6 +269,36 @@ export function LocationMapPicker({
     }
     return true;
   }, [showToast, t]);
+
+  const lookupAddress = useCallback(async () => {
+    const query = addressDraft.trim();
+    if (!query) return;
+    setBusy(true);
+    try {
+      const hits = await Location.geocodeAsync(query);
+      const first = hits[0];
+      if (!first) {
+        showToast({
+          variant: 'warning',
+          message: t('mobile.newOrder.mapUnavailableHint'),
+        });
+        return;
+      }
+      const next = { latitude: first.latitude, longitude: first.longitude };
+      dropPin({ ...next, address: query });
+      setRegion(regionFrom(next));
+    } catch {
+      showToast({
+        variant: 'error',
+        message: toastCopy(
+          t('mobile.newOrder.locationErrorTitle'),
+          t('mobile.newOrder.locationErrorBody'),
+        ),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [addressDraft, dropPin, showToast, t]);
 
   const locateCurrent = useCallback(async () => {
     setBusy(true);
@@ -490,6 +522,21 @@ export function LocationMapPicker({
                 {t('mobile.newOrder.locationRequiredBody')}
               </AppText>
             )}
+
+            <TextField
+              value={addressDraft}
+              onChangeText={setAddressDraft}
+              placeholder={t('mobile.newOrder.mapPickerHint')}
+              returnKeyType="search"
+              onSubmitEditing={() => void lookupAddress()}
+              accessibilityLabel={t('mobile.newOrder.mapPickerHint')}
+            />
+            <SecondaryButton
+              label={t('mobile.newOrder.mapPickerTitle')}
+              onPress={() => void lookupAddress()}
+              loading={busy}
+              style={{ borderRadius: theme.radius.xl }}
+            />
 
             <SecondaryButton
               label={t('mobile.newOrder.useCurrentLocation')}

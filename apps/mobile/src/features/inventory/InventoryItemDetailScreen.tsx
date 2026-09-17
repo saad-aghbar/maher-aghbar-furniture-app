@@ -65,9 +65,11 @@ import {
 
 type InventoryItemDetailScreenProps = {
   itemId: string;
+  /** Hide stack back chrome when this screen is the split-pane detail. */
+  embedded?: boolean;
 };
 
-export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenProps) {
+export function InventoryItemDetailScreen({ itemId, embedded = false }: InventoryItemDetailScreenProps) {
   const { user } = useAuth();
   const router = useRouter();
   const { t, locale, isRTL } = useLocale();
@@ -290,7 +292,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
 
   if (!allowed) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/inventory' as Href)}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -298,7 +300,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
 
   if (itemQuery.isLoading && !itemQuery.data) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/inventory' as Href)}>
         <InventoryDetailSkeleton />
       </AppScreen>
     );
@@ -314,7 +316,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
         ? t('mobile.inventory.groupLandmark.semi')
         : undefined;
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/inventory' as Href)}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ToastClearance />
         <ErrorState
@@ -414,7 +416,9 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   gap: theme.spacing.sm,
                 }}
               >
-                <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+                {embedded ? null : (
+                  <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+                )}
                 {eyebrow ? (
                   <AppText
                     variant="caption"

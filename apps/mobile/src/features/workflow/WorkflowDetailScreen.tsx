@@ -29,7 +29,6 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { ProductionFlowMap } from '@/features/production-flow/components/ProductionFlowMap';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { AddStageSheet } from './components/AddStageSheet';
@@ -57,6 +56,7 @@ import { buildWorkflowLayoutLevels } from './workflowLayout';
 import { canonicalEdgesForLayout, toDomainGraph } from './toDomainGraph';
 import { ensureOpeningChain, ensureTerminalChain } from '@/api/modules/workflow';
 import { workflowGraphChainRequirements } from '@maher/types';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import {
   useCreateDraftMutation,
   useDiscardWorkflowDraftMutation,
@@ -114,6 +114,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
   const { t, locale } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const navigation = useNavigation();
@@ -121,7 +122,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
   const canManage = can(user, 'production.workflow.manage');
   const canPublish = can(user, 'production.workflow.publish');
   /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
-  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomClearance = surfaceClearance;
 
   const [addOpen, setAddOpen] = useState(false);
   const [editNode, setEditNode] = useState<WorkflowNode | null>(null);

@@ -2,12 +2,12 @@ import { type ReactNode } from 'react';
 import {
   ScrollView,
   type ScrollViewProps,
-  type StyleProp,
-  type ViewStyle,
+  type StyleProp, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMaherDensity } from '@/adaptive/density';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type ScrollableScreenProps = {
   children: ReactNode;
@@ -28,17 +28,28 @@ export function ScrollableScreen({
 }: ScrollableScreenProps) {
   const insets = useSafeAreaInsets();
   const { colors, theme } = useTheme();
+  const density = useMaherDensity();
+  const surfaceClearance = useSurfaceClearance();
   const pad = theme.spacing[padding];
 
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      style={[{ flex: 1, backgroundColor: colors.background }, style]}
+      style={[
+        {
+          flex: 1,
+          backgroundColor: colors.background,
+          width: '100%',
+          alignSelf: 'center',
+          maxWidth: density.contentMaxWidth,
+        },
+        style,
+      ]}
       contentContainerStyle={[
         {
           paddingTop: insets.top + pad,
-          paddingBottom: insets.bottom + pad + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance + pad,
           paddingHorizontal: pad,
           gap: theme.spacing.lg,
           flexGrow: 1,

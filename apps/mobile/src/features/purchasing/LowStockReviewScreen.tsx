@@ -25,7 +25,6 @@ import { locationsForWarehouse } from '@/features/inventory/components/Warehouse
 import { pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { draftPurchaseRunWhatsApp } from './api';
@@ -51,6 +50,7 @@ import {
   updateLowStockQty,
   type LowStockReviewRow,
 } from './lowStockReview';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   useCreatePurchaseOrdersBatchMutation,
   useLowStockDraftQuery,
@@ -64,6 +64,7 @@ export function LowStockReviewScreen() {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const canCreate = can(user, 'purchase-order.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -103,7 +104,7 @@ export function LowStockReviewScreen() {
     () => (warehousesQuery.data ?? []).filter((w) => !w.type || w.type === 'RAW_MATERIALS'),
     [warehousesQuery.data],
   );
-  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 140;
+  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) + 140;
 
   useEffect(() => {
     if (!seeded.length) return;

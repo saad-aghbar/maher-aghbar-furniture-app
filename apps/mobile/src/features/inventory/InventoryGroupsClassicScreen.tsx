@@ -11,16 +11,17 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { InventoryGroupCard } from './components/InventoryGroupCard';
 import { InventoryGroupsSkeleton } from './components/InventorySkeleton';
 import { useInventoryGroupsQuery } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 /** Classic groups hub — kept for INVENTORY_COMPOSITION = 'classic' rollback. */
 export function InventoryGroupsClassicScreen() {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme, colors } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const allowed = can(user, 'inventory.read');
@@ -71,7 +72,7 @@ export function InventoryGroupsClassicScreen() {
         keyExtractor={(g) => g.categoryGroup}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
           flexGrow: 1,
         }}
         refreshControl={

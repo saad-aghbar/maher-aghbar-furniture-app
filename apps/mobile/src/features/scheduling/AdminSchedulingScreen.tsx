@@ -4,6 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
+import { SplitPane } from '@/adaptive/SplitPane';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import {
@@ -36,7 +39,6 @@ import {
 import { assignTask } from '@/api/modules/production';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { ProductionTaskSheet } from '@/features/production/components/ProductionTaskSheet';
 import {
@@ -111,11 +113,13 @@ export function AdminSchedulingScreen() {
   const canAdjustHours = can(user, 'schedule.settings.manage');
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const { isDesk } = useMaherLayout();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const tabClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const tabClearance = surfaceClearance;
 
   const today = todayYmd();
   const weekRange = useMemo(() => weekRangeFromYmd(today), [today]);
@@ -480,6 +484,12 @@ export function AdminSchedulingScreen() {
   const stageRow = day?.stages.find(
     (row) => (row.stageDefinitionId ?? row.departmentId ?? row.code) === stageMeta?.id,
   );
+  const listOnlyFocus =
+    focus === 'unscheduled' ||
+    focus === 'atRisk' ||
+    focus === 'conflicts' ||
+    focus === 'week';
+  const splitMonthDay = isDesk && !listOnlyFocus;
   const freeWindows = worker
     ? worker.freeWindows
     : task
@@ -650,93 +660,182 @@ export function AdminSchedulingScreen() {
         ) : null}
 
         {focus !== 'unscheduled' && focus !== 'atRisk' && focus !== 'conflicts' && focus !== 'week' ? (
-          <>
-            <FactoryMonthBoard
-              selectedDay={selectedDay}
-              cursor={cursor}
-              onCursorChange={setCursor}
-              dayMeta={dayMeta}
-              onSelectDay={(ymd) => {
-                setSelectedDay(ymd);
-                if (focus === 'today') setFocus(null);
-              }}
-            />
-            {day ? (
-              <FactoryDayWorkspace
-                day={day}
-                onOpenStage={(stageId, _code, name) => {
-                  setStageMeta({ id: stageId || name, name });
-                  setStageOpen(true);
-                }}
-                onAdjustHours={() => {
-                  if (!canAdjustHours) return;
-                  setDayExceptionOpen(true);
-                }}
-              />
-            ) : null}
-            {focus === 'overtime' && overtimeWorkers.length > 0 ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                {overtimeWorkers.map((row) => (
-                  <ListItemEnter key={row.employeeId} index={0}>
-                    <SchedulingOrderCard
-                      order={{
-                        id: row.employeeId,
-                        productionOrderId: row.employeeId,
-                        number: row.name,
-                        productName: t('mobile.adminScheduling.overtimeBadge'),
-                        plannedStart: row.overtimeAfter,
-                        plannedEnd: row.overtimeAfter,
-                      }}
-                      onPress={() => setWorker(row)}
-                    />
-                  </ListItemEnter>
-                ))}
-              </View>
-            ) : null}
-            <View style={{ gap: theme.spacing.sm }}>
-              <AppText>{t('mobile.adminScheduling.dayOrdersTitle', { date: selectedDay })}</AppText>
-              <SchedulingSalesOrderGroups
-                groups={groupSchedulingCardsBySalesOrder(dayOrders)}
-                renderCard={(card) => (
-                  <SchedulingOrderCard
-                    order={{
-                      id: card.id,
-                      productionOrderId: card.productionOrderId,
-                      number: card.number,
-                      productName: card.title,
-                      dealerName: card.dealerName,
-                      imageUrl: card.imageUrl,
-                      plannedStart: card.plannedStart,
-                      plannedEnd: card.plannedEnd,
-                      status: card.status,
-                      materialRisk: card.materialRisk,
-                      hasConflict: card.hasConflict,
-                      requestedDeliveryDate: card.requiredDeliveryDate,
-                      committedDeliveryDate: card.committedDeliveryDate,
-                    }}
-                    onPress={() =>
-                      setSelectedOrder({
-                        id: card.id,
-                        productionOrderId: card.productionOrderId,
-                        number: card.number,
-                        productName: card.title,
-                        dealerName: card.dealerName,
-                        imageUrl: card.imageUrl,
-                        plannedStart: card.plannedStart,
-                        plannedEnd: card.plannedEnd,
-                        status: card.status,
-                        materialRisk: card.materialRisk,
-                        hasConflict: card.hasConflict,
-                        version: card.scheduleVersion,
-                        requestedDeliveryDate: card.requiredDeliveryDate,
-                        committedDeliveryDate: card.committedDeliveryDate,
-                      })
-                    }
-                  />
+          <SplitPane
+            testID="scheduling-split"
+            split={splitMonthDay}
+            primary={
+              <View style={{ gap: theme.spacing.md }}>
+                <FactoryMonthBoard
+                  selectedDay={selectedDay}
+                  cursor={cursor}
+                  onCursorChange={setCursor}
+                  dayMeta={dayMeta}
+                  onSelectDay={(ymd) => {
+                    setSelectedDay(ymd);
+                    if (focus === 'today') setFocus(null);
+                  }}
+                />
+                {splitMonthDay ? null : (
+                  <>
+                    {day ? (
+                      <FactoryDayWorkspace
+                        day={day}
+                        onOpenStage={(stageId, _code, name) => {
+                          setStageMeta({ id: stageId || name, name });
+                          setStageOpen(true);
+                        }}
+                        onAdjustHours={() => {
+                          if (!canAdjustHours) return;
+                          setDayExceptionOpen(true);
+                        }}
+                      />
+                    ) : null}
+                    {focus === 'overtime' && overtimeWorkers.length > 0 ? (
+                      <View style={{ gap: theme.spacing.sm }}>
+                        {overtimeWorkers.map((row) => (
+                          <ListItemEnter key={row.employeeId} index={0}>
+                            <SchedulingOrderCard
+                              order={{
+                                id: row.employeeId,
+                                productionOrderId: row.employeeId,
+                                number: row.name,
+                                productName: t('mobile.adminScheduling.overtimeBadge'),
+                                plannedStart: row.overtimeAfter,
+                                plannedEnd: row.overtimeAfter,
+                              }}
+                              onPress={() => setWorker(row)}
+                            />
+                          </ListItemEnter>
+                        ))}
+                      </View>
+                    ) : null}
+                    <View style={{ gap: theme.spacing.sm }}>
+                      <AppText>{t('mobile.adminScheduling.dayOrdersTitle', { date: selectedDay })}</AppText>
+                      <SchedulingSalesOrderGroups
+                        groups={groupSchedulingCardsBySalesOrder(dayOrders)}
+                        renderCard={(card) => (
+                          <SchedulingOrderCard
+                            order={{
+                              id: card.id,
+                              productionOrderId: card.productionOrderId,
+                              number: card.number,
+                              productName: card.title,
+                              dealerName: card.dealerName,
+                              imageUrl: card.imageUrl,
+                              plannedStart: card.plannedStart,
+                              plannedEnd: card.plannedEnd,
+                              status: card.status,
+                              materialRisk: card.materialRisk,
+                              hasConflict: card.hasConflict,
+                              requestedDeliveryDate: card.requiredDeliveryDate,
+                              committedDeliveryDate: card.committedDeliveryDate,
+                            }}
+                            onPress={() =>
+                              setSelectedOrder({
+                                id: card.id,
+                                productionOrderId: card.productionOrderId,
+                                number: card.number,
+                                productName: card.title,
+                                dealerName: card.dealerName,
+                                imageUrl: card.imageUrl,
+                                plannedStart: card.plannedStart,
+                                plannedEnd: card.plannedEnd,
+                                status: card.status,
+                                materialRisk: card.materialRisk,
+                                hasConflict: card.hasConflict,
+                                version: card.scheduleVersion,
+                                requestedDeliveryDate: card.requiredDeliveryDate,
+                                committedDeliveryDate: card.committedDeliveryDate,
+                              })
+                            }
+                          />
+                        )}
+                      />
+                    </View>
+                  </>
                 )}
-              />
-            </View>
-          </>
+              </View>
+            }
+            detail={
+              <View style={{ gap: theme.spacing.md }}>
+                {day ? (
+                  <FactoryDayWorkspace
+                    day={day}
+                    onOpenStage={(stageId, _code, name) => {
+                      setStageMeta({ id: stageId || name, name });
+                      setStageOpen(true);
+                    }}
+                    onAdjustHours={() => {
+                      if (!canAdjustHours) return;
+                      setDayExceptionOpen(true);
+                    }}
+                  />
+                ) : null}
+                {focus === 'overtime' && overtimeWorkers.length > 0 ? (
+                  <View style={{ gap: theme.spacing.sm }}>
+                    {overtimeWorkers.map((row) => (
+                      <ListItemEnter key={row.employeeId} index={0}>
+                        <SchedulingOrderCard
+                          order={{
+                            id: row.employeeId,
+                            productionOrderId: row.employeeId,
+                            number: row.name,
+                            productName: t('mobile.adminScheduling.overtimeBadge'),
+                            plannedStart: row.overtimeAfter,
+                            plannedEnd: row.overtimeAfter,
+                          }}
+                          onPress={() => setWorker(row)}
+                        />
+                      </ListItemEnter>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={{ gap: theme.spacing.sm }}>
+                  <AppText>{t('mobile.adminScheduling.dayOrdersTitle', { date: selectedDay })}</AppText>
+                  <SchedulingSalesOrderGroups
+                    groups={groupSchedulingCardsBySalesOrder(dayOrders)}
+                    renderCard={(card) => (
+                      <SchedulingOrderCard
+                        order={{
+                          id: card.id,
+                          productionOrderId: card.productionOrderId,
+                          number: card.number,
+                          productName: card.title,
+                          dealerName: card.dealerName,
+                          imageUrl: card.imageUrl,
+                          plannedStart: card.plannedStart,
+                          plannedEnd: card.plannedEnd,
+                          status: card.status,
+                          materialRisk: card.materialRisk,
+                          hasConflict: card.hasConflict,
+                          requestedDeliveryDate: card.requiredDeliveryDate,
+                          committedDeliveryDate: card.committedDeliveryDate,
+                        }}
+                        onPress={() =>
+                          setSelectedOrder({
+                            id: card.id,
+                            productionOrderId: card.productionOrderId,
+                            number: card.number,
+                            productName: card.title,
+                            dealerName: card.dealerName,
+                            imageUrl: card.imageUrl,
+                            plannedStart: card.plannedStart,
+                            plannedEnd: card.plannedEnd,
+                            status: card.status,
+                            materialRisk: card.materialRisk,
+                            hasConflict: card.hasConflict,
+                            version: card.scheduleVersion,
+                            requestedDeliveryDate: card.requiredDeliveryDate,
+                            committedDeliveryDate: card.committedDeliveryDate,
+                          })
+                        }
+                      />
+                    )}
+                  />
+                </View>
+              </View>
+            }
+          />
         ) : null}
       </ScrollView>
 

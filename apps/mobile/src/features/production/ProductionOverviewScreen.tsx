@@ -22,7 +22,6 @@ import {
   haptics,
 } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { ProductionComplexityFilter, ProductionDateMode, ProductionDayFocus, ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
 import { ProductionProblemsBar } from './components/ProductionProblemsBar';
@@ -47,6 +46,7 @@ import {
 import { productionHubBoardHref, productionHubOrderHref } from './productionHubOrderHref';
 import { selectProductionBasketBoard } from './selectProduction';
 import { boardCountForBucket, productionListItemsForBoard } from './boardLaneList';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type MetricAccent = 'brand' | 'success' | 'late' | 'warning';
 
@@ -76,12 +76,19 @@ const BOARD_BUCKETS = new Set<string>([
   'all',
 ]);
 
-export function ProductionOverviewScreen() {
+export function ProductionOverviewScreen({
+  selectedOrderId,
+  onSelectHref,
+}: {
+  selectedOrderId?: string;
+  onSelectHref?: (href: string) => void;
+} = {}) {
   const { user, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
-  const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomPad = theme.spacing['3xl'] + tabBarReserve;
   const router = useRouter();
   const params = useLocalSearchParams<{
     bucket?: string;
@@ -673,7 +680,9 @@ export function ProductionOverviewScreen() {
           });
           const openDetails = () => {
             void haptics.selection();
-            router.push(productionHubBoardHref(board.items.map((row) => row.href)) as Href);
+            const href = productionHubBoardHref(board.items.map((row) => row.href));
+            if (onSelectHref) onSelectHref(href);
+            else router.push(href as Href);
           };
           return (
             <ListItemEnter index={index} enabled={staggerListEnter}>
@@ -684,7 +693,9 @@ export function ProductionOverviewScreen() {
                   const row = board.items.find((entry) => entry.id === itemId);
                   if (!row) return;
                   void haptics.selection();
-                  router.push(productionHubOrderHref(row.href) as Href);
+                  const href = productionHubOrderHref(row.href);
+                  if (onSelectHref) onSelectHref(href);
+                  else router.push(href as Href);
                 }}
               />
             </ListItemEnter>

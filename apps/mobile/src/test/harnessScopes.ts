@@ -29,6 +29,9 @@ export const ACCESSIBILITY_SWEEP_DIRS = [
   'src/features/requests/components/CropPreviewSheet.tsx',
   'src/features/requests/components/SpecCorrectSheet.tsx',
   'src/features/sales-orders/components/CatalogPromotionBoard.tsx',
+  'src/adaptive',
+  'src/navigation/AdaptiveShell.tsx',
+  'src/navigation/AdminSideNav.tsx',
 ] as const;
 
 /** Window metrics used by the sheet geometry harness (iPhone 14). */

@@ -34,7 +34,7 @@ import {
   useReducedMotion,
 } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 import { ProductionTaskSheet } from './components/ProductionTaskSheet';
@@ -128,6 +128,8 @@ type ProductionDetailScreenProps = {
   orderId: string;
   /** orders = Preparing plan host; production = post-release execution (default). */
   host?: 'orders' | 'production';
+  /** Desk split: hide back chrome and skip unreleased redirects. */
+  embedded?: boolean;
 };
 
 function priorityText(priority: string, t: (key: string) => string): string {
@@ -139,11 +141,13 @@ function priorityText(priority: string, t: (key: string) => string): string {
 export function ProductionDetailScreen({
   orderId,
   host = 'production',
+  embedded = false,
 }: ProductionDetailScreenProps) {
   const { user } = useAuth();
   const { t, locale, isRTL, formatDateTime, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -422,7 +426,7 @@ export function ProductionDetailScreen({
 
   if (!canRead) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/production' as Href)}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -430,7 +434,7 @@ export function ProductionDetailScreen({
 
   if (query.isLoading && !query.data) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/production' as Href)}>
         <ProductionListSkeleton />
       </AppScreen>
     );
@@ -438,7 +442,7 @@ export function ProductionDetailScreen({
 
   if ((query.isError && !query.data) || !detail) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href}>
+      <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/production' as Href)}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.production.errorTitle')}
@@ -450,7 +454,7 @@ export function ProductionDetailScreen({
     );
   }
 
-  if (redirectUnreleasedToOrdersPlan && salesOrderId) {
+  if (redirectUnreleasedToOrdersPlan && salesOrderId && !embedded) {
     return (
       <Redirect
         href={`/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href}
@@ -477,7 +481,7 @@ export function ProductionDetailScreen({
   const replanDockVisible = showReplan && !dockVisible;
   const listBottomPad =
     theme.spacing['3xl'] +
-    SURFACE_TAB_BAR_CLEARANCE +
+    tabBarReserve +
     (dockVisible || replanDockVisible ? 72 : 0);
 
   const openAssign = (taskId: string) => {
@@ -565,7 +569,7 @@ export function ProductionDetailScreen({
   };
 
   return (
-    <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href} padding="md">
+    <AppScreen backFallback={embedded ? undefined : ('/(app)/(admin)/(tabs)/production' as Href)} padding="md">
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
         data={

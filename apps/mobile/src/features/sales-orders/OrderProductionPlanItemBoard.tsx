@@ -1,5 +1,4 @@
 import { ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
@@ -10,7 +9,7 @@ import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
-import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import { useTheme } from '@/theme';
 import type { OrderProductionSetupLine } from './api';
 import { PlanItemFloorCard } from './components/PlanItemFloorCard';
@@ -32,6 +31,9 @@ type Props = {
     totalLines?: number;
     percent?: number;
   } | null;
+  selectedLineId?: string;
+  onSelectLine?: (lineId: string) => void;
+  embedded?: boolean;
 };
 
 function PlanItemsScreenTitle({
@@ -78,11 +80,14 @@ export function OrderProductionPlanItemBoard({
   orderNumber,
   dealer,
   progress,
+  selectedLineId,
+  onSelectLine,
+  embedded = false,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const floor = selectPlanItemsFloor({
     orderNumber,
@@ -95,13 +100,15 @@ export function OrderProductionPlanItemBoard({
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
       <View style={{ paddingHorizontal: theme.spacing.lg }}>
-        <PlanItemsScreenTitle onBack={() => router.back()} titleWeight={titleWeight} />
+        {embedded ? null : (
+          <PlanItemsScreenTitle onBack={() => router.back()} titleWeight={titleWeight} />
+        )}
       </View>
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: surfaceListBottomInset(insets.bottom),
+          paddingBottom: surfaceClearance,
         }}
       >
         <ListItemEnter index={0}>
@@ -237,7 +244,12 @@ export function OrderProductionPlanItemBoard({
             <ListItemEnter key={item.id} index={index + 1}>
               <PlanItemFloorCard
                 item={item}
+                selected={item.salesOrderLineId === selectedLineId}
                 onPress={() => {
+                  if (onSelectLine) {
+                    onSelectLine(item.salesOrderLineId);
+                    return;
+                  }
                   router.push(
                     `/(app)/(admin)/orders/${salesOrderId}/production-plan?lineId=${item.salesOrderLineId}` as Href,
                   );

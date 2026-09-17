@@ -30,7 +30,6 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { ReturnJourneyRail } from './components/ReturnJourneyRail';
 import { ReturnPhotoGallery } from './components/ReturnPhotoGallery';
@@ -62,18 +61,21 @@ import {
   selectReturnCard,
 } from './selectReturn';
 import type { ReturnResolution } from './api';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   returnId: string;
   /** Dealer surface: human lifecycle, need-info note, no admin resolve actions. */
   dealerFacing?: boolean;
   backFallback?: Href;
+  embedded?: boolean;
 };
 
 export function ReturnDetailScreen({
   returnId,
   dealerFacing = false,
   backFallback,
+  embedded = false,
 }: Props) {
   const { user } = useAuth();
   const router = useRouter();
@@ -81,6 +83,7 @@ export function ReturnDetailScreen({
   const { colors, theme, colorScheme } = useTheme();
   const pill = returnCtaStyle(theme);
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = canAny(user, ['return.read', 'sales-order.read']);
@@ -214,13 +217,14 @@ export function ReturnDetailScreen({
         title={card.number}
         titleWeight={titleWeight}
         backFallback={resolvedBack}
+        hideBack={embedded}
       />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom:
-            insets.bottom + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['3xl'],
+            surfaceClearance + theme.spacing['3xl'],
         }}
       >
         <View
@@ -1206,10 +1210,12 @@ function DetailTitle({
   title,
   titleWeight,
   backFallback,
+  hideBack,
 }: {
   title: string;
   titleWeight: 'medium' | 'semibold';
   backFallback: Href;
+  hideBack?: boolean;
 }) {
   const { isRTL } = useLocale();
   const { theme } = useTheme();
@@ -1227,7 +1233,7 @@ function DetailTitle({
           justifyContent: 'center',
         }}
       >
-        <ScreenBackLead fallback={backFallback} />
+        {hideBack ? null : <ScreenBackLead fallback={backFallback} />}
       </View>
       <AppText
         variant="largeTitle"

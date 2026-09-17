@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   View,
   type TextInputProps,
@@ -62,6 +63,7 @@ export function TextField({
 }: TextFieldProps) {
   const { colors, theme, colorScheme } = useTheme();
   const { isRTL, locale } = useLocale();
+  const [focused, setFocused] = useState(false);
   const rounded = pill ?? rest.returnKeyType === 'search';
   const radius = rounded ? theme.radius.full : theme.radius.xl;
   const padY = theme.spacing.md;
@@ -103,6 +105,14 @@ export function TextField({
       ]}
       {...rest}
       {...growing.inputProps}
+      onFocus={(e) => {
+        setFocused(true);
+        rest.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        rest.onBlur?.(e);
+      }}
     />
   );
 
@@ -144,15 +154,15 @@ export function TextField({
         </View>
       ) : null}
       {rounded ? (
-        <SearchBarShell error={Boolean(error)} iconColor={iconColor}>
+        <SearchBarShell error={Boolean(error)} focused={focused} iconColor={iconColor}>
           {input}
         </SearchBarShell>
       ) : (
         <View
           style={{
             borderRadius: radius,
-            borderWidth: 1,
-            borderColor: error ? colors.error : colors.borderStrong,
+            borderWidth: focused ? 1.5 : 1,
+            borderColor: error ? colors.error : focused ? colors.brand : colors.borderStrong,
             backgroundColor: colors.surface,
             overflow: 'hidden',
             ...orderBoardShadow(colorScheme),

@@ -9,6 +9,8 @@ import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCa
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
+import { carouselCardWidth } from '@/adaptive/density';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useTheme } from '@/theme';
 
 type Props = {
@@ -16,11 +18,9 @@ type Props = {
   onPress: () => void;
 };
 
-/** Fixed board width — shared by waiting / production / completed carousels. */
-const CARD_W = 200;
+/** Compact board width — shared by waiting / production / completed carousels. */
+const COMPACT_CARD_W = 200;
 const PAD = 12;
-/** Match catalog product card media (width ÷ ratio). */
-const MEDIA_H = Math.round(CARD_W / PRODUCT_CARD_MEDIA_RATIO);
 const TITLE_LINES = 2;
 const TITLE_LINE = 18;
 const META_LINE = 16;
@@ -31,6 +31,9 @@ const META_LINE = 16;
 export function DealerOrderCard({ order, onPress }: Props) {
   const { t, formatCurrency, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { windowClass } = useMaherLayout();
+  const CARD_W = carouselCardWidth(windowClass, COMPACT_CARD_W);
+  const MEDIA_H = Math.round(CARD_W / PRODUCT_CARD_MEDIA_RATIO);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pct =
     order.progressPercent != null
@@ -260,4 +263,4 @@ function PriceBlock({
   );
 }
 
-export const DEALER_ORDER_CARD_WIDTH = CARD_W;
+export const DEALER_ORDER_CARD_WIDTH = COMPACT_CARD_W;

@@ -31,7 +31,6 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useLocale } from '@/i18n';
 import { SuccessBurst, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { AiProcessingAnimation } from './components/AiProcessingAnimation';
 import {
   useAiJobQuery,
@@ -40,6 +39,7 @@ import {
   useManualAiJobMutation,
   useRejectAiJobMutation,
 } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   confidenceLabel,
   isProcessingPhase,
@@ -61,6 +61,7 @@ export function AiReviewScreen({ jobId }: AiReviewScreenProps) {
   const { user } = useAuth();
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -261,7 +262,7 @@ export function AiReviewScreen({ jobId }: AiReviewScreenProps) {
             tintColor={colors.brand}
           />
         }
-        contentContainerStyle={{ gap: theme.spacing.lg, paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE }}
+        contentContainerStyle={{ gap: theme.spacing.lg, paddingBottom: theme.spacing['3xl'] + tabBarReserve }}
       >
         <View
           style={{

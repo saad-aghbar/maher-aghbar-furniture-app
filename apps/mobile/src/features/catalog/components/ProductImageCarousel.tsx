@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Image,
   Pressable,
@@ -16,9 +15,8 @@ import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { SkeletonShimmer, haptics } from '@/motion';
 import { useLocale } from '@/i18n';
+import { useWindowMetrics } from '@/adaptive/windowMetrics';
 import { useTheme } from '@/theme';
-
-const { width: SCREEN_W } = Dimensions.get('window');
 
 type ProductImageCarouselProps = {
   uris: string[];
@@ -38,6 +36,7 @@ export function ProductImageCarousel({
   onToggleFavorite,
 }: ProductImageCarouselProps) {
   const { colors, theme } = useTheme();
+  const { width: SCREEN_W } = useWindowMetrics();
   const { t, isRTL } = useLocale();
   const insets = useSafeAreaInsets();
   const height = Math.round(SCREEN_W / aspectRatio);

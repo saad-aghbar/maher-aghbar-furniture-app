@@ -86,12 +86,12 @@ type DealerTab =
   | 'invoices'
   | 'priceList';
 
-type Props = { dealerId: string };
+type Props = { dealerId: string; embedded?: boolean };
 
 /**
  * Dealer detail — floor boards: identity hero, metrics, money, profile, CRM, summary tabs.
  */
-export function DealerDetailScreen({ dealerId }: Props) {
+export function DealerDetailScreen({ dealerId, embedded = false }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL, formatCurrency, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -241,7 +241,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
   if (!allowed) {
     return (
       <ScrollableScreen>
-        <BackButton onPress={onBack} />
+        {embedded ? null : <BackButton onPress={onBack} />}
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </ScrollableScreen>
     );
@@ -250,7 +250,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
   if (detailQuery.isLoading && !dealer) {
     return (
       <ScrollableScreen>
-        <BackButton onPress={onBack} />
+        {embedded ? null : <BackButton onPress={onBack} />}
         <ActivityIndicator color={colors.brand} />
       </ScrollableScreen>
     );
@@ -259,7 +259,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
   if (detailQuery.isError && !dealer) {
     return (
       <ScrollableScreen>
-        <BackButton onPress={onBack} />
+        {embedded ? null : <BackButton onPress={onBack} />}
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.dealers.detailErrorTitle')}
@@ -342,7 +342,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
         ),
       }}
     >
-      <DealerDetailTitle onBack={onBack} titleWeight={titleWeight} />
+      <DealerDetailTitle onBack={embedded ? undefined : onBack} titleWeight={titleWeight} />
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       {/* Identity hero */}
@@ -1137,7 +1137,7 @@ function DealerDetailTitle({
   onBack,
   titleWeight,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   titleWeight: 'medium' | 'semibold';
 }) {
   const { t, isRTL } = useLocale();
@@ -1156,7 +1156,7 @@ function DealerDetailTitle({
           justifyContent: 'center',
         }}
       >
-        <BackButton onPress={onBack} />
+        {onBack ? <BackButton onPress={onBack} /> : null}
       </View>
       <AppText
         variant="largeTitle"

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   FlatList,
   RefreshControl,
   View,
@@ -19,13 +18,13 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { DealerEmptyState, DealerProductCard } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
+import { useTheme } from '@/theme';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { AnimatedPressable, haptics } from '@/motion';
-import { useTheme } from '@/theme';
-import {
-  DEALER_TAB_BAR_CLEARANCE,
-  SURFACE_TAB_BAR_CLEARANCE,
-} from '@/navigation/tabBarClearance';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
+import { useWindowMetrics } from '@/adaptive/windowMetrics';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
+import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import type { BrowseCategory, BrowseProduct } from './api';
 import { CatalogFilterChips } from './components/CatalogFilterChips';
@@ -68,6 +67,8 @@ type CatalogScreenProps = {
   backFallback?: Href;
   /** Admin: show Add product when user has catalog.manage. */
   showCreateProduct?: boolean;
+  selectedProductId?: string;
+  onSelectProduct?: (id: string) => void;
   /**
    * `dealer` — premium customer catalog (DealerProductCard, FAB clearance).
    * `admin` — shared products hub chrome (unchanged admin UX).
@@ -84,6 +85,8 @@ export function CatalogScreen({
   showBack = false,
   backFallback = '/(app)/(admin)/(tabs)' as Href,
   showCreateProduct = false,
+  selectedProductId,
+  onSelectProduct,
   variant = 'dealer',
 }: CatalogScreenProps = {}) {
   const { user } = useAuth();
@@ -91,6 +94,9 @@ export function CatalogScreen({
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
+  const { windowClass, columnCapacity, isCompact } = useMaherLayout();
+  const { width: screenW } = useWindowMetrics();
+  const tabBarReserve = useTabBarReserve();
   const router = useRouter();
   const searchParams = useLocalSearchParams();
   const isDealer = variant === 'dealer';
@@ -100,13 +106,14 @@ export function CatalogScreen({
   const canCreate = showCreateProduct && can(user, 'catalog.manage');
   const addProductLabel = t('catalog.addProduct');
   const fabSize = 56;
-  const tabClearance = isDealer ? DEALER_TAB_BAR_CLEARANCE : SURFACE_TAB_BAR_CLEARANCE;
+  const tabClearance = isDealer ? DEALER_TAB_BAR_CLEARANCE : tabBarReserve;
   /** Admin grid: last row + chocolate + FAB must clear the floating tab (inset only). */
   const listBottomPad = isDealer
     ? theme.spacing['3xl'] + tabClearance
     : adminCatalogListBottomPad(
         insets.bottom,
         canCreate ? fabSize + theme.spacing.md : 0,
+        windowClass,
       );
 
   const [searchInput, setSearchInput] = useState('');
@@ -207,10 +214,10 @@ export function CatalogScreen({
         ? []
         : (categoriesQuery.data ?? []);
 
-  const screenW = Dimensions.get('window').width;
   const pad = theme.spacing.lg;
   const gap = theme.spacing.md;
-  const cardWidth = (screenW - pad * 2 - gap) / 2;
+  const cols = isCompact ? 2 : Math.min(columnCapacity, 4);
+  const cardWidth = (screenW - pad * 2 - gap * (cols - 1)) / cols;
   const filterActiveCount = countActiveCatalogFilters(applied);
 
   /** True first visit only — never when swapping filters. */
@@ -235,6 +242,10 @@ export function CatalogScreen({
 
   const openProduct = (id: string) => {
     if (pickForOrder) void haptics.selection();
+    if (onSelectProduct) {
+      onSelectProduct(id);
+      return;
+    }
     router.push(
       productDetailHref
         ? productDetailHref(id)
@@ -402,7 +413,8 @@ export function CatalogScreen({
       <FlatList
         data={cards}
         keyExtractor={(item) => item.id}
-        numColumns={2}
+        numColumns={cols}
+        key={`catalog-cols-${cols}`}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ paddingHorizontal: pad, paddingBottom: theme.spacing.sm, gap: theme.spacing.sm }}>
@@ -424,11 +436,15 @@ export function CatalogScreen({
             ) : null}
           </View>
         }
-        columnWrapperStyle={{
-          gap,
-          paddingHorizontal: pad,
-          alignItems: 'flex-start',
-        }}
+        columnWrapperStyle={
+          cols > 1
+            ? {
+                gap,
+                paddingHorizontal: pad,
+                alignItems: 'flex-start',
+              }
+            : undefined
+        }
         contentContainerStyle={{
           paddingBottom: listBottomPad,
           flexGrow: 1,
@@ -548,7 +564,7 @@ export function CatalogScreen({
               }}
               style={{
                 position: 'absolute',
-                bottom: adminCatalogFabBottom(insets.bottom),
+                bottom: adminCatalogFabBottom(insets.bottom, windowClass),
                 ...(isRTL ? { left: theme.spacing.lg } : { right: theme.spacing.lg }),
                 width: fabSize,
                 height: fabSize,
@@ -567,6 +583,10 @@ export function CatalogScreen({
             onClose={() => setCreateOpen(false)}
             initialCategoryId={categoryId}
             onCreated={(id) => {
+              if (onSelectProduct) {
+                onSelectProduct(id);
+                return;
+              }
               if (productDetailHref) {
                 router.push(productDetailHref(id));
               }

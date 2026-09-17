@@ -13,7 +13,6 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useProductionOrderQuery } from '@/features/production/query';
 import { useProductionOrderWorkflowQuery } from '@/features/workflow/query';
@@ -39,6 +38,7 @@ import { toastMessageForError } from '@/api/queryClient';
 import { useToast } from '@/components/feedback/Toast';
 import { adminProductionPlanHref } from './flowRoutes';
 import { stageNeedsTimeApproval } from '@/features/workflow/productionSetupBehavior';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 const STAGE_STARTED = new Set([
   'IN_PROGRESS',
@@ -59,6 +59,7 @@ type Props = {
 export function ProductionFlowScreen({ role, source, id, backFallback }: Props) {
   const { t, locale, formatDate, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -94,7 +95,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     planEditable &&
     Boolean(s.snapshotNodeId) &&
     !STAGE_STARTED.has(String(s.status ?? '').toUpperCase());
-  const flowScrollBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  const flowScrollBottomPad = theme.spacing['3xl'] + tabBarReserve;
 
   const awaitingTimeApproval = useMemo(() => {
     if (role !== 'admin') return false;
@@ -463,7 +464,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           >
             <ProductionFlowMap
               stages={model.stages}
-              bottomInset={SURFACE_TAB_BAR_CLEARANCE}
+              bottomInset={tabBarReserve}
               onStagePress={(stage) => {
                 if (
                   role === 'admin' &&

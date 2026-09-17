@@ -1,5 +1,8 @@
 import { useEffect } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { View } from 'react-native';
+import { useMaherDensity } from '@/adaptive/density';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
+import { useWindowMetrics } from '@/adaptive/windowMetrics';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -31,10 +34,14 @@ export function AdminHomeQuickAccess() {
   const { user } = useAuth();
   const router = useRouter();
   const reduce = useReducedMotion();
-  const { width } = useWindowDimensions();
+  const { width } = useWindowMetrics();
+  const { columnCapacity, isCompact } = useMaherLayout();
+  const density = useMaherDensity();
   const pad = theme.spacing.lg;
   const gap = theme.spacing.sm;
-  const halfW = (width - pad * 2 - gap) / 2;
+  const cols = isCompact ? 2 : Math.min(Math.max(columnCapacity, 2), 4);
+  const layoutWidth = density.contentMaxWidth ? Math.min(width, density.contentMaxWidth) : width;
+  const tileW = (layoutWidth - pad * 2 - gap * (cols - 1)) / cols;
   const ink = colorScheme === 'dark' ? colors.surfaceSecondary : '#2F2924';
 
   const visible = filterAdminOverflowModules(user, 'home');
@@ -76,7 +83,7 @@ export function AdminHomeQuickAccess() {
             key={mod.key}
             mod={mod}
             index={index}
-            width={mod.span === 'full' ? width - pad * 2 : halfW}
+            width={mod.span === 'full' ? layoutWidth - pad * 2 : tileW}
             reduce={Boolean(reduce)}
             ink={ink}
             onPress={() => {

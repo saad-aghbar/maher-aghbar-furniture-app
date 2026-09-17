@@ -56,6 +56,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // Bump so SpringBoard drops the cached home-screen icon after a logo change.
       buildNumber: '2',
       infoPlist: {
+        UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
+        'UISupportedInterfaceOrientations~ipad': [
+          'UIInterfaceOrientationPortrait',
+          'UIInterfaceOrientationPortraitUpsideDown',
+          'UIInterfaceOrientationLandscapeLeft',
+          'UIInterfaceOrientationLandscapeRight',
+        ],
         NSMicrophoneUsageDescription:
           'Allow Maher Al-Aghbar Furniture to record a short voice note when reporting a production problem.',
         NSCameraUsageDescription:
@@ -117,6 +124,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins: [
       'expo-router',
       'expo-secure-store',
+      './plugins/withAndroidTabletOrientation',
       [
         'expo-localization',
         { supportsRTL: false },

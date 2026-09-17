@@ -52,7 +52,6 @@ import {
 } from './invoiceFilters';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   flattenInvoices,
@@ -61,6 +60,7 @@ import {
 } from './query';
 import { selectInvoiceCard, type InvoiceCardModel } from './selectInvoice';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   detailHref: (id: string) => Href;
@@ -69,6 +69,8 @@ type Props = {
   adminControls?: boolean;
   /** Admin purchasing invoice detail route. */
   purchasingDetailHref?: (id: string) => Href;
+  selectedInvoiceId?: string;
+  onSelectInvoice?: (id: string) => void;
 };
 
 type SectionItem =
@@ -125,11 +127,14 @@ export function InvoicesListScreen({
   adminControls = false,
   purchasingDetailHref = (id) =>
     `/(app)/(admin)/purchasing/supplier-invoices/${id}` as Href,
+  selectedInvoiceId,
+  onSelectInvoice,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -355,7 +360,7 @@ export function InvoicesListScreen({
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance,
         }}
         refreshControl={
           <RefreshControl
@@ -554,7 +559,11 @@ export function InvoicesListScreen({
               <InvoiceBoardCard
                 invoice={item.card}
                 dealerFacing={dealerSurface}
-                onPress={() => router.push(detailHref(item.card.id))}
+                onPress={() =>
+                  onSelectInvoice
+                    ? onSelectInvoice(item.card.id)
+                    : router.push(detailHref(item.card.id))
+                }
                 onPdf={() => {
                   void (async () => {
                     const opts = await pickPdfOptions();

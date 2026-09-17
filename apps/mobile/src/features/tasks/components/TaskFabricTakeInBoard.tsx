@@ -13,6 +13,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
+import { CodeField } from '@/components/forms/CodeField';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import {
   fabricTakeInErrorKey,
@@ -52,6 +53,7 @@ export function TaskFabricTakeInBoard({ taskId, readOnly = false }: Props) {
   const [preview, setPreview] = useState<ScanPreview | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [typedCode, setTypedCode] = useState('');
 
   const boardQuery = useQuery({
     queryKey: queryKeys.purchasing.fabricTaskBoard(taskId),
@@ -124,12 +126,12 @@ export function TaskFabricTakeInBoard({ taskId, readOnly = false }: Props) {
   const taken = boardQuery.data?.taken ?? 0;
   const total = boardQuery.data?.total ?? items.length;
 
-  async function onScan() {
+  async function onScan(typed?: string) {
     if (readOnly) return;
     setWarning(null);
     setScanning(true);
     try {
-      const code = await openScanner();
+      const code = typed?.trim() ? typed.trim() : await openScanner();
       if (!code) return;
       let scannedLot: Awaited<ReturnType<typeof getInventoryLotByCode>> | null = null;
       try {
@@ -255,11 +257,24 @@ export function TaskFabricTakeInBoard({ taskId, readOnly = false }: Props) {
             />
           </View>
         ) : (
-          <PrimaryButton
-            label={t('mobile.tasks.fabricScanCta')}
-            loading={scanning}
-            onPress={() => void onScan()}
-          />
+          <>
+            <CodeField
+              value={typedCode}
+              onChangeText={setTypedCode}
+              placeholder={t('mobile.tasks.fabricScanCta')}
+              returnKeyType="go"
+              onSubmitEditing={() => {
+                const code = typedCode.trim();
+                if (code) void onScan(code);
+              }}
+              onScanned={(code) => void onScan(code)}
+            />
+            <PrimaryButton
+              label={t('mobile.tasks.fabricScanCta')}
+              loading={scanning}
+              onPress={() => void onScan()}
+            />
+          </>
         )}
       </View>
     </Board>

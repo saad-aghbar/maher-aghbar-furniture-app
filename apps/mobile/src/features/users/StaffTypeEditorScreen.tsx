@@ -16,7 +16,6 @@ import { LocaleNameField } from '@/features/catalog/components/BilingualNameFiel
 import { useLocale } from '@/i18n';
 import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { PermissionBoard } from './components/PermissionBoard';
 import {
@@ -24,6 +23,7 @@ import {
   UserFormFooter,
   UserFormSection,
 } from './components/userSheetForm';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import {
   useCreateStaffTypeMutation,
   useStaffTypeQuery,
@@ -68,6 +68,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showToast } = useToast();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -246,7 +247,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance,
         }}
       >
         <AppText

@@ -259,6 +259,16 @@
       "AdminMoreAccountRoute"
     ]
   },
+  "app/(app)/(admin)/more/notifications.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-more-notifications"
+    ],
+    "notes": "route:/more/notifications",
+    "exportNames": [
+      "AdminNotificationSettingsRoute"
+    ]
+  },
   "app/(app)/(admin)/more/settings.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -579,6 +589,46 @@
       "AdminQuotationDetailRoute"
     ]
   },
+  "app/(app)/(admin)/reports/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports--layout"
+    ],
+    "notes": "route:/reports/_layout",
+    "exportNames": [
+      "ReportsLayout"
+    ]
+  },
+  "app/(app)/(admin)/reports/coverage/[issueType].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-coverage-[issue-type]"
+    ],
+    "notes": "route:/reports/coverage/[issueType]",
+    "exportNames": [
+      "ReportsCoverageIssuesRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/coverage/[type].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-coverage-[type]"
+    ],
+    "notes": "route:/reports/coverage/[type]",
+    "exportNames": [
+      "ReportsCoverageIssuesRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/coverage/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-coverage"
+    ],
+    "notes": "route:/reports/coverage",
+    "exportNames": [
+      "ReportsCoverageRoute"
+    ]
+  },
   "app/(app)/(admin)/reports/index.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -587,6 +637,26 @@
     "notes": "route:/reports",
     "exportNames": [
       "AdminReportsRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/inventory/[itemId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-inventory-[item-id]"
+    ],
+    "notes": "route:/reports/inventory/[itemId]",
+    "exportNames": [
+      "ReportsInventoryItemRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/inventory/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-inventory"
+    ],
+    "notes": "route:/reports/inventory",
+    "exportNames": [
+      "ReportsInventoryRoute"
     ]
   },
   "app/(app)/(admin)/reports/order/[id].tsx": {
@@ -599,6 +669,56 @@
       "OrderCostDossierRoute"
     ]
   },
+  "app/(app)/(admin)/reports/orders.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-orders"
+    ],
+    "notes": "route:/reports/orders",
+    "exportNames": [
+      "ReportsOrdersRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/products/[productId]/variants/[variantId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-products-[product-id]-variants-[variant-id]"
+    ],
+    "notes": "route:/reports/products/[productId]/variants/[variantId]",
+    "exportNames": [
+      "ReportsVariantProfileRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/products/[productId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-products-[product-id]"
+    ],
+    "notes": "route:/reports/products/[productId]",
+    "exportNames": [
+      "ReportsProductProfileRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/products/custom.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-products-custom"
+    ],
+    "notes": "route:/reports/products/custom",
+    "exportNames": [
+      "ReportsCustomWorkRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/products/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-products"
+    ],
+    "notes": "route:/reports/products",
+    "exportNames": [
+      "ReportsProductsRoute"
+    ]
+  },
   "app/(app)/(admin)/reports/returns/[id].tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -607,6 +727,16 @@
     "notes": "route:/reports/returns/[id]",
     "exportNames": [
       "ReturnCostDossierRoute"
+    ]
+  },
+  "app/(app)/(admin)/reports/returns/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-reports-returns"
+    ],
+    "notes": "route:/reports/returns",
+    "exportNames": [
+      "ReportsReturnsDeskRoute"
     ]
   },
   "app/(app)/(admin)/requests/[id]/lines/[itemId].tsx": {
@@ -797,6 +927,16 @@
     "notes": "route:/account/calendar",
     "exportNames": [
       "CustomerDeliveryCalendarRoute"
+    ]
+  },
+  "app/(app)/(customer)/account/notifications.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account-notifications"
+    ],
+    "notes": "route:/account/notifications",
+    "exportNames": [
+      "CustomerNotificationSettingsRoute"
     ]
   },
   "app/(app)/(customer)/account/payments.tsx": {
@@ -1059,6 +1199,16 @@
       "EmployeeLayout"
     ]
   },
+  "app/(app)/(employee)/completed-orders/[salesOrderId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-completed-orders-[sales-order-id]"
+    ],
+    "notes": "route:/completed-orders/[salesOrderId]",
+    "exportNames": [
+      "EmployeeCompletedSalesOrderItemsRoute"
+    ]
+  },
   "app/(app)/(employee)/deliveries/[id].tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -1087,6 +1237,16 @@
     "notes": "route:/orders/[salesOrderId]",
     "exportNames": [
       "EmployeeSalesOrderItemsRoute"
+    ]
+  },
+  "app/(app)/(employee)/profile/notifications.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-profile-notifications"
+    ],
+    "notes": "route:/profile/notifications",
+    "exportNames": [
+      "EmployeeNotificationSettingsRoute"
     ]
   },
   "app/(app)/(employee)/tasks/[id]/index.tsx": {
@@ -1244,6 +1404,12 @@
     "exportNames": [
       "DevLayout"
     ]
+  },
+  "app/dev/adaptive.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
   },
   "app/dev/admin-home.tsx": {
     "classification": "SCREEN_LINK",
@@ -1435,6 +1601,16 @@
     "notes": "shared/motion",
     "exportNames": [
       "ExpandableLocaleSwitcher"
+    ]
+  },
+  "src/components/FontScaleSwitcher.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.font-scale-switcher"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "FontScaleSwitcher"
     ]
   },
   "src/components/ThemeSwitcher.tsx": {
@@ -1731,6 +1907,18 @@
     "notes": "shared/motion",
     "exportNames": [
       "ToastCard"
+    ]
+  },
+  "src/components/floor/FloorCheckGroup.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.floor-check-group",
+      "shared.floor-check-row"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "FloorCheckGroup",
+      "FloorCheckRow"
     ]
   },
   "src/components/forms/AppTextInput.tsx": {
@@ -3997,6 +4185,16 @@
       "InventoryGroupsScreen"
     ]
   },
+  "src/features/inventory/InventoryHubHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-hub-host"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryHubHost"
+    ]
+  },
   "src/features/inventory/InventoryItemDetailScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -5113,6 +5311,26 @@
       "MorePreferencesBoard"
     ]
   },
+  "src/features/notifications/NotificationIntentProvider.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.notifications.notification-intent-provider"
+    ],
+    "notes": "parent-domain:notifications",
+    "exportNames": [
+      "NotificationIntentProvider"
+    ]
+  },
+  "src/features/notifications/NotificationSettingsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.notifications.notification-settings-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "NotificationSettingsScreen"
+    ]
+  },
   "src/features/notifications/NotificationsInboxScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -5271,6 +5489,36 @@
     "notes": "parent-domain:production",
     "exportNames": [
       "ProductionAttentionBoard"
+    ]
+  },
+  "src/features/production/components/ProductionBasketBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-basket-board"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionBasketBoard"
+    ]
+  },
+  "src/features/production/components/ProductionBasketItemRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-basket-item-row"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionBasketItemRow"
+    ]
+  },
+  "src/features/production/components/ProductionComplexityChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-complexity-chrome"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionComplexityChrome"
     ]
   },
   "src/features/production/components/ProductionDayLensBoard.tsx": {
@@ -6208,6 +6456,38 @@
       "QuotationValidityStub"
     ]
   },
+  "src/features/reports/CostCoverageIssuesScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.cost-coverage-issues-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CostCoverageIssuesScreen",
+      "CostCoverageIssuesRoute"
+    ]
+  },
+  "src/features/reports/CostCustomWorkScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.cost-custom-work-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CostCustomWorkScreen"
+    ]
+  },
+  "src/features/reports/CostInventoryItemScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.cost-inventory-item-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CostInventoryItemScreen",
+      "CostInventoryItemRoute"
+    ]
+  },
   "src/features/reports/CostOrderDossierScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -6218,6 +6498,17 @@
       "CostOrderDossierScreen"
     ]
   },
+  "src/features/reports/CostProductProfileScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.cost-product-profile-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CostProductProfileScreen",
+      "CostProductProfileRoute"
+    ]
+  },
   "src/features/reports/CostReturnDossierScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -6226,6 +6517,87 @@
     "notes": "feature-screen",
     "exportNames": [
       "CostReturnDossierScreen"
+    ]
+  },
+  "src/features/reports/CostVariantProfileScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.cost-variant-profile-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CostVariantProfileScreen",
+      "CostVariantProfileRoute"
+    ]
+  },
+  "src/features/reports/ReportsCoverageScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-coverage-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsCoverageScreen"
+    ]
+  },
+  "src/features/reports/ReportsFallbackScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-fallback-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsFallbackScreen"
+    ]
+  },
+  "src/features/reports/ReportsInventoryScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-inventory-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsInventoryScreen"
+    ]
+  },
+  "src/features/reports/ReportsMoneyScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-money-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsMoneyScreen"
+    ]
+  },
+  "src/features/reports/ReportsOrdersScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-orders-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsOrdersScreen"
+    ]
+  },
+  "src/features/reports/ReportsProductsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-products-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsProductsScreen"
+    ]
+  },
+  "src/features/reports/ReportsReturnsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.reports.reports-returns-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReportsReturnsScreen"
     ]
   },
   "src/features/reports/ReportsScreen.tsx": {
@@ -6248,6 +6620,16 @@
       "CostFilterSheet"
     ]
   },
+  "src/features/reports/components/CostMoneyLine.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.cost-money-line"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "CostMoneyLine"
+    ]
+  },
   "src/features/reports/components/CostNotConfiguredSlot.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -6268,6 +6650,56 @@
       "CostPressableRow"
     ]
   },
+  "src/features/reports/components/ReportsBasisTouchBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-basis-touch-bar"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsBasisTouchBar"
+    ]
+  },
+  "src/features/reports/components/ReportsDeskHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-desk-header"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsDeskHeader"
+    ]
+  },
+  "src/features/reports/components/ReportsDeskRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-desk-rail"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsDeskRail"
+    ]
+  },
+  "src/features/reports/components/ReportsFilterBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-filter-bar"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsFilterBar"
+    ]
+  },
+  "src/features/reports/components/ReportsListState.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-list-state"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsListState"
+    ]
+  },
   "src/features/reports/components/ReportsMetricGrid.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -6276,6 +6708,16 @@
     "notes": "parent-domain:reports",
     "exportNames": [
       "ReportsMetricGrid"
+    ]
+  },
+  "src/features/reports/components/ReportsMoneyBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-money-board"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsMoneyBoard"
     ]
   },
   "src/features/reports/components/ReportsMoneyRows.tsx": {
@@ -6298,6 +6740,16 @@
       "ReportsPeriodChrome"
     ]
   },
+  "src/features/reports/components/ReportsRangeSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-range-sheet"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsRangeSheet"
+    ]
+  },
   "src/features/reports/components/ReportsStatusRows.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -6316,6 +6768,26 @@
     "notes": "parent-domain:reports",
     "exportNames": [
       "ReportsTabBar"
+    ]
+  },
+  "src/features/reports/reportsDeskFilters.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-desk-filters-provider"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsDeskFiltersProvider"
+    ]
+  },
+  "src/features/reports/reportsPeriod.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-period-provider"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsPeriodProvider"
     ]
   },
   "src/features/requests/AdminRequestDetailScreen.tsx": {
@@ -6904,6 +7376,16 @@
       "OrderProductionPlanScreen"
     ]
   },
+  "src/features/sales-orders/OrdersDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-desk-host"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersDeskHost"
+    ]
+  },
   "src/features/sales-orders/OrdersListScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -7134,6 +7616,28 @@
     "notes": "parent-domain:sales-orders",
     "exportNames": [
       "MaterialPickerSheet"
+    ]
+  },
+  "src/features/sales-orders/components/OrderBasketBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-basket-board"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderBasketBoard"
+    ]
+  },
+  "src/features/sales-orders/components/OrderBasketItemRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-basket-item-row",
+      "feature.sales-orders.order"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderBasketItemRow",
+      "ORDER"
     ]
   },
   "src/features/sales-orders/components/OrderBoardCard.tsx": {
@@ -7402,6 +7906,16 @@
     "notes": "parent-domain:sales-orders",
     "exportNames": [
       "OrdersWorkbenchHome"
+    ]
+  },
+  "src/features/sales-orders/components/PlanItemFloorCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.plan-item-floor-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "PlanItemFloorCard"
     ]
   },
   "src/features/sales-orders/components/ProductionStageGraph.tsx": {
@@ -7890,6 +8404,16 @@
       "TasksListScreen"
     ]
   },
+  "src/features/tasks/WorkerCompletedSalesOrderItemsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.tasks.worker-completed-sales-order-items-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "WorkerCompletedSalesOrderItemsScreen"
+    ]
+  },
   "src/features/tasks/WorkerOrderWorkflowScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -8224,6 +8748,26 @@
       "VoiceRecorderBar"
     ]
   },
+  "src/features/tasks/components/WorkerCompletedSalesOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-completed-sales-order-card"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerCompletedSalesOrderCard"
+    ]
+  },
+  "src/features/tasks/components/WorkerCompletedTaskRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-completed-task-row"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerCompletedTaskRow"
+    ]
+  },
   "src/features/tasks/components/WorkerOrderCard.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -8242,6 +8786,28 @@
     "notes": "parent-domain:tasks",
     "exportNames": [
       "WorkerSalesOrderCard"
+    ]
+  },
+  "src/features/tasks/components/WorkerSalesOrderIdentityBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-sales-order-identity-board"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerSalesOrderIdentityBoard"
+    ]
+  },
+  "src/features/tasks/components/WorkerSalesOrderItemRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-sales-order-item-row",
+      "feature.tasks.worker"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerSalesOrderItemRow",
+      "WORKER"
     ]
   },
   "src/features/tasks/components/recoveryFloorCards.tsx": {
@@ -8326,6 +8892,16 @@
     "notes": "parent-domain:users",
     "exportNames": [
       "EditUserSheet"
+    ]
+  },
+  "src/features/users/components/PermissionBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.permission-board"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "PermissionBoard"
     ]
   },
   "src/features/users/components/RolesTouchBar.tsx": {
@@ -8942,6 +9518,78 @@
     "notes": "shared/motion",
     "exportNames": [
       "TabIndicator"
+    ]
+  },
+  "src/adaptive/AdaptiveColumns.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.adaptive-columns"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AdaptiveColumns"
+    ]
+  },
+  "src/adaptive/AdaptiveContainer.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.adaptive-container"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AdaptiveContainer"
+    ]
+  },
+  "src/adaptive/AdaptiveOverlay.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.adaptive-overlay"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AdaptiveOverlay"
+    ]
+  },
+  "src/adaptive/AdaptiveSurfaceContext.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.adaptive-surface-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AdaptiveSurfaceProvider"
+    ]
+  },
+  "src/adaptive/DataRow.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.data-row"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "DataRow"
+    ]
+  },
+  "src/adaptive/SplitPane.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.split-pane",
+      "shared.split-pane-placeholder"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SplitPane",
+      "SplitPanePlaceholder"
+    ]
+  },
+  "src/adaptive/windowMetrics.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.window-metrics-override"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "WindowMetricsOverride"
     ]
   }
 }

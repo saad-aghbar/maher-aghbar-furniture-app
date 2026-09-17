@@ -26,11 +26,11 @@ import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { getStoredPushToken } from '@/storage/pushDevice';
 import { groupLocalizedNotificationTopics } from './selectNotificationPrefs';
 import { registerPushDevice } from './registerPushDevice';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   backFallback: Href;
@@ -42,6 +42,7 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const qc = useQueryClient();
@@ -49,7 +50,7 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
   const allowed = can(user, 'notification.read');
   const leadSize = theme.sizes.touch.min;
   const dockPad =
-    stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 88;
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) + 88;
 
   const query = useQuery({
     queryKey: queryKeys.notifications.topics(),
@@ -303,7 +304,7 @@ export function NotificationSettingsScreen({ backFallback }: Props) {
         )}
       </ScrollView>
 
-      <FloatingActionDock floating tabClearance={SURFACE_TAB_BAR_CLEARANCE}>
+      <FloatingActionDock floating tabClearance={tabBarReserve}>
         <PrimaryButton
           label={t('mobile.notifications.prefs.confirm')}
           onPress={() => save.mutate()}

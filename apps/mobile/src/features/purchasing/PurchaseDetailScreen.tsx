@@ -24,13 +24,13 @@ import { openPurchaseOrderPdf } from './api';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PurchaseWhatsAppResult } from '@/api/modules/purchasing';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { usePurchaseActionMutation, usePurchaseOrderQuery } from './query';
 import { groupReceiptsByWarehouse } from './receiveLineDrafts';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   localizedNamed,
   purchaseLineQtyLabel,
@@ -38,17 +38,18 @@ import {
   selectPurchaseDetail,
 } from './selectPurchase';
 
-type Props = { orderId: string };
+type Props = { orderId: string; embedded?: boolean };
 
 /** Extra lift so the last Receipts card clears the floating tab bar. */
 const RECEIPTS_TAB_CLEARANCE_EXTRA = 48;
 
-export function PurchaseDetailScreen({ orderId }: Props) {
+export function PurchaseDetailScreen({ orderId, embedded = false }: Props) {
   const { user } = useAuth();
   const router = useRouter();
   const { t, locale, formatCurrency, formatDate, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = can(user, 'purchase-order.read');
@@ -72,7 +73,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
 
   if (!canRead) {
     return (
-      <AppScreen backFallback={backFallback}>
+      <AppScreen backFallback={embedded ? undefined : backFallback}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -80,7 +81,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
 
   if (query.isError && !query.data) {
     return (
-      <AppScreen backFallback={backFallback}>
+      <AppScreen backFallback={embedded ? undefined : backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.purchasing.errorTitle')}
@@ -95,7 +96,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   const po = query.data;
   if (!po || !detail) {
     return (
-      <AppScreen backFallback={backFallback}>
+      <AppScreen backFallback={embedded ? undefined : backFallback}>
         <PurchasingSkeleton />
       </AppScreen>
     );
@@ -120,13 +121,13 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   const whatsappTo = whatsappPreview?.to ?? po.whatsappLastTo ?? null;
   const hasDockActions = showApprove || showSend || canOpenReceive || showResendWhatsapp;
   const dockPad = hasDockActions
-    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) +
       96 +
       RECEIPTS_TAB_CLEARANCE_EXTRA
-    : theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + RECEIPTS_TAB_CLEARANCE_EXTRA;
+    : theme.spacing['3xl'] + tabBarReserve + RECEIPTS_TAB_CLEARANCE_EXTRA;
 
   return (
-    <AppScreen backFallback={backFallback}>
+    <AppScreen backFallback={embedded ? undefined : backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
         contentContainerStyle={{

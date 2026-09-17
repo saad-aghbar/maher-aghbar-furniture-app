@@ -21,6 +21,7 @@ type Props = {
   onEdit?: () => void;
   onLabelPdf?: () => void;
   onQrCode?: () => void;
+  selected?: boolean;
   /** Skip stagger enter (section tab swaps). */
   animateEnter?: boolean;
 };
@@ -41,6 +42,7 @@ export function InventoryMaterialRow({
   onEdit,
   onLabelPdf,
   onQrCode,
+  selected = false,
   animateEnter = true,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -67,8 +69,8 @@ export function InventoryMaterialRow({
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor: item.isLowStock ? colors.warning : colors.borderStrong,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : item.isLowStock ? colors.warning : colors.borderStrong,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           ...orderBoardShadow(colorScheme),
         }}

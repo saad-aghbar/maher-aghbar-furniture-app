@@ -33,24 +33,47 @@ export function AnimatedPressable({
   style,
   onPressIn,
   onPressOut,
+  onHoverIn,
+  onHoverOut,
+  onFocus,
+  onBlur,
   children,
   ...rest
 }: Props) {
   const reduce = useReducedMotion();
   const scale = useSharedValue(1);
+  const wash = useSharedValue(0);
   const target = variant === 'card' ? pressScale.card : pressScale.button;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    opacity: 1 - wash.value * 0.06,
   }));
 
   return (
     <AnimatedPressableBase
       {...rest}
       style={[style, animatedStyle]}
+      onHoverIn={(e) => {
+        if (!reduce) wash.value = withTiming(1, { duration: withMotionDuration(durations.press, reduce) });
+        onHoverIn?.(e);
+      }}
+      onHoverOut={(e) => {
+        wash.value = withTiming(0, { duration: withMotionDuration(durations.press, reduce) });
+        onHoverOut?.(e);
+      }}
+      onFocus={(e) => {
+        if (!reduce) wash.value = withTiming(1, { duration: withMotionDuration(durations.press, reduce) });
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        wash.value = withTiming(0, { duration: withMotionDuration(durations.press, reduce) });
+        onBlur?.(e);
+      }}
       onPressIn={(e) => {
         if (!reduce) {
           scale.value = withSpring(target, springs.press);
+          wash.value = withTiming(1, { duration: withMotionDuration(durations.press, reduce) });
         }
         onPressIn?.(e);
       }}
@@ -60,6 +83,7 @@ export function AnimatedPressable({
         } else {
           scale.value = 1;
         }
+        wash.value = withTiming(0, { duration: withMotionDuration(durations.press, reduce) });
         onPressOut?.(e);
       }}
     >

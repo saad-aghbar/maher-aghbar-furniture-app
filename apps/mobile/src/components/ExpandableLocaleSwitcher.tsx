@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable } from 'react-native';
 import Animated, {
   FadeIn,
   interpolate,
@@ -79,6 +79,23 @@ export function ExpandableLocaleSwitcher({ expandToward = 'end' }: Props) {
 
   return (
     <Animated.View entering={FadeIn.duration(280)} style={{ alignSelf, zIndex: 40 }}>
+      {/* Behind the pill so outside taps collapse without eating EN/AR/HE hits. */}
+      {expanded ? (
+        <Pressable
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          onPress={() => setOpen(false)}
+          style={{
+            position: 'absolute',
+            width: 4000,
+            height: 4000,
+            top: -2000,
+            left: -2000,
+            zIndex: 0,
+          }}
+        />
+      ) : null}
       <Animated.View
         style={[
           {
@@ -88,6 +105,7 @@ export function ExpandableLocaleSwitcher({ expandToward = 'end' }: Props) {
             borderColor: colors.border,
             backgroundColor: colors.surface,
             justifyContent: 'center',
+            zIndex: 2,
             ...theme.elevation.raised,
           },
           shellStyle,
@@ -95,6 +113,7 @@ export function ExpandableLocaleSwitcher({ expandToward = 'end' }: Props) {
       >
         {!expanded ? (
           <Pressable
+            testID="locale-switcher"
             accessibilityRole="button"
             accessibilityLabel={t('mobile.switchLanguage')}
             accessibilityState={{ expanded: false }}
@@ -133,10 +152,12 @@ export function ExpandableLocaleSwitcher({ expandToward = 'end' }: Props) {
               return (
                 <Pressable
                   key={code}
+                  testID={`locale-option-${code}`}
                   accessibilityRole="button"
                   accessibilityLabel={t(`mobile.languageName.${code}`)}
                   accessibilityState={{ selected: active }}
                   onPress={() => pick(code as Locale)}
+                  hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
                   style={{
                     width: SEG_W,
                     height: CIRCLE - PAD * 2,
@@ -162,21 +183,6 @@ export function ExpandableLocaleSwitcher({ expandToward = 'end' }: Props) {
           </Animated.View>
         )}
       </Animated.View>
-      {/* Tap outside to collapse while expanded — full-screen transparent catcher behind */}
-      {expanded ? (
-        <Pressable
-          accessibilityLabel={t('common.close')}
-          onPress={() => setOpen(false)}
-          style={{
-            position: 'absolute',
-            width: 4000,
-            height: 4000,
-            top: -2000,
-            left: -2000,
-            zIndex: -1,
-          }}
-        />
-      ) : null}
     </Animated.View>
   );
 }

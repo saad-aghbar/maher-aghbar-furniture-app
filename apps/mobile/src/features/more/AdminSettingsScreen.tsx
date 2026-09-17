@@ -32,9 +32,9 @@ import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
 import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
 import { haptics, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 const COMPANY_DEFAULTS: CompanySettings = {
   nameAr: '',
@@ -478,13 +478,14 @@ export function AdminSettingsScreen() {
 }
 
 /**
- * Last-content inset: insets.bottom + SURFACE_TAB_BAR_CLEARANCE.
+ * Last-content inset: surfaceClearance.
  * Real trailing height (not only paddingBottom) so Currency, VAT `16`,
  * and Save clear the floating pill. Do not restyle the tab bar.
  */
 function SettingsScroll({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const bottomInset = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const surfaceClearance = useSurfaceClearance();
+  const bottomInset = surfaceClearance;
   return (
     <ScrollableScreen
       style={{ paddingBottom: bottomInset }}

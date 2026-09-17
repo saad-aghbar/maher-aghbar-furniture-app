@@ -17,7 +17,6 @@ import { ListItemEnter, haptics } from '@/motion';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { navigateSurfaceHref } from '@/navigation/navigateSurfaceHref';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { NotificationBoardCard } from './components/NotificationBoardCard';
 import { NotificationsListSkeleton } from './components/NotificationsListSkeleton';
@@ -37,6 +36,7 @@ import {
   useMarkNotificationReadMutation,
   useNotificationsQuery,
 } from './query';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import {
   groupNotificationsByDay,
   normalizeNotificationList,
@@ -132,8 +132,9 @@ export function NotificationsInboxScreen({
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const router = useRouter();
-  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomClearance = surfaceClearance;
   const allowed = can(user, 'notification.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const surface = user ? resolveAppSurface(user) : 'admin';

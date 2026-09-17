@@ -44,7 +44,8 @@ export function classifySheet(source: string): SheetKind {
   if (
     /<BottomSheet[\s>]/.test(source) ||
     /<ConfirmationSheet[\s>]/.test(source) ||
-    /<ActionSheet[\s>]/.test(source)
+    /<ActionSheet[\s>]/.test(source) ||
+    /<AdaptiveOverlay[\s>]/.test(source)
   ) {
     return 'host';
   }
@@ -70,11 +71,13 @@ export function loadSheetContracts(): SheetContractRow[] {
 export function hasHeightConstraint(source: string): boolean {
   return (
     /<BottomSheet[\s>]/.test(source) ||
+    /<AdaptiveOverlay[\s>]/.test(source) ||
     /fitContent/.test(source) ||
     /sheetHeight/.test(source) ||
     /maxHeight/.test(source) ||
     /expandedHeight/.test(source) ||
-    /expandable/.test(source)
+    /expandable/.test(source) ||
+    /intent=/.test(source)
   );
 }
 

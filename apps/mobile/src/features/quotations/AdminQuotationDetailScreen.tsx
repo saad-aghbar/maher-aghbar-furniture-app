@@ -41,7 +41,6 @@ import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
   presentableText,
   quotationComplexity,
@@ -53,6 +52,7 @@ import {
   sellingPriceMissing,
 } from '@/features/quotations/presentAdminQuotation';
 import { quotationDraftSaveLines } from '@/features/requests/factoryLineDesk';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   quotationId: string;
@@ -209,6 +209,7 @@ export function AdminQuotationDetailScreen({
     minHeight: theme.sizes.touch.min,
   };
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1187,7 +1188,7 @@ export function AdminQuotationDetailScreen({
         }
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance,
           gap: theme.spacing.md,
         }}
         keyboardShouldPersistTaps="handled"

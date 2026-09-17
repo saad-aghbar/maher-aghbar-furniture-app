@@ -12,12 +12,16 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { ProductionListSkeleton } from '@/features/production/components/ProductionSkeleton';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { isAtLeast } from '@/adaptive/breakpoints';
+import { SplitPane, SplitPanePlaceholder } from '@/adaptive/SplitPane';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { OrderProductionPlanEditorScreen } from './OrderProductionPlanEditorScreen';
 import { OrderProductionPlanItemBoard } from './OrderProductionPlanItemBoard';
 import {
   useOrderProductionSetupActions,
   useOrderProductionSetupQuery,
 } from './production-setup/query';
+import { FactoryReadinessSummary } from './production-setup/components/FactoryReadinessSummary';
 import { productionOrderIdForLineId } from './productionOrderIdForLine';
 import { useSalesOrderQuery } from './query';
 
@@ -34,6 +38,8 @@ export function OrderProductionPlanScreen({
 }) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const { windowClass, isWide } = useMaherLayout();
+  const desk = isAtLeast(windowClass, 'expanded');
   const { user } = useAuth();
   const router = useRouter();
   const query = useSalesOrderQuery(salesOrderId, Boolean(salesOrderId));
@@ -141,9 +147,12 @@ export function OrderProductionPlanScreen({
     );
   }
 
-  if (!lineId) {
+  if (!lineId || desk) {
     const setupLines = setupQuery.data?.lines ?? [];
-    if (booting || (!bootError && canEditSetup && !attempted.current && !hasSetupLines)) {
+    if (
+      !lineId &&
+      (booting || (!bootError && canEditSetup && !attempted.current && !hasSetupLines))
+    ) {
       return (
         <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
           <View
@@ -166,15 +175,56 @@ export function OrderProductionPlanScreen({
       );
     }
     if (setupLines.length) {
-      return (
+      const board = (
         <OrderProductionPlanItemBoard
           salesOrderId={salesOrderId}
           lines={setupLines}
           orderNumber={setupQuery.data?.salesOrder.number ?? order.number}
           dealer={setupQuery.data?.salesOrder.customer ?? order.customer}
           progress={setupQuery.data?.progress}
+          selectedLineId={lineId}
+          embedded={desk}
+          onSelectLine={(id) => {
+            if (desk) {
+              router.setParams({ lineId: id });
+              return;
+            }
+            router.push(
+              `/(app)/(admin)/orders/${salesOrderId}/production-plan?lineId=${id}` as Href,
+            );
+          }}
         />
       );
+      if (desk) {
+        return (
+          <SplitPane
+            testID="production-plan-desk-split"
+            split
+            primary={board}
+            detail={
+              lineId && poId ? (
+                <OrderProductionPlanEditorScreen
+                  productionOrderId={poId}
+                  salesOrderId={salesOrderId}
+                />
+              ) : null
+            }
+            detailPlaceholder={
+              <SplitPanePlaceholder
+                icon="construct-outline"
+                title={t('mobile.adaptive.chooseProductionTitle')}
+                body={t('mobile.adaptive.chooseProductionBody')}
+              />
+            }
+            secondary={
+              isWide && setupQuery.data ? (
+                <FactoryReadinessSummary setup={setupQuery.data} />
+              ) : undefined
+            }
+          />
+        );
+      }
+      return board;
     }
   }
 

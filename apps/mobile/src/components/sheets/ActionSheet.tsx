@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -60,7 +60,8 @@ export function ActionSheet({
         };
 
   return (
-    <BottomSheet
+    <AdaptiveOverlay
+      intent="action"
       open={open}
       onClose={onClose}
       onClosed={() => {
@@ -186,6 +187,6 @@ export function ActionSheet({
           </AppText>
         </AnimatedPressable>
       </View>
-    </BottomSheet>
+    </AdaptiveOverlay>
   );
 }

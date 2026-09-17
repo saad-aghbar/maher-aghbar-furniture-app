@@ -48,7 +48,7 @@ import {
   todayYmd,
   type CalendarCursor,
 } from '@/components/calendar';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
@@ -179,6 +179,7 @@ export function AdminRequestDetailScreen({
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const router = useRouter();
   const queryClient = useQueryClient();
   const allowed = can(user, 'request.read');
@@ -672,7 +673,7 @@ export function AdminRequestDetailScreen({
           paddingTop: theme.spacing.sm,
           paddingBottom:
             theme.spacing['3xl'] +
-            SURFACE_TAB_BAR_CLEARANCE +
+            tabBarReserve +
             theme.spacing.xl +
             Math.max(insets.bottom, theme.spacing.sm),
           gap: theme.spacing.md,

@@ -16,7 +16,6 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { OrdersFilterButton } from '@/features/sales-orders/components/OrdersFilterButton';
 import { OrdersSearchBar } from '@/features/sales-orders/components/OrdersSearchBar';
 import { useLocale } from '@/i18n';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { DeliveryFloorOrderCard } from './components/DeliveryFloorOrderCard';
 import {
@@ -26,6 +25,7 @@ import {
 } from './components/DeliveryFilterSheet';
 import { deliverySectionLabelStyle } from './deliveryFloorStyle';
 import { useMyDeliveriesQuery } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 export type DeliveryOrdersListVariant = 'open' | 'completed';
 
@@ -39,11 +39,12 @@ export function DeliveryOrdersListScreen({ variant }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const allowed = can(user, 'delivery.read');
   const isCompleted = variant === 'completed';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomPad = theme.spacing['3xl'] + tabBarReserve;
   const [q, setQ] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<DeliveryFilterDraft>(EMPTY_FILTER);

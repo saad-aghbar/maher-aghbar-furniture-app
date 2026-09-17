@@ -1,6 +1,6 @@
 import { ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import type { FactoryDayResponse, FactoryDayWorker } from '@/api/modules/scheduling';
 import { localeRow, useLocale } from '@/i18n';
@@ -38,10 +38,11 @@ export function StageDaySheet({
   const free = Math.max(0, availableMinutes - scheduledMinutes);
 
   return (
-    <BottomSheet
+    <AdaptiveOverlay
       open={open}
       onClose={onClose}
       title={`${stageName} · ${date}`}
+      intent="inspector"
       expandable
     >
       <ScrollView contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing['3xl'] }}>
@@ -94,6 +95,6 @@ export function StageDaySheet({
 
         <WorkerTimelineBoard workers={workers} timezone={day?.timezone} date={date} />
       </ScrollView>
-    </BottomSheet>
+    </AdaptiveOverlay>
   );
 }

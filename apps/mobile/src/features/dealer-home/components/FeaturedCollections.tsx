@@ -6,6 +6,8 @@ import { DealerGlassCard } from '@/features/dealer-ui/DealerGlassCard';
 import { DealerSectionHeader } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
+import { carouselCardWidth } from '@/adaptive/density';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useTheme } from '@/theme';
 import type { DealerHomeCollection } from '../dealerHomeImagery';
 
@@ -13,12 +15,10 @@ type Props = {
   collections?: DealerHomeCollection[];
 };
 
-/** Square photo + compact caption — same footprint for every tile. */
-const CARD_W = 156;
+/** Square photo + compact caption — compact keeps today’s footprint. */
+const COMPACT_CARD_W = 156;
 const PAD = 10;
-const IMAGE = CARD_W - PAD * 2;
 const CAPTION_H = 44;
-const CARD_H = PAD + IMAGE + 8 + CAPTION_H + PAD;
 /** Bottom/side room for card shadow (ScrollView otherwise clips it). */
 const SHADOW_GUTTER_Y = 14;
 const SHADOW_GUTTER_X = 8;
@@ -29,6 +29,10 @@ const SHADOW_GUTTER_X = 8;
 export function FeaturedCollections({ collections = [] }: Props) {
   const { t, tPlural, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { windowClass } = useMaherLayout();
+  const CARD_W = carouselCardWidth(windowClass, COMPACT_CARD_W);
+  const IMAGE = CARD_W - PAD * 2;
+  const CARD_H = PAD + IMAGE + 8 + CAPTION_H + PAD;
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dark = colorScheme === 'dark';

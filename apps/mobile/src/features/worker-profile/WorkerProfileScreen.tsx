@@ -26,8 +26,8 @@ import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
 import { rolesLabel } from '@/i18n/roleLabel';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 /**
  * Worker profile — same floor-board / prefs language as admin More + account.
@@ -38,12 +38,13 @@ export function WorkerProfileScreen() {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
-  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomClearance = surfaceClearance;
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioBusy, setBioBusy] = useState(false);

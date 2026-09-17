@@ -19,15 +19,16 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useState } from 'react';
 import { flattenAiJobsPages, useAiJobsInfiniteQuery, useCreateAiJobMutation } from './query';
 import { selectAiJobReview } from './selectAiReview';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 export function AiIntakeListScreen() {
   const { user } = useAuth();
   const { t } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -141,7 +142,7 @@ export function AiIntakeListScreen() {
             tintColor={colors.brand}
           />
         }
-        contentContainerStyle={{ paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE, flexGrow: 1 }}
+        contentContainerStyle={{ paddingBottom: theme.spacing['3xl'] + tabBarReserve, flexGrow: 1 }}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
             <AppText variant="title" weight="semibold">

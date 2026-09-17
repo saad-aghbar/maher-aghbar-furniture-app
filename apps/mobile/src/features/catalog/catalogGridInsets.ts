@@ -1,4 +1,9 @@
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import {
+  SURFACE_TAB_BAR_CLEARANCE,
+  surfaceClearanceFor,
+  tabBarReserve,
+} from '@/navigation/tabBarClearance';
+import type { MaherWindowClass } from '@/adaptive/layoutTypes';
 
 /**
  * Admin products grid last-content inset so the last row clears the floating tab
@@ -7,11 +12,17 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 export function adminCatalogListBottomPad(
   insetsBottom: number,
   fabExtra = 0,
+  windowClass: MaherWindowClass = 'compact',
 ): number {
-  return insetsBottom + SURFACE_TAB_BAR_CLEARANCE + fabExtra;
+  return surfaceClearanceFor(windowClass, insetsBottom) + fabExtra;
 }
 
 /** FAB `bottom` so the + sits above the floating tab, not on it. */
-export function adminCatalogFabBottom(insetsBottom: number): number {
-  return insetsBottom + SURFACE_TAB_BAR_CLEARANCE;
+export function adminCatalogFabBottom(
+  insetsBottom: number,
+  windowClass: MaherWindowClass = 'compact',
+): number {
+  return tabBarReserve(windowClass) + Math.max(0, insetsBottom);
 }
+
+export { SURFACE_TAB_BAR_CLEARANCE };

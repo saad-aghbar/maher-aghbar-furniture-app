@@ -23,7 +23,6 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { alignStart, localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SalesOrderListItem } from './api';
 import { AdminOrderCard } from './components/AdminOrderCard';
 import {
@@ -75,6 +74,7 @@ import {
 } from './selectOrderCard';
 import { complexityBadgeKey } from './orderManufacturingKind';
 import { getOwnDeliveries } from '@/api/modules/scheduling';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import {
   deliveryStatusFromCustomerStatus,
   type OrdersStageFocus,
@@ -91,6 +91,10 @@ type OrdersListScreenProps = {
   variant: OrdersListVariant;
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
   fixture?: SalesOrderListItem[];
+  /** Highlighted row when the desk is split. */
+  selectedOrderId?: string;
+  /** When set, order rows call this instead of pushing `/orders/[id]`. */
+  onSelectOrder?: (id: string) => void;
 };
 
 const defaultDraft: OrdersFilterDraft = defaultOrdersFilterDraft;
@@ -99,11 +103,14 @@ export function OrdersListScreen({
   variant,
   forceState,
   fixture,
+  selectedOrderId,
+  onSelectOrder,
 }: OrdersListScreenProps) {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -146,7 +153,9 @@ export function OrdersListScreen({
       setAdminDeskMode('orders');
       setAdminLifecycleFocus(seeded);
     }
+  }, [variant, selectedOrderId]);
 
+  useEffect(() => {
     const rawDesk = Array.isArray(params.desk) ? params.desk[0] : params.desk;
     if (variant === 'admin' && (rawDesk === 'requests' || rawDesk === 'rfq')) {
       setAdminDeskMode('requests');
@@ -723,6 +732,10 @@ export function OrdersListScreen({
       router.push(returnCaseHref({ id: row?.id ?? id }) as Href);
       return;
     }
+    if (onSelectOrder) {
+      onSelectOrder(id);
+      return;
+    }
     router.push(detailHref(id));
   };
 
@@ -1004,7 +1017,7 @@ export function OrdersListScreen({
         keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: surfaceClearance,
           flexGrow: 1,
         }}
         refreshControl={
@@ -1043,6 +1056,7 @@ export function OrdersListScreen({
           <AdminOrderCard
             order={item}
             index={index}
+            selected={item.kind !== 'rfq' && item.kind !== 'returnWork' && item.id === selectedOrderId}
             onPress={() => onPressItem(item.id, item.kind)}
           />
         )}

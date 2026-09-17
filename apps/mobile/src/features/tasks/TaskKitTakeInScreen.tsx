@@ -8,10 +8,10 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { Ionicons } from '@expo/vector-icons';
+import { CodeField } from '@/components/forms/CodeField';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { TaskActionDock } from './components/TaskActionDock';
@@ -21,6 +21,7 @@ import {
 } from './components/TaskIncomingWorkFloorSection';
 import { useTaskQuery } from './query';
 import { selectTaskDetail } from './selectTask';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = { taskId: string };
 
@@ -28,6 +29,7 @@ export function TaskKitTakeInScreen({ taskId }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const router = useRouter();
   const onBack = useSmartBack('/(app)/(employee)/(tabs)/tasks' as Href);
   const incomingRef = useRef<TaskIncomingFloorHandle>(null);
@@ -35,6 +37,7 @@ export function TaskKitTakeInScreen({ taskId }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [info, setInfo] = useState({ required: false, allReceived: true, received: 0, expected: 0 });
   const [incomingReady, setIncomingReady] = useState(false);
+  const [typedIncoming, setTypedIncoming] = useState('');
   const [dockH, setDockH] = useState(0);
   const taskQuery = useTaskQuery(taskId, Boolean(taskId));
   const readOnly = taskQuery.data
@@ -42,7 +45,7 @@ export function TaskKitTakeInScreen({ taskId }: Props) {
     : false;
 
   const continueEnabled = incomingReady && (!info.required || info.allReceived || readOnly);
-  const floorClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const floorClearance = surfaceClearance;
 
   return (
     <AppScreen edges={{ top: true, bottom: true }}>
@@ -97,13 +100,28 @@ export function TaskKitTakeInScreen({ taskId }: Props) {
           />
 
           {readOnly ? null : (
-            <SecondaryButton
-              testID="task-takein-scan"
-              label={t('mobile.tasks.incomingScanOptional')}
-              accessibilityLabel={t('mobile.tasks.incomingScanOptional')}
-              onPress={() => incomingRef.current?.openScan()}
-              leading={<Ionicons name="qr-code-outline" size={18} color={colors.brand} />}
-            />
+            <>
+              <CodeField
+                value={typedIncoming}
+                onChangeText={setTypedIncoming}
+                placeholder={t('mobile.tasks.incomingScanOptional')}
+                returnKeyType="go"
+                onSubmitEditing={() => {
+                  const code = typedIncoming.trim();
+                  if (code) incomingRef.current?.applyScan(code);
+                }}
+                onScanned={(code) => incomingRef.current?.applyScan(code)}
+                scanTitle={t('mobile.tasks.incomingReceiveTitle')}
+                scanHint={t('mobile.tasks.incomingReceiveSoftHint')}
+              />
+              <SecondaryButton
+                testID="task-takein-scan"
+                label={t('mobile.tasks.incomingScanOptional')}
+                accessibilityLabel={t('mobile.tasks.incomingScanOptional')}
+                onPress={() => incomingRef.current?.openScan()}
+                leading={<Ionicons name="qr-code-outline" size={18} color={colors.brand} />}
+              />
+            </>
           )}
 
           <PrimaryButton

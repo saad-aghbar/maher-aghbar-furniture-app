@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { CodeField } from '@/components/forms/CodeField';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -31,6 +33,7 @@ type Props = {
   onClearResult: () => void;
   onScanAgain: () => void;
   onUseScanned?: (item: InventoryItem) => void;
+  onTypedCode?: (code: string) => void;
 };
 
 /**
@@ -51,6 +54,7 @@ export function KnownItemLabelConfirm({
   onClearResult,
   onScanAgain,
   onUseScanned,
+  onTypedCode,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -59,6 +63,7 @@ export function KnownItemLabelConfirm({
   const scanned = resultScanned;
   const busy = Boolean(scanning);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const [typedCode, setTypedCode] = useState('');
   const accent =
     kind === 'MATCH'
       ? colors.success
@@ -111,6 +116,24 @@ export function KnownItemLabelConfirm({
           <AppText variant="caption" color="muted">
             {t('mobile.inventory.scanLabelConfirmHint')}
           </AppText>
+        ) : null}
+
+        {kind !== 'MATCH' && onTypedCode ? (
+          <CodeField
+            value={typedCode}
+            onChangeText={setTypedCode}
+            placeholder={t('mobile.inventory.scanLabelConfirmHint')}
+            editable={!disabled && !busy}
+            returnKeyType="go"
+            onSubmitEditing={() => {
+              const code = typedCode.trim();
+              if (!code || disabled || busy) return;
+              onTypedCode(code);
+            }}
+            onScanned={(code) => onTypedCode(code)}
+            scanTitle={t('mobile.inventory.scanLabelToConfirm')}
+            scanHint={t('mobile.inventory.scanLabelConfirmHint')}
+          />
         ) : null}
 
         {kind !== 'MATCH' ? (

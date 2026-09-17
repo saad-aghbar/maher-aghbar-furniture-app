@@ -8,6 +8,7 @@ import {
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { CodeField } from '@/components/forms/CodeField';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -81,6 +82,7 @@ export const ScanInventoryItemAction = forwardRef<
   const { openScanner } = useCodeScanner();
   const [pending, setPending] = useState<PendingResult | null>(null);
   const [identifying, setIdentifying] = useState(false);
+  const [typedCode, setTypedCode] = useState('');
   const allowItemRef = useRef(allowItem);
   allowItemRef.current = allowItem;
   const onItemSelectedRef = useRef(onItemSelected);
@@ -102,6 +104,62 @@ export const ScanInventoryItemAction = forwardRef<
     [],
   );
 
+  const applyCode = useCallback(
+    async (code: string) => {
+      if (disabled || identifying) return;
+      qrLog(0, `SELECT consumer resumed code=${code}`);
+      setIdentifying(true);
+      void haptics.selection();
+      qrLog(0, `inventory lookup started code=${code}`);
+      try {
+        const resolved = await resolveInventoryScan(code);
+        const selectMode = selectSelectScanMode(resolved);
+        if (selectMode !== 'item') {
+          void haptics.error();
+          qrLog(0, `lookup ${resolved.status} — not a selectable inventory item`);
+          if (selectMode === 'order-fabric' && resolved.status === 'ORDER_FABRIC') {
+            present('order-fabric', null, {
+              code: resolved.lot.qrCode ?? code,
+              label:
+                resolved.lot.fabricProcurement?.label ??
+                resolved.lot.inventoryItem.nameEn ??
+                null,
+              orderNumber:
+                resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+            });
+            return;
+          }
+          present(selectMode, null);
+          return;
+        }
+        if (resolved.status !== 'FOUND') {
+          void haptics.error();
+          present('not-found', null);
+          return;
+        }
+
+        qrLog(0, `lookup FOUND itemId=${resolved.item.id} sku=${resolved.item.sku}`);
+        const gate = isInventoryItemSelectable(resolved.item, allowItemRef.current);
+        if (gate === 'archived') {
+          void haptics.error();
+          present('blocked-inactive', resolved.item);
+          return;
+        }
+        if (gate === 'disallowed') {
+          void haptics.error();
+          present('blocked-type', resolved.item);
+          return;
+        }
+
+        void haptics.confirmLight();
+        present('confirm', resolved.item);
+      } finally {
+        setIdentifying(false);
+      }
+    },
+    [disabled, identifying, present],
+  );
+
   const runScan = useCallback(async () => {
     if (disabled || identifying) return;
     onBeforeScanRef.current?.();
@@ -116,61 +174,36 @@ export const ScanInventoryItemAction = forwardRef<
       qrLog(0, 'camera cancel — form unchanged');
       return;
     }
-
-    setIdentifying(true);
-    void haptics.selection();
-    qrLog(0, `inventory lookup started code=${code}`);
-    try {
-      const resolved = await resolveInventoryScan(code);
-      const selectMode = selectSelectScanMode(resolved);
-      if (selectMode !== 'item') {
-        void haptics.error();
-        qrLog(0, `lookup ${resolved.status} — not a selectable inventory item`);
-        if (selectMode === 'order-fabric' && resolved.status === 'ORDER_FABRIC') {
-          present('order-fabric', null, {
-            code: resolved.lot.qrCode ?? code,
-            label:
-              resolved.lot.fabricProcurement?.label ??
-              resolved.lot.inventoryItem.nameEn ??
-              null,
-            orderNumber:
-              resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
-          });
-          return;
-        }
-        present(selectMode, null);
-        return;
-      }
-      if (resolved.status !== 'FOUND') {
-        void haptics.error();
-        present('not-found', null);
-        return;
-      }
-
-      qrLog(0, `lookup FOUND itemId=${resolved.item.id} sku=${resolved.item.sku}`);
-      const gate = isInventoryItemSelectable(resolved.item, allowItemRef.current);
-      if (gate === 'archived') {
-        void haptics.error();
-        present('blocked-inactive', resolved.item);
-        return;
-      }
-      if (gate === 'disallowed') {
-        void haptics.error();
-        present('blocked-type', resolved.item);
-        return;
-      }
-
-      void haptics.confirmLight();
-      present('confirm', resolved.item);
-    } finally {
-      setIdentifying(false);
-    }
-  }, [clearPending, disabled, identifying, openScanner, present, t]);
+    await applyCode(code);
+  }, [applyCode, clearPending, disabled, identifying, openScanner, t]);
 
   useImperativeHandle(ref, () => ({ startScan: () => void runScan() }), [runScan]);
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
+      {showTrigger && !pending ? (
+        <CodeField
+          value={typedCode}
+          onChangeText={setTypedCode}
+          placeholder={t('mobile.inventory.scanBarcodeHint')}
+          editable={!disabled && !identifying}
+          returnKeyType="go"
+          onSubmitEditing={() => {
+            const code = typedCode.trim();
+            if (!code || disabled || identifying) return;
+            onBeforeScanRef.current?.();
+            clearPending();
+            void applyCode(code);
+          }}
+          onScanned={(code) => {
+            onBeforeScanRef.current?.();
+            clearPending();
+            void applyCode(code);
+          }}
+          scanTitle={t('mobile.inventory.scanQr')}
+          scanHint={t('mobile.inventory.scanBarcodeHint')}
+        />
+      ) : null}
       {showTrigger && !pending ? (
         <AnimatedPressable
           variant="button"

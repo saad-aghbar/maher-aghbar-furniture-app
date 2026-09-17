@@ -14,7 +14,6 @@ import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { queryKeys } from '@/api/queryKeys';
 import type { WipKitCard } from '@/api/modules/inventory';
@@ -29,6 +28,7 @@ import {
 } from './components/InventorySemiFilterSheet';
 import { InventorySemiStageGroup } from './components/InventorySemiStageGroup';
 import { InventoryQrSheet, type InventoryQrItem } from './components/InventoryQrSheet';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   boardParamsForSemiFilter,
   selectSemiOrderStageSections,
@@ -62,6 +62,7 @@ export function InventorySemiOrderScreen() {
   const orderId = String(orderIdParam ?? '');
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { user } = useAuth();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
@@ -232,7 +233,7 @@ export function InventorySemiOrderScreen() {
         data={groups}
         keyExtractor={(row) => `stage-${row.stageCode}`}
         contentContainerStyle={{
-          paddingBottom: SURFACE_TAB_BAR_CLEARANCE + theme.spacing.xl,
+          paddingBottom: tabBarReserve + theme.spacing.xl,
           flexGrow: 1,
         }}
         refreshControl={

@@ -21,6 +21,7 @@ const TREES = [
   join(MOBILE, 'src/components'),
   join(MOBILE, 'src/features'),
   join(MOBILE, 'src/motion'),
+  join(MOBILE, 'src/adaptive'),
 ];
 
 function walk(dir, out = []) {
@@ -80,7 +81,7 @@ function classify(rel, src, exports) {
   }
 
   // Shared primitives + motion → REGISTERED
-  if (rel.startsWith('src/components/') || rel.startsWith('src/motion/')) {
+  if (rel.startsWith('src/components/') || rel.startsWith('src/motion/') || rel.startsWith('src/adaptive/')) {
     const ids = exports.length
       ? exports.map((e) => {
           const prefix = rel.startsWith('src/motion/') ? 'motion' : 'shared';

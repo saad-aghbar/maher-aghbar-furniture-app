@@ -17,7 +17,6 @@ import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import type { Warehouse } from './api';
 import { CreateWarehouseSheet } from './components/CreateWarehouseSheet';
@@ -28,6 +27,7 @@ import { AppTextInput } from '@/components/forms/AppTextInput';
 import { resolveAppFontStyle } from '@/theme';
 import { useWarehousesQuery } from './query';
 import { warehouseDisplayName, warehouseTypeKey } from './warehouseDesk';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 const backFallback = '/(app)/(admin)/(tabs)/inventory' as Href;
 
@@ -37,6 +37,7 @@ export function InventoryWarehousesScreen() {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const allowed = canAny(user, ['warehouse.read', 'warehouse.manage', 'inventory.read']);
   const canCreate = can(user, 'warehouse.manage');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -55,7 +56,7 @@ export function InventoryWarehousesScreen() {
   }, [locale, q, query.data, t]);
 
   const dockPad =
-    stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) +
     (canCreate ? 72 : 0);
 
   if (!allowed) {

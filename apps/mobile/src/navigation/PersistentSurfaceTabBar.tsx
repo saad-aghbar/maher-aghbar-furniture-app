@@ -21,6 +21,7 @@ import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme, useChromeSize } from '@/theme';
 import { can } from '@maher/permissions';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { activeTabFromPath } from './activeTabFromPath';
 import { navigateToTab } from './navigateToTab';
 import { type TabName } from './tabConfig';
@@ -155,6 +156,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   const { user } = useAuth();
   const { colors, theme, colorScheme } = useTheme();
   const { isRTL, t } = useLocale();
+  const { navigationMode } = useMaherLayout({ surface });
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const activeH = useChromeSize(ACTIVE_HEIGHT);
@@ -298,6 +300,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   }));
 
   if (tabs.length === 0) return null;
+  if (navigationMode !== 'bottom') return null;
 
   if (floating) {
     const dark = colorScheme === 'dark';

@@ -29,7 +29,6 @@ import {
 } from '@/features/account/selectStatement';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter, AnimatedPressable } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { ReturnBoardCard } from './components/ReturnBoardCard';
 import { ReturnsDealerSheet } from './components/ReturnsDealerSheet';
@@ -50,6 +49,7 @@ import {
   selectReturnCard,
 } from './selectReturn';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   detailHref: (id: string) => Href;
@@ -58,6 +58,8 @@ type Props = {
   /** Admin: show dealer filter. */
   adminControls?: boolean;
   backFallback?: Href;
+  selectedReturnId?: string;
+  onSelectReturn?: (id: string) => void;
 };
 
 function ReturnsScreenTitle({
@@ -120,11 +122,14 @@ export function ReturnsListScreen({
   canCreate,
   adminControls = false,
   backFallback = '/(app)/(admin)/(tabs)' as Href,
+  selectedReturnId,
+  onSelectReturn,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const params = useLocalSearchParams<{ chip?: string; physical?: string }>();
@@ -312,7 +317,7 @@ export function ReturnsListScreen({
           gap: theme.spacing.md,
           flexGrow: 1,
           paddingBottom:
-            insets.bottom + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['3xl'],
+            surfaceClearance + theme.spacing['3xl'],
         }}
         refreshControl={
           <RefreshControl
@@ -601,7 +606,9 @@ export function ReturnsListScreen({
             <ReturnBoardCard
               item={item}
               dealerFacing={dealerSurface}
-              onPress={() => router.push(detailHref(item.id))}
+              onPress={() =>
+                onSelectReturn ? onSelectReturn(item.id) : router.push(detailHref(item.id))
+              }
             />
           </ListItemEnter>
         )}

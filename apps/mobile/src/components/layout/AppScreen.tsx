@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMaherDensity } from '@/adaptive/density';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useTheme } from '@/theme';
 
@@ -21,6 +22,9 @@ type AppScreenProps = {
  * Do not pad the shell for the floating tab bar — that creates an opaque strip
  * behind the pill. Put `SURFACE_TAB_BAR_CLEARANCE` on scroll/list content instead
  * so page content can show through under the bar.
+ *
+ * On MEDIUM+ the shell caps to `contentMaxWidth` so a phone canvas is never
+ * stretched across a 1400px window. COMPACT stays full-bleed.
  */
 export function AppScreen({
   children,
@@ -32,6 +36,7 @@ export function AppScreen({
 }: AppScreenProps) {
   const insets = useSafeAreaInsets();
   const { colors, theme } = useTheme();
+  const density = useMaherDensity();
   const pad = theme.spacing[padding];
 
   return (
@@ -45,6 +50,9 @@ export function AppScreen({
           paddingBottom: edges.bottom ? insets.bottom + pad : 0,
           paddingHorizontal: pad,
           gap: theme.spacing.md,
+          width: '100%',
+          alignSelf: 'center',
+          maxWidth: density.contentMaxWidth,
         },
         style,
       ]}

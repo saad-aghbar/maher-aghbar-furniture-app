@@ -26,12 +26,12 @@ import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCa
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useQuery } from '@tanstack/react-query';
 import { ReturnOrderPickerSheet } from './components/ReturnOrderPickerSheet';
 import { ReturnPhotoBoard } from './components/ReturnPhotoBoard';
 import { returnCtaStyle } from './components/returnFloorCta';
 import { useCreateReturnMutation, type ReturnReason } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 const REASONS: ReturnReason[] = [
   'MANUFACTURING_DEFECT',
@@ -67,6 +67,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
   const { user } = useAuth();
   const { t, isRTL, locale, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const router = useRouter();
   const { openAccessoryCamera } = useAccessoryCamera();
@@ -270,7 +271,7 @@ export function CreateReturnScreen({ afterCreateHref }: Props) {
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         }}
         keyboardShouldPersistTaps="handled"
       >

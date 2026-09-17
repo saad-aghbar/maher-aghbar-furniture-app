@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { getApiBaseUrl, getApiV1Url, hostnameFromDevUri } from '../config';
 
 jest.mock('expo-constants', () => ({
@@ -59,10 +60,23 @@ describe('api config', () => {
     expect(getApiBaseUrl()).toBe('http://172.20.10.2:4000');
   });
 
-  it('keeps loopback when Expo host is also loopback (simulator)', () => {
+  it('keeps loopback when Expo host is also loopback (iOS simulator)', () => {
     process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:4000';
     constants.expoConfig.hostUri = 'localhost:8081';
     expect(getApiBaseUrl()).toBe('http://localhost:4000');
+  });
+
+  it('rewrites loopback to 10.0.2.2 on Android emulator when Metro host is loopback', () => {
+    const platform = Platform as { OS: string };
+    const prev = platform.OS;
+    platform.OS = 'android';
+    try {
+      process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:4000';
+      constants.expoConfig.hostUri = 'localhost:8081';
+      expect(getApiBaseUrl()).toBe('http://10.0.2.2:4000');
+    } finally {
+      platform.OS = prev;
+    }
   });
 
   it('requires https URL on EAS preview builds', () => {

@@ -5,7 +5,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import { useTheme } from '@/theme';
 
 type ConfirmationSheetProps = {
@@ -71,10 +71,11 @@ export function ConfirmationSheet({
   };
 
   return (
-    <BottomSheet
+    <AdaptiveOverlay
       open={open}
       onClose={onClose}
       title={title}
+      intent="confirm"
       fitContent
       maxHeight={withReason ? 480 : 360}
       overlay={overlay}
@@ -133,6 +134,6 @@ export function ConfirmationSheet({
           <SecondaryButton label={cancelLabel} style={pill} onPress={onClose} />
         </View>
       </View>
-    </BottomSheet>
+    </AdaptiveOverlay>
   );
 }

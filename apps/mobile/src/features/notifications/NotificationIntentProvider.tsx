@@ -40,7 +40,7 @@ export function NotificationIntentProvider({ children }: { children: ReactNode }
     async (intent: PendingNotificationIntent) => {
       const surface = user ? resolveAppSurface(user) : null;
       const decision = decideNotificationOpen({
-        status,
+        status: status === 'offline' ? 'unauthenticated' : status,
         user: user ? { id: user.id } : null,
         surface,
         intent,

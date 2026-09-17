@@ -15,7 +15,7 @@ import { useTheme } from '@/theme';
 import { queryKeys } from '@/api/queryKeys';
 import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { AdaptiveContainer } from '@/adaptive/AdaptiveContainer';
 import { AtelierScrollProvider, useAtelierScroll } from './AtelierScrollContext';
 import { AdminHomeAtelierDashboard } from './components/AdminHomeAtelierDashboard';
 import { AdminHomeAtelierHero } from './components/AdminHomeAtelierHero';
@@ -30,6 +30,7 @@ import { mapMgmtHref } from './mapMgmtHref';
 import { homeAttentionCount, pickHomeFocus } from './pickHomeFocus';
 import { useAdminHomeQuery, useManagementSummaryQuery } from './query';
 import type { AdminHomePayload, ManagementSummaryPayload } from './api';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type AdminHomeScreenProps = {
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
@@ -46,6 +47,7 @@ function AtelierScrollShell({
   refreshControl?: ReactElement<RefreshControlProps>;
 }) {
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { colors, theme } = useTheme();
   const { scrollY } = useAtelierScroll();
   const onScroll = useAnimatedScrollHandler({
@@ -55,7 +57,7 @@ function AtelierScrollShell({
   });
   /** Extra clearance so the last Attention card sits fully above the floating tab bar. */
   const scrollBottomPad =
-    insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['5xl'];
+    insets.bottom + theme.spacing['3xl'] + tabBarReserve + theme.spacing['5xl'];
 
   return (
     <Animated.ScrollView
@@ -275,9 +277,11 @@ function AdminHomeScreenInner({
 
   return (
     <AtelierScrollShell refreshControl={showLoading || showError ? undefined : refresh}>
-      {showOfflineBanner || forceState === 'offline' ? <OfflineBanner /> : null}
-      {hero}
-      {body}
+      <AdaptiveContainer fill={false} testID="admin-home-adaptive">
+        {showOfflineBanner || forceState === 'offline' ? <OfflineBanner /> : null}
+        {hero}
+        {body}
+      </AdaptiveContainer>
     </AtelierScrollShell>
   );
 }

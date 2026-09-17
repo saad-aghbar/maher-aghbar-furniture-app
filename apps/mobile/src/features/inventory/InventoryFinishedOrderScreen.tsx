@@ -23,7 +23,6 @@ import { useDeliveryLoadSheetQuery } from '@/features/delivery-load/query';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { fgLeaveByLabel, fgLeaveUrgency } from './fgFilters';
@@ -43,6 +42,7 @@ import { transferableQty } from './selectInventoryPick';
 import { CreateStockCountSheet } from './components/CreateStockCountSheet';
 import { CreateTransferSheet } from './components/CreateTransferSheet';
 import { InventoryListSkeleton } from './components/InventorySkeleton';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 const BACK_SLOT = 44;
 
@@ -331,6 +331,7 @@ export function InventoryFinishedOrderScreen() {
   const { t, locale, isRTL, formatDateTime } = useLocale();
   const { colors, theme } = useTheme();
   const { user } = useAuth();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -622,7 +623,7 @@ export function InventoryFinishedOrderScreen() {
         <ScrollView
           contentContainerStyle={{
             gap: theme.spacing.md,
-            paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+            paddingBottom: theme.spacing['3xl'] + tabBarReserve,
           }}
           refreshControl={
             <RefreshControl

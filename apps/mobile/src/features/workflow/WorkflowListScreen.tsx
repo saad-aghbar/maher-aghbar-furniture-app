@@ -25,7 +25,6 @@ import { LocaleNameField } from '@/features/catalog/components/BilingualNameFiel
 import { useLocale } from '@/i18n';
 import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { WorkflowFloorBoard, WorkflowFloorRow } from './components/WorkflowFloorList';
@@ -39,6 +38,7 @@ import {
 import { slugFromEnglishName } from './trilingualNames';
 import { workflowScopeLabelKey } from './workflowScope';
 import { isReturnWorkflowScope } from '@maher/types';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 const LIST_BACK = '/(app)/(admin)/(tabs)/production' as Href;
 
@@ -50,6 +50,7 @@ export function WorkflowListScreen() {
   const { showToast } = useToast();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { height: windowH } = useWindowDimensions();
   const allowed = canAny(user, ['production.workflow.read', 'production-order.update']);
   const canManage = can(user, 'production.workflow.manage');
@@ -65,7 +66,7 @@ export function WorkflowListScreen() {
   const [name, setName] = useState('');
   const [translating, setTranslating] = useState(false);
   /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
-  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomClearance = surfaceClearance;
 
   const filtered = useMemo(() => {
     const rows = (listQuery.data ?? []).filter((row) =>

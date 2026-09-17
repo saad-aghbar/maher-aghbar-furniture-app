@@ -11,6 +11,7 @@ import type { PlanItemFloorModel, PlanItemSectionKey } from '../selectPlanItemsF
 type Props = {
   item: PlanItemFloorModel;
   onPress: () => void;
+  selected?: boolean;
 };
 
 const THUMB = 56;
@@ -36,7 +37,7 @@ const SECTION_LABEL: Record<PlanItemSectionKey, string> = {
 /**
  * One manufacture line — materials-card recipe with plan readiness stamps.
  */
-export function PlanItemFloorCard({ item, onPress }: Props) {
+export function PlanItemFloorCard({ item, onPress, selected = false }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -57,7 +58,11 @@ export function PlanItemFloorCard({ item, onPress }: Props) {
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: item.attention ? colors.warning : colors.borderStrong,
+        borderColor: selected
+          ? colors.brand
+          : item.attention
+            ? colors.warning
+            : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),

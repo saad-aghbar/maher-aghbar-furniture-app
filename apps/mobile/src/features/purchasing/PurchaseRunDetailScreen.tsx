@@ -20,7 +20,6 @@ import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openPurchaseOrderPdf } from './api';
@@ -28,6 +27,7 @@ import { PurchaseWhatsAppPreviewSheet } from './components/PurchaseWhatsAppPrevi
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { PurchasingSkeleton } from './components/PurchasingSkeleton';
 import { usePurchaseRunActions, usePurchaseRunQuery } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = { runId: string };
 
@@ -54,6 +54,7 @@ export function PurchaseRunDetailScreen({ runId }: Props) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const canRead = can(user, 'purchase-order.read');
   const canApprove = can(user, 'purchase-order.approve');
@@ -86,10 +87,10 @@ export function PurchaseRunDetailScreen({ runId }: Props) {
   const showResend = canApprove && sentOrLater;
   const hasDock = showApprove || showSend || showResend || canReceiveNow || orders.length > 0;
   const dockPad = hasDock
-    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) +
       96 +
       RECEIPTS_TAB_CLEARANCE_EXTRA
-    : theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+    : theme.spacing['3xl'] + tabBarReserve;
 
   const previewMessages = useMemo(
     () =>

@@ -1,5 +1,4 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import { useTheme } from '@/theme';
 
 /**
@@ -7,7 +6,7 @@ import { useTheme } from '@/theme';
  * floating tab pill (pill height + home indicator + a quiet extra gap).
  */
 export function useCostFloorScrollPad() {
-  const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { theme } = useTheme();
-  return theme.spacing['3xl'] + surfaceListBottomInset(insets.bottom);
+  return theme.spacing['3xl'] + surfaceClearance;
 }

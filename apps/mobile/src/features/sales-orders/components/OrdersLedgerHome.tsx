@@ -7,7 +7,6 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { useLocale } from '@/i18n';
 import { useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { groupOrdersByDay, type LedgerBucketKey } from '../groupOrdersByDay';
 import type { AdminOrderCardModel, DealerOrderCardModel, OrdersListVariant } from '../selectOrderCard';
 import type { StatusChipKey } from './OrdersFilterChips';
@@ -15,6 +14,7 @@ import { OrdersCompositionChrome } from './OrdersCompositionChrome';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersQuietRow } from './OrdersQuietRow';
 import { orderBoardShadow } from './orderFloorStyle';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type StreamItem = {
   id: string;
@@ -82,6 +82,7 @@ export function OrdersLedgerHome({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
@@ -184,7 +185,7 @@ export function OrdersLedgerHome({
       ListHeaderComponent={header}
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.lg,
-        paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         flexGrow: 1,
       }}
       refreshControl={

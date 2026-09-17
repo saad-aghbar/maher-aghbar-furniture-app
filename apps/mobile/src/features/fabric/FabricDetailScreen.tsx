@@ -41,7 +41,6 @@ import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { resolveFabricStageLabel, resolveFabricStatusLabel } from './fabricCopy';
 import { FabricActionSheet, FabricInset } from './FabricActionSheet';
@@ -62,6 +61,7 @@ import {
   selectFabricTrackerRow,
 } from './selectFabricTracker';
 import { resolveFabricTone } from './fabricToneVisuals';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   procurementId?: string;
@@ -80,6 +80,7 @@ export function FabricDetailScreen({ procurementId, code, backFallback }: Props)
   const { user } = useAuth();
   const { t, locale, formatDate, formatNumber, formatCurrency, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
@@ -410,7 +411,7 @@ export function FabricDetailScreen({ procurementId, code, backFallback }: Props)
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         }}
       >
         <ListItemEnter index={0}>

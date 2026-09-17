@@ -6,6 +6,7 @@ import { localizedName } from '@maher/i18n';
 import { can, canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -13,7 +14,9 @@ import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
+import { TextField } from '@/components/forms/TextField';
 import { ActionSheet } from '@/components/sheets/ActionSheet';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
@@ -170,6 +173,8 @@ type Props = {
   initialLowStock?: boolean;
   initialHandoff?: boolean;
   initialTab?: string;
+  selectedItemId?: string;
+  onSelectItem?: (id: string) => void;
 };
 
 /**
@@ -182,6 +187,8 @@ export function InventorySignatureHome({
   initialLowStock,
   initialHandoff,
   initialTab,
+  selectedItemId,
+  onSelectItem,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -191,6 +198,7 @@ export function InventorySignatureHome({
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const { openScanner } = useCodeScanner();
+  const { isDesk } = useMaherLayout();
   const router = useRouter();
   const allowed = can(user, 'inventory.read');
   const canSync = can(user, 'inventory.adjust');
@@ -249,6 +257,7 @@ export function InventorySignatureHome({
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [scanResult, setScanResult] = useState<InventoryItem | 'not-found' | null>(null);
+  const [typedCode, setTypedCode] = useState('');
   const [inspectBin, setInspectBin] = useState<WarehouseBinContents | null>(null);
   const pendingBinPrintRef = useRef<WarehouseBinContents | null>(null);
   const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
@@ -600,14 +609,11 @@ export function InventorySignatureHome({
     });
   }
 
-  async function runIdentifyScan() {
-    const code = await openScanner({
-      title: t('mobile.inventory.scan'),
-      hint: t('mobile.inventory.scanBarcodeHint'),
-    });
-    if (!code) return;
+  async function dispatchIdentifyCode(code: string) {
+    const trimmed = code.trim();
+    if (!trimmed) return;
     void haptics.selection();
-    const resolved = await resolveInventoryScan(code);
+    const resolved = await resolveInventoryScan(trimmed);
     if (resolved.status === 'FOUND_BIN') {
       void haptics.confirmLight();
       InteractionManager.runAfterInteractions(() => {
@@ -659,6 +665,23 @@ export function InventorySignatureHome({
     });
   }
 
+  async function runIdentifyScan() {
+    const code = await openScanner({
+      title: t('mobile.inventory.scan'),
+      hint: t('mobile.inventory.scanBarcodeHint'),
+    });
+    if (!code) return;
+    await dispatchIdentifyCode(code);
+  }
+
+  function openInventoryItem(id: string, query = '') {
+    if (onSelectItem) {
+      onSelectItem(id);
+      return;
+    }
+    router.push(`/(app)/(admin)/inventory/items/${id}${query}` as Href);
+  }
+
   function cardFromItem(found: InventoryItem): InventoryItemCardModel {
     return selectInventoryItemCard(found, locale);
   }
@@ -697,7 +720,7 @@ export function InventorySignatureHome({
         setOpsFromScan('count');
         break;
       case 'details':
-        router.push(`/(app)/(admin)/inventory/items/${next.itemId}` as Href);
+        openInventoryItem(next.itemId);
         break;
       case 'qr':
         setQrItem(next.item);
@@ -922,6 +945,33 @@ export function InventorySignatureHome({
 
   const header = (
     <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
+      {isDesk ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            gap: theme.spacing.sm,
+            alignItems: 'flex-end',
+          }}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <TextField
+              label={t('mobile.adaptive.scanDockLabel')}
+              value={typedCode}
+              onChangeText={setTypedCode}
+              placeholder={t('mobile.adaptive.scanDockPlaceholder')}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="go"
+              onSubmitEditing={() => void dispatchIdentifyCode(typedCode)}
+              accessibilityLabel={t('mobile.adaptive.scanDockLabel')}
+            />
+          </View>
+          <PrimaryButton
+            label={t('mobile.adaptive.scanSubmit')}
+            onPress={() => void dispatchIdentifyCode(typedCode)}
+          />
+        </View>
+      ) : null}
       <InventoryCompositionChrome
         title={
           lifecycle === 'finished'
@@ -1291,11 +1341,8 @@ export function InventorySignatureHome({
               item={item.model}
               index={index}
               animateEnter={false}
-              onPress={() =>
-                router.push(
-                  `/(app)/(admin)/inventory/items/${item.model.id}` as Href,
-                )
-              }
+              selected={item.model.id === selectedItemId}
+              onPress={() => openInventoryItem(item.model.id)}
               canReceive={canReceive}
               canIssue={canIssue}
               canEdit={canEdit}
@@ -1345,11 +1392,7 @@ export function InventorySignatureHome({
               imageUrl={item.model.imageUrl}
               index={index}
               animateEnter={false}
-              onPress={() =>
-                router.push(
-                  `/(app)/(admin)/inventory/items/${item.model.id}?lifecycle=finished` as Href,
-                )
-              }
+              onPress={() => openInventoryItem(item.model.id, '?lifecycle=finished')}
             />
           ) : item.kind === 'transfer' ? (
             <InventoryTransferRow
@@ -1691,7 +1734,7 @@ export function InventorySignatureHome({
         }
         onViewItem={(inventoryItemId) => {
           setInspectBin(null);
-          router.push(`/(app)/(admin)/inventory/items/${inventoryItemId}` as Href);
+          openInventoryItem(inventoryItemId);
         }}
       />
       <InventoryScanResultSheet
@@ -1743,7 +1786,7 @@ export function InventorySignatureHome({
             onPress: () => {
               const created = createdAfterSaveRef.current;
               if (created) {
-                router.push(`/(app)/(admin)/inventory/items/${created.id}` as Href);
+                openInventoryItem(created.id);
               }
             },
           },

@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
   adminOrderFlowHref,
   dealerOrderFlowHref,
@@ -15,6 +14,7 @@ import { OrdersCompositionChrome } from './OrdersCompositionChrome';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersStageSpine } from './OrdersStageSpine';
 import { OrdersStreamStrip, type OrdersStreamStripModel } from './OrdersStreamStrip';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   variant: OrdersListVariant;
@@ -53,6 +53,7 @@ export function OrdersPipelineHome({
 }: Props) {
   const { t } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const router = useRouter();
 
   const allStream: OrdersStreamStripModel[] = useMemo(() => {
@@ -123,7 +124,7 @@ export function OrdersPipelineHome({
       keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
       ListHeaderComponent={header}
       contentContainerStyle={{
-        paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         flexGrow: 1,
       }}
       refreshControl={

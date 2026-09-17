@@ -1,5 +1,7 @@
-import { Dimensions, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
+import { useWindowMetrics } from '@/adaptive/windowMetrics';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import type { BrowseProduct } from '@/features/catalog/api';
@@ -33,10 +35,13 @@ export function ProductQuickPickSheet({
 }: ProductQuickPickSheetProps) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { width } = useWindowMetrics();
+  const { columnCapacity, isCompact } = useMaherLayout();
   const dark = colorScheme === 'dark';
   const pad = theme.spacing.lg;
   const gap = theme.spacing.md;
-  const cardW = (Dimensions.get('window').width - pad * 2 - gap - theme.spacing.lg) / 2;
+  const cols = isCompact ? 2 : Math.min(columnCapacity, 4);
+  const cardW = (width - pad * 2 - gap * (cols - 1) - theme.spacing.lg) / cols;
 
   const cards = products.map((p) => toProductCard(p, locale));
 
@@ -83,8 +88,9 @@ export function ProductQuickPickSheet({
           <FlatList
             data={cards}
             keyExtractor={(item) => item.id}
-            numColumns={2}
-            columnWrapperStyle={{ gap }}
+            numColumns={cols}
+            key={`quick-pick-${cols}`}
+            columnWrapperStyle={cols > 1 ? { gap } : undefined}
             contentContainerStyle={{ gap, paddingBottom: theme.spacing.xl }}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {

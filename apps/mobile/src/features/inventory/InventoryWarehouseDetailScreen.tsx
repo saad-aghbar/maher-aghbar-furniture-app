@@ -20,7 +20,6 @@ import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import type { Warehouse, WarehouseDeskLocation } from './api';
 import { openWarehouseLocationQrLabelPdf } from './api';
@@ -36,6 +35,7 @@ import {
   useUpdateWarehouseLocationMutation,
   useWarehouseDeskQuery,
 } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   binStockSummary,
   deskLocationToBinContents,
@@ -56,6 +56,7 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const allowed = canAny(user, [
@@ -95,7 +96,7 @@ export function InventoryWarehouseDetailScreen({ warehouseId }: Props) {
     : null;
 
   const dockPad =
-    stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) +
     (canManageBins ? 72 : 0);
 
   function fail(err: unknown) {

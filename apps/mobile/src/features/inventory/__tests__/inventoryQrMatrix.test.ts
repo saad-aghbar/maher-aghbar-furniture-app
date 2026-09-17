@@ -146,8 +146,13 @@ describe('inventory QR complete interaction matrix', () => {
   });
 
   it('BottomSheet yields Modal while camera is open (no nested Modal freeze)', () => {
-    const sheet = readFileSync(
+    const wrapper = readFileSync(
       join(__dirname, '../../../components/sheets/BottomSheet.tsx'),
+      'utf8',
+    );
+    expect(wrapper).toContain('AdaptiveOverlay');
+    const sheet = readFileSync(
+      join(__dirname, '../../../components/sheets/BottomSheetPanel.tsx'),
       'utf8',
     );
     expect(sheet).toContain('isScanning');

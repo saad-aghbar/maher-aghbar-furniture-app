@@ -3,9 +3,8 @@ import { ActivityIndicator, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
-import { PersistentSurfaceTabBar } from '@/navigation/PersistentSurfaceTabBar';
+import { AdaptiveShell } from '@/navigation/AdaptiveShell';
 import { useStackMotionOptions } from '@/navigation/stackMotion';
-import { TabSwipeNavigator } from '@/navigation/TabSwipeNavigator';
 import { resolveAppSurface } from '@/permissions';
 import { EmployeeThemeOverride, useTheme } from '@/theme';
 
@@ -33,24 +32,20 @@ export default function AppLayout() {
   const surface = resolveAppSurface(user);
 
   const shell = (
-    <TabSwipeNavigator surface={surface}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Stack screenOptions={stackMotion}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(admin)" />
-          <Stack.Screen name="(customer)" />
-          <Stack.Screen name="(employee)" />
-          <Stack.Screen name="notifications/index" />
-          <Stack.Screen
-            name="search/index"
-            options={{ animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen name="_forbidden" />
-        </Stack>
-        {/* Keep tab chrome for app-level pushes (search / notifications). */}
-        <PersistentSurfaceTabBar surface={surface} />
-      </View>
-    </TabSwipeNavigator>
+    <AdaptiveShell surface={surface}>
+      <Stack screenOptions={stackMotion}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(admin)" />
+        <Stack.Screen name="(customer)" />
+        <Stack.Screen name="(employee)" />
+        <Stack.Screen name="notifications/index" />
+        <Stack.Screen
+          name="search/index"
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen name="_forbidden" />
+      </Stack>
+    </AdaptiveShell>
   );
 
   // Worker surface only — admin/dealer keep global cream/liquorice themes.

@@ -15,7 +15,6 @@ import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { openInventoryLabelPdf, openInventoryQrLabelPdf, type InventoryCategoryGroup } from './api';
 import { AddStockSheet, type StockMoveMode } from './components/AddStockSheet';
 import { EditInventoryItemSheet } from './components/EditInventoryItemSheet';
@@ -32,6 +31,7 @@ import {
   useUpdateInventoryItemMutation,
   useWarehousesQuery,
 } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   selectInventoryItemCard,
   type InventoryItemCardModel,
@@ -52,6 +52,7 @@ export function InventoryGroupListScreen({
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme, colors } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
@@ -185,7 +186,7 @@ export function InventoryGroupListScreen({
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
           flexGrow: 1,
         }}
         refreshControl={

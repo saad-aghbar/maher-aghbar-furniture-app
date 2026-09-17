@@ -1,5 +1,5 @@
 import { useAuth } from '@/auth/AuthProvider';
-import { ProductionOverviewScreen } from '@/features/production/ProductionOverviewScreen';
+import { ProductionDeskHost } from '@/features/production/ProductionDeskHost';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
 export default function AdminProduction() {
@@ -10,7 +10,7 @@ export default function AdminProduction() {
       require={['production-order.read', 'production-task.read']}
       mode="any"
     >
-      <ProductionOverviewScreen />
+      <ProductionDeskHost />
     </PermissionGate>
   );
 }

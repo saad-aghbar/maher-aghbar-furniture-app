@@ -191,6 +191,20 @@ const DOMAIN_USAGE: Record<string, { usedIn: string[]; openUsageTarget?: string;
 
 const EXISTING_DEV_SCREENS: LabRegistryEntry[] = [
   {
+    id: 'screen.dev.adaptive',
+    componentName: 'AdaptiveGalleryScreen',
+    category: 'Full Screens',
+    subcategory: 'Dev scenarios',
+    role: 'Admin',
+    sourceFile: 'app/dev/adaptive.tsx',
+    usedIn: ['Dev → Adaptive'],
+    openUsageTarget: '/dev/adaptive',
+    description: 'Window class, split pane, and overlay gallery.',
+    interactive: true,
+    tags: ['screen', 'adaptive'],
+    representation: 'screen-link',
+  },
+  {
     id: 'screen.dev.admin-home',
     componentName: 'AdminHomeDevPreview',
     category: 'Full Screens',

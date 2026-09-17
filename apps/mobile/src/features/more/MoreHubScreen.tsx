@@ -16,11 +16,11 @@ import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useChromeSize, useTheme } from '@/theme';
 import { MoreFloorCommand } from './components/MoreFloorCommand';
 import { MoreIdentityBoard } from './components/MoreIdentityBoard';
 import { MorePreferencesBoard } from './components/MorePreferencesBoard';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 /** Admin More hub — signed in, prefs, places, automation. */
 export function MoreHubScreen() {
@@ -29,11 +29,12 @@ export function MoreHubScreen() {
   const { theme, colors } = useTheme();
   const pip = useChromeSize(16);
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const reduce = useReducedMotion();
   /** Last Places card must sit above the floating pill — not under it. */
-  const scrollBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const scrollBottomPad = surfaceClearance;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
   const notificationsQuery = useNotificationsQuery(Boolean(user) && canNotify);

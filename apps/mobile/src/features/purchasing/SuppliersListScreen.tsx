@@ -20,13 +20,13 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CreateSupplierSheet } from './components/CreateSupplierSheet';
 import { useSupplierStatementPdf } from './useSupplierStatementPdf';
 import { PurchasingSkeleton } from './components/PurchasingSkeleton';
 import { SupplierBoardCard } from './components/SupplierBoardCard';
 import { useArchiveSupplierMutation, useSuppliersQuery } from './query';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 const BACK_FALLBACK = '/(app)/(admin)/purchasing' as Href;
 
@@ -74,7 +74,8 @@ export function SuppliersListScreen() {
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
-  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const surfaceClearance = useSurfaceClearance();
+  const listBottomPad = surfaceClearance;
   const allowed = can(user, 'supplier.read');
   const canManage = can(user, 'supplier.manage');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';

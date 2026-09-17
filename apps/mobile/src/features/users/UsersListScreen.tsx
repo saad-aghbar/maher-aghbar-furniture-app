@@ -29,7 +29,6 @@ import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { CreateUserSheet } from './components/CreateUserSheet';
 import { DepartmentPickerSheet } from './components/DepartmentPickerSheet';
@@ -55,6 +54,7 @@ import {
 import { roleKindForSegment, type UsersSegment } from './segment';
 import { useStageLibraryQuery } from '@/features/workflow/query';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 function UsersScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
   const { t, isRTL } = useLocale();
@@ -96,13 +96,14 @@ export function UsersListScreen() {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'user.manage');
   /** Last-card inset: home indicator + floating tab bar (same as other leftover PRs). */
-  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomClearance = surfaceClearance;
 
   const [segment, setSegment] = useState<UsersSegment>('workers');
   const [q, setQ] = useState('');

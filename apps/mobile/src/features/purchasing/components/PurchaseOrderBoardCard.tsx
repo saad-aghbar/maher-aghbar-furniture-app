@@ -11,9 +11,10 @@ import { humanizeWarehouseLabel, type PurchaseCardModel } from '../selectPurchas
 type Props = {
   order: PurchaseCardModel;
   onPress: () => void;
+  selected?: boolean;
 };
 
-export function PurchaseOrderBoardCard({ order, onPress }: Props) {
+export function PurchaseOrderBoardCard({ order, onPress, selected = false }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -41,8 +42,8 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
       }}
       style={{
         borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: colors.borderStrong,
+        borderWidth: selected ? 1.5 : 1,
+        borderColor: selected ? colors.brand : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),

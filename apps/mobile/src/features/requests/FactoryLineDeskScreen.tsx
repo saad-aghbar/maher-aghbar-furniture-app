@@ -43,8 +43,8 @@ import { emptyOrderLine, type NewOrderLine } from '@/features/requests/newOrderL
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type RfqProps = { mode: 'rfq'; requestId: string; itemId: string; quotationId?: never; lineId?: never };
 type QuoteProps = { mode: 'quote'; quotationId: string; lineId: string; requestId?: never; itemId?: never };
@@ -85,6 +85,7 @@ export function FactoryLineDeskScreen(props: Props) {
   const { showToast } = useToast();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const queryClient = useQueryClient();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canUpdate =
@@ -259,7 +260,7 @@ export function FactoryLineDeskScreen(props: Props) {
     (props.mode === 'quote' && quotationQuery.isError && !quotationQuery.data);
   const missing = props.mode === 'rfq' ? !rfqItem && !requestQuery.isLoading : !quoteLine && !quotationQuery.isLoading;
 
-  const footerClearance = stickyCtaBottomInset(insets.bottom, theme.spacing.sm, SURFACE_TAB_BAR_CLEARANCE);
+  const footerClearance = stickyCtaBottomInset(insets.bottom, theme.spacing.sm, tabBarReserve);
   const visual = line.imageUrl || line.photoUris.find(Boolean);
   const sku = line.variantSku || line.variantLabel;
 
@@ -426,7 +427,7 @@ export function FactoryLineDeskScreen(props: Props) {
       </ScrollView>
 
       {editable ? (
-        <FloatingActionDock floating tabClearance={SURFACE_TAB_BAR_CLEARANCE}>
+        <FloatingActionDock floating tabClearance={tabBarReserve}>
           <View
             style={{
               borderRadius: theme.radius.xl,

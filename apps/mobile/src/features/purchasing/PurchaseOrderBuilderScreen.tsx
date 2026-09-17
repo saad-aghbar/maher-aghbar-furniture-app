@@ -34,7 +34,6 @@ import { purchasingScanMissKey } from '@/features/inventory/selectScanPresentati
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddMaterialSheet } from './components/AddMaterialSheet';
@@ -57,6 +56,7 @@ import {
   type BuilderMaterial,
 } from './orderBuilder';
 import { useCreatePurchaseRunMutation, useSuppliersQuery } from './query';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 const CATEGORIES: InventoryCategoryGroup[] = ['fabric', 'foam', 'wood', 'accessories'];
 const SECTION_MAX = 360;
@@ -67,6 +67,7 @@ export function PurchaseOrderBuilderScreen() {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const { openScanner } = useCodeScanner();
   const canCreate = can(user, 'purchase-order.create');
@@ -190,7 +191,7 @@ export function PurchaseOrderBuilderScreen() {
     totalOnHand: 0,
     primaryUnit: null,
   }));
-  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 72;
+  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) + 72;
 
   useEffect(() => {
     if (seededRef.current) return;
@@ -266,6 +267,10 @@ export function PurchaseOrderBuilderScreen() {
       hint: t('mobile.inventory.scanBarcodeHint'),
     });
     if (!code) return;
+    await applyMaterialCode(code);
+  };
+
+  const applyMaterialCode = async (code: string) => {
     try {
       const resolved = await resolveInventoryScan(code);
       if (resolved.status !== 'FOUND') {
@@ -352,6 +357,10 @@ export function PurchaseOrderBuilderScreen() {
                   autoCorrect={false}
                   autoCapitalize="none"
                   returnKeyType="search"
+                  onSubmitEditing={() => {
+                    const q = search.trim();
+                    if (q && !q.includes(' ')) void applyMaterialCode(q);
+                  }}
                   clearButtonMode="while-editing"
                   accessibilityLabel={t('mobile.purchasing.searchMaterials')}
                   style={{

@@ -31,7 +31,6 @@ import { useLocale } from '@/i18n';
 import { isolateLtr } from '@/i18n/format';
 import { displayRolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 import { useAuth } from '@/auth/AuthProvider';
@@ -51,6 +50,7 @@ import { Linking, Pressable, Switch, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 function looksLatinValue(value: string): boolean {
   return !/[\u0600-\u06FF\u0590-\u05FF]/.test(value);
@@ -84,6 +84,7 @@ export function MoreAccountScreen({
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -753,7 +754,7 @@ export function MoreAccountScreen({
       </View>
       <View
         pointerEvents="none"
-        style={{ height: insets.bottom + SURFACE_TAB_BAR_CLEARANCE }}
+        style={{ height: surfaceClearance }}
       />
     </ScrollableScreen>
   );

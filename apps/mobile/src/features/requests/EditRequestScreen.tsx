@@ -43,7 +43,8 @@ import { parseMapCoord } from '@/components/maps/mapCoords';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { FormShake, haptics, ListItemEnter } from '@/motion';
-import { DEALER_TAB_BAR_CLEARANCE, SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
+import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useAvailabilityQuery } from '@/features/scheduling/query';
 import {
@@ -171,7 +172,8 @@ export function EditRequestScreen({
   const canUpload = can(user, 'document.manage');
   const isAdmin = variant === 'admin';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const stickyBottom = isAdmin ? SURFACE_TAB_BAR_CLEARANCE : DEALER_TAB_BAR_CLEARANCE;
+  const tabBarReserve = useTabBarReserve();
+  const stickyBottom = isAdmin ? tabBarReserve : DEALER_TAB_BAR_CLEARANCE;
 
   const query = useQuery({
     queryKey: queryKeys.requests.detail(requestId),

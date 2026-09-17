@@ -38,17 +38,20 @@ export function useLabelVerifyScan(currentId: string | undefined) {
     setBusy(false);
   }, [clear]);
 
-  const run = useCallback(async (overrideId?: string) => {
+  const run = useCallback(async (overrideId?: string, typedCode?: string) => {
     const id = overrideId ?? currentIdRef.current;
     if (!id || busyRef.current) return;
     clear();
     busyRef.current = true;
     setBusy(true);
     try {
-      const code = await openScanner({
-        title: t('mobile.inventory.scanLabelToConfirm'),
-        hint: t('mobile.inventory.scanLabelConfirmHint'),
-      });
+      const code =
+        typedCode !== undefined
+          ? typedCode
+          : await openScanner({
+              title: t('mobile.inventory.scanLabelToConfirm'),
+              hint: t('mobile.inventory.scanLabelConfirmHint'),
+            });
       const outcome = await runInventoryLabelVerify({
         code,
         currentId: id,

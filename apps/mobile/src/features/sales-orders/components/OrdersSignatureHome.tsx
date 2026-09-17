@@ -25,7 +25,6 @@ import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter, useReducedMotion } from '@/motion';
 import { durations, withMotionDuration } from '@/motion/presets';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
   adminOrderFlowHref,
   dealerOrderFlowHref,
@@ -80,6 +79,7 @@ import {
   type RfqInboxSubchip,
 } from './OrdersRfqInboxChips';
 import { OrdersStageSpine } from './OrdersStageSpine';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   OrderTypeLensBar,
   type OrderTypeCounts,
@@ -298,6 +298,7 @@ export function OrdersSignatureHome({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const reduce = useReducedMotion();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -488,7 +489,7 @@ export function OrdersSignatureHome({
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
     paddingBottom:
-      theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
+      theme.spacing['3xl'] + tabBarReserve + LIST_BOTTOM_EXTRA,
   };
   /** Row layout anim fights the keyboard while typing — keep list stable during search. */
   const searchActive = searchInput.trim().length > 0;

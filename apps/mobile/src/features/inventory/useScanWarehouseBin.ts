@@ -9,11 +9,15 @@ export function useScanWarehouseBin() {
   const { t } = useLocale();
   const { showToast } = useToast();
 
-  return async function scanWarehouseBin(): Promise<WarehouseBinContents | null> {
-    const code = await openScanner({
-      title: t('mobile.inventory.scanBin'),
-      hint: t('mobile.inventory.searchBins'),
-    });
+  return async function scanWarehouseBin(
+    typedCode?: string,
+  ): Promise<WarehouseBinContents | null> {
+    const code = typedCode?.trim()
+      ? typedCode.trim()
+      : await openScanner({
+          title: t('mobile.inventory.scanBin'),
+          hint: t('mobile.inventory.searchBins'),
+        });
     if (!code) return null;
     const parsed = parseBinScanCode(code);
     const lookup = parsed.kind === 'bin' ? parsed.idOrCode : code.trim();

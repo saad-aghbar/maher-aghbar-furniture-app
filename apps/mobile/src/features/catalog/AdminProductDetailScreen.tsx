@@ -87,12 +87,12 @@ function toDraft(p: AdminProductDetail, locale: string): Draft {
   };
 }
 
-type Props = { productId: string };
+type Props = { productId: string; embedded?: boolean };
 
 /**
  * Admin product manage PDP — identity and variants only. Dealers never see this screen.
  */
-export function AdminProductDetailScreen({ productId }: Props) {
+export function AdminProductDetailScreen({ productId, embedded = false }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -340,7 +340,9 @@ export function AdminProductDetailScreen({ productId }: Props) {
           minHeight: theme.sizes.touch.min,
         }}
       >
-        <BackButton onPress={() => router.back()} label={t('mobile.productDetail.back')} />
+        {embedded ? null : (
+          <BackButton onPress={() => router.back()} label={t('mobile.productDetail.back')} />
+        )}
         <AppText variant="title" weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
           {chromeTitle}
         </AppText>

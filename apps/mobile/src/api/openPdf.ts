@@ -43,7 +43,8 @@ export async function openAuthedPdf(
   file.write(bytes);
 
   try {
-    // iOS: share the file URL only (message alone can drop the attachment).
+    // iOS and Designed-for-iPad Mac: the share sheet is the open / Preview / print
+    // path. Linking is the fallback when share is cancelled or unavailable.
     if (Platform.OS === 'ios') {
       await Share.share({ url: file.uri });
     } else {

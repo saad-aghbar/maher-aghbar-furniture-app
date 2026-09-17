@@ -1,8 +1,8 @@
 import { useAuth } from '@/auth/AuthProvider';
 import { PermissionGate } from '@/navigation/PermissionGate';
-import { DeliveryOrdersListScreen } from '@/features/delivery-load';
 import { isDeliveryFloorWorker } from '@/features/delivery-load/isDeliveryFloorWorker';
-import { TasksListScreen } from '@/features/tasks/TasksListScreen';
+import { DeliveryOrdersListScreen } from '@/features/delivery-load';
+import { WorkerTasksDeskHost } from '@/features/tasks/WorkerTasksDeskHost';
 
 export default function EmployeeTasks() {
   const { user } = useAuth();
@@ -15,7 +15,7 @@ export default function EmployeeTasks() {
   }
   return (
     <PermissionGate user={user} require="production-task.read" mode="all">
-      <TasksListScreen variant="open" />
+      <WorkerTasksDeskHost />
     </PermissionGate>
   );
 }

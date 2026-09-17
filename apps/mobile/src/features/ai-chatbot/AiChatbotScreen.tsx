@@ -14,10 +14,10 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useLocale } from '@/i18n';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import {
   CHAT_COMPOSER_HEIGHT,
   CHAT_COMPOSER_TAB_GAP,
-  SURFACE_TAB_BAR_CLEARANCE,
 } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
@@ -77,6 +77,7 @@ export function AiChatbotScreen({ backFallback }: Props) {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'ai-chat.read');
@@ -210,7 +211,7 @@ export function AiChatbotScreen({ backFallback }: Props) {
   }
 
   const listBottomPad =
-    SURFACE_TAB_BAR_CLEARANCE + CHAT_COMPOSER_HEIGHT + CHAT_COMPOSER_TAB_GAP + theme.spacing.lg;
+    tabBarReserve + CHAT_COMPOSER_HEIGHT + CHAT_COMPOSER_TAB_GAP + theme.spacing.lg;
 
   return (
     <AppScreen

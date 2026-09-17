@@ -60,6 +60,7 @@ type ProductDetailScreenProps = {
    */
   variant?: 'dealer' | 'admin';
   productDetailHref?: (id: string) => Href;
+  embedded?: boolean;
 };
 
 const DIM_ICON: Record<ProductDetailDimension['kind'], keyof typeof Ionicons.glyphMap> = {
@@ -80,6 +81,7 @@ export function ProductDetailScreen({
   fixture,
   variant = 'dealer',
   productDetailHref,
+  embedded = false,
 }: ProductDetailScreenProps) {
   const { user } = useAuth();
   const { t, formatCurrency, locale, isRTL } = useLocale();
@@ -156,7 +158,7 @@ export function ProductDetailScreen({
   if (!allowed && !forceState) {
     return (
       <AppScreen>
-        <DetailNav onBack={() => router.back()} />
+        {embedded ? null : <DetailNav onBack={() => router.back()} />}
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -166,7 +168,7 @@ export function ProductDetailScreen({
     return (
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
-        <DetailNav onBack={() => router.back()} />
+        {embedded ? null : <DetailNav onBack={() => router.back()} />}
         <ErrorState
           title={t('mobile.productDetail.errorTitle')}
           description={t('mobile.productDetail.errorBody')}
@@ -180,7 +182,7 @@ export function ProductDetailScreen({
   if (!vm) {
     return (
       <AppScreen>
-        <DetailNav onBack={() => router.back()} />
+        {embedded ? null : <DetailNav onBack={() => router.back()} />}
         <EmptyState
           title={t('mobile.productDetail.errorTitle')}
           description={t('mobile.productDetail.errorBody')}

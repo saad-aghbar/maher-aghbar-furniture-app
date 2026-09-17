@@ -18,6 +18,7 @@ import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { CodeField } from '@/components/forms/CodeField';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useToast } from '@/components/feedback/Toast';
 import { listWarehouses, type Warehouse } from '@/features/inventory/api';
@@ -198,6 +199,7 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
     const canMutate = allowed && !readOnly;
     const [loading, setLoading] = useState(false);
     const [scanning, setScanning] = useState(false);
+    const [typedCode, setTypedCode] = useState('');
     const [lines, setLines] = useState<DraftLine[]>([]);
     const [scanMessage, setScanMessage] = useState<string | null>(null);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -652,15 +654,17 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
       }
     }
 
-    async function onScan() {
+    async function onScan(typed?: string) {
       if (!canMutate) return;
       setScanMessage(null);
       setScanning(true);
       try {
-        const code = await openScanner({
-          title: t('mobile.tasks.scanMaterialTitle'),
-          hint: t('mobile.tasks.scanMaterialHint'),
-        });
+        const code = typed?.trim()
+          ? typed.trim()
+          : await openScanner({
+              title: t('mobile.tasks.scanMaterialTitle'),
+              hint: t('mobile.tasks.scanMaterialHint'),
+            });
         if (!code?.trim()) return;
         const result = await identifyTaskMaterial(taskId, code.trim());
         if (result.status === 'MATCH') {
@@ -1005,6 +1009,21 @@ export const TaskMaterialsFloorSection = forwardRef<TaskMaterialsFloorHandle, Pr
         </View>
 
         <View style={{ padding: theme.spacing.md, gap: theme.spacing.sm }}>
+          {canMutate ? (
+            <CodeField
+              value={typedCode}
+              onChangeText={setTypedCode}
+              placeholder={t('mobile.tasks.scanMaterialHint')}
+              returnKeyType="go"
+              onSubmitEditing={() => {
+                const code = typedCode.trim();
+                if (code) void onScan(code);
+              }}
+              onScanned={(code) => void onScan(code)}
+              scanTitle={t('mobile.tasks.scanMaterialTitle')}
+              scanHint={t('mobile.tasks.scanMaterialHint')}
+            />
+          ) : null}
           {canMutate ? (
             <SecondaryButton
               testID="task-scan-material"

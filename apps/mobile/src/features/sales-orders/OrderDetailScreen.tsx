@@ -54,7 +54,8 @@ import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionShe
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { formatPercent, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE, surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   adminOrderFlowHref,
@@ -146,6 +147,8 @@ type OrderDetailScreenProps = {
   variant: OrdersListVariant;
   forceState?: 'loading' | 'error' | 'offline' | 'success';
   fixture?: SalesOrderDetail;
+  /** Hide stack back chrome when this screen is the split-pane detail. */
+  embedded?: boolean;
 };
 
 type ConfirmKind = 'confirm' | 'hold' | 'cancel' | null;
@@ -155,16 +158,19 @@ export function OrderDetailScreen({
   variant,
   forceState,
   fixture,
+  embedded = false,
 }: OrderDetailScreenProps) {
   const { user } = useAuth();
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const router = useRouter();
+  const goBack = embedded ? undefined : () => router.back();
   const allowed = can(user, 'sales-order.read');
   const canUpdate = can(user, 'sales-order.update');
   const canInvoice = can(user, 'invoice.read');
@@ -387,10 +393,11 @@ export function OrderDetailScreen({
   );
   /** Lift sticky bar above floating tab bar; leave room in the scroll. */
   const hasProductionWorkflow = (vm?.productionOrders?.length ?? 0) > 0;
+  const tabReserve = variant === 'dealer' ? SURFACE_TAB_BAR_CLEARANCE : tabBarReserve;
   const stickyPad = showStickyActions
-    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 148
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabReserve) + 148
     : theme.spacing['3xl'] +
-      SURFACE_TAB_BAR_CLEARANCE +
+      tabReserve +
       (variant === 'dealer' ? 56 : theme.spacing['2xl']);
 
   const actionsSheet: ActionSheetItem[] = useMemo(() => {
@@ -527,7 +534,7 @@ export function OrderDetailScreen({
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-        <DetailNav onBack={() => router.back()} title={t('mobile.orderDetail.title')} />
+        <DetailNav onBack={goBack} title={t('mobile.orderDetail.title')} />
         <OrderDetailSkeleton />
       </AppScreen>
     );
@@ -536,7 +543,7 @@ export function OrderDetailScreen({
   if (!allowed && !forceState) {
     return (
       <AppScreen>
-        <DetailNav onBack={() => router.back()} title={t('mobile.orderDetail.title')} />
+        <DetailNav onBack={goBack} title={t('mobile.orderDetail.title')} />
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -546,7 +553,7 @@ export function OrderDetailScreen({
     return (
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
-        <DetailNav onBack={() => router.back()} title={t('mobile.orderDetail.title')} />
+        <DetailNav onBack={goBack} title={t('mobile.orderDetail.title')} />
         <ErrorState
           title={t('mobile.orderDetail.errorTitle')}
           description={t('mobile.orderDetail.errorBody')}
@@ -560,7 +567,7 @@ export function OrderDetailScreen({
   if (!vm) {
     return (
       <AppScreen>
-        <DetailNav onBack={() => router.back()} title={t('mobile.orderDetail.title')} />
+        <DetailNav onBack={goBack} title={t('mobile.orderDetail.title')} />
         <EmptyState
           title={t('mobile.orderDetail.errorTitle')}
           description={t('mobile.orderDetail.errorBody')}
@@ -588,13 +595,14 @@ export function OrderDetailScreen({
         <View style={{ paddingHorizontal: theme.spacing.lg }}>
           <DealerOrderTitle
             title={vm.number}
+            hideBack={embedded}
             onMore={actionsSheet.length ? () => setSheetOpen(true) : undefined}
           />
         </View>
       ) : (
         <Animated.View style={[{ paddingHorizontal: theme.spacing.lg }, headerFade]}>
           <DetailNav
-            onBack={() => router.back()}
+            onBack={goBack}
             title={vm.number}
             subtitle={vm.showCosts ? vm.dealerName : null}
             trailing={<StatusBadge status={vm.status} dot />}
@@ -2034,9 +2042,11 @@ function LineItemCard({
 function DealerOrderTitle({
   title,
   onMore,
+  hideBack = false,
 }: {
   title: string;
   onMore?: () => void;
+  hideBack?: boolean;
 }) {
   const { t, isRTL, locale } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
@@ -2057,7 +2067,9 @@ function DealerOrderTitle({
           justifyContent: 'center',
         }}
       >
-        <ScreenBackLead fallback={'/(app)/(customer)/(tabs)/orders' as Href} />
+        {hideBack ? null : (
+          <ScreenBackLead fallback={'/(app)/(customer)/(tabs)/orders' as Href} />
+        )}
       </View>
       <AppText
         variant="largeTitle"
@@ -2123,7 +2135,7 @@ function DetailNav({
   trailing,
   onMore,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   title: string;
   subtitle?: string | null;
   trailing?: ReactNode;
@@ -2145,7 +2157,7 @@ function DetailNav({
         marginBottom: theme.spacing.sm,
       }}
     >
-      <BackButton onPress={onBack} label={t('mobile.orderDetail.back')} />
+      {onBack ? <BackButton onPress={onBack} label={t('mobile.orderDetail.back')} /> : null}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <AppText
           variant="title"

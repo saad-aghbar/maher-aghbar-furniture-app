@@ -26,6 +26,7 @@ export function searchBarShadow(dark: boolean) {
 type ShellProps = {
   children: ReactNode;
   error?: boolean;
+  focused?: boolean;
   style?: StyleProp<ViewStyle>;
   /** Hide the leading search bubble (rare). */
   hideIcon?: boolean;
@@ -42,6 +43,7 @@ type ShellProps = {
 export function SearchBarShell({
   children,
   error,
+  focused,
   style,
   hideIcon = false,
   iconColor,
@@ -57,8 +59,8 @@ export function SearchBarShell({
         {
           minHeight: theme.sizes.touch.min,
           borderRadius: theme.radius.full,
-          borderWidth: 1,
-          borderColor: error ? colors.error : colors.borderStrong,
+          borderWidth: focused ? 1.5 : 1,
+          borderColor: error ? colors.error : focused ? colors.brand : colors.borderStrong,
           backgroundColor: colors.surfaceSecondary,
           overflow: 'hidden',
           flexDirection: localeRow(isRTL),

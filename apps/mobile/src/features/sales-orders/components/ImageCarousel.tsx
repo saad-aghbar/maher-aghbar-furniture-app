@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Image,
   View,
@@ -11,8 +10,7 @@ import { ImageViewer } from '@/components/media/ImageViewer';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-
-const { width: SCREEN_W } = Dimensions.get('window');
+import { useWindowMetrics } from '@/adaptive/windowMetrics';
 
 type ImageCarouselProps = {
   uris: string[];
@@ -24,10 +22,11 @@ type ImageCarouselProps = {
 export function ImageCarousel({ uris, height = 240, itemWidth }: ImageCarouselProps) {
   const { colors, theme } = useTheme();
   const { t } = useLocale();
+  const { width: windowW } = useWindowMetrics();
   const [index, setIndex] = useState(0);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const listRef = useRef<FlatList<string>>(null);
-  const pageW = itemWidth && itemWidth > 0 ? itemWidth : SCREEN_W;
+  const pageW = itemWidth && itemWidth > 0 ? itemWidth : windowW;
   const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
     if (first?.index != null) setIndex(first.index);

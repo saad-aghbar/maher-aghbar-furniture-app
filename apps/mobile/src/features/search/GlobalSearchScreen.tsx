@@ -22,10 +22,10 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { resolveMobileHomeHref } from '@/permissions';
 import { useTheme } from '@/theme';
 import { parseInvoiceSearchSubtitle } from './selectSearchHit';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 function hitHref(type: string, id: string, userCustomerId?: string | null): Href {
   switch (type) {
@@ -94,6 +94,7 @@ export function GlobalSearchScreen() {
   const { user } = useAuth();
   const { t, locale, formatCurrency } = useLocale();
   const { theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -158,7 +159,7 @@ export function GlobalSearchScreen() {
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         }}
         refreshControl={
           <RefreshControl

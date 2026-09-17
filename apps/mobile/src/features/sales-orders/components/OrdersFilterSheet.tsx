@@ -14,7 +14,7 @@ import {
   type CalendarCursor,
 } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -250,10 +250,11 @@ export function OrdersFilterSheet({
   };
 
   return (
-    <BottomSheet
+    <AdaptiveOverlay
       open={open}
       onClose={onClose}
       title={t('mobile.orders.filterTitle')}
+      intent="picker"
       fitContent
       maxHeight={sheetHeight}
     >
@@ -496,7 +497,7 @@ export function OrdersFilterSheet({
           />
         </View>
       </View>
-    </BottomSheet>
+    </AdaptiveOverlay>
   );
 }
 

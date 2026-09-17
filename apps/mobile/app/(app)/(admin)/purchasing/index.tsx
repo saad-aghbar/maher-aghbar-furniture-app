@@ -1,5 +1,5 @@
 import { useAuth } from '@/auth/AuthProvider';
-import { PurchasingHubScreen } from '@/features/purchasing/PurchasingHubScreen';
+import { PurchasingDeskHost } from '@/features/purchasing/PurchasingDeskHost';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
 export default function AdminPurchasingRoute() {
@@ -10,7 +10,7 @@ export default function AdminPurchasingRoute() {
       require={['purchase-order.read', 'supplier.read', 'fabric.procurement.read']}
       mode="any"
     >
-      <PurchasingHubScreen />
+      <PurchasingDeskHost />
     </PermissionGate>
   );
 }

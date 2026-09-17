@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
@@ -18,7 +17,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import { useTheme } from '@/theme';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
 import { PurchasingBuyAlertCard } from './components/PurchasingBuyAlertCard';
@@ -96,11 +95,16 @@ function PurchasingTitle({
   );
 }
 
-export function PurchasingHubScreen() {
+type Props = {
+  selectedOrderId?: string;
+  onSelectOrder?: (id: string) => void;
+};
+
+export function PurchasingHubScreen({ selectedOrderId, onSelectOrder }: Props = {}) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -347,7 +351,7 @@ export function PurchasingHubScreen() {
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             style={{
-              height: theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceListBottomInset(insets.bottom),
+              height: theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceClearance,
             }}
           />
         }
@@ -477,13 +481,20 @@ export function PurchasingHubScreen() {
             {tab === 'orders' ? (
                 <PurchaseOrderBoardCard
                   order={item as ReturnType<typeof selectPurchaseCard>}
+                  selected={
+                    selectedOrderId === (item as ReturnType<typeof selectPurchaseCard>).id
+                  }
                   onPress={() => {
                     const order = item as ReturnType<typeof selectPurchaseCard>;
-                    const href =
-                      order.runId && (order.runSupplierCount ?? 0) > 1
-                        ? `/(app)/(admin)/purchasing/runs/${order.runId}`
-                        : `/(app)/(admin)/purchasing/${order.id}`;
-                    router.push(href as Href);
+                    if (order.runId && (order.runSupplierCount ?? 0) > 1) {
+                      router.push(`/(app)/(admin)/purchasing/runs/${order.runId}` as Href);
+                      return;
+                    }
+                    if (onSelectOrder) {
+                      onSelectOrder(order.id);
+                      return;
+                    }
+                    router.push(`/(app)/(admin)/purchasing/${order.id}` as Href);
                   }}
                 />
             ) : tab === 'fabric' ? (

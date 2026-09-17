@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { CodeField } from '@/components/forms/CodeField';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useToast } from '@/components/feedback/Toast';
@@ -81,6 +82,7 @@ export function TaskMaterialUsageSheet({ open, taskId, onClose, onConfirmed }: P
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [typedCode, setTypedCode] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -119,15 +121,17 @@ export function TaskMaterialUsageSheet({ open, taskId, onClose, onConfirmed }: P
     );
   }
 
-  async function onScan() {
+  async function onScan(typed?: string) {
     setScanError(null);
     setScanMessage(null);
     setScanning(true);
     try {
-      const code = await openScanner({
-        title: t('mobile.tasks.scanMaterialTitle'),
-        hint: t('mobile.tasks.scanMaterialHint'),
-      });
+      const code = typed?.trim()
+        ? typed.trim()
+        : await openScanner({
+            title: t('mobile.tasks.scanMaterialTitle'),
+            hint: t('mobile.tasks.scanMaterialHint'),
+          });
       if (!code?.trim()) return;
       const result = await identifyTaskMaterial(taskId, code.trim());
       if (result.status === 'MATCH') {
@@ -238,6 +242,20 @@ export function TaskMaterialUsageSheet({ open, taskId, onClose, onConfirmed }: P
           <AppText variant="caption" color="muted">
             {t('mobile.tasks.materialsHint')}
           </AppText>
+
+          <CodeField
+            value={typedCode}
+            onChangeText={setTypedCode}
+            placeholder={t('mobile.tasks.scanMaterialHint')}
+            returnKeyType="go"
+            onSubmitEditing={() => {
+              const code = typedCode.trim();
+              if (code) void onScan(code);
+            }}
+            onScanned={(code) => void onScan(code)}
+            scanTitle={t('mobile.tasks.scanMaterialTitle')}
+            scanHint={t('mobile.tasks.scanMaterialHint')}
+          />
 
           <SecondaryButton
             label={scanning ? t('mobile.tasks.scanning') : t('mobile.tasks.scanMaterial')}

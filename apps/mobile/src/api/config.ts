@@ -124,8 +124,14 @@ export function getApiBaseUrl(): string {
   // Physical device / Expo Go: Metro is on the LAN — API is too.
   if (lanHost) return `http://${lanHost}:${API_PORT}`;
 
-  // Simulator / no Expo host: honor localhost from env, or platform defaults.
-  if (configured) return configured;
+  // Simulator / no Expo LAN host: honor localhost from env on iOS.
+  // Android emulator loopback is the guest OS, not the Mac API.
+  if (configured) {
+    if (Platform.OS === 'android' && isLoopbackUrl(configured)) {
+      return `http://10.0.2.2:${API_PORT}`;
+    }
+    return configured;
+  }
 
   if (Platform.OS === 'android') {
     return `http://10.0.2.2:${API_PORT}`;

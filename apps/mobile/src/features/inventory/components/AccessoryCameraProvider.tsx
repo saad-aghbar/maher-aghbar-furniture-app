@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 import { Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { isCaptureCameraAvailable } from '@/adaptive/cameraAvailability';
 import { AccessoryCameraScreen } from './AccessoryCameraScreen';
 
 export type AccessoryCameraOptions = {
@@ -49,7 +51,17 @@ export function AccessoryCameraProvider({ children }: { children: ReactNode }) {
     resolve?.(value);
   }, []);
 
-  const openAccessoryCamera = useCallback((options?: AccessoryCameraOptions) => {
+  const openAccessoryCamera = useCallback(async (options?: AccessoryCameraOptions) => {
+    if (!(await isCaptureCameraAvailable())) {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        allowsEditing: false,
+        exif: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return null;
+      return result.assets[0].uri;
+    }
     if (resolverRef.current) {
       resolverRef.current(null);
       resolverRef.current = null;

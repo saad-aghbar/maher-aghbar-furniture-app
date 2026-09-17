@@ -17,7 +17,6 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { pickHotOrder, type HotOrderCandidate } from '../pickHotOrder';
 import {
   countOrderStages,
@@ -32,6 +31,7 @@ import { OrdersCompositionChrome } from './OrdersCompositionChrome';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { resolveOrderMediaUri } from './OrderCardMedia';
 import { OrdersQuietRow } from './OrdersQuietRow';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = {
   variant: OrdersListVariant;
@@ -72,6 +72,7 @@ export function OrdersWorkbenchHome({
 }: Props) {
   const { t, formatCurrency, formatDate, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const tabBarReserve = useTabBarReserve();
   const reduce = useReducedMotion();
 
   const allCandidates: HotOrderCandidate[] = useMemo(() => {
@@ -234,7 +235,7 @@ export function OrdersWorkbenchHome({
       ListHeaderComponent={header}
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.lg,
-        paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom: theme.spacing['3xl'] + tabBarReserve,
         flexGrow: 1,
       }}
       refreshControl={

@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useMaherDensity } from '@/adaptive/density';
 import { LoginReveal } from '@/components/branding';
 import type { BrandIntroState } from '@/hooks/useBrandIntroState';
 import type { LoginColors } from './theme/loginColors';
@@ -18,6 +19,8 @@ type Props = {
  */
 export function LoginScreenContent({ intro, colors, form }: Props) {
   const { shared } = intro;
+  const density = useMaherDensity();
+  const formMaxWidth = density.dialogMaxWidth || undefined;
 
   const formMotion = {
     formOpacity: shared.field0,
@@ -29,7 +32,10 @@ export function LoginScreenContent({ intro, colors, form }: Props) {
 
   return (
     <View
-      style={styles.root}
+      style={[
+        styles.root,
+        formMaxWidth ? { maxWidth: formMaxWidth, alignSelf: 'center' } : null,
+      ]}
       pointerEvents={intro.formInteractive ? 'auto' : 'none'}
     >
       <LoginReveal

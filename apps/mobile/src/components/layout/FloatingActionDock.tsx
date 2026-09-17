@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { createElevation } from '@/theme/elevation';
 import { useTheme } from '@/theme';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 import { stickyCtaBottomInset } from './stickyCtaInset';
 
 type Props = {
@@ -26,10 +26,12 @@ export function FloatingActionDock({
   children,
   style,
   floating = false,
-  tabClearance = SURFACE_TAB_BAR_CLEARANCE,
+  tabClearance,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, theme, colorScheme } = useTheme();
+  const reserve = useTabBarReserve();
+  const clearance = tabClearance ?? reserve;
 
   return (
     <View
@@ -45,7 +47,7 @@ export function FloatingActionDock({
           paddingBottom: stickyCtaBottomInset(
             insets.bottom,
             theme.spacing.md,
-            tabClearance,
+            clearance,
           ),
           backgroundColor: floating ? 'transparent' : colors.background,
         },

@@ -58,6 +58,8 @@ type TasksListScreenProps = {
   variant: TasksListVariant;
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
   fixture?: TaskListItem[];
+  selectedTaskId?: string;
+  onSelectTask?: (id: string) => void;
 };
 
 const INITIAL_COMPLETED_FILTERS: CompletedFiltersState = {
@@ -75,7 +77,13 @@ function orderSegment(segment: TasksSegment): 'open' | 'today' | 'active' {
 /**
  * Worker floor queue — bubble filters on My Tasks; Completed tab is separate.
  */
-export function TasksListScreen({ variant, forceState, fixture }: TasksListScreenProps) {
+export function TasksListScreen({
+  variant,
+  forceState,
+  fixture,
+  selectedTaskId,
+  onSelectTask,
+}: TasksListScreenProps) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -518,6 +526,8 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
               index={index}
               completed={false}
               animateEnter={animateEnter}
+              selected={item.id === selectedTaskId}
+              onPress={onSelectTask ? () => onSelectTask(item.id) : undefined}
             />
           )}
           ListEmptyComponent={

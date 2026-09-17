@@ -26,7 +26,6 @@ import { locationsForWarehouse } from '@/features/inventory/components/Warehouse
 import { pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DestinationPickSheet } from './components/DestinationPickSheet';
@@ -53,6 +52,7 @@ import {
 } from './receiveLineDrafts';
 import { usePurchaseActionMutation, usePurchaseOrderQuery } from './query';
 import { localizedNamed } from './selectPurchase';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 type Props = { orderId: string };
 
@@ -62,6 +62,7 @@ export function ReceiveGoodsScreen({ orderId }: Props) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const { showToast } = useToast();
   const canReceive = can(user, 'inventory.receive');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -94,7 +95,7 @@ export function ReceiveGoodsScreen({ orderId }: Props) {
   const destRow = working.find((d) => d.lineId === destOpen);
   const verifyLine = working.find((d) => d.lineId === verifyLineId);
   const { verifyBusy, runLabelVerify } = useLabelVerifyScan(verifyLine?.inventoryItemId);
-  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 120;
+  const dockPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) + 120;
   const issue = validateReceiveDrafts(working);
   const reviewGroups = groupReceiveDraftsByWarehouse(working);
   const allChecked = allReceiveLinesChecked(working);

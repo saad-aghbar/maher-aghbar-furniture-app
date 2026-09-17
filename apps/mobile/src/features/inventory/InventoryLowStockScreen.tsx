@@ -12,7 +12,6 @@ import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { useLocale } from '@/i18n';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { InventoryCategoryGroup } from './api';
@@ -27,6 +26,7 @@ import {
 } from './lowStockPick';
 import { useInventoryGroupsQuery, useLowStockQuery } from './query';
 import { isValidCategoryGroup, selectInventoryItemCard } from './selectInventory';
+import { useTabBarReserve } from '@/adaptive/useSurfaceClearance';
 
 export function InventoryLowStockScreen() {
   const { user } = useAuth();
@@ -36,6 +36,7 @@ export function InventoryLowStockScreen() {
   const { t, locale } = useLocale();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarReserve = useTabBarReserve();
   const allowed = can(user, 'inventory.read');
   const canCreatePo = can(user, 'purchase-order.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -64,7 +65,7 @@ export function InventoryLowStockScreen() {
 
   const groups = groupsQuery.data ?? [];
   const dockPad =
-    stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) +
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md, tabBarReserve) +
     (canCreatePo ? 72 : 0);
   const selectedCount = selected.size;
 

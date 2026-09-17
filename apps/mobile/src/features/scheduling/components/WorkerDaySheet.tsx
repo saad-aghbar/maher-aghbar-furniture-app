@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { formatYmdLabel } from '@/components/calendar';
-import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import {
@@ -79,11 +79,12 @@ export function WorkerDaySheet({ open, onClose, worker, date }: Props) {
   }, [open, worker?.employeeId, date]);
 
   return (
-    <BottomSheet
+    <AdaptiveOverlay
       open={open}
       onClose={onClose}
       overlay
       expandable
+      intent="inspector"
       sheetHeight={Math.round(height * 0.88)}
       title={worker ? worker.name : t('mobile.adminScheduling.workerDay.title')}
     >
@@ -306,7 +307,7 @@ export function WorkerDaySheet({ open, onClose, worker, date }: Props) {
           )}
         </DealerBoard>
       </ScrollView>
-    </BottomSheet>
+    </AdaptiveOverlay>
   );
 }
 

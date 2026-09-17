@@ -16,6 +16,7 @@ type AdminOrderCardProps = {
   order: AdminOrderCardModel;
   index?: number;
   onPress?: () => void;
+  selected?: boolean;
 };
 
 function priorityLabel(priority: string, t: (key: string) => string): string {
@@ -25,7 +26,7 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
   return label === key ? priority : label;
 }
 
-export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProps) {
+export function AdminOrderCard({ order, index = 0, onPress, selected = false }: AdminOrderCardProps) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
@@ -43,6 +44,7 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
         variant="card"
         accessibilityRole="button"
         accessibilityLabel={order.number}
+        accessibilityState={{ selected }}
         onPress={() => {
           void haptics.selection();
           onPress?.();
@@ -50,8 +52,8 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor: urgent ? colors.warning : colors.borderStrong,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : urgent ? colors.warning : colors.borderStrong,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           marginBottom: theme.spacing.md,
           ...orderBoardShadow(colorScheme),

@@ -16,12 +16,12 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { CreateDealerSheet } from './components/CreateDealerSheet';
 import { DealerListCard } from './components/DealerListCard';
 import { useDealersListQuery } from './query';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 function DealersScreenTitle({
   onBack,
@@ -64,13 +64,20 @@ function DealersScreenTitle({
 /**
  * Dealers list — parchment boards with Waiting / In work / Done + Paid / Left.
  */
-export function DealersListScreen() {
+export function DealersListScreen({
+  selectedDealerId,
+  onSelectDealer,
+}: {
+  selectedDealerId?: string;
+  onSelectDealer?: (id: string) => void;
+} = {}) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
-  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const surfaceClearance = useSurfaceClearance();
+  const listBottomPad = surfaceClearance;
   const router = useRouter();
   const onBack = useSmartBack('/(app)/(admin)/(tabs)' as Href);
   const allowed = can(user, 'customer.read');
@@ -209,7 +216,12 @@ export function DealersListScreen() {
             <ListItemEnter key={dealer.id} index={index}>
               <DealerListCard
                 dealer={dealer}
-                onPress={() => router.push(`/(app)/(admin)/dealers/${dealer.id}` as Href)}
+                selected={dealer.id === selectedDealerId}
+                onPress={() =>
+                  onSelectDealer
+                    ? onSelectDealer(dealer.id)
+                    : router.push(`/(app)/(admin)/dealers/${dealer.id}` as Href)
+                }
               />
             </ListItemEnter>
           ))}

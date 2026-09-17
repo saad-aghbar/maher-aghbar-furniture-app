@@ -19,4 +19,9 @@ describe('admin catalog grid insets', () => {
   it('FAB bottom matches the tab-clearance line', () => {
     expect(adminCatalogFabBottom(34)).toBe(34 + SURFACE_TAB_BAR_CLEARANCE);
   });
+
+  it('MEDIUM+ admin catalog drops the pill reserve', () => {
+    expect(adminCatalogListBottomPad(34, 0, 'expanded')).toBe(34);
+    expect(adminCatalogFabBottom(34, 'wide')).toBe(34);
+  });
 });

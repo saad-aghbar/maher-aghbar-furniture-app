@@ -43,6 +43,7 @@ import { RecordPaymentSheet } from './components/RecordPaymentSheet';
 type Props = {
   invoiceId: string;
   backFallback?: Href;
+  embedded?: boolean;
 };
 
 /** Same side inset as PersistentSurfaceTabBar floating shell. */
@@ -58,6 +59,7 @@ const INVOICE_DETAIL_CURRENCY = '₪';
 export function InvoiceDetailScreen({
   invoiceId,
   backFallback = '/(app)/(admin)/invoices' as Href,
+  embedded = false,
 }: Props) {
   const { user } = useAuth();
   const router = useRouter();
@@ -167,9 +169,11 @@ export function InvoiceDetailScreen({
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-      <View style={{ paddingHorizontal: contentPad }}>
-        <ScreenBackLead fallback={backFallback} />
-      </View>
+      {embedded ? null : (
+        <View style={{ paddingHorizontal: contentPad }}>
+          <ScreenBackLead fallback={backFallback} />
+        </View>
+      )}
       {showOfflineBanner ? (
         <View style={{ paddingHorizontal: contentPad }}>
           <OfflineBanner />

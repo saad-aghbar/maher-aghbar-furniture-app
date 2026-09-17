@@ -53,7 +53,6 @@ import {
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, SuccessBurst, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { PendingOutboxBanner } from './components/PendingOutboxBanner';
 import {
@@ -113,6 +112,7 @@ import {
 } from '@/features/quality/components/PackagingConfirmPanel';
 import { ReinspectionBanner } from '@/features/quality/components/ReinspectionBanner';
 import { ReworkFloorBanner } from '@/features/quality/components/ReworkFloorBanner';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 if (
   Platform.OS === 'android' &&
@@ -127,6 +127,7 @@ type TaskDetailScreenProps = {
   fixture?: TaskDetail;
   /** Override back target (e.g. admin PO hub → floor). */
   backFallback?: Href;
+  embedded?: boolean;
 };
 
 const TASKS_FALLBACK = '/(app)/(employee)/(tabs)/tasks' as Href;
@@ -140,11 +141,13 @@ export function TaskDetailScreen({
   forceState,
   fixture,
   backFallback = TASKS_FALLBACK,
+  embedded = false,
 }: TaskDetailScreenProps) {
   const { user } = useAuth();
   const { t, formatDateTime, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const surfaceClearance = useSurfaceClearance();
   const { width: windowW } = useWindowDimensions();
   const { showOfflineBanner, isConnected } = useNetwork();
   const { showToast } = useToast();
@@ -157,7 +160,7 @@ export function TaskDetailScreen({
   const pad = theme.spacing.md;
   const mediaW = Math.max(0, windowW - pad * 2);
   /** Dock + last floor board clear the floating tab bar. */
-  const floorClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const floorClearance = surfaceClearance;
   const [dockHeight, setDockHeight] = useState(0);
   const onDockHeight = useCallback((height: number) => {
     setDockHeight((prev) => (prev === height ? prev : height));
@@ -1165,7 +1168,7 @@ export function TaskDetailScreen({
 
       <View style={{ paddingHorizontal: pad }}>
         <TaskDetailNav
-          onBack={onBack}
+          onBack={embedded ? undefined : onBack}
           title={taskDetailNavTitle(qualityKind, t)}
           subtitle={vm.orderNumber}
           trailing={
@@ -1800,7 +1803,7 @@ function TaskDetailNav({
   subtitle,
   trailing,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   title: string;
   subtitle?: string | null;
   trailing?: ReactNode;
@@ -1819,7 +1822,7 @@ function TaskDetailNav({
         marginBottom: theme.spacing.sm,
       }}
     >
-      <BackButton onPress={onBack} label={t('mobile.tasks.back')} />
+      {onBack ? <BackButton onPress={onBack} label={t('mobile.tasks.back')} /> : null}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <AppText
           variant="title"
