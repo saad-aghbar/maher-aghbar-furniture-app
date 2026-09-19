@@ -1,20 +1,18 @@
 import { View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
+import { StickyLogoutDock } from '@/components/layout/StickyLogoutDock';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useDealerHomeQuery } from '@/features/dealer-home/query';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
-import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { AnimatedPressable, haptics } from '@/motion';
+import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 import { useChromeSize, useTheme } from '@/theme';
 import { DealerAiSpotlight } from './components/DealerAiSpotlight';
 import { DealerIdentityBoard } from './components/DealerIdentityBoard';
@@ -25,13 +23,13 @@ import { DealerPreferencesBoard } from './components/DealerPreferencesBoard';
  * Dealer Account hub — floor / atelier composition matching Admin More.
  */
 export function DealerAccountScreen() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const pip = useChromeSize(16);
+  const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
-  const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
   const homeQuery = useDealerHomeQuery(
@@ -41,17 +39,10 @@ export function DealerAccountScreen() {
 
   if (!user) return null;
 
-  const Footer = reduce ? View : Animated.View;
-  const footerProps = reduce
-    ? {}
-    : { entering: FadeInDown.delay(360).duration(380).damping(22) };
-
   return (
-    <ScrollableScreen
-      contentContainerStyle={{
-        paddingBottom: theme.spacing['3xl'] + DEALER_TAB_BAR_CLEARANCE,
-      }}
-    >
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
+        <ScrollableScreen contentContainerStyle={{ paddingBottom: theme.spacing.lg }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View
@@ -158,19 +149,10 @@ export function DealerAccountScreen() {
         <DealerPreferencesBoard />
         <DealerPlacesDock />
         <DealerAiSpotlight />
-
-        <Divider />
-
-        <Footer {...footerProps} style={{ gap: theme.spacing.sm }}>
-          <DestructiveButton
-            label={t('auth.logout')}
-            onPress={() => {
-              void logout().then(() => router.replace('/(auth)/login' as Href));
-            }}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-        </Footer>
       </View>
-    </ScrollableScreen>
+      </ScrollableScreen>
+      </View>
+      <StickyLogoutDock paddingBottom={surfaceClearance} />
+    </View>
   );
 }

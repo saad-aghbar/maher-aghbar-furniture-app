@@ -19,6 +19,7 @@ jest.mock('expo-router', () => {
 jest.mock('@/auth/AuthProvider', () => ({
   useAuth: () => ({
     status: 'authenticated',
+    logout: jest.fn(async () => undefined),
     user: {
       id: '1',
       username: 'admin',
@@ -61,5 +62,39 @@ describe('AdaptiveShell chrome', () => {
       { width: 1024, surface: 'admin' },
     );
     expect(view.queryByTestId('admin-side-nav-placeholder')).toBeNull();
+  });
+
+  it('pins the account footer on the WIDE sidebar', async () => {
+    const view = await renderAdaptive(
+      <AdaptiveShell surface="admin">
+        <Text>x</Text>
+      </AdaptiveShell>,
+      { width: 1440, surface: 'admin' },
+    );
+    expect(view.getByTestId('admin-side-nav-sidebar')).toBeTruthy();
+    expect(view.getByTestId('admin-side-nav-account')).toBeTruthy();
+    expect(view.queryByTestId('admin-side-nav-placeholder')).toBeNull();
+  });
+
+  it('keeps the account footer on the MEDIUM rail', async () => {
+    const view = await renderAdaptive(
+      <AdaptiveShell surface="admin">
+        <Text>x</Text>
+      </AdaptiveShell>,
+      { width: 820, surface: 'admin' },
+    );
+    expect(view.getByTestId('admin-side-nav-rail')).toBeTruthy();
+    expect(view.getByTestId('admin-side-nav-account')).toBeTruthy();
+  });
+
+  it('omits the sidebar account footer on compact admin (pill chrome)', async () => {
+    const view = await renderAdaptive(
+      <AdaptiveShell surface="admin">
+        <Text>x</Text>
+      </AdaptiveShell>,
+      { width: 390, surface: 'admin' },
+    );
+    expect(view.queryByTestId('admin-side-nav-account')).toBeNull();
+    expect(view.getByTestId('admin-side-nav-placeholder')).toBeTruthy();
   });
 });

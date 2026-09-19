@@ -1,21 +1,18 @@
 import { View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
+import { StickyLogoutDock } from '@/components/layout/StickyLogoutDock';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useChromeSize, useTheme } from '@/theme';
 import { MoreFloorCommand } from './components/MoreFloorCommand';
 import { MoreIdentityBoard } from './components/MoreIdentityBoard';
@@ -24,17 +21,13 @@ import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 
 /** Admin More hub — signed in, prefs, places, automation. */
 export function MoreHubScreen() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const pip = useChromeSize(16);
-  const insets = useSafeAreaInsets();
   const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
-  const reduce = useReducedMotion();
-  /** Last Places card must sit above the floating pill — not under it. */
-  const scrollBottomPad = surfaceClearance;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
   const notificationsQuery = useNotificationsQuery(Boolean(user) && canNotify);
@@ -42,13 +35,10 @@ export function MoreHubScreen() {
 
   if (!user) return null;
 
-  const Footer = reduce ? View : Animated.View;
-  const footerProps = reduce
-    ? {}
-    : { entering: FadeInDown.delay(360).duration(380).damping(22) };
-
   return (
-    <ScrollableScreen contentContainerStyle={{ paddingBottom: scrollBottomPad }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
+        <ScrollableScreen contentContainerStyle={{ paddingBottom: theme.spacing.lg }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View
@@ -136,23 +126,14 @@ export function MoreHubScreen() {
         </View>
       </View>
 
-      <View style={{ gap: theme.spacing.lg }}>
-        <MoreIdentityBoard user={user} />
-        <MorePreferencesBoard />
-        <MoreFloorCommand />
-
-        <Divider />
-
-        <Footer {...footerProps} style={{ gap: theme.spacing.sm }}>
-          <DestructiveButton
-            label={t('auth.logout')}
-            onPress={() => {
-              void logout().then(() => router.replace('/(auth)/login' as Href));
-            }}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-        </Footer>
+        <View style={{ gap: theme.spacing.lg }}>
+          <MoreIdentityBoard user={user} />
+          <MorePreferencesBoard />
+          <MoreFloorCommand />
+        </View>
+      </ScrollableScreen>
       </View>
-    </ScrollableScreen>
+      <StickyLogoutDock paddingBottom={surfaceClearance} />
+    </View>
   );
 }

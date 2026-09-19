@@ -1,7 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/auth/AuthProvider';
@@ -15,12 +14,12 @@ import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
-import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { PasswordField } from '@/components/forms/PasswordField';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
+import { StickyLogoutDock } from '@/components/layout/StickyLogoutDock';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
@@ -33,18 +32,15 @@ import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
  * Worker profile — same floor-board / prefs language as admin More + account.
  */
 export function WorkerProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
-  const insets = useSafeAreaInsets();
   const surfaceClearance = useSurfaceClearance();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
-  const listBottomClearance = surfaceClearance;
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioBusy, setBioBusy] = useState(false);
@@ -110,7 +106,9 @@ export function WorkerProfileScreen() {
     reduce ? undefined : FadeInDown.delay(delay).duration(380).damping(22);
 
   return (
-    <ScrollableScreen contentContainerStyle={{ paddingBottom: 0 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
+        <ScrollableScreen contentContainerStyle={{ paddingBottom: theme.spacing.lg }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View
@@ -332,27 +330,11 @@ export function WorkerProfileScreen() {
             />
           </MoreBoard>
         </Animated.View>
-
-        <Divider />
-
-        <Animated.View entering={enter(180)}>
-          <DestructiveButton
-            label={t('auth.logout')}
-            onPress={() => {
-              void logout().then(() => router.replace('/(auth)/login' as Href));
-            }}
-            style={{ borderRadius: theme.radius.xl }}
-          />
-        </Animated.View>
       </View>
-
-      <View
-        pointerEvents="none"
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={{ height: listBottomClearance }}
-      />
-    </ScrollableScreen>
+      </ScrollableScreen>
+      </View>
+      <StickyLogoutDock paddingBottom={surfaceClearance} />
+    </View>
   );
 }
 

@@ -1,6 +1,6 @@
 # Universal App Complete — Implementation
 
-**Verdict (software):** phone/tablet adaptive implementation is ready for physical-device release UAT. **Mac distribution** remains **BLOCKED — EXTERNAL APPLE SIGNING**. **Physical camera** and **Stage Manager split widths** need hardware. Android tablet dest-client **JS loads** (Metro/`10.0.2.2` proven 2026-09-18); **logged-in Android tablet UAT is not PASS** (DevTools inspector blocked credential entry). iPad dealer/worker tablet logins were not completed in the closure pass (iPhone dealer/worker remain PASS).
+**Verdict (software):** phone/tablet adaptive implementation is ready for physical-device release UAT. **Mac distribution** remains **BLOCKED — EXTERNAL APPLE SIGNING**. **Physical camera** and **Stage Manager split widths** still need hardware. 2026-09-19 interactive UAT: Android tablet Admin/Dealer/Worker **PASS**; iPad Dealer (`nile`) and Worker (`carpenter`) **PASS**; Hebrew WIDE admin shell **PASS**; in-app PDF share sheet **PASS**. Production store release is still **NO** until Mac signing, camera hardware, and Stage Manager widths.
 
 This is one product for iPhone, Android phone, iPad, Android tablet, and (when signing allows) Apple Silicon Mac Designed-for-iPad. There are no `ScreenPhone` / `ScreenTablet` forks.
 

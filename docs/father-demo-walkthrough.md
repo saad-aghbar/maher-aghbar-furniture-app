@@ -1,6 +1,6 @@
 # Father demo walkthrough
 
-**As of:** 2026-09-17 (Asia/Amman) · password `123`
+**As of:** 2026-09-18 (Asia/Amman) · password `123`
 
 Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (factory), `nile` / `oasis` (dealers), `carpenter` / `inspector` (floor).
 
@@ -15,9 +15,9 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Nile Interiors (`CUS-0101`)
 - Sales order: **SO-2026-00001** (DELIVERED)
 - Production: **SO-2026-00001.B** (COMPLETED)
-- Delivery: **DLV-2026-00001** (DELIVERED, 2026-09-10)
+- Delivery: **DLV-2026-00001** (DELIVERED, 2026-09-12)
 - Invoice: **INV-2026-00001** (PAID, outstanding 0 ILS)
-- Dates: requested 2026-09-11 · suggested 2026-09-10 · committed 2026-09-10 · factory earliest 2026-09-10 · planned — · actual 2026-09-10
+- Dates: requested 2026-09-12 · suggested 2026-09-12 · committed 2026-09-12 · factory earliest 2026-09-12 · planned — · actual 2026-09-12
 
 ### 2. Sweifieh sectional
 
@@ -26,7 +26,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00006** (IN_PRODUCTION)
 - Production: **SO-2026-00006.A** (IN_PROGRESS)
-- Dates: requested 2026-09-28 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
+- Dates: requested 2026-09-29 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
 
 ### 3. Nile blank production start
 
@@ -35,7 +35,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Nile Interiors (`CUS-0101`)
 - Sales order: **SO-2026-00008** (IN_PRODUCTION)
 - Production: **SO-2026-00008.A** (IN_PROGRESS)
-- Dates: requested 2026-10-16 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
+- Dates: requested 2026-10-17 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
 
 ### 4. Golden factory path
 
@@ -44,7 +44,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Nile Interiors (`CUS-0101`)
 - Sales order: **SO-GOLDEN-001** (IN_PRODUCTION)
 - Production: **SO-GOLDEN-001.A** (IN_PROGRESS)
-- Dates: requested 2026-09-23 · suggested 2026-09-17 · committed — · factory earliest 2026-09-17 · planned — · actual —
+- Dates: requested 2026-09-24 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
 
 ### 5. Oasis Italian velvet sofa
 
@@ -53,7 +53,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00007** (WAITING_FOR_MATERIALS)
 - Production: **SO-2026-00007.A** (WAITING_FOR_MATERIALS)
-- Dates: requested 2026-10-12 · suggested 2026-10-12 · committed — · factory earliest 2026-10-12 · planned — · actual —
+- Dates: requested 2026-10-13 · suggested 2026-10-13 · committed — · factory earliest 2026-10-13 · planned — · actual —
 
 ### 6. Oasis club armchair QC
 
@@ -62,7 +62,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Dealer: Oasis Living (`CUS-0102`)
 - Sales order: **SO-2026-00005** (IN_PRODUCTION)
 - Production: **SO-2026-00005.A** (ON_HOLD)
-- Dates: requested 2026-10-02 · suggested 2026-09-17 · committed — · factory earliest 2026-09-17 · planned — · actual —
+- Dates: requested 2026-10-03 · suggested 2026-09-19 · committed — · factory earliest 2026-09-19 · planned — · actual —
 
 ### 7. Oasis armchair scuff
 
@@ -73,7 +73,7 @@ Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (fact
 - Production: **SO-2026-00004.A** (COMPLETED)
 - Delivery: **DLV-2026-00004** (DELIVERED, 2026-09-17)
 - Invoice: **INV-2026-00004** (PAID, outstanding 0 ILS)
-- Dates: requested 2026-09-17 · suggested 2026-09-17 · committed 2026-09-17 · factory earliest 2026-09-17 · planned — · actual 2026-09-17
+- Dates: requested 2026-09-18 · suggested 2026-09-17 · committed 2026-09-17 · factory earliest 2026-09-17 · planned — · actual 2026-09-17
 
 ## Commercial quotations (اعتماد vs قبول)
 
@@ -87,9 +87,9 @@ Product: EN **Schedule** / AR **الجدول**. Mobile tab + portal `/deliveries
 
 Same sales order must agree on Requested / Suggested / Committed / Planned delivery / Current expected / Actual and the primary `calendarDate` across Dealer Home, Schedule, order detail, Customer Portal, and Admin customer-facing schedule fields. `calendarDate` is delivered → actual; else active logistics `deliveryDate`; else committed; else a trustworthy expected proxy; else requested. **Never** a stale historical `earliestAvailableDate`, and **never** production completion when a truck is booked.
 
-- **Nile** SO-2026-00001 — delivered chrome on the actual day (2026-09-10).
+- **Nile** SO-2026-00001 — delivered chrome on the actual day (2026-09-12).
 - **Golden** SO-GOLDEN-001 — in production with four-line STD / KARINA / MODIFIED / CUSTOM mix.
-- **Oasis Italian velvet** SO-2026-00007 — material at-risk / may-be-late; requested 2026-10-12; committed —.
+- **Oasis Italian velvet** SO-2026-00007 — material at-risk / may-be-late; requested 2026-10-13; committed —.
 - Isolation: `oasis` must not see Nile sales orders.
 - Arabic pass: nav **الجدول**; requested labels are not **مؤكد**.
 - Do not invent extra demo orders for this walkthrough.

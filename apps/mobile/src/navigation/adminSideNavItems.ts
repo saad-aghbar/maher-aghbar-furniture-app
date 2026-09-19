@@ -1,7 +1,7 @@
 import type { Href } from 'expo-router';
 import type { Ionicons } from '@expo/vector-icons';
+import { can, type AppSurface } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
-import type { AppSurface } from '@maher/permissions';
 import {
   filterAdminOverflowModules,
   type AdminOverflowModule,
@@ -86,6 +86,49 @@ export function adminSideNavItems(
       ? filterAdminOverflowModules(user, 'more').map(moduleItem)
       : [];
   return { primary, overflow };
+}
+
+export const ADMIN_MORE_HREF = '/(app)/(admin)/more' as Href;
+
+export type AdminAccountSheetItem = {
+  key: 'account' | 'notifications' | 'settings';
+  labelKey: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  href: Href;
+};
+
+/** Account / notifications / factory settings for the pinned sidebar sheet. */
+export function adminAccountSheetItems(
+  user: AuthUser | null | undefined,
+): AdminAccountSheetItem[] {
+  const items: AdminAccountSheetItem[] = [
+    {
+      key: 'account',
+      labelKey: 'mobile.more.manageAccount',
+      icon: 'person-outline',
+      href: '/(app)/(admin)/more/account' as Href,
+    },
+    {
+      key: 'notifications',
+      labelKey: 'mobile.notifications.prefs.title',
+      icon: 'notifications-outline',
+      href: '/(app)/(admin)/more/notifications' as Href,
+    },
+  ];
+  if (user && can(user, 'settings.manage')) {
+    items.push({
+      key: 'settings',
+      labelKey: 'mobile.more.moreSettings',
+      icon: 'business-outline',
+      href: '/(app)/(admin)/more/settings' as Href,
+    });
+  }
+  return items;
+}
+
+/** True when the admin More hub or a nested account screen is showing. */
+export function isAdminAccountPath(pathname: string): boolean {
+  return isAdminModulePath(pathname, String(ADMIN_MORE_HREF));
 }
 
 export function selectedAdminSideNavKey(

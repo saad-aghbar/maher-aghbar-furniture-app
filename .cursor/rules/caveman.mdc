@@ -1,0 +1,316 @@
+---
+description: Low-context / Caveman engineering protocol for the Maher ERP repository
+alwaysApply: true
+---
+
+# CAVEMAN ENGINEERING PROTOCOL
+
+You are working on a large production ERP repository.
+
+Your highest priority is to minimize unnecessary context consumption while maintaining correctness.
+
+## CORE PRINCIPLE
+
+DO NOT READ THE ENTIRE REPOSITORY.
+
+DO NOT READ LARGE FILES UNLESS THEY ARE RELEVANT.
+
+DO NOT REREAD INFORMATION THAT IS ALREADY AVAILABLE IN THE project context documents.
+
+DO NOT recursively inspect unrelated directories.
+
+DO NOT load entire files when a targeted search or relevant section is sufficient.
+
+Work like a senior engineer entering an existing production codebase.
+
+Understand only what is necessary for the current task.
+
+---
+
+# 1. CONTEXT-FIRST WORKFLOW
+
+Before investigating source code:
+
+Read these files if they exist:
+
+- docs/AI_CONTEXT/PROJECT_MAP.md
+- docs/AI_CONTEXT/ARCHITECTURE_MAP.md
+- docs/AI_CONTEXT/CURRENT_STATE.md
+- docs/AI_CONTEXT/ACTIVE_WORK.md
+
+These documents are the compact project memory.
+
+Use them to determine where to look.
+
+Do NOT reread large portions of the repository simply to reconstruct information already documented there.
+
+---
+
+# 2. TARGETED READING
+
+For every task:
+
+1. Identify the feature/domain.
+2. Identify the likely entry points.
+3. Search for exact symbols/routes/components/services.
+4. Read only the relevant files or relevant sections.
+5. Trace dependencies only when necessary.
+6. Stop investigating once sufficient evidence exists.
+
+Do not explore unrelated modules.
+
+---
+
+# 3. NEVER BULK-READ THE REPOSITORY
+
+Never do broad reads such as:
+
+- reading every source file
+- reading every component
+- reading every API controller
+- reading every service
+- reading every schema
+- reading all documentation
+- reading generated files
+- reading dependencies
+- reading lockfiles
+- reading build artifacts
+
+unless the user explicitly asks for a repository-wide audit.
+
+---
+
+# 4. SEARCH BEFORE READING
+
+Prefer:
+
+search → identify exact file → inspect relevant section
+
+instead of:
+
+open directory → read many files → infer architecture
+
+Use targeted searches for:
+
+- component names
+- route names
+- API paths
+- service names
+- database models
+- permissions
+- event names
+- hooks
+- screen names
+- error messages
+
+---
+
+# 5. DO NOT REREAD HUGE FILES
+
+If a file has already been inspected during the current task:
+
+DO NOT reopen the entire file.
+
+Use targeted searches or relevant line ranges.
+
+If a file is very large, inspect only the section relevant to the current change.
+
+---
+
+# 6. DO NOT INVENT CONTEXT
+
+The goal is not to avoid reading necessary code.
+
+If you need information to safely modify something:
+
+READ IT.
+
+Correctness is more important than token minimization.
+
+The rule is:
+
+MINIMUM NECESSARY CONTEXT.
+
+Not:
+
+MINIMUM POSSIBLE CONTEXT.
+
+---
+
+# 7. USE PROJECT MEMORY
+
+The project context documents are summaries, not substitutes for source code.
+
+Use them to locate the relevant implementation.
+
+If the source code contradicts the context document:
+
+SOURCE CODE WINS.
+
+After discovering an important architectural change, update the relevant context document instead of repeatedly rediscovering it later.
+
+---
+
+# 8. TASK SCOPING
+
+Before making changes, internally determine:
+
+TASK:
+What exactly is being requested?
+
+DOMAIN:
+Which subsystem owns it?
+
+FILES:
+What files are likely involved?
+
+DEPENDENCIES:
+What must be inspected before modifying it?
+
+STOP CONDITION:
+What evidence is sufficient to make the change safely?
+
+Do not investigate beyond the stop condition.
+
+---
+
+# 9. PRESERVE EXISTING ARCHITECTURE
+
+Do not redesign systems merely because you discover a different implementation style.
+
+Before introducing a new abstraction:
+
+Search for an existing abstraction.
+
+Before adding a new API:
+
+Search for an existing endpoint/service.
+
+Before adding a new permission:
+
+Search existing permission definitions.
+
+Before adding a new component:
+
+Search for an existing reusable component.
+
+Reuse existing patterns whenever appropriate.
+
+---
+
+# 10. GENERATED / LARGE / LOW-VALUE FILES
+
+Avoid reading:
+
+- node_modules
+- .git
+- build output
+- generated API clients unless necessary
+- generated Prisma files
+- lockfiles unless dependency work requires them
+- compiled files
+- caches
+- logs
+- coverage output
+- platform build artifacts
+
+Treat these as low-value context sources.
+
+---
+
+# 11. TEST TARGETING
+
+Do not automatically run the entire repository test suite after every tiny change.
+
+First run the smallest relevant validation.
+
+Example:
+
+component change
+→ component/unit test
+
+API change
+→ relevant backend tests
+
+database change
+→ migration/schema tests
+
+then broader tests only when justified.
+
+For release/closure work, the full suite can still be run.
+
+---
+
+# 12. NO AUTOMATIC "FULL AUDIT"
+
+Do not turn ordinary tasks into repository-wide audits.
+
+Only perform a repository-wide audit when explicitly requested.
+
+Examples:
+
+"Fix the inspection button."
+
+DO NOT audit the whole ERP.
+
+"Implement Apple Watch."
+
+Perform the required architecture audit because the task explicitly affects a new platform.
+
+---
+
+# 13. CONTEXT DOCUMENT MAINTENANCE
+
+If the current task changes architecture, update:
+
+docs/AI_CONTEXT/ARCHITECTURE_MAP.md
+
+If the task changes project status:
+
+docs/AI_CONTEXT/CURRENT_STATE.md
+
+If the task changes the active implementation:
+
+docs/AI_CONTEXT/ACTIVE_WORK.md
+
+Keep these documents concise.
+
+Do not turn them into giant documentation files.
+
+---
+
+# 14. OUTPUT DISCIPLINE
+
+At the beginning of work, briefly state:
+
+- target domain
+- files/subsystems being inspected
+- reason
+
+Do not produce giant explanations before doing the work.
+
+At the end report:
+
+- changed files
+- tests
+- remaining blockers
+
+Keep the report concise.
+
+---
+
+# FINAL RULE
+
+BE A CAVEMAN:
+
+READ ONLY WHAT YOU NEED.
+
+REMEMBER THE PROJECT THROUGH SMALL CONTEXT FILES.
+
+SEARCH BEFORE READING.
+
+NEVER BULK-READ THE REPOSITORY WITHOUT A REASON.
+
+DO NOT SACRIFICE CORRECTNESS FOR TOKEN SAVINGS.
+
+MINIMUM NECESSARY CONTEXT.

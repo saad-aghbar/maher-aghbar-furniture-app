@@ -1,17 +1,21 @@
 import { useCallback, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname, useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { useMaherDensity } from '@/adaptive/density';
+import { displayRolesLabel } from '@/i18n/roleLabel';
 import { localeRow, pinStart, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { AdminAccountSheet } from './AdminAccountSheet';
 import { activeTabFromPath } from './activeTabFromPath';
 import {
+  adminAccountSheetItems,
   adminSideNavItems,
+  isAdminAccountPath,
   selectedAdminSideNavKey,
   type AdminSideNavItem,
 } from './adminSideNavItems';
@@ -26,7 +30,7 @@ type Props = {
  * phone tab bar + More atlas. Not a Material NavigationRail.
  */
 export function AdminSideNav({ mode }: Props) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { colors, theme } = useTheme();
   const { t, isRTL, locale } = useLocale();
   const insets = useSafeAreaInsets();
@@ -37,8 +41,13 @@ export function AdminSideNav({ mode }: Props) {
   const items = [...primary, ...overflow];
   const activeTab = activeTabFromPath('admin', pathname);
   const selectedKey = selectedAdminSideNavKey(items, pathname, activeTab);
+  const accountSelected = isAdminAccountPath(pathname);
+  const sheetItems = adminAccountSheetItems(user);
+  const [accountOpen, setAccountOpen] = useState(false);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const width = mode === 'rail' ? density.railWidth : density.sidebarWidth;
+  const displayName = user?.name?.trim() || user?.username || t('mobile.more.accountEyebrow');
+  const roleCaption = displayRolesLabel(t, user, locale);
 
   const onPress = useCallback(
     (item: AdminSideNavItem) => {
@@ -60,6 +69,8 @@ export function AdminSideNav({ mode }: Props) {
       style={{
         width,
         minWidth: width,
+        maxWidth: width,
+        alignSelf: 'stretch',
         backgroundColor: colors.surface,
         borderColor: colors.border,
         ...(isRTL ? { borderLeftWidth: 1 } : { borderRightWidth: 1 }),
@@ -86,6 +97,7 @@ export function AdminSideNav({ mode }: Props) {
         </View>
       ) : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: mode === 'rail' ? theme.spacing.xs : theme.spacing.sm,
           gap: theme.spacing.xs,
@@ -132,6 +144,125 @@ export function AdminSideNav({ mode }: Props) {
           />
         ))}
       </ScrollView>
+      <AccountFooter
+        mode={mode}
+        selected={accountSelected}
+        displayName={displayName}
+        roleCaption={roleCaption}
+        onPress={() => {
+          void haptics.selection();
+          setAccountOpen(true);
+        }}
+      />
+      <AdminAccountSheet
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        items={sheetItems}
+        onNavigate={(href: Href) => {
+          router.navigate(href);
+        }}
+        onLogout={() => {
+          void logout().then(() => router.replace('/(auth)/login' as Href));
+        }}
+      />
+    </View>
+  );
+}
+
+function AccountFooter({
+  mode,
+  selected,
+  displayName,
+  roleCaption,
+  onPress,
+}: {
+  mode: 'rail' | 'sidebar';
+  selected: boolean;
+  displayName: string;
+  roleCaption: string;
+  onPress: () => void;
+}) {
+  const { colors, theme } = useTheme();
+  const { t, isRTL, locale } = useLocale();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const rail = mode === 'rail';
+  const a11y = t('mobile.more.accountEyebrow');
+
+  return (
+    <View
+      style={{
+        borderTopWidth: 1,
+        borderColor: colors.border,
+        paddingHorizontal: rail ? theme.spacing.xs : theme.spacing.sm,
+        paddingTop: theme.spacing.sm,
+      }}
+    >
+      <AnimatedPressable
+        variant="button"
+        testID="admin-side-nav-account"
+        accessibilityRole="button"
+        accessibilityLabel={a11y}
+        accessibilityState={{ selected }}
+        onPress={onPress}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          minHeight: rail ? 52 : theme.sizes.touch.min,
+          flexDirection: localeRow(isRTL),
+          alignItems: 'center',
+          justifyContent: rail ? 'center' : 'flex-start',
+          gap: theme.spacing.sm,
+          paddingHorizontal: rail ? 0 : theme.spacing.sm,
+          paddingVertical: theme.spacing.sm,
+          borderRadius: theme.radius.md,
+          backgroundColor: selected
+            ? colors.brandSoft
+            : hovered
+              ? colors.surfaceSecondary
+              : 'transparent',
+          borderWidth: focused ? 1.5 : 0,
+          borderColor: colors.brand,
+        }}
+      >
+        {selected ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 8,
+              bottom: 8,
+              width: 3,
+              borderRadius: 2,
+              backgroundColor: colors.brand,
+              ...pinStart(isRTL),
+            }}
+          />
+        ) : null}
+        <Ionicons
+          name="person-circle-outline"
+          size={22}
+          color={selected ? colors.brand : colors.textSecondary}
+        />
+        {rail ? null : (
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText
+              variant="body"
+              weight={titleWeight}
+              numberOfLines={1}
+              color={selected ? 'brand' : 'primary'}
+            >
+              {displayName}
+            </AppText>
+            <AppText variant="caption" color="muted" numberOfLines={1}>
+              {roleCaption}
+            </AppText>
+          </View>
+        )}
+      </AnimatedPressable>
     </View>
   );
 }

@@ -5,6 +5,52 @@ This is the runtime evidence record. Implementation status for all ~142 routes r
 **Start SHA (2026-09-17 pass):** `d107990f5fdfcfd4b8a20552922d0d4129b43cd1`  
 **Branch:** `main`
 
+## Interactive UAT closure — 2026-09-19
+
+No application code changed this pass. Dest client `jo.maheraghbar.furniture` on iPad Pro 13" M5 (`62BFE1AD-4B6C-409C-AC14-9712692751D6`) + Android tablet evidence from 2026-09-18/19. **Not pushed.**
+
+### Android tablet (dest client, logged-in)
+
+**PASS** for Admin / Dealer (`nile`) / Worker (`carpenter`), EN / AR / HE. Inspector was disabled before credential entry (`i` is RN inspect unless a TextInput is focused). Evidence: [universal-uat-evidence/android-tablet/](./universal-uat-evidence/android-tablet/). AVD was not attached on the 2026-09-19 morning resume; those frames were captured earlier in the same closure.
+
+### iPad Dealer (`nile`)
+
+**PASS.** Landscape home (Nile Interiors, dealer pill + FAB, no admin sidebar). Catalog, Classic Chair PDP + Add to basket, Basket, New Order, Orders list, Account, Statement, Invoices, Returns (`RT-DEMO-001`).
+
+Order detail: `maher:///(app)/(customer)/orders/14beff64-…` (admin SO-GOLDEN UUID) showed **Couldn’t load order** — customer route, not an adaptive-layout bug. Dealer-owned **SO-COST-REWORK** (`e892e096-…`) loaded (Model 204, Delivered). Portrait rotation of that detail: framebuffer 2064×2752, same dealer chrome.
+
+Evidence: [universal-uat-evidence/ipad13-dealer/](./universal-uat-evidence/ipad13-dealer/).
+
+### iPad Worker (`carpenter`)
+
+**PASS.** Actual login (username focused, then `carpenter` / `123`). Home: Khaled / صالة الإنتاج, worker bottom chrome, no dealer FAB, no admin rail. Tasks desk (SO-GOLDEN-001 split). Completed (SO-COST-REWORK / SO-COST-GOLDEN). Notifications (unread list). Order workflow `SO-GOLDEN-001` (`f21a0731-…`). iOS Save Password sheet dismissed with **Not Now**.
+
+Evidence: [universal-uat-evidence/ipad13-worker/](./universal-uat-evidence/ipad13-worker/).
+
+### Hebrew large-screen (iPad admin)
+
+**PASS.** Locale switcher AR → HE on WIDE admin home: `בוקר טוב`, sidebar בית / הזמנות / מלאי / ייצור, IDs `SO-…` / `INV-…` stay LTR. Orders split in HE (list + empty detail + `SO-FB1042`).
+
+Evidence: [universal-uat-evidence/ipad13-he/](./universal-uat-evidence/ipad13-he/).
+
+### PDF share sheet
+
+**PASS.** Dealer invoice `INV-COST-VAR-XL-1` → Download PDF options (EN / White) → iOS share popover `maher-invoices-…` PDF Document · 171 KB (Preview, Copy, Markup, Print, Save to Files).
+
+Evidence: [universal-uat-evidence/pdf/ipad-share-sheet.png](./universal-uat-evidence/pdf/ipad-share-sheet.png).
+
+### Stage Manager / split widths
+
+**PARTIAL.** Device Hub **Enter Resize Mode** was invoked; the iPad stayed full-screen in the hub. Independent 600 / 900 / 1200 pt window classes were **not** proven. Rotation EXPANDED ↔ WIDE remains the resize evidence.
+
+### Camera
+
+**PHYSICAL DEVICE UAT REQUIRED.** Simulator has no camera. Device Hub lists physical iPhone **Sa69aD** (`00008130-001924A02651001C`); dest-client camera was **not** run on that hardware this pass. Typed scan remains the Simulator path.
+
+### Mac / Windows
+
+Unchanged. Mac signing **BLOCKED — EXTERNAL**. Windows spike only. Not app-code failures.
+
 ## Blocker closure — 2026-09-18
 
 Previous pass is unchanged below. This section is the follow-up: Android Metro root cause, language switch, deep links, PDF bytes, permission smoke. It does **not** rewrite the 2026-09-17 FAIL rows; it records what was re-run.
@@ -251,10 +297,8 @@ Spike only. [WINDOWS_SPIKE.md](./WINDOWS_SPIKE.md). No RN Windows port started.
 
 ## Remaining debt
 
-- Finish Android tablet logged-in UAT after Metro is reachable; re-check landscape letterbox on a healthy JS session.
-- Prove EN/HE switch (and RTL for Hebrew) on Admin + Dealer + Worker.
-- iPad dealer/worker chrome login.
-- Stage Manager / true split widths.
+- Stage Manager / true split widths (600 / 900 / 1200 pt independently). Device Hub Enter Resize Mode did not emulate those classes.
+- Physical camera on a dest-client device (Simulator typed scan only).
 - Mac runtime after paid signing.
 - Pre-existing i18n leftovers.
 - MFA path (not on demo users used here).

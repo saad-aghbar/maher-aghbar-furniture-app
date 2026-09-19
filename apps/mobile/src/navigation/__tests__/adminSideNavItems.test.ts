@@ -1,6 +1,12 @@
 import type { AuthUser } from '@maher/types';
 import { ROLE_PERMISSIONS, SYSTEM_STAFF_PRESETS } from '@maher/permissions';
-import { adminSideNavItems, isAdminModulePath, selectedAdminSideNavKey } from '../adminSideNavItems';
+import {
+  adminAccountSheetItems,
+  adminSideNavItems,
+  isAdminAccountPath,
+  isAdminModulePath,
+  selectedAdminSideNavKey,
+} from '../adminSideNavItems';
 
 function userWith(permissions: readonly string[]): AuthUser {
   return {
@@ -46,6 +52,7 @@ describe('adminSideNavItems permission parity', () => {
       ]),
     );
     expect(side.overflow.some((i) => i.key === 'mod:more')).toBe(false);
+    expect(side.primary.some((i) => i.tabName === 'more')).toBe(false);
   });
 
   it('System Admin sees users; Warehouse does not', () => {
@@ -95,6 +102,34 @@ describe('adminSideNavItems permission parity', () => {
     for (const item of [...admin.primary, ...admin.overflow]) {
       expect(String(item.href)).toMatch(/^\/\(app\)\/\(admin\)/);
     }
+  });
+});
+
+describe('adminAccountSheetItems', () => {
+  it('hides factory settings unless settings.manage is granted', () => {
+    const admin = userWith(ROLE_PERMISSIONS.SYSTEM_ADMINISTRATOR);
+    expect(adminAccountSheetItems(admin).map((item) => item.key)).toEqual([
+      'account',
+      'notifications',
+      'settings',
+    ]);
+    const warehouse = userWith(SYSTEM_STAFF_PRESETS.WAREHOUSE_MANAGEMENT.permissionCodes);
+    expect(adminAccountSheetItems(warehouse).map((item) => item.key)).toEqual([
+      'account',
+      'notifications',
+    ]);
+  });
+});
+
+describe('isAdminAccountPath', () => {
+  it('marks the footer selected on More and nested account screens', () => {
+    expect(isAdminAccountPath('/more')).toBe(true);
+    expect(isAdminAccountPath('/more/account')).toBe(true);
+    expect(isAdminAccountPath('/more/notifications')).toBe(true);
+    expect(isAdminAccountPath('/more/settings')).toBe(true);
+    expect(isAdminAccountPath('/(app)/(admin)/more/account')).toBe(true);
+    expect(isAdminAccountPath('/orders')).toBe(false);
+    expect(isAdminAccountPath('/')).toBe(false);
   });
 });
 
