@@ -25,6 +25,8 @@ import {
 } from '@/auth/biometrics';
 import { registerPushDevice, releasePushDevice } from '@/features/notifications/registerPushDevice';
 import { clearPendingNotificationIntent } from '@/storage/pushDevice';
+import { getAccessToken } from '@/storage/tokens';
+import { clearWatchSession, syncWatchSession } from '@/watch/sessionSync';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -172,6 +174,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
   }, [status, refreshUser]);
+
+  useEffect(() => {
+    if (user && (status === 'authenticated' || status === 'needs_biometric')) {
+      void getAccessToken().then((token) => syncWatchSession(user, token));
+      return;
+    }
+    if (status === 'unauthenticated' || status === 'session_expired' || status === 'disabled') {
+      void clearWatchSession();
+    }
+  }, [status, user]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

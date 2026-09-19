@@ -32,6 +32,7 @@ Where to change X. Source code wins if this drifts.
 - Shell / nav: [`apps/mobile/src/navigation/`](../../apps/mobile/src/navigation/) (`AdaptiveShell`, `SurfaceGate`, `AdminSideNav`).
 - HTTP: [`apps/mobile/src/api/client.ts`](../../apps/mobile/src/api/client.ts). Base URL: [`apps/mobile/src/api/config.ts`](../../apps/mobile/src/api/config.ts) (`EXPO_PUBLIC_API_BASE_URL`, Expo LAN host, Android `10.0.2.2` → `/api/v1`).
 - Surface gates on each group `_layout.tsx` using `resolveAppSurface`.
+- Apple Watch (native, not RN): SwiftUI in [`apps/mobile/targets/watch/`](../../apps/mobile/targets/watch/) (injected by `@bacons/apple-targets` at prebuild). iPhone bridge: [`apps/mobile/modules/maher-watch-bridge/`](../../apps/mobile/modules/maher-watch-bridge/). JS contract / session sync: [`apps/mobile/src/watch/`](../../apps/mobile/src/watch/). Wrist aggregators: [`apps/api/src/modules/watch/`](../../apps/api/src/modules/watch/) (`GET /watch/worker/today`, `/admin/summary`, `/dealer/orders`). Mutations reuse existing task / QC / notification routes. Identity from `resolveAppSurface()`; Watch never has a login form. `ios/` stays generated / gitignored.
 
 ## Admin web
 
@@ -62,6 +63,8 @@ Where to change X. Source code wins if this drifts.
 | DB model | `packages/database/prisma/schema.prisma` |
 | Demo scenario | `packages/database/prisma/demo/` |
 | Mobile screen | `apps/mobile/src/features/<feature>/` + route in `apps/mobile/app/` |
+| Apple Watch screen | `apps/mobile/targets/watch/` (SwiftUI). Do not port RN screens. |
+| Watch identity / WCSession | `apps/mobile/src/watch/` + `apps/mobile/modules/maher-watch-bridge/` |
 | Admin page | `apps/admin-web/src/app/[locale]/<route>/page.tsx` |
 | Shared type | `packages/types/src/` |
 | Workflow graph | `packages/workflow-domain/src/` + `apps/api/src/modules/production/workflow/` |

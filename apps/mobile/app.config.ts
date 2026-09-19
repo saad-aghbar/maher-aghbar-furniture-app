@@ -168,6 +168,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           iCloudContainerEnvironment: 'Production',
         },
       ],
+      '@bacons/apple-targets',
       ...((stripIosPush
         ? ['./plugins/withPersonalTeamIosCapabilities']
         : [

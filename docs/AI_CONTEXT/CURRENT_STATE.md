@@ -27,6 +27,7 @@ Primary sources: [UNIVERSAL_APP_COMPLETE_IMPLEMENTATION.md](../UNIVERSAL_APP_COM
 - Mac Designed-for-iPad: CocoaPods fixed; **signing BLOCKED** (Personal Team; Mac UDID not in profile). Runtime not run.
 - Physical camera UAT required on dest-client device.
 - Production store release: **NO** until Mac signing + camera + Stage Manager widths.
+- Apple Watch companion: Phases 0–10 in tree. Simulator identity + worker/admin/dealer glances **PASS**. Inspection seed + airplane photos not taken. Physical Watch / complications / APNs **BLOCKED** (Personal Team). Universal-app UAT is unchanged.
 - Windows: spike only ([WINDOWS_SPIKE.md](../WINDOWS_SPIKE.md)). No port.
 - Web (`admin-web`, customer/employee portals): not part of the universal-app UAT.
 

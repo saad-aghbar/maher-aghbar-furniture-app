@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { invalidateWatchAccessToken, mirrorWatchAccessToken } from '@/watch/sessionSync';
 
 export const ACCESS_TOKEN_KEY = 'maher.access_token';
 export const REFRESH_TOKEN_KEY = 'maher.refresh_token';
@@ -19,11 +20,13 @@ export async function getRefreshToken(): Promise<string | null> {
 export async function setTokens(pair: TokenPair): Promise<void> {
   await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, pair.accessToken);
   await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, pair.refreshToken);
+  void mirrorWatchAccessToken(pair.accessToken);
 }
 
 export async function clearTokens(): Promise<void> {
   await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  void invalidateWatchAccessToken();
 }
 
 export async function getTokenPair(): Promise<TokenPair | null> {

@@ -10,6 +10,10 @@ Branch: `main`. This file is the in-flight pointer, not a changelog.
 - Physical-device install path: `scripts/ios-device.sh` (`pnpm --filter @maher/mobile ios:device`) — Xcode 26 / DeviceHub
 - 2026-09-19 iPad 13 UAT evidence under `docs/universal-uat-evidence/`
 
+## In flight
+
+- Apple Watch companion Phases 0–10: simulator identity + worker/admin/dealer glances **PASS**. Inspection live seed and airplane-mode photos pending. Complications / APNs / physical Watch **BLOCKED** (Personal Team). See [APPLE_WATCH_UAT.md](../APPLE_WATCH_UAT.md).
+
 ## Open follow-ups
 
 - Reconcile leftover 2026-09-17 Android FAIL rows against the 2026-09-19 PASS section.

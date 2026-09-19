@@ -39,6 +39,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { GeoModule } from './modules/geo/geo.module';
 import { SearchModule } from './modules/search/search.module';
+import { WatchModule } from './modules/watch/watch.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { SearchModule } from './modules/search/search.module';
     RolesModule,
     GeoModule,
     SearchModule,
+    WatchModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
