@@ -1,37 +1,50 @@
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { SplitPane, SplitPanePlaceholder } from '@/adaptive/SplitPane';
-import { useDeskSelection } from '@/adaptive/useDeskSelection';
+import { firstSearchParam, useDeskSelection } from '@/adaptive/useDeskSelection';
 import { useLocale } from '@/i18n';
+import { OrderProductionPlanEditorScreen } from '@/features/sales-orders/OrderProductionPlanEditorScreen';
+import { OrderProductionPlanScreen } from '@/features/sales-orders/OrderProductionPlanScreen';
 import { ProductionDetailScreen } from './ProductionDetailScreen';
 import { ProductionOverviewScreen } from './ProductionOverviewScreen';
-import { productionHubOrderHref } from './productionHubOrderHref';
-
-function factoryOrderId(href: string): string | null {
-  const match = href.match(/\/production\/([^/?]+)(?:\?|$)/);
-  if (!match?.[1]) return null;
-  if (href.includes('/plan') || href.includes('/workflow') || href.includes('/setup')) {
-    return null;
-  }
-  return match[1];
-}
+import {
+  parseProductionDeskSelection,
+  productionDeskSelectedId,
+  productionHubOrderHref,
+} from './productionHubOrderHref';
 
 /**
- * Admin Production tab. COMPACT/MEDIUM push. EXPANDED/WIDE embed the factory
- * order when the hub destination is the production detail (not the plan).
+ * Admin Production tab. COMPACT/MEDIUM push. EXPANDED/WIDE embed the
+ * sales-order line chooser or factory order in the side pane.
  */
 export function ProductionDeskHost() {
   const { t } = useLocale();
   const router = useRouter();
+  const params = useLocalSearchParams<{ lineId?: string | string[] }>();
   const { split, selected, selectOrPush } = useDeskSelection();
+  const parsed = parseProductionDeskSelection(selected);
+  const lineId = firstSearchParam(params.lineId);
 
   const onSelectHref = (href: string) => {
-    const id = factoryOrderId(href);
+    const id = productionDeskSelectedId(href);
     if (id) {
+      if (split) {
+        router.setParams({ selected: id, lineId: '' });
+        return;
+      }
       selectOrPush(id, href as Href);
       return;
     }
     router.push(href as Href);
   };
+
+  const detail =
+    parsed?.kind === 'salesOrder' ? (
+      <OrderProductionPlanScreen salesOrderId={parsed.id} lineId={lineId} embedded />
+    ) : parsed?.kind === 'plan' ? (
+      <OrderProductionPlanEditorScreen productionOrderId={parsed.id} />
+    ) : parsed?.kind === 'factory' ? (
+      <ProductionDetailScreen orderId={parsed.id} embedded />
+    ) : null;
 
   return (
     <SplitPane
@@ -43,11 +56,7 @@ export function ProductionDeskHost() {
           onSelectHref={onSelectHref}
         />
       }
-      detail={
-        selected ? (
-          <ProductionDetailScreen orderId={selected} embedded />
-        ) : null
-      }
+      detail={detail}
       detailPlaceholder={
         <SplitPanePlaceholder
           icon="construct-outline"

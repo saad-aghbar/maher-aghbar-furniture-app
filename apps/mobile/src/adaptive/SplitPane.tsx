@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useMaherDensity } from './density';
+import { useSurfaceClearance } from './useSurfaceClearance';
 
 export type SplitPaneProps = {
   /** Reading-start pane (list / calendar / hub). */
@@ -20,7 +22,11 @@ export type SplitPaneProps = {
   primaryWidth?: number;
   /** Fraction of the row given to the primary pane when `primaryWidth` is omitted. Default 0.42. */
   primaryRatio?: number;
-  /** Optional third pane at the reading end (WIDE work detail). Rendered only when provided. */
+  /**
+   * Optional third pane at the reading end (WIDE work detail). Rendered only
+   * when provided. Bare boards belong in `SplitPaneAside` — unlike `primary`
+   * and `detail` this pane carries no screen shell of its own.
+   */
   secondary?: ReactNode;
   secondaryWidth?: number;
   detailPlaceholder?: ReactNode;
@@ -100,6 +106,38 @@ export function SplitPane({
         </View>
       ) : null}
     </View>
+  );
+}
+
+type SplitPaneAsideProps = {
+  children: ReactNode;
+  testID?: string;
+};
+
+/**
+ * Screen shell for the third pane. `primary` and `detail` normally hold whole
+ * screens that clear the status bar and scroll themselves; an aside is usually
+ * a bare board stack, so it needs the same treatment here or it sits jammed
+ * under the status bar against the window edge.
+ */
+export function SplitPaneAside({ children, testID }: SplitPaneAsideProps) {
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const clearance = useSurfaceClearance();
+  return (
+    <ScrollView
+      testID={testID}
+      style={{ flex: 1 }}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{
+        paddingTop: insets.top + theme.spacing.lg,
+        paddingHorizontal: theme.spacing.lg,
+        paddingBottom: clearance,
+        gap: theme.spacing.md,
+      }}
+    >
+      {children}
+    </ScrollView>
   );
 }
 

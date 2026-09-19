@@ -34,11 +34,12 @@ Where to change X. Source code wins if this drifts.
 - Surface gates on each group `_layout.tsx` using `resolveAppSurface`.
 - Apple Watch (native, not RN): SwiftUI in [`apps/mobile/targets/watch/`](../../apps/mobile/targets/watch/) (injected by `@bacons/apple-targets` at prebuild). iPhone bridge: [`apps/mobile/modules/maher-watch-bridge/`](../../apps/mobile/modules/maher-watch-bridge/). JS contract / session sync: [`apps/mobile/src/watch/`](../../apps/mobile/src/watch/). Wrist aggregators: [`apps/api/src/modules/watch/`](../../apps/api/src/modules/watch/) (`GET /watch/worker/today`, `/admin/summary`, `/dealer/orders`). Mutations reuse existing task / QC / notification routes. Identity from `resolveAppSurface()`; Watch never has a login form. `ios/` stays generated / gitignored.
 
-## Admin web
+## Unified web
 
-- Pages: [`apps/admin-web/src/app/[locale]/`](../../apps/admin-web/src/app/). Locale matcher in `apps/admin-web/middleware.ts`.
-- REST client: [`apps/admin-web/src/lib/api-client.ts`](../../apps/admin-web/src/lib/api-client.ts) (`NEXT_PUBLIC_API_URL`, cookie auth).
+- Pages: [`apps/web/src/app/[locale]/`](../../apps/web/src/app/) — `admin/**`, `dealer/**`, `worker/**`, `(auth)/**`.
+- REST client: [`apps/web/src/lib/api-client.ts`](../../apps/web/src/lib/api-client.ts) (same-origin `/api/v1` rewrite → API `:4000`, cookie auth + single-flight refresh).
 - RTL: `getDirection(locale)` from `@maher/i18n` in `[locale]/layout.tsx`.
+- Surface routing: `resolveWebHomePath()` → `/admin/dashboard` | `/dealer/dashboard` | `/worker/dashboard`.
 
 ## Jobs
 
@@ -47,11 +48,11 @@ Where to change X. Source code wins if this drifts.
 
 ## Shared packages (who consumes)
 
-- `@maher/types` — API, mobile, admin-web, permissions, i18n, workflow-domain, notifications.
-- `@maher/permissions` — API, mobile, admin-web, database seed, notifications.
-- `@maher/i18n` — mobile + three Next apps.
-- `@maher/ui` — Next apps only (not mobile).
-- `@maher/workflow-domain` — mobile workflow editor, admin-web labels, API production workflow.
+- `@maher/types` — API, mobile, web, permissions, i18n, workflow-domain, notifications.
+- `@maher/permissions` — API, mobile, web, database seed, notifications.
+- `@maher/i18n` — mobile + unified web.
+- `@maher/ui` — Next web only (not mobile).
+- `@maher/workflow-domain` — mobile workflow editor, web labels, API production workflow.
 - `@maher/validation` — declared on API; runtime DTOs use `class-validator`. Treat as unused until proven otherwise.
 
 ## Where to change
@@ -65,7 +66,7 @@ Where to change X. Source code wins if this drifts.
 | Mobile screen | `apps/mobile/src/features/<feature>/` + route in `apps/mobile/app/` |
 | Apple Watch screen | `apps/mobile/targets/watch/` (SwiftUI). Do not port RN screens. |
 | Watch identity / WCSession | `apps/mobile/src/watch/` + `apps/mobile/modules/maher-watch-bridge/` |
-| Admin page | `apps/admin-web/src/app/[locale]/<route>/page.tsx` |
+| Web page | `apps/web/src/app/[locale]/{admin,dealer,worker}/<route>/page.tsx` |
 | Shared type | `packages/types/src/` |
 | Workflow graph | `packages/workflow-domain/src/` + `apps/api/src/modules/production/workflow/` |
 | Async job (non-scheduling) | `apps/worker/src/` |

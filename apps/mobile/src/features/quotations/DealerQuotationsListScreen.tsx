@@ -41,6 +41,8 @@ import {
 type Props = {
   detailHref: (id: string) => Href;
   backFallback: Href;
+  selectedQuotationId?: string;
+  onSelectQuotation?: (id: string) => void;
 };
 
 function QuotationsScreenTitle({
@@ -84,7 +86,12 @@ function QuotationsScreenTitle({
 /**
  * Dealer quotations desk — hub, desk rail, date range, and folio cards.
  */
-export function DealerQuotationsListScreen({ detailHref, backFallback }: Props) {
+export function DealerQuotationsListScreen({
+  detailHref,
+  backFallback,
+  selectedQuotationId,
+  onSelectQuotation,
+}: Props) {
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -378,7 +385,10 @@ export function DealerQuotationsListScreen({ detailHref, backFallback }: Props) 
           <ListItemEnter index={index}>
             <QuotationBoardCard
               quotation={item}
-              onPress={() => router.push(detailHref(item.id))}
+              selected={item.id === selectedQuotationId}
+              onPress={() =>
+                onSelectQuotation ? onSelectQuotation(item.id) : router.push(detailHref(item.id))
+              }
               onPdf={() => onPdf(item.id)}
             />
           </ListItemEnter>

@@ -19,10 +19,11 @@ type Props = {
   onPress: () => void;
   onConfirm?: () => void;
   index?: number;
+  selected?: boolean;
 };
 
 /** Receipt ticket — receipt stub + qty/address, not a station % or promised-day card. */
-export function DealerReceiptCard({ row, onPress, onConfirm, index = 0 }: Props) {
+export function DealerReceiptCard({ row, onPress, onConfirm, index = 0, selected = false }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -59,8 +60,8 @@ export function DealerReceiptCard({ row, onPress, onConfirm, index = 0 }: Props)
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : colors.borderStrong,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           ...orderBoardShadow(colorScheme),
         }}

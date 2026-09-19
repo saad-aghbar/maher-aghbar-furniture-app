@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   StyleSheet,
-  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -25,6 +24,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter, useDraggablePillBar, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useChromeSize, useTheme } from '@/theme';
@@ -98,8 +98,7 @@ export function MaterialPickerSheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * (overlay ? 0.72 : 0.5)), 640);
+  const { sheetHeight } = useSheetListViewport();
 
   const [category, setCategory] = useState<InventoryCategoryGroup>(
     initialCategory ?? 'fabric',

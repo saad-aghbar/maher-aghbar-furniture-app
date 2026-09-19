@@ -764,6 +764,10 @@ export type FabricTrackerItem = {
   id: string;
   salesOrderId: string;
   salesOrderNumber: string;
+  productionOrderId?: string | null;
+  productionOrderNumber?: string | null;
+  salesOrderLineId?: string | null;
+  itemLetter?: string | null;
   dealerName?: string | null;
   productName?: string | null;
   productImageUrl?: string | null;

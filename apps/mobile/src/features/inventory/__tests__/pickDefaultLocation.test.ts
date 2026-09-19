@@ -63,7 +63,10 @@ describe('pickerViewportHeights', () => {
     const tall = pickerViewportHeights(2000);
     expect(tall.warehouse).toBe(PICKER_WAREHOUSE_MAX);
     expect(tall.bin).toBe(PICKER_BIN_MAX);
-    expect(tall.sheet).toBeLessThanOrEqual(760);
+    expect(tall.sheet).toBeGreaterThan(760);
+    const desk = pickerViewportHeights(1024, true);
+    expect(desk.warehouse).toBeGreaterThanOrEqual(400);
+    expect(desk.bin).toBeGreaterThanOrEqual(360);
   });
 
   it('wires shared heights into every warehouse+bin pop-up', () => {
@@ -82,7 +85,7 @@ describe('pickerViewportHeights', () => {
       expect(src).toContain('pickerViewportHeights');
     }
     const strip = readFileSync(join(inventoryDir, 'components/WarehouseBinBoard.tsx'), 'utf8');
-    expect(strip).toContain('pickerViewportHeights(height).bin');
+    expect(strip).toContain('pickerViewportHeights(height, isDesk).bin');
   });
 });
 

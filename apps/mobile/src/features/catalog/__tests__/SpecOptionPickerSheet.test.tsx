@@ -62,7 +62,7 @@ describe('SpecOptionPickerSheet geometry', () => {
         onSelect={onSelect}
       />,
     );
-    assertSheetHeightContract(view, { maxHeight: 620 });
+    assertSheetHeightContract(view);
     assertFitContentDoesNotExceedCap(view);
     fireEvent.press(view.getByLabelText('Foam 35'));
     expect(onSelect).toHaveBeenCalledWith('v-35');
@@ -97,7 +97,7 @@ describe('SpecOptionPickerSheet geometry', () => {
     expect(view.getByLabelText('Option 0')).toBeTruthy();
   });
 
-  it('keyboard-open cap shrinks below the default 70% window', () => {
+  it('keyboard-open cap shrinks below the default picker window', () => {
     const defaultCap = resolveSheetHeightCap({ windowHeight: HARNESS_WINDOW.height });
     const withKeyboard = resolveSheetHeightCap({
       windowHeight: HARNESS_WINDOW.height,

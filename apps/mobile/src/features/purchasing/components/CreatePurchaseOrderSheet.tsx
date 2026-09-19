@@ -13,6 +13,7 @@ import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { WarehousePickList } from '@/features/inventory/components/WarehousePickList';
 import { pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import {
   MaterialPickerSheet,
   type PickedOrderMaterial,
@@ -50,7 +51,8 @@ export function CreatePurchaseOrderSheet({
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(Math.round(height));
+  const { isDesk } = useMaherLayout();
+  const pickerHeights = pickerViewportHeights(Math.round(height), isDesk);
   const sheetHeight = pickerHeights.sheet;
   const warehouseListHeight = pickerHeights.warehouse;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';

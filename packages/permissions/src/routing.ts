@@ -131,8 +131,9 @@ export function resolveAppSurface(user: AuthUser): AppSurface {
 /** In-app path (no locale prefix) after login for the chosen surface. */
 export function resolveWebHomePath(user: AuthUser): string {
   const surface = resolveAppSurface(user);
-  if (surface === 'employee') return '/dashboard';
-  return '/dashboard';
+  if (surface === 'customer') return '/dealer/dashboard';
+  if (surface === 'employee') return '/worker/dashboard';
+  return '/admin/dashboard';
 }
 
 /** Primary mobile home persona from permissions. */

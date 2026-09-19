@@ -20,6 +20,8 @@ type Props = {
   q?: string;
   index?: number;
   animateEnter?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
 const MEDIA = 72;
@@ -51,6 +53,8 @@ export function WorkerSalesOrderCard({
   q,
   index = 0,
   animateEnter = true,
+  selected = false,
+  onSelect,
 }: Props) {
   const { t, formatDateTime, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -87,6 +91,10 @@ export function WorkerSalesOrderCard({
       : null;
 
   const goToPicker = () => {
+    if (onSelect) {
+      onSelect();
+      return;
+    }
     router.push(workerSalesOrderHref(order, { segment, q }) as Href);
   };
 
@@ -101,8 +109,8 @@ export function WorkerSalesOrderCard({
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : borderColor,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           marginBottom: theme.spacing.sm + 4,
           ...orderBoardShadow(colorScheme),

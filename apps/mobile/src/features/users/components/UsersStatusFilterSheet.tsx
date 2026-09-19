@@ -5,6 +5,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -40,6 +41,7 @@ const STATUS_OPTIONS: Array<{ value: UserStatusFilter; labelKey: string }> = [
 export function UsersFilterSheet({ open, onClose, value, skills, onApply }: CombinedProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [draft, setDraft] = useState<UsersFilterDraft>(value);
 
@@ -55,7 +57,7 @@ export function UsersFilterSheet({ open, onClose, value, skills, onApply }: Comb
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={t('users.filterTitle')} sheetHeight={520}>
+    <BottomSheet open={open} onClose={onClose} title={t('users.filterTitle')} sheetHeight={sheetHeight}>
       <View style={{ flex: 1, gap: theme.spacing.md }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -195,10 +197,11 @@ export function UsersRoleFilterSheet({
 }: RoleSheetProps) {
   const { t, locale } = useLocale();
   const { theme, colorScheme } = useTheme();
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={t(titleKey)} sheetHeight={420}>
+    <BottomSheet open={open} onClose={onClose} title={t(titleKey)} sheetHeight={sheetHeight}>
       <View style={{ gap: theme.spacing.md, flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.md }}

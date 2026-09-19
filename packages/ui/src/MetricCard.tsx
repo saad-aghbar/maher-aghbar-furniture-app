@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cn } from './cn';
 
 export type MetricTone = 'neutral' | 'brand' | 'success' | 'warning' | 'error' | 'info';
@@ -13,31 +13,13 @@ export interface MetricCardProps {
   className?: string;
 }
 
-const toneClasses: Record<MetricTone, { icon: string; accent: string }> = {
-  neutral: {
-    icon: 'bg-[var(--maher-surface-muted)] text-[var(--maher-text-secondary)]',
-    accent: 'bg-[var(--maher-border-strong)]',
-  },
-  brand: {
-    icon: 'bg-[var(--maher-brand-soft)] text-[var(--maher-brand)]',
-    accent: 'bg-[var(--maher-brand)]',
-  },
-  success: {
-    icon: 'bg-[var(--maher-success-soft)] text-[var(--maher-success)]',
-    accent: 'bg-[var(--maher-success)]',
-  },
-  warning: {
-    icon: 'bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
-    accent: 'bg-[var(--maher-warning)]',
-  },
-  error: {
-    icon: 'bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
-    accent: 'bg-[var(--maher-error)]',
-  },
-  info: {
-    icon: 'bg-[var(--maher-info-soft)] text-[var(--maher-info)]',
-    accent: 'bg-[var(--maher-info)]',
-  },
+const toneAccent: Record<MetricTone, string> = {
+  neutral: 'var(--maher-brand)',
+  brand: 'var(--maher-brand)',
+  success: 'var(--maher-success)',
+  warning: 'var(--maher-warning)',
+  error: 'var(--maher-error)',
+  info: 'var(--maher-info)',
 };
 
 export function MetricCard({
@@ -49,39 +31,28 @@ export function MetricCard({
   tone = 'neutral',
   className,
 }: MetricCardProps) {
-  const tones = toneClasses[tone];
-
   return (
     <div
       className={cn(
-        'maher-lift group relative overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-5',
-        'shadow-[var(--maher-shadow-sm)] hover:border-[var(--maher-border-strong)]',
+        'maher-floor-board relative overflow-hidden rounded-[20px] border border-[var(--maher-border-strong)] bg-[var(--maher-surface)] p-5 ps-6 shadow-[var(--maher-shadow-sm)]',
         className,
       )}
     >
       <span
-        className={cn(
-          'absolute inset-y-0 start-0 w-1 origin-left transition-transform duration-300 ease-out rtl:origin-right group-hover:scale-x-[2.5]',
-          tones.accent,
-        )}
-        aria-hidden="true"
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 start-0 w-[3px] opacity-55"
+        style={{ background: toneAccent[tone] } satisfies CSSProperties}
       />
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-[var(--maher-text-secondary)]">{label}</p>
         {icon ? (
-          <span
-            className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)]',
-              'transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110',
-              tones.icon,
-            )}
-          >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--maher-surface-muted)] text-[var(--maher-text-secondary)]">
             {icon}
           </span>
         ) : null}
       </div>
       <div className="mt-3 flex items-end justify-between gap-2">
-        <p className="maher-animate-bounce-in text-3xl font-semibold tracking-tight text-[var(--maher-text-primary)]">
+        <p className="text-3xl font-semibold tracking-tight text-[var(--maher-text-primary)] tabular-nums">
           {value}
         </p>
         {trend ? <div className="text-sm text-[var(--maher-text-secondary)]">{trend}</div> : null}

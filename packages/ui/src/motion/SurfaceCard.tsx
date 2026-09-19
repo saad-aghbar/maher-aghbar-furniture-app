@@ -1,12 +1,10 @@
 'use client';
 
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
-import { useCardMotion } from './useCardMotion';
 
 export interface SurfaceCardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
-  /** Pointer-tilt like dashboard cards */
   tilt?: boolean;
   maxTilt?: number;
   sheen?: boolean;
@@ -16,46 +14,28 @@ export interface SurfaceCardProps extends HTMLAttributes<HTMLDivElement> {
 export function SurfaceCard({
   children,
   className,
-  tilt = false,
-  maxTilt = 7,
-  sheen = true,
+  tilt: _tilt,
+  maxTilt: _maxTilt,
+  sheen: _sheen,
   interactive = true,
   style,
-  onMouseMove,
-  onMouseLeave,
   ...props
 }: SurfaceCardProps) {
-  const motion = useCardMotion<HTMLDivElement>(maxTilt);
-
   return (
     <div
-      ref={tilt ? motion.ref : undefined}
-      onMouseMove={
-        tilt
-          ? (e) => {
-              motion.onMove(e);
-              onMouseMove?.(e);
-            }
-          : onMouseMove
-      }
-      onMouseLeave={
-        tilt
-          ? (e) => {
-              motion.onLeave();
-              onMouseLeave?.(e);
-            }
-          : onMouseLeave
-      }
       className={cn(
-        'maher-animate-rise overflow-hidden rounded-[var(--maher-radius-xl)] border border-border bg-surface shadow-card',
-        interactive && 'maher-lift',
-        sheen && 'maher-sheen',
-        tilt && 'maher-dash-card maher-press',
+        'maher-floor-board relative overflow-hidden rounded-[20px] border border-[var(--maher-border-strong)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
+        interactive && 'maher-press',
         className,
       )}
       style={style}
       {...props}
     >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 start-0 w-[3px] opacity-55"
+        style={{ background: 'var(--maher-brand)' } satisfies CSSProperties}
+      />
       {children}
     </div>
   );

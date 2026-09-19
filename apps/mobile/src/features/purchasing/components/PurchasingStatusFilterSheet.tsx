@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
@@ -7,6 +7,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { DatePickerField } from '@/components/calendar/DatePickerField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
@@ -50,8 +51,7 @@ export function PurchasingStatusFilterSheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.72), 600);
+  const { sheetHeight, nestedListHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [draft, setDraft] = useState(status);
   const [draftFrom, setDraftFrom] = useState(dateFrom);
@@ -256,7 +256,7 @@ export function PurchasingStatusFilterSheet({
               warehouses={[{ id: '', name: t('common.all') }, ...warehouses]}
               selectedId={draftWarehouse}
               onSelect={setDraftWarehouse}
-              listHeight={Math.round(height * 0.32)}
+              listHeight={nestedListHeight}
             />
           </View>
         ) : null}

@@ -826,6 +826,10 @@ export type FabricHoldingRow = {
   imageUrl?: string | null;
   salesOrderId?: string | null;
   orderNumber: string | null;
+  productionOrderId?: string | null;
+  productionOrderNumber?: string | null;
+  salesOrderLineId?: string | null;
+  itemLetter?: string | null;
   dealerName: string | null;
   productName?: string | null;
   productImageUrl?: string | null;

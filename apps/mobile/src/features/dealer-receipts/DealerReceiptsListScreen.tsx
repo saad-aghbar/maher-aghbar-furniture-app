@@ -31,6 +31,8 @@ import { useSurfaceClearance } from '@/adaptive/useSurfaceClearance';
 type Props = {
   detailHref: (salesOrderId: string) => Href;
   backFallback?: Href;
+  selectedOrderId?: string;
+  onSelectOrder?: (id: string) => void;
 };
 
 function ReceiptsScreenTitle({
@@ -74,6 +76,8 @@ function ReceiptsScreenTitle({
 export function DealerReceiptsListScreen({
   detailHref,
   backFallback = '/(app)/(customer)/(tabs)' as Href,
+  selectedOrderId,
+  onSelectOrder,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -211,7 +215,12 @@ export function DealerReceiptsListScreen({
           <DealerReceiptCard
             row={item}
             index={index}
-            onPress={() => router.push(detailHref(item.salesOrderId))}
+            selected={item.salesOrderId === selectedOrderId}
+            onPress={() =>
+              onSelectOrder
+                ? onSelectOrder(item.salesOrderId)
+                : router.push(detailHref(item.salesOrderId))
+            }
             onConfirm={() =>
               void confirm.open({
                 salesOrderId: item.salesOrderId,

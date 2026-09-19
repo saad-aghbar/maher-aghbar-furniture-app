@@ -13,7 +13,7 @@ import { ProductionListSkeleton } from '@/features/production/components/Product
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { isAtLeast } from '@/adaptive/breakpoints';
-import { SplitPane, SplitPanePlaceholder } from '@/adaptive/SplitPane';
+import { SplitPane, SplitPaneAside, SplitPanePlaceholder } from '@/adaptive/SplitPane';
 import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { OrderProductionPlanEditorScreen } from './OrderProductionPlanEditorScreen';
 import { OrderProductionPlanItemBoard } from './OrderProductionPlanItemBoard';
@@ -32,14 +32,17 @@ import { useSalesOrderQuery } from './query';
 export function OrderProductionPlanScreen({
   salesOrderId,
   lineId,
+  embedded = false,
 }: {
   salesOrderId: string;
   lineId?: string;
+  embedded?: boolean;
 }) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { windowClass, isWide } = useMaherLayout();
   const desk = isAtLeast(windowClass, 'expanded');
+  const nestDesk = desk && !embedded;
   const { user } = useAuth();
   const router = useRouter();
   const query = useSalesOrderQuery(salesOrderId, Boolean(salesOrderId));
@@ -147,7 +150,7 @@ export function OrderProductionPlanScreen({
     );
   }
 
-  if (!lineId || desk) {
+  if (!lineId || nestDesk) {
     const setupLines = setupQuery.data?.lines ?? [];
     if (
       !lineId &&
@@ -155,16 +158,18 @@ export function OrderProductionPlanScreen({
     ) {
       return (
         <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              paddingHorizontal: theme.spacing.lg,
-              paddingVertical: theme.spacing.sm,
-            }}
-          >
-            <BackButton onPress={() => router.back()} />
-          </View>
+          {embedded ? null : (
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                paddingHorizontal: theme.spacing.lg,
+                paddingVertical: theme.spacing.sm,
+              }}
+            >
+              <BackButton onPress={() => router.back()} />
+            </View>
+          )}
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
             <ActivityIndicator color={colors.brand} />
             <AppText variant="caption" color="muted">
@@ -183,9 +188,13 @@ export function OrderProductionPlanScreen({
           dealer={setupQuery.data?.salesOrder.customer ?? order.customer}
           progress={setupQuery.data?.progress}
           selectedLineId={lineId}
-          embedded={desk}
+          embedded={desk || embedded}
           onSelectLine={(id) => {
-            if (desk) {
+            if (embedded) {
+              router.setParams({ selected: `so:${salesOrderId}`, lineId: id });
+              return;
+            }
+            if (nestDesk) {
               router.setParams({ lineId: id });
               return;
             }
@@ -195,7 +204,7 @@ export function OrderProductionPlanScreen({
           }}
         />
       );
-      if (desk) {
+      if (nestDesk) {
         return (
           <SplitPane
             testID="production-plan-desk-split"
@@ -218,7 +227,9 @@ export function OrderProductionPlanScreen({
             }
             secondary={
               isWide && setupQuery.data ? (
-                <FactoryReadinessSummary setup={setupQuery.data} />
+                <SplitPaneAside testID="production-plan-readiness-aside">
+                  <FactoryReadinessSummary setup={setupQuery.data} />
+                </SplitPaneAside>
               ) : undefined
             }
           />
@@ -228,7 +239,7 @@ export function OrderProductionPlanScreen({
     }
   }
 
-  if (released && poId) {
+  if (released && poId && !embedded) {
     return <Redirect href={`/(app)/(admin)/production/${poId}` as Href} />;
   }
 
@@ -244,16 +255,18 @@ export function OrderProductionPlanScreen({
   if (booting || (!bootError && canEditSetup && !attempted.current)) {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.sm,
-          }}
-        >
-          <BackButton onPress={() => router.back()} />
-        </View>
+        {embedded ? null : (
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.sm,
+            }}
+          >
+            <BackButton onPress={() => router.back()} />
+          </View>
+        )}
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
           <ActivityIndicator color={colors.brand} />
           <AppText variant="caption" color="muted">
@@ -266,16 +279,18 @@ export function OrderProductionPlanScreen({
 
   return (
     <AppScreen>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.sm,
-        }}
-      >
-        <BackButton onPress={() => router.back()} />
-      </View>
+      {embedded ? null : (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            paddingHorizontal: theme.spacing.lg,
+            paddingVertical: theme.spacing.sm,
+          }}
+        >
+          <BackButton onPress={() => router.back()} />
+        </View>
+      )}
       <ErrorState
         title={t('mobile.productionSetup.planTitle')}
         description={bootError ?? t('mobile.orders.journey.planNeedsPo')}

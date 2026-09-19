@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  PROBLEM_CATEGORY_LIST_MAX_HEIGHT,
+  problemCategoryListMaxHeight,
   REPORT_PROBLEM_CATEGORIES,
   reportProblemSheetHeight,
   trimmedProblemReason,
@@ -11,8 +11,9 @@ import {
 const sheetSrc = readFileSync(join(__dirname, '../components/ReportProblemSheet.tsx'), 'utf8');
 
 describe('ReportProblemSheet layout', () => {
-  it('sizes the sheet to 72% of the window', () => {
-    expect(reportProblemSheetHeight(800)).toBe(576);
+  it('sizes the sheet to the shared picker viewport', () => {
+    expect(reportProblemSheetHeight(844)).toBeGreaterThanOrEqual(680);
+    expect(reportProblemSheetHeight(1024, true)).toBeGreaterThan(reportProblemSheetHeight(844));
     expect(sheetSrc).toContain('reportProblemSheetHeight(windowH)');
     expect(sheetSrc).toContain('sheetHeight={sheetHeight}');
     expect(sheetSrc).toContain('overlay');
@@ -22,12 +23,15 @@ describe('ReportProblemSheet layout', () => {
   it('uses a scrollable category board and a pinned footer', () => {
     expect(sheetSrc).toContain('DealerBoard');
     expect(sheetSrc).toContain("t('mobile.tasks.problemKindTitle')");
-    expect(sheetSrc).toContain('PROBLEM_CATEGORY_LIST_MAX_HEIGHT');
+    expect(sheetSrc).toContain('problemCategoryListMaxHeight');
     expect(sheetSrc).toContain('nestedScrollEnabled');
     expect(sheetSrc).toContain('DealerFormFooter');
     expect(sheetSrc).toContain("t('mobile.tasks.submitProblem')");
     expect(sheetSrc).toContain('flex: 1, minHeight: 0');
-    expect(PROBLEM_CATEGORY_LIST_MAX_HEIGHT).toBe(220);
+    expect(problemCategoryListMaxHeight(844)).toBeGreaterThanOrEqual(240);
+    expect(problemCategoryListMaxHeight(1024, true)).toBeGreaterThan(
+      problemCategoryListMaxHeight(844),
+    );
     expect(REPORT_PROBLEM_CATEGORIES).toHaveLength(9);
     expect(REPORT_PROBLEM_CATEGORIES).toContain('MATERIAL_MISSING');
     expect(REPORT_PROBLEM_CATEGORIES).toContain('OTHER');

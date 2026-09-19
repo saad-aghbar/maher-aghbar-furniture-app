@@ -99,7 +99,7 @@ for (const file of files) {
       violations.push(`${filePosix}: Mobile must not import @maher/ui (${spec})`);
     }
 
-    const targetApps = ['api', 'admin-web', 'customer-portal', 'employee-portal', 'mobile', 'worker'];
+    const targetApps = ['api', 'web', 'mobile', 'worker'];
     for (const target of targetApps) {
       if (!mentionsAppSrc(resolved, target) && !mentionsAppSrc(spec, target)) continue;
       if (fromApp === target) continue;
@@ -114,7 +114,7 @@ for (const file of files) {
       if (fromApp === 'mobile' && target !== 'mobile') {
         violations.push(`${filePosix}: Mobile must not import apps/${target} (${spec})`);
       } else if (
-        (fromApp === 'admin-web' || fromApp === 'customer-portal' || fromApp === 'employee-portal') &&
+        fromApp === 'web' &&
         (target === 'mobile' || target === 'api')
       ) {
         violations.push(`${filePosix}: ${fromApp} must not import apps/${target} (${spec})`);

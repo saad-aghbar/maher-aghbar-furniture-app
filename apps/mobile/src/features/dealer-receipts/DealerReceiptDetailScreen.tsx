@@ -37,16 +37,19 @@ import { useDealerReceiptConfirm } from './useDealerReceiptConfirm';
 type Props = {
   salesOrderId: string;
   backFallback?: Href;
+  embedded?: boolean;
 };
 
 function DetailTitle({
   number,
   backFallback,
   titleWeight,
+  embedded = false,
 }: {
   number: string;
   backFallback: Href;
   titleWeight: 'medium' | 'semibold';
+  embedded?: boolean;
 }) {
   const { isRTL } = useLocale();
   const { theme } = useTheme();
@@ -54,18 +57,20 @@ function DetailTitle({
 
   return (
     <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
-          zIndex: 1,
-          justifyContent: 'center',
-        }}
-      >
-        <ScreenBackLead fallback={backFallback} />
-      </View>
+      {embedded ? null : (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+            zIndex: 1,
+            justifyContent: 'center',
+          }}
+        >
+          <ScreenBackLead fallback={backFallback} />
+        </View>
+      )}
       <AppText
         variant="largeTitle"
         weight={titleWeight}
@@ -114,6 +119,7 @@ function FactRow({
 export function DealerReceiptDetailScreen({
   salesOrderId,
   backFallback = '/(app)/(customer)/deliveries' as Href,
+  embedded = false,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL, formatDate } = useLocale();
@@ -173,7 +179,7 @@ export function DealerReceiptDetailScreen({
   if (!allowed) {
     return (
       <AppScreen>
-        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} />
+        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} embedded={embedded} />
         <DealerEmptyState title={t('mobile.noModules')} body={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -182,7 +188,7 @@ export function DealerReceiptDetailScreen({
   if (loadError) {
     return (
       <AppScreen>
-        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} />
+        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} embedded={embedded} />
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.dealerReceipts.errorTitle')}
@@ -200,7 +206,7 @@ export function DealerReceiptDetailScreen({
   if (loading) {
     return (
       <AppScreen>
-        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} />
+        <DetailTitle number={t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} embedded={embedded} />
         <OrderDetailSkeleton />
       </AppScreen>
     );
@@ -209,7 +215,7 @@ export function DealerReceiptDetailScreen({
   if (!kind) {
     return (
       <AppScreen>
-        <DetailTitle number={number || t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} />
+        <DetailTitle number={number || t('mobile.dealerReceipts.title')} backFallback={backFallback} titleWeight={titleWeight} embedded={embedded} />
         <DealerEmptyState
           title={t('mobile.dealerReceipts.notOnDesk')}
           body={t('mobile.dealerReceipts.notOnDeskHint')}
@@ -225,7 +231,7 @@ export function DealerReceiptDetailScreen({
   return (
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <DetailTitle number={number} backFallback={backFallback} titleWeight={titleWeight} />
+      <DetailTitle number={number} backFallback={backFallback} titleWeight={titleWeight} embedded={embedded} />
       <ScrollView
         style={{ flex: 1 }}
         refreshControl={

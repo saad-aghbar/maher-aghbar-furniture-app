@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import type { DepartmentRow } from '@/api/modules/users';
 import { AppText } from '@/components/AppText';
@@ -12,6 +7,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
@@ -45,8 +41,7 @@ export function DepartmentPickerSheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.72), 660);
+  const { sheetHeight } = useSheetListViewport();
   const [query, setQuery] = useState('');
   const [draftId, setDraftId] = useState<string | null>(selectedId);
 

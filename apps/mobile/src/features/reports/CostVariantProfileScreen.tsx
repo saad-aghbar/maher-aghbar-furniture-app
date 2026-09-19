@@ -19,9 +19,11 @@ import { useCostVariantProfileQuery } from './query';
 export function CostVariantProfileScreen({
   productId,
   variantId,
+  embedded = false,
 }: {
   productId: string;
   variantId: string;
+  embedded?: boolean;
 }) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -46,7 +48,7 @@ export function CostVariantProfileScreen({
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={back} />
+          {embedded ? null : <ScreenBackLead fallback={back} />}
         </View>
         <AppText
           variant="largeTitle"

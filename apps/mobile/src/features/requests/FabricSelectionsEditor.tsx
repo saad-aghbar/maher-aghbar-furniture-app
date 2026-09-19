@@ -5,7 +5,7 @@ import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import { NamedPickerSheet, type NamedPickRow } from './components/NamedPickerSheet';
+import { NamedPickerSheet, dealerVisibleCaption, type NamedPickRow } from './components/NamedPickerSheet';
 
 export type DealerFabricRow = {
   key: string;
@@ -187,13 +187,21 @@ export function FabricSelectionsEditor({
         title={t('mobile.newOrder.fabricName')}
         rows={fabricOptions}
         selectedId={fabricPick != null ? value[fabricPick]?.fabricId ?? null : null}
-        onSelect={(id) => {
+        allowCustom
+        onSelect={(id, customName) => {
           if (fabricPick == null) return;
+          if (customName) {
+            patch(fabricPick, {
+              fabricId: undefined,
+              type: customName,
+            });
+            return;
+          }
           const picked = fabricOptions.find((row) => row.id === id);
           patch(fabricPick, {
             fabricId: id ?? undefined,
             type: picked?.name ?? '',
-            code: picked?.caption ?? value[fabricPick]?.code ?? '',
+            code: dealerVisibleCaption(picked?.caption) || '',
           });
         }}
       />
@@ -203,8 +211,20 @@ export function FabricSelectionsEditor({
         title={t('mobile.newOrder.fabricColor')}
         rows={colorOptions}
         selectedId={colorPick != null ? value[colorPick]?.colorId ?? null : null}
-        onSelect={(id) => {
+        allowCustom
+        customHint={t('mobile.newOrder.typedColorHint')}
+        customPlaceholder={t('mobile.newOrder.typedColorPlaceholder')}
+        customSectionTitle={t('mobile.newOrder.typedColorSection')}
+        catalogSectionTitle={t('mobile.newOrder.catalogColorSection')}
+        onSelect={(id, customName) => {
           if (colorPick == null) return;
+          if (customName) {
+            patch(colorPick, {
+              colorId: undefined,
+              color: customName,
+            });
+            return;
+          }
           const picked = colorOptions.find((row) => row.id === id);
           patch(colorPick, {
             colorId: id ?? undefined,

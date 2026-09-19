@@ -3,7 +3,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  useWindowDimensions,
   View,
   type StyleProp,
   type ViewStyle,
@@ -12,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { isolateLtr } from '@/i18n/format';
@@ -59,8 +59,7 @@ export function PhoneField({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const { height: windowH } = useWindowDimensions();
-  const sheetHeight = Math.round(windowH * 0.72);
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const fallback = useMemo(() => {

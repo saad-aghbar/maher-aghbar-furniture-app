@@ -26,7 +26,13 @@ import { returnDossierHref } from './reportsDeskHrefs';
 import { useCostReturnsQuery } from './query';
 import type { CostReturnRow } from '@/api/modules/reports';
 
-export function ReportsReturnsScreen() {
+export function ReportsReturnsScreen({
+  selectedReturnId: _selectedReturnId,
+  onSelectReturn,
+}: {
+  selectedReturnId?: string;
+  onSelectReturn?: (id: string) => void;
+} = {}) {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -112,9 +118,13 @@ export function ReportsReturnsScreen() {
           <ListItemEnter index={index}>
             <ReturnCaseCard
               row={item}
-              onPress={() =>
-                router.push(returnDossierHref(item.id, { from: range.from, to: range.to, dateBasis }))
-              }
+              onPress={() => {
+                if (onSelectReturn) {
+                  onSelectReturn(item.id);
+                  return;
+                }
+                router.push(returnDossierHref(item.id, { from: range.from, to: range.to, dateBasis }));
+              }}
             />
           </ListItemEnter>
         )}

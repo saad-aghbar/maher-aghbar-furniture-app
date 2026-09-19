@@ -17,6 +17,7 @@ import {
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
 import { pickDefaultLocationId, locationPickerLabel, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 
 type Props = {
   open: boolean;
@@ -46,7 +47,8 @@ export function DestinationPickSheet({
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(Math.round(height));
+  const { isDesk } = useMaherLayout();
+  const pickerHeights = pickerViewportHeights(Math.round(height), isDesk);
   const sheetHeight = pickerHeights.sheet;
   const holding = mode === 'location';
   const [query, setQuery] = useState('');

@@ -26,6 +26,8 @@ export type PendingAttachment = {
   errorMessage?: string;
   /** Bytes hint for progress UI */
   sizeBytes?: number;
+  /** Basket line this file belongs to. Review shows every file. */
+  lineId?: string;
 };
 
 export function newAttachmentId() {

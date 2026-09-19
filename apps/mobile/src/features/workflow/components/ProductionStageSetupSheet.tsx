@@ -14,6 +14,7 @@ import {
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
 import { pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
+import { sheetIsDeskWidth } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { resolveTrilingualIfChanged } from '@/i18n/resolveTrilingualName';
@@ -500,7 +501,8 @@ export function ProductionStageSetupSheet({
 
   const warehouseType = produce === 'finished' ? 'FINISHED_GOODS' : 'SEMI_FINISHED';
   const makesSomething = produce !== 'none';
-  const pickerHeights = pickerViewportHeights(Dimensions.get('window').height);
+  const win = Dimensions.get('window');
+  const pickerHeights = pickerViewportHeights(win.height, sheetIsDeskWidth(win.width));
   const sheetMaxHeight = pickerHeights.sheet;
   const effectiveConsumeSemi = canTakeSemi && consumeSemi;
   const productLabel = product

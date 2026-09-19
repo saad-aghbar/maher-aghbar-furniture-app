@@ -27,6 +27,7 @@ import { useAccessoryCameraState } from '@/features/inventory/components/Accesso
 import { BottomSheetTransition, shouldDismissSheet } from '@/motion/BottomSheetTransition';
 import { springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import { sheetIsDeskWidth, sheetPickerHeight } from './sheetListViewport';
 
 /** Soft settle for expand / collapse — less snappy than chrome springs. */
 const SHEET_HEIGHT_SPRING = {
@@ -36,13 +37,15 @@ const SHEET_HEIGHT_SPRING = {
   overshootClamping: true,
 } as const;
 
-/** Default sheet cap: ~70% of the window. Keyboard-open shrinks the cap. */
+/** Default sheet cap: ~82% phone / ~86% iPad desk. Keyboard-open shrinks the cap. */
 export function resolveSheetHeightCap(opts: {
   windowHeight: number;
+  windowWidth?: number;
   maxHeight?: number;
   keyboardHeight?: number;
 }): number {
-  const cap = opts.maxHeight ?? Math.round(opts.windowHeight * 0.7);
+  const isDesk = sheetIsDeskWidth(opts.windowWidth ?? 0);
+  const cap = opts.maxHeight ?? sheetPickerHeight(opts.windowHeight, isDesk);
   const keyboardHeight = opts.keyboardHeight ?? 0;
   if (keyboardHeight <= 0) return cap;
   return Math.min(cap, Math.max(240, opts.windowHeight - keyboardHeight));
@@ -61,7 +64,7 @@ type BottomSheetProps = {
   /** Fixed height when `fitContent` is false. */
   sheetHeight?: number;
   /**
-   * Size the sheet to its content, capped at `maxHeight` (default ~70% of the window).
+   * Size the sheet to its content, capped at `maxHeight` (default ~82% phone / ~86% desk).
    * Prefer scrollable children when content may exceed the cap.
    */
   fitContent?: boolean;
@@ -159,6 +162,7 @@ export function SheetPanel({
     : !hostBlocked;
 
   const windowH = Dimensions.get('window').height;
+  const windowW = Dimensions.get('window').width;
   const fullExpandedHeight = useMemo(
     () =>
       expandedHeight ??
@@ -170,10 +174,11 @@ export function SheetPanel({
     () =>
       resolveSheetHeightCap({
         windowHeight: windowH,
+        windowWidth: windowW,
         maxHeight,
         keyboardHeight,
       }),
-    [maxHeight, keyboardHeight, windowH],
+    [maxHeight, keyboardHeight, windowH, windowW],
   );
 
   const [animHeight, setAnimHeight] = useState(() => Math.min(320, heightCap));

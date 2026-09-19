@@ -1,16 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { AppLinkComponent } from '../AppLinkComponent';
-import { cn } from '../cn';
-import { useCardMotion } from './useCardMotion';
 
 export interface QuickActionTileProps {
   href: string;
   label: string;
   icon: ReactNode;
   delayMs?: number;
-  /** Pass next-intl / next Link to keep client navigation */
   LinkComponent?: AppLinkComponent;
   trailingIcon?: ReactNode;
 }
@@ -23,21 +20,23 @@ export function QuickActionTile({
   LinkComponent,
   trailingIcon,
 }: QuickActionTileProps) {
-  const { ref, onMove, onLeave } = useCardMotion<HTMLAnchorElement>(9);
   const className =
-    'maher-dash-action maher-press maher-sheen group relative flex min-w-[132px] flex-col items-start gap-3 overflow-hidden rounded-[var(--maher-radius-xl)] border border-border bg-surface p-4 shadow-card';
+    'maher-floor-board maher-press group relative flex min-w-[132px] flex-col items-start gap-3 overflow-hidden rounded-[20px] border border-[var(--maher-border-strong)] bg-[var(--maher-surface)] px-4 py-4 ps-5 shadow-[var(--maher-shadow-sm)]';
   const style = { animationDelay: `${delayMs}ms` };
 
   const body = (
     <>
-      <span className="maher-dash-icon relative z-[1] flex h-10 w-10 items-center justify-center rounded-[var(--maher-radius-md)] bg-brand-soft text-brand">
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 start-0 w-[3px] opacity-55"
+        style={{ background: 'var(--maher-brand)' } satisfies CSSProperties}
+      />
+      <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--maher-surface-muted)] text-[var(--maher-brand)]">
         {icon}
       </span>
-      <span className="maher-dash-label relative z-[1] text-sm font-semibold text-text-primary">
-        {label}
-      </span>
+      <span className="text-sm font-semibold text-[var(--maher-text-primary)]">{label}</span>
       {trailingIcon ? (
-        <span className="maher-dash-arrow absolute end-3 top-3 z-[1] opacity-0">{trailingIcon}</span>
+        <span className="absolute end-3 top-3 text-[var(--maher-text-tertiary)]">{trailingIcon}</span>
       ) : null}
     </>
   );
@@ -45,28 +44,14 @@ export function QuickActionTile({
   if (LinkComponent) {
     const Comp = LinkComponent;
     return (
-      <Comp
-        ref={ref}
-        href={href}
-        onMouseMove={onMove}
-        onMouseLeave={onLeave}
-        className={className}
-        style={style}
-      >
+      <Comp href={href} className={className} style={style}>
         {body}
       </Comp>
     );
   }
 
   return (
-    <a
-      ref={ref}
-      href={href}
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-      className={className}
-      style={style}
-    >
+    <a href={href} className={className} style={style}>
       {body}
     </a>
   );

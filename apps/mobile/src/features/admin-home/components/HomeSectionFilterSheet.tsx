@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter, softFadeDown, useReducedMotion } from '@/motion';
@@ -80,6 +81,7 @@ export function HomeSectionFilterSheet({ open, onClose, map, onToggle, onShowAll
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const visibleCount = HOME_SECTION_IDS.filter((id) => map[id] !== false).length;
   const allOn = visibleCount === HOME_SECTION_IDS.length;
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const Intro = reduce ? View : Animated.View;
 
   return (
@@ -88,7 +90,7 @@ export function HomeSectionFilterSheet({ open, onClose, map, onToggle, onShowAll
       onClose={onClose}
       title={t('mobile.adminHome.sectionFilter.title')}
       fitContent
-      maxHeight={580}
+      maxHeight={sheetHeight}
     >
       <View style={{ gap: theme.spacing.md }}>
         <Intro entering={reduce ? undefined : softFadeDown(40)}>
@@ -169,7 +171,7 @@ export function HomeSectionFilterSheet({ open, onClose, map, onToggle, onShowAll
         </AnimatedPressable>
 
         <ScrollView
-          style={{ maxHeight: 380 }}
+          style={{ maxHeight: listHeight }}
           contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.lg }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

@@ -1,12 +1,12 @@
 import { useAuth } from '@/auth/AuthProvider';
-import { ReportsProductsScreen } from '@/features/reports/ReportsProductsScreen';
+import { ReportsProductsDeskHost } from '@/features/reports/ReportsDeskHost';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
 export default function ReportsProductsRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="inventory.cost.read">
-      <ReportsProductsScreen />
+      <ReportsProductsDeskHost />
     </PermissionGate>
   );
 }

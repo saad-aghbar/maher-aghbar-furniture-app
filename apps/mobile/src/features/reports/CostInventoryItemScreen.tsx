@@ -19,7 +19,13 @@ import { useCostInventoryItemQuery } from './query';
 
 const BACK = '/(app)/(admin)/reports/inventory' as Href;
 
-export function CostInventoryItemScreen({ itemId }: { itemId: string }) {
+export function CostInventoryItemScreen({
+  itemId,
+  embedded = false,
+}: {
+  itemId: string;
+  embedded?: boolean;
+}) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -41,7 +47,7 @@ export function CostInventoryItemScreen({ itemId }: { itemId: string }) {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK} />
+          {embedded ? null : <ScreenBackLead fallback={BACK} />}
         </View>
         <AppText
           variant="largeTitle"

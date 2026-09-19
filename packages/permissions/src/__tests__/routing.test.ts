@@ -39,7 +39,7 @@ describe('post-login routing', () => {
       permissions: ['request.create', 'quotation.read'],
     };
     expect(resolveAppSurface(user)).toBe('customer');
-    expect(resolveWebHomePath(user)).toBe('/dashboard');
+    expect(resolveWebHomePath(user)).toBe('/dealer/dashboard');
     expect(resolveHomePersona(user)).toBe('customer');
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(customer)/(tabs)');
   });
@@ -66,7 +66,7 @@ describe('post-login routing', () => {
       ],
     };
     expect(resolveAppSurface(user)).toBe('employee');
-    expect(resolveWebHomePath(user)).toBe('/dashboard');
+    expect(resolveWebHomePath(user)).toBe('/worker/dashboard');
     expect(resolveHomePersona(user)).toBe('production_worker');
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(employee)/(tabs)');
     expect(shouldFetchWorkerQueue(user)).toBe(true);
@@ -114,7 +114,7 @@ describe('post-login routing', () => {
     expect(resolveComposedHomeKind(user)).toBe('warehouse');
     expect(shouldFetchSalesAdminHome(user)).toBe(false);
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(admin)/(tabs)');
-    expect(resolveWebHomePath(user)).toBe('/dashboard');
+    expect(resolveWebHomePath(user)).toBe('/admin/dashboard');
   });
 
   it('treats inventory.read-only staff as warehouse, not generic sales home', () => {
@@ -179,7 +179,7 @@ describe('post-login routing', () => {
       permissions: ['quotation.create', 'customer.create', 'sales-order.create'],
     };
     expect(resolveAppSurface(user)).toBe('admin');
-    expect(resolveWebHomePath(user)).toBe('/dashboard');
+    expect(resolveWebHomePath(user)).toBe('/admin/dashboard');
     expect(resolveHomePersona(user)).toBe('sales');
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(admin)/(tabs)');
   });

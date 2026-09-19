@@ -4,6 +4,15 @@ import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
 import type { OverlayIntent } from '@/adaptive/resolveOverlayMode';
 
 export { resolveSheetHeightCap } from './BottomSheetPanel';
+export {
+  sheetIsDeskWidth,
+  sheetNestedListHeight,
+  sheetPickerHeight,
+  sheetScrollListHeight,
+  useSheetListViewport,
+  SHEET_HEIGHT_DESK_RATIO,
+  SHEET_HEIGHT_PHONE_RATIO,
+} from './sheetListViewport';
 
 type BottomSheetProps = {
   open: boolean;

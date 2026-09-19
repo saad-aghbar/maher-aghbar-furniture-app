@@ -51,6 +51,9 @@ describe('Dealer basket floor', () => {
     expect(screen).not.toContain('OrderLineSpecSheet');
     expect(screen).not.toContain('NewOrderDimensionsEditor');
     expect(screen).not.toContain('editLineSpec');
+    expect(screen).toContain('attachmentsForLine');
+    expect(screen).toContain('activeLine.notes');
+    expect(screen).toContain('activeLine.externalOrderNumber');
   });
 
   it('uses a trash well and edit-variant chip on each ticket', () => {
@@ -63,7 +66,7 @@ describe('Dealer basket floor', () => {
     expect(card).not.toContain('TextField');
   });
 
-  it('renders the New Order packing slip instead of a chip wrap', () => {
+  it('renders equal basket tickets instead of a hero packing slip', () => {
     const rail = read('components/OrderBasketItemRail.tsx');
     expect(rail).toContain('bag-handle-outline');
     expect(rail).toContain('trash-outline');
@@ -71,13 +74,26 @@ describe('Dealer basket floor', () => {
     expect(rail).toContain('lineVisualIdentity');
     expect(rail).toContain('basketEditingPiece');
     expect(rail).toContain('openBasketDesk');
-    expect(rail).toContain('pairRows');
+    expect(rail).toContain('pairBasketRows');
+    expect(rail).toContain('newOrderBasketColumns');
+    expect(rail).not.toContain('HeroTicket');
   });
 
   it('fabric type and colour are pickers, not catch-all text boxes', () => {
     const editor = read('FabricSelectionsEditor.tsx');
     expect(editor).toContain('NamedPickerSheet');
     expect(editor).toContain('fabricOptions');
+    expect(editor).toContain('allowCustom');
+    expect(editor).toContain('typedColorHint');
+    expect(editor).toContain('typedColorPlaceholder');
     expect(editor).not.toMatch(/catch-all|free.?text box/i);
+    const sheet = read('components/NamedPickerSheet.tsx');
+    expect(sheet).toContain('named-pick-custom-input');
+    expect(sheet).toContain('named-pick-search');
+    expect(sheet).toContain('autoCapitalize="none"');
+    expect(sheet).toContain('dealerVisibleCaption');
+    expect(sheet).toContain('typedFabricSection');
+    expect(sheet).toContain('namedPickerCatalogListMinHeight');
+    expect(sheet).toContain('catalogListMin');
   });
 });

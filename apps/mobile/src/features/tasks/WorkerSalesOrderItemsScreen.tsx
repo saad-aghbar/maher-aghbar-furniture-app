@@ -24,20 +24,40 @@ function parseSegment(raw?: string): MyOrderSegment {
   return 'open';
 }
 
+type Props = {
+  salesOrderId?: string;
+  embedded?: boolean;
+  segment?: string;
+  q?: string;
+};
+
 /**
  * Middle step: sales order items with variant labels, then the existing lane.
+ * On the worker desk this mounts in the side pane (`embedded`); compact still
+ * uses the stack route.
  */
-export function WorkerSalesOrderItemsScreen() {
-  const { salesOrderId, segment: segmentParam, q } = useLocalSearchParams<{
+export function WorkerSalesOrderItemsScreen({
+  salesOrderId: salesOrderIdProp,
+  embedded = false,
+  segment: segmentProp,
+  q: qProp,
+}: Props = {}) {
+  const params = useLocalSearchParams<{
     salesOrderId?: string;
     segment?: string;
     q?: string;
   }>();
-  const id = String(Array.isArray(salesOrderId) ? salesOrderId[0] : salesOrderId ?? '');
-  const segment = parseSegment(
-    Array.isArray(segmentParam) ? segmentParam[0] : segmentParam,
+  const id = String(
+    salesOrderIdProp ||
+      (Array.isArray(params.salesOrderId) ? params.salesOrderId[0] : params.salesOrderId) ||
+      '',
   );
-  const needle = String(Array.isArray(q) ? q[0] : q ?? '');
+  const segment = parseSegment(
+    segmentProp || (Array.isArray(params.segment) ? params.segment[0] : params.segment),
+  );
+  const needle = String(
+    qProp ?? (Array.isArray(params.q) ? params.q[0] : params.q) ?? '',
+  );
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const onBack = useSmartBack('/(app)/(employee)/(tabs)/tasks' as Href);
@@ -50,7 +70,7 @@ export function WorkerSalesOrderItemsScreen() {
   if (query.isError && !query.data) {
     return (
       <AppScreen>
-        <BackButton onPress={onBack} />
+        {embedded ? null : <BackButton onPress={onBack} />}
         <ErrorState
           title={t('mobile.tasks.errorTitle')}
           description={t('mobile.tasks.errorBody')}
@@ -87,12 +107,12 @@ export function WorkerSalesOrderItemsScreen() {
                 gap: theme.spacing.sm,
               }}
             >
-              <BackButton onPress={onBack} />
+              {embedded ? null : <BackButton onPress={onBack} />}
               <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
                 <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
                   {t('mobile.tasks.orderItemsEyebrow')}
                 </AppText>
-                <AppText variant="largeTitle" weight={titleWeight}>
+                <AppText variant={embedded ? 'title' : 'largeTitle'} weight={titleWeight}>
                   {t('mobile.tasks.orderItemsTitle')}
                 </AppText>
                 {salesOrder?.number ? (

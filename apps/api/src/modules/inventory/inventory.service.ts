@@ -39,6 +39,7 @@ import {
   type RawMaterialGroupValue,
   type WarehouseTypeValue,
 } from '../../common/helpers/inventory-lifecycle.util';
+import { upsertCatalogFabric } from '../catalog/record-named-fabric';
 import { roundMoney } from '../../common/helpers/money.util';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
@@ -449,6 +450,19 @@ export class InventoryService {
         newValues: { sku: item.sku },
       },
     });
+    if (String(item.category ?? '').toUpperCase() === 'FABRIC') {
+      try {
+        await upsertCatalogFabric(this.prisma, {
+          code: item.sku,
+          nameEn: item.nameEn,
+          nameAr: item.nameAr,
+          nameHe: item.nameHe,
+          color: item.color,
+        });
+      } catch {
+        /* Inventory item is the source of truth — catalog list is best-effort. */
+      }
+    }
     return withItemScanCode(item);
   }
 
@@ -2227,8 +2241,11 @@ export class InventoryService {
         fabricProcurement: {
           include: {
             requirement: true,
+            productionOrder: { select: { id: true, number: true } },
             salesOrderLine: {
               select: {
+                id: true,
+                itemLetter: true,
                 description: true,
                 product: { select: { nameEn: true, imageUrl: true } },
               },
@@ -2290,6 +2307,10 @@ export class InventoryService {
         imageUrl: first.inventoryItem.imageUrl,
         salesOrderId: first.salesOrder?.id ?? first.salesOrderId ?? null,
         orderNumber: first.salesOrder?.number ?? null,
+        productionOrderId: first.fabricProcurement?.productionOrderId ?? first.fabricProcurement?.productionOrder?.id ?? null,
+        productionOrderNumber: first.fabricProcurement?.productionOrder?.number ?? null,
+        salesOrderLineId: first.fabricProcurement?.salesOrderLineId ?? first.fabricProcurement?.salesOrderLine?.id ?? null,
+        itemLetter: first.fabricProcurement?.salesOrderLine?.itemLetter ?? null,
         dealerName: first.salesOrder?.customer.nameEn ?? first.salesOrder?.customer.nameAr ?? null,
         productName:
           first.fabricProcurement?.salesOrderLine?.description ??

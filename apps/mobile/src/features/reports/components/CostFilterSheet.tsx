@@ -7,6 +7,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -54,8 +55,6 @@ const SECTION_ICON = {
   lifecycle: 'albums-outline',
   sort: 'swap-vertical-outline',
 } as const satisfies Record<string, keyof typeof Ionicons.glyphMap>;
-
-const LIST_BOX_MAX = 200;
 
 export function costFilterSheetMaxHeight(windowHeight: number) {
   return Math.min(Math.round(windowHeight * 0.88), 720);
@@ -681,6 +680,7 @@ function FloorChip({
 
 function ScrollableOptionList({ children }: { children: ReactNode }) {
   const { colors, theme, colorScheme } = useTheme();
+  const { nestedListHeight } = useSheetListViewport();
   return (
     <View
       testID="cost-filter-option-list"
@@ -690,7 +690,7 @@ function ScrollableOptionList({ children }: { children: ReactNode }) {
         borderRadius: theme.radius.xl,
         backgroundColor: colors.surface,
         overflow: 'hidden',
-        maxHeight: LIST_BOX_MAX,
+        maxHeight: nestedListHeight,
         ...orderBoardShadow(colorScheme),
       }}
     >
@@ -728,6 +728,7 @@ function NamedSearchPicker({
 }) {
   const { isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { nestedListHeight } = useSheetListViewport();
   const selected = items.find((d) => d.id === selectedId);
   const needle = query.trim().toLowerCase();
   const filtered = useMemo(() => {
@@ -794,7 +795,7 @@ function NamedSearchPicker({
           borderRadius: theme.radius.xl,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          maxHeight: LIST_BOX_MAX,
+          maxHeight: nestedListHeight,
           ...orderBoardShadow(colorScheme),
         }}
       >

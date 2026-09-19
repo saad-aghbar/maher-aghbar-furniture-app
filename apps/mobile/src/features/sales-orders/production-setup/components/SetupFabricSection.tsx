@@ -15,6 +15,8 @@ type Props = {
   requestedFabricLabel?: string | null;
   editable: boolean;
   onPickFabric?: () => void;
+  onRecordRequested?: () => void;
+  recording?: boolean;
 };
 
 export function SetupFabricSection({
@@ -22,6 +24,8 @@ export function SetupFabricSection({
   requestedFabricLabel,
   editable,
   onPickFabric,
+  onRecordRequested,
+  recording,
 }: Props) {
   const { t, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
@@ -125,6 +129,14 @@ export function SetupFabricSection({
         <SecondaryButton
           label={t('mobile.productionSetup.fabric.pick')}
           onPress={onPickFabric}
+        />
+      ) : null}
+
+      {editable && requested && onRecordRequested ? (
+        <SecondaryButton
+          label={t('mobile.productionSetup.fabric.record')}
+          onPress={onRecordRequested}
+          loading={recording}
         />
       ) : null}
     </OrderBoardCard>

@@ -15,14 +15,16 @@ import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { SkeletonShimmer, haptics } from '@/motion';
 import { useLocale } from '@/i18n';
-import { useWindowMetrics } from '@/adaptive/windowMetrics';
 import { useTheme } from '@/theme';
+import { productDetailHeroHeight } from '../productDetailHeroLayout';
 
 type ProductImageCarouselProps = {
   uris: string[];
   aspectRatio?: number;
-  /** Overlay back control on the hero (PDP). */
+  /** Overlay back control on the hero (full-screen PDP). Hidden in a split pane. */
   onBack?: () => void;
+  /** Skip notch inset — the catalog desk already sits below the status bar. */
+  embedded?: boolean;
   /** Optional favorite toggle opposite the back control. */
   favorited?: boolean;
   onToggleFavorite?: () => void;
@@ -32,14 +34,19 @@ export function ProductImageCarousel({
   uris,
   aspectRatio = 1,
   onBack,
+  embedded = false,
   favorited = false,
   onToggleFavorite,
 }: ProductImageCarouselProps) {
   const { colors, theme } = useTheme();
-  const { width: SCREEN_W } = useWindowMetrics();
   const { t, isRTL } = useLocale();
   const insets = useSafeAreaInsets();
-  const height = Math.round(SCREEN_W / aspectRatio);
+  const [paneW, setPaneW] = useState(0);
+  const width = paneW;
+  const height = productDetailHeroHeight(width || 0, aspectRatio);
+  const overlayTop = embedded
+    ? theme.spacing.sm
+    : Math.max(insets.top, theme.spacing.sm);
   const [index, setIndex] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
@@ -58,10 +65,15 @@ export function ProductImageCarousel({
   const empty = !uris.length;
 
   return (
-    <View>
+    <View
+      onLayout={(e) => {
+        const next = Math.round(e.nativeEvent.layout.width);
+        if (next > 0 && next !== paneW) setPaneW(next);
+      }}
+    >
       <View
         style={{
-          width: SCREEN_W,
+          width: '100%',
           height,
           backgroundColor: empty ? colors.background : colors.surfaceSecondary,
         }}
@@ -70,7 +82,7 @@ export function ProductImageCarousel({
           <Animated.View entering={FadeIn.duration(280)} style={{ flex: 1 }}>
             <EmptyProductImage caption={t('mobile.productDetail.noImage')} />
           </Animated.View>
-        ) : (
+        ) : width > 0 ? (
           <FlatList
             ref={listRef}
             data={uris}
@@ -81,6 +93,11 @@ export function ProductImageCarousel({
             onViewableItemsChanged={onViewable}
             viewabilityConfig={{ viewAreaCoveragePercentThreshold: 60 }}
             onScrollToIndexFailed={() => undefined}
+            getItemLayout={(_, index) => ({
+              length: width,
+              offset: width * index,
+              index,
+            })}
             renderItem={({ item }) => (
               <Pressable
                 onPress={() => {
@@ -90,7 +107,7 @@ export function ProductImageCarousel({
                 accessibilityRole="imagebutton"
                 accessibilityLabel={t('mobile.productDetail.openImage')}
               >
-                <View style={{ width: SCREEN_W, height, backgroundColor: colors.surfaceSecondary }}>
+                <View style={{ width, height, backgroundColor: colors.surfaceSecondary }}>
                   {!loaded[item] ? (
                     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                       <SkeletonShimmer height={height} />
@@ -99,7 +116,7 @@ export function ProductImageCarousel({
                   <Image
                     source={{ uri: item }}
                     style={{
-                      width: SCREEN_W,
+                      width,
                       height,
                       opacity: loaded[item] ? 1 : 0,
                     }}
@@ -110,7 +127,7 @@ export function ProductImageCarousel({
               </Pressable>
             )}
           />
-        )}
+        ) : null}
 
         {onBack ? (
           <Pressable
@@ -122,7 +139,7 @@ export function ProductImageCarousel({
             accessibilityLabel={t('mobile.productDetail.back')}
             style={{
               position: 'absolute',
-              top: Math.max(insets.top, theme.spacing.sm),
+              top: overlayTop,
               ...(isRTL ? { right: theme.spacing.lg } : { left: theme.spacing.lg }),
               width: 40,
               height: 40,
@@ -156,7 +173,7 @@ export function ProductImageCarousel({
             }
             style={{
               position: 'absolute',
-              top: Math.max(insets.top, theme.spacing.sm),
+              top: overlayTop,
               ...(isRTL ? { left: theme.spacing.lg } : { right: theme.spacing.lg }),
               width: 40,
               height: 40,
@@ -180,7 +197,7 @@ export function ProductImageCarousel({
           <View
             style={{
               position: 'absolute',
-              top: Math.max(insets.top, theme.spacing.sm) + 6,
+              top: overlayTop + 6,
               alignSelf: 'center',
               left: 0,
               right: 0,

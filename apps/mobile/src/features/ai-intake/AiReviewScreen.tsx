@@ -27,6 +27,7 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useLocale } from '@/i18n';
 import { SuccessBurst, haptics } from '@/motion';
@@ -61,6 +62,7 @@ export function AiReviewScreen({ jobId }: AiReviewScreenProps) {
   const { user } = useAuth();
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const tabBarReserve = useTabBarReserve();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
@@ -443,9 +445,9 @@ export function AiReviewScreen({ jobId }: AiReviewScreenProps) {
         open={customerSheetOpen}
         onClose={() => setCustomerSheetOpen(false)}
         title={t('mobile.aiIntake.selectDealer')}
-        sheetHeight={420}
+        sheetHeight={sheetHeight}
       >
-        <ScrollView style={{ maxHeight: 320 }}>
+        <ScrollView style={{ maxHeight: listHeight }}>
           {customers.map((c) => (
             <Pressable
               key={c.id}

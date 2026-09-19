@@ -1,13 +1,13 @@
 import { type ReactElement } from 'react';
 import { ScrollView, View } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
-import { resolveSheetHeightCap } from '@/components/sheets/BottomSheet';
+import { resolveSheetHeightCap, SHEET_HEIGHT_PHONE_RATIO } from '@/components/sheets/BottomSheet';
 import { HARNESS_WINDOW } from './harnessScopes';
 import { HarnessProviders } from './testProviders';
 
 export { resolveSheetHeightCap };
 
-export const DEFAULT_SHEET_MAX_RATIO = 0.7;
+export const DEFAULT_SHEET_MAX_RATIO = SHEET_HEIGHT_PHONE_RATIO;
 
 export function defaultSheetMaxHeight(windowHeight: number = HARNESS_WINDOW.height) {
   return Math.round(windowHeight * DEFAULT_SHEET_MAX_RATIO);

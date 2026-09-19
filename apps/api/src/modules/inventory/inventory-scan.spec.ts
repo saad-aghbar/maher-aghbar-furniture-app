@@ -23,6 +23,17 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     inventoryTransaction: {},
     warehouse: {},
     auditEvent: { create: jest.fn().mockResolvedValue({}) },
+    fabric: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'fab-cat-1',
+        isActive: true,
+        nameHe: null,
+        color: null,
+        ...data,
+      })),
+      update: jest.fn(),
+    },
     $transaction: jest.fn(async (arg: unknown) => {
       if (Array.isArray(arg)) return Promise.all(arg);
       return (arg as (tx: unknown) => unknown)(prisma);
@@ -102,6 +113,7 @@ describe('inventory scan identity', () => {
     expect(data.barcode).toBeUndefined();
     expect(created.scanCode).toBe('MAT-TEST-001');
     expect(created.qrCode).toBe('MAT-TEST-001');
+    expect(prisma.fabric.create).toHaveBeenCalled();
   });
 
   it('accessory create uses the same qrCode=sku default', async () => {

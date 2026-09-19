@@ -91,4 +91,57 @@ describe('dealer basket sheets', () => {
       expect(view.getByTestId('named-pick-v-250')).toBeTruthy();
     });
   });
+
+  it('lets the dealer type a fabric name that is not on the list', async () => {
+    const onSelect = jest.fn();
+    const view = await renderSheet(
+      <NamedPickerSheet
+        open
+        onClose={() => undefined}
+        title="Fabric"
+        allowCustom
+        rows={[{ id: 'fab-linen', name: 'Linen Beige', caption: 'FAB-LINEN' }]}
+        selectedId={null}
+        onSelect={onSelect}
+      />,
+    );
+    expect(view.getByTestId('named-pick-custom')).toBeTruthy();
+    expect(view.getByTestId('named-pick-custom-input')).toBeTruthy();
+    expect(view.getByTestId('named-pick-search')).toBeTruthy();
+    expect(view.getByTestId('named-pick-fab-linen')).toBeTruthy();
+    expect(view.queryByText('FAB-LINEN')).toBeNull();
+    fireEvent.changeText(view.getByTestId('named-pick-custom-input'), 'my velvet');
+    expect(view.getByTestId('named-pick-fab-linen')).toBeTruthy();
+    await waitFor(() => {
+      fireEvent.press(view.getByTestId('named-pick-custom'));
+      expect(onSelect).toHaveBeenCalledWith(null, 'my velvet');
+    });
+  });
+
+  it('lets the dealer type a colour that is not on the list', async () => {
+    const onSelect = jest.fn();
+    const view = await renderSheet(
+      <NamedPickerSheet
+        open
+        onClose={() => undefined}
+        title="Colour"
+        allowCustom
+        customHint="type your own colour, or pick one below."
+        customPlaceholder="your colour"
+        rows={[{ id: 'col-beige', name: 'Beige', caption: 'COL-BEIGE' }]}
+        selectedId={null}
+        onSelect={onSelect}
+      />,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('named-pick-custom-input')).toBeTruthy();
+    });
+    expect(view.getByTestId('named-pick-search')).toBeTruthy();
+    expect(view.queryByText('COL-BEIGE')).toBeNull();
+    fireEvent.changeText(view.getByTestId('named-pick-custom-input'), 'sand');
+    await waitFor(() => {
+      fireEvent.press(view.getByTestId('named-pick-custom'));
+      expect(onSelect).toHaveBeenCalledWith(null, 'sand');
+    });
+  });
 });

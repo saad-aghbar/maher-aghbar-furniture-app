@@ -21,7 +21,13 @@ import type { Href } from 'expo-router';
 
 const BACK = '/(app)/(admin)/reports/products' as Href;
 
-export function CostProductProfileScreen({ productId }: { productId: string }) {
+export function CostProductProfileScreen({
+  productId,
+  embedded = false,
+}: {
+  productId: string;
+  embedded?: boolean;
+}) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
@@ -47,7 +53,7 @@ export function CostProductProfileScreen({ productId }: { productId: string }) {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK} />
+          {embedded ? null : <ScreenBackLead fallback={BACK} />}
         </View>
         <AppText
           variant="largeTitle"
@@ -117,15 +123,19 @@ export function CostProductProfileScreen({ productId }: { productId: string }) {
                   <CostPressableRow
                     key={row.variantId}
                     accessibilityLabel={row.variant?.sku ?? row.variantId}
-                    onPress={() =>
+                    onPress={() => {
+                      if (embedded) {
+                        router.setParams({ selected: `v:${productId}:${row.variantId}` });
+                        return;
+                      }
                       router.push(
                         variantProfileHref(productId, row.variantId, {
                           from: range.from,
                           to: range.to,
                           dateBasis,
                         }),
-                      )
-                    }
+                      );
+                    }}
                   >
                     <CostMoneyLine
                       label={localizedName(locale, row.variant, row.variant?.sku || row.variantId)}

@@ -12,7 +12,7 @@ import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import type { TaskBlockerCategory } from '../api';
 import {
-  PROBLEM_CATEGORY_LIST_MAX_HEIGHT,
+  problemCategoryListMaxHeight,
   REPORT_PROBLEM_CATEGORIES,
   reportProblemSheetHeight,
   trimmedProblemReason,
@@ -117,7 +117,7 @@ export function ReportProblemSheet({ open, taskId, submitting, onClose, onSubmit
             <ScrollView
               nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: PROBLEM_CATEGORY_LIST_MAX_HEIGHT }}
+              style={{ maxHeight: problemCategoryListMaxHeight(windowH) }}
               contentContainerStyle={{ gap: theme.spacing.sm }}
             >
               {REPORT_PROBLEM_CATEGORIES.map((cat, index) => {

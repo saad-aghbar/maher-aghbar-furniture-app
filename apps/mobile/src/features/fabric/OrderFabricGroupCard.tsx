@@ -10,16 +10,19 @@ import { FabricRowBody } from './FabricRowBody';
 import { resolveFabricTone } from './fabricToneVisuals';
 import {
   fabricAwaitsSupply,
+  fabricOrderShowsSubOrders,
   fabricRemainingNeed,
   fabricStockCoverage,
   type FabricOrderGroup,
   type FabricStatusSurface,
+  type FabricSubOrderGroup,
   type FabricTrackerRow,
 } from './selectFabricTracker';
 
 type Props = {
   group: FabricOrderGroup;
   onPressOrder?: () => void;
+  onPressSubOrder?: (sub: FabricSubOrderGroup) => void;
   onPressFabric: (row: FabricTrackerRow) => void;
   surface?: FabricStatusSurface;
   /** Purchasing shows supplier on child rows. */
@@ -30,12 +33,13 @@ type Props = {
 };
 
 /**
- * ORDER is the parent. Fabrics are children. The sales order number appears
- * once — never on every fabric row.
+ * ORDER is the parent. Factory sub-orders (SO-xxx.A) nest under it.
+ * Fabrics hang off the sub-order, never off every line of the sales order.
  */
 export function OrderFabricGroupCard({
   group,
   onPressOrder,
+  onPressSubOrder,
   onPressFabric,
   surface = 'desk',
   showSupplier = false,
@@ -50,6 +54,7 @@ export function OrderFabricGroupCard({
     ready: group.readyCount,
     required: group.requiredCount,
   });
+  const nested = fabricOrderShowsSubOrders(group);
 
   return (
     <View
@@ -100,20 +105,36 @@ export function OrderFabricGroupCard({
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
+            alignItems: nested ? 'flex-start' : 'center',
             justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
         >
           {group.orderNumber ? (
-            <AppText
-              variant="label"
-              weight={titleWeight}
-              dir="ltr"
-              style={{ flexShrink: 1, fontSize: 16, color: colors.brand }}
-            >
-              {group.orderNumber}
-            </AppText>
+            <View style={{ flex: 1, gap: 2 }}>
+              {nested ? (
+                <AppText
+                  variant="caption"
+                  weight={titleWeight}
+                  style={{
+                    color: colors.brand,
+                    letterSpacing: locale === 'ar' ? 0 : 0.5,
+                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                    textAlign: isRTL ? 'right' : 'left',
+                  }}
+                >
+                  {t('mobile.inventory.fabricSalesOrderEyebrow')}
+                </AppText>
+              ) : null}
+              <AppText
+                variant="label"
+                weight={titleWeight}
+                dir="ltr"
+                style={{ flexShrink: 1, fontSize: 16, color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {group.orderNumber}
+              </AppText>
+            </View>
           ) : (
             <AppText variant="caption" color="muted">
               {t('mobile.inventory.fabricUnassignedOrder')}
@@ -136,9 +157,11 @@ export function OrderFabricGroupCard({
             alignItems: 'center',
           }}
         >
-          <ProductThumb uri={group.productImageUrl} size={56} radius={theme.radius.lg} />
+          {!nested ? (
+            <ProductThumb uri={group.productImageUrl} size={56} radius={theme.radius.lg} />
+          ) : null}
           <View style={{ flex: 1, gap: 2 }}>
-            {group.productName ? (
+            {!nested && group.productName ? (
               <AppText
                 weight={titleWeight}
                 numberOfLines={2}
@@ -155,6 +178,15 @@ export function OrderFabricGroupCard({
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
                 {group.dealerName}
+              </AppText>
+            ) : null}
+            {nested ? (
+              <AppText
+                variant="caption"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {t('mobile.inventory.fabricSubOrdersCount', { n: group.subOrders.length })}
               </AppText>
             ) : null}
             {showSupplier && group.purchaseOrderNumber ? (
@@ -187,55 +219,232 @@ export function OrderFabricGroupCard({
         style={{
           paddingHorizontal: theme.spacing.lg,
           paddingVertical: theme.spacing.sm,
+          gap: theme.spacing.sm,
           ...(isRTL
             ? { paddingRight: theme.spacing.lg + 4 }
             : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
-        <AppText
-          variant="caption"
-          weight={titleWeight}
-          style={{
-            color: colors.brand,
-            letterSpacing: locale === 'ar' ? 0 : 0.5,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-            marginBottom: theme.spacing.xs,
-            textAlign: isRTL ? 'right' : 'left',
-          }}
-        >
-          {t('mobile.inventory.fabricChildrenEyebrow')}
-        </AppText>
-        {group.rows.map((row, index) => (
-          <View
-            key={row.id}
-            style={{
-              borderTopWidth: index === 0 ? 0 : 1,
-              borderTopColor: colors.border,
-            }}
-          >
-            <AnimatedPressable
-              variant="card"
-              accessibilityRole="button"
-              accessibilityLabel={row.label}
-              onPress={() => {
-                void haptics.selection();
-                onPressFabric(row);
+        {nested ? (
+          group.subOrders.map((sub) => (
+            <SubOrderBlock
+              key={sub.id}
+              sub={sub}
+              onPressSubOrder={onPressSubOrder}
+              onPressFabric={onPressFabric}
+              showSupplier={showSupplier}
+              surface={surface}
+              stockFreeByItemId={stockFreeByItemId}
+            />
+          ))
+        ) : (
+          <>
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{
+                color: colors.brand,
+                letterSpacing: locale === 'ar' ? 0 : 0.5,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              <FabricRowBody
-                row={row}
-                embedded
-                disclose
-                showOrder={false}
-                showSupplier={showSupplier}
-                surface={surface}
-                stockHint={stockHintForRow(row, stockFreeByItemId, t)}
-              />
-            </AnimatedPressable>
-          </View>
-        ))}
+              {t('mobile.inventory.fabricChildrenEyebrow')}
+            </AppText>
+            <FabricChildList
+              rows={group.rows}
+              onPressFabric={onPressFabric}
+              showSupplier={showSupplier}
+              surface={surface}
+              stockFreeByItemId={stockFreeByItemId}
+            />
+          </>
+        )}
       </View>
     </View>
+  );
+}
+
+function SubOrderBlock({
+  sub,
+  onPressSubOrder,
+  onPressFabric,
+  showSupplier,
+  surface,
+  stockFreeByItemId,
+}: {
+  sub: FabricSubOrderGroup;
+  onPressSubOrder?: (sub: FabricSubOrderGroup) => void;
+  onPressFabric: (row: FabricTrackerRow) => void;
+  showSupplier: boolean;
+  surface: FabricStatusSurface;
+  stockFreeByItemId?: Record<string, number>;
+}) {
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const readyLabel = t('mobile.purchasing.fabricReadyCount', {
+    ready: sub.readyCount,
+    required: sub.requiredCount,
+  });
+  const number = sub.productionOrderNumber;
+  const open = Boolean(onPressSubOrder && sub.productionOrderId);
+
+  return (
+    <View
+      style={{
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceSecondary,
+        overflow: 'hidden',
+      }}
+    >
+      <AnimatedPressable
+        variant="card"
+        accessibilityRole="button"
+        accessibilityLabel={`${number ?? ''} ${sub.productName ?? ''} ${readyLabel}`.trim()}
+        disabled={!open}
+        onPress={() => {
+          if (!open || !onPressSubOrder) return;
+          void haptics.selection();
+          onPressSubOrder(sub);
+        }}
+        style={{
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          gap: 2,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            style={{
+              color: colors.brand,
+              letterSpacing: locale === 'ar' ? 0 : 0.5,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            }}
+          >
+            {t('mobile.inventory.fabricSubOrderEyebrow')}
+          </AppText>
+          <AppText
+            variant="caption"
+            dir="ltr"
+            style={{ color: sub.attention ? colors.warning : colors.textMuted }}
+          >
+            {readyLabel}
+          </AppText>
+        </View>
+        {number ? (
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            dir="ltr"
+            style={{ color: colors.textPrimary, textAlign: isRTL ? 'right' : 'left' }}
+          >
+            {number}
+          </AppText>
+        ) : null}
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+            marginTop: 2,
+          }}
+        >
+          <ProductThumb uri={sub.productImageUrl} size={44} radius={theme.radius.md} />
+          {sub.productName ? (
+            <AppText
+              variant="caption"
+              color="secondary"
+              numberOfLines={2}
+              style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {sub.productName}
+            </AppText>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+          {open ? (
+            <Ionicons
+              name={isRTL ? 'chevron-back' : 'chevron-forward'}
+              size={14}
+              color={colors.textMuted}
+            />
+          ) : null}
+        </View>
+      </AnimatedPressable>
+      <View style={{ paddingHorizontal: theme.spacing.md }}>
+        <FabricChildList
+          rows={sub.rows}
+          onPressFabric={onPressFabric}
+          showSupplier={showSupplier}
+          surface={surface}
+          stockFreeByItemId={stockFreeByItemId}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FabricChildList({
+  rows,
+  onPressFabric,
+  showSupplier,
+  surface,
+  stockFreeByItemId,
+}: {
+  rows: FabricTrackerRow[];
+  onPressFabric: (row: FabricTrackerRow) => void;
+  showSupplier: boolean;
+  surface: FabricStatusSurface;
+  stockFreeByItemId?: Record<string, number>;
+}) {
+  const { colors } = useTheme();
+  const { t } = useLocale();
+  return (
+    <>
+      {rows.map((row, index) => (
+        <View
+          key={row.id}
+          style={{
+            borderTopWidth: index === 0 ? 0 : 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          <AnimatedPressable
+            variant="card"
+            accessibilityRole="button"
+            accessibilityLabel={row.label}
+            onPress={() => {
+              void haptics.selection();
+              onPressFabric(row);
+            }}
+          >
+            <FabricRowBody
+              row={row}
+              embedded
+              disclose
+              showOrder={false}
+              showSupplier={showSupplier}
+              surface={surface}
+              stockHint={stockHintForRow(row, stockFreeByItemId, t)}
+            />
+          </AnimatedPressable>
+        </View>
+      ))}
+    </>
   );
 }
 

@@ -12,6 +12,7 @@ import {
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
 import { locationPickerLabel, pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -52,7 +53,8 @@ export function AddMaterialSheet({
   const { t, locale, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(height);
+  const { isDesk } = useMaherLayout();
+  const pickerHeights = pickerViewportHeights(height, isDesk);
   const fabric = isFabricCategory(material?.category);
   const [step, setStep] = useState<Step>('destination');
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId);

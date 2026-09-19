@@ -19,6 +19,7 @@ type Props = {
   quotation: DealerQuoteRow;
   onPress: () => void;
   onPdf?: () => void;
+  selected?: boolean;
 };
 
 function toneColor(
@@ -34,7 +35,7 @@ function toneColor(
 /**
  * Dealer quote folio — validity stub + offer inset, not an invoice money stack.
  */
-export function QuotationBoardCard({ quotation, onPress, onPdf }: Props) {
+export function QuotationBoardCard({ quotation, onPress, onPdf, selected = false }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -68,8 +69,8 @@ export function QuotationBoardCard({ quotation, onPress, onPdf }: Props) {
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surface,
+        borderColor: selected ? colors.brand : colors.borderStrong,
+        backgroundColor: selected ? colors.brandSoft : colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
       }}

@@ -60,6 +60,8 @@ type TasksListScreenProps = {
   fixture?: TaskListItem[];
   selectedTaskId?: string;
   onSelectTask?: (id: string) => void;
+  selectedOrderId?: string;
+  onSelectOrder?: (id: string, extras?: { segment?: string; q?: string; number?: string }) => void;
 };
 
 const INITIAL_COMPLETED_FILTERS: CompletedFiltersState = {
@@ -83,6 +85,8 @@ export function TasksListScreen({
   fixture,
   selectedTaskId,
   onSelectTask,
+  selectedOrderId,
+  onSelectOrder,
 }: TasksListScreenProps) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -446,6 +450,12 @@ export function TasksListScreen({
               q={debouncedSearch}
               index={index}
               animateEnter={animateEnter}
+              selected={item.id === selectedOrderId}
+              onSelect={
+                onSelectOrder
+                  ? () => onSelectOrder(item.id, { segment: ordersSegment, q: debouncedSearch })
+                  : undefined
+              }
             />
           )}
           ListEmptyComponent={
@@ -457,7 +467,7 @@ export function TasksListScreen({
               <EmptyState title={emptyTitle} description={emptyBody} />
             )
           }
-          extraData={`${segment}:${debouncedSearch}:${animateEnter}:${isFilterUpdating}`}
+          extraData={`${segment}:${debouncedSearch}:${animateEnter}:${isFilterUpdating}:${selectedOrderId ?? ''}`}
           keyboardShouldPersistTaps="handled"
         />
       ) : isCompleted ? (
@@ -483,6 +493,16 @@ export function TasksListScreen({
               q={debouncedCompletedQ}
               index={index}
               animateEnter={animateEnter}
+              selected={item.id === selectedOrderId}
+              onSelect={
+                onSelectOrder
+                  ? () =>
+                      onSelectOrder(item.id, {
+                        q: debouncedCompletedQ,
+                        number: item.number,
+                      })
+                  : undefined
+              }
             />
           )}
           ListEmptyComponent={
@@ -500,7 +520,7 @@ export function TasksListScreen({
             }
           }}
           onEndReachedThreshold={0.4}
-          extraData={`done:${animateEnter}:${isFilterUpdating}`}
+          extraData={`done:${animateEnter}:${isFilterUpdating}:${selectedOrderId ?? ''}`}
           keyboardShouldPersistTaps="handled"
         />
       ) : (

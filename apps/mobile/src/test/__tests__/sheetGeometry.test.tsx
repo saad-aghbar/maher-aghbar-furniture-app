@@ -26,11 +26,11 @@ describe('sheet height contract', () => {
     jest.restoreAllMocks();
   });
 
-  it('caps default height at ~70% of the window and shrinks for the keyboard', () => {
+  it('caps default height at ~82% of the window and shrinks for the keyboard', () => {
     const windowHeight = HARNESS_WINDOW.height;
     const defaultCap = resolveSheetHeightCap({ windowHeight });
     expect(defaultCap).toBe(defaultSheetMaxHeight(windowHeight));
-    expect(defaultCap).toBeLessThanOrEqual(Math.round(windowHeight * 0.7));
+    expect(defaultCap).toBeLessThanOrEqual(Math.round(windowHeight * 0.82));
 
     const withKeyboard = resolveSheetHeightCap({
       windowHeight,

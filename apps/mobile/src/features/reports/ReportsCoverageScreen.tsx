@@ -34,7 +34,13 @@ const EXTRA_ISSUES = [
   { type: 'unattributed_txs', label: 'mobile.reports.issue.unattributed_txs' },
 ] as const;
 
-export function ReportsCoverageScreen() {
+export function ReportsCoverageScreen({
+  selectedIssueType: _selectedIssueType,
+  onSelectIssue,
+}: {
+  selectedIssueType?: string;
+  onSelectIssue?: (type: string) => void;
+} = {}) {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -51,6 +57,20 @@ export function ReportsCoverageScreen() {
     if (type === 'unlinked_lines') return data?.unlinkedLines ?? 0;
     if (type === 'unpriced_skus' || type === 'inventory_valuation') return data?.unpriced?.length ?? 0;
     return 0;
+  };
+
+  const openIssue = (type: string) => {
+    if (onSelectIssue) {
+      onSelectIssue(type);
+      return;
+    }
+    router.push(
+      coverageIssuesHref(type, {
+        from: range.from,
+        to: range.to,
+        dateBasis,
+      }),
+    );
   };
 
   return (
@@ -88,15 +108,7 @@ export function ReportsCoverageScreen() {
                       key={metric.key}
                       testID={`cost-coverage-${metric.type}`}
                       accessibilityLabel={t(metric.label)}
-                      onPress={() =>
-                        router.push(
-                          coverageIssuesHref(metric.type, {
-                            from: range.from,
-                            to: range.to,
-                            dateBasis,
-                          }),
-                        )
-                      }
+                      onPress={() => openIssue(metric.type)}
                     >
                       <AppText variant="title" weight={titleWeight} dir="ltr">
                         {formatCostPercent(locale, pct)}
@@ -114,15 +126,7 @@ export function ReportsCoverageScreen() {
                 })}
                 <CostPressableRow
                   accessibilityLabel={t('mobile.reports.unlinkedLines')}
-                  onPress={() =>
-                    router.push(
-                      coverageIssuesHref('unlinked_lines', {
-                        from: range.from,
-                        to: range.to,
-                        dateBasis,
-                      }),
-                    )
-                  }
+                  onPress={() => openIssue('unlinked_lines')}
                 >
                   <AppText>{t('mobile.reports.unlinkedLines')}</AppText>
                   <AppText variant="caption" color="muted">
@@ -136,15 +140,7 @@ export function ReportsCoverageScreen() {
                   <CostPressableRow
                     key={issue.type}
                     accessibilityLabel={t(issue.label)}
-                    onPress={() =>
-                      router.push(
-                        coverageIssuesHref(issue.type, {
-                          from: range.from,
-                          to: range.to,
-                          dateBasis,
-                        }),
-                      )
-                    }
+                    onPress={() => openIssue(issue.type)}
                   >
                     <AppText>{t(issue.label)}</AppText>
                     <AppText variant="caption" color="muted">

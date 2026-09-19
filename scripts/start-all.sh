@@ -49,9 +49,7 @@ export COMPANY_NAME_EN="${COMPANY_NAME_EN:-Maher Al-Aghbar & Sons Furniture}"
 needs_prepare=0
 [[ -f "$ROOT/apps/api/dist/main.js" ]] || needs_prepare=1
 # next start requires BUILD_ID; a partial .next dir is not enough
-[[ -f "$ROOT/apps/admin-web/.next/BUILD_ID" ]] || needs_prepare=1
-[[ -f "$ROOT/apps/customer-portal/.next/BUILD_ID" ]] || needs_prepare=1
-[[ -f "$ROOT/apps/employee-portal/.next/BUILD_ID" ]] || needs_prepare=1
+[[ -f "$ROOT/apps/web/.next/BUILD_ID" ]] || needs_prepare=1
 if [[ "$needs_prepare" -eq 1 ]]; then
   echo "==> Builds missing — running prepare:launch first"
   bash "$ROOT/scripts/prepare-launch.sh"
@@ -155,19 +153,9 @@ wait_http() {
 }
 
 if ! ensure_port_free_or_owned 3000 admin; then
-  start_bg admin "cd '$ROOT/apps/admin-web' && NODE_ENV=production NEXT_PUBLIC_API_URL='$NEXT_PUBLIC_API_URL' pnpm start"
+  start_bg admin "cd '$ROOT/apps/web' && NODE_ENV=production NEXT_PUBLIC_API_URL='$NEXT_PUBLIC_API_URL' pnpm start"
 fi
 wait_http "http://localhost:3000/ar/login" "admin" || true
-
-if ! ensure_port_free_or_owned 3001 customer; then
-  start_bg customer "cd '$ROOT/apps/customer-portal' && NODE_ENV=production NEXT_PUBLIC_API_URL='$NEXT_PUBLIC_API_URL' pnpm start"
-fi
-wait_http "http://localhost:3001/ar/login" "customer" || true
-
-if ! ensure_port_free_or_owned 3002 employee; then
-  start_bg employee "cd '$ROOT/apps/employee-portal' && NODE_ENV=production NEXT_PUBLIC_API_URL='$NEXT_PUBLIC_API_URL' pnpm start"
-fi
-wait_http "http://localhost:3002/ar/login" "employee" || true
 
 if [[ -f "$ROOT/apps/worker/dist/main.js" ]]; then
   start_bg worker "cd '$ROOT/apps/worker' && \

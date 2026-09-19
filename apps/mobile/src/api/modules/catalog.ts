@@ -185,6 +185,19 @@ export async function listCatalogFabrics(q?: string) {
   return apiGet<PaginatedResponse<CatalogNamedRow>>(`/fabrics${qs}`);
 }
 
+export async function recordCatalogFabric(input: {
+  nameEn: string;
+  nameAr?: string;
+  nameHe?: string;
+  code?: string;
+  color?: string;
+}) {
+  return apiPost<CatalogNamedRow & { created: boolean; isActive?: boolean }>(
+    '/fabrics/record',
+    input,
+  );
+}
+
 export async function listCatalogColors(q?: string) {
   const qs = toSearchParams({ page: 1, pageSize: 200, q });
   return apiGet<PaginatedResponse<CatalogNamedRow>>(`/colors${qs}`);

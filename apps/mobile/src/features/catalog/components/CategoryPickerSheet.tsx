@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +16,7 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { LocaleNameField } from './BilingualNameField';
 import { resolveTrilingualName } from '@/i18n/resolveTrilingualName';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
@@ -84,7 +80,7 @@ export function CategoryPickerSheet({
   const reduce = useReducedMotion();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { height } = useWindowDimensions();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreate);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -92,10 +88,6 @@ export function CategoryPickerSheet({
   const createCategoryTitle = t('catalog.createCategory');
   const namesRequiredMsg = t('catalog.namesRequired');
   const categoryCreatedMsg = t('catalog.categoryCreated');
-  const sheetHeight = Math.min(
-    Math.round(height * (requireConfirm ? 0.7 : allowCreate ? 0.68 : 0.62)),
-    requireConfirm ? 620 : 580,
-  );
   const [query, setQuery] = useState('');
   const [draftId, setDraftId] = useState<string | null>(selectedId);
   const sheetTitle = creating
@@ -162,7 +154,7 @@ export function CategoryPickerSheet({
   const enter = (index: number) =>
     reduce ? undefined : FadeInDown.delay(30 + index * 35).duration(220);
 
-  const listMax = sheetHeight - (requireConfirm || allowCreate ? 300 : 210);
+  const listMax = Math.max(listHeight, sheetHeight - (requireConfirm || allowCreate ? 300 : 210));
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -289,6 +281,7 @@ export function CategoryPickerSheet({
           <View
             style={{
               flex: 1,
+              minHeight: listHeight,
               maxHeight: listMax,
               borderRadius: theme.radius.xl,
               borderWidth: 1,

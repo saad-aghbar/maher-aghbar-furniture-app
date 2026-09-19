@@ -1,8 +1,6 @@
 import { sanitizeFeedbackCopy } from '@/api/toastErrors';
+import { sheetNestedListHeight, sheetPickerHeight } from '@/components/sheets/sheetListViewport';
 import type { TaskBlockerCategory } from './api';
-
-export const REPORT_PROBLEM_SHEET_HEIGHT_RATIO = 0.72;
-export const PROBLEM_CATEGORY_LIST_MAX_HEIGHT = 220;
 
 export const REPORT_PROBLEM_CATEGORIES: TaskBlockerCategory[] = [
   'MATERIAL_MISSING',
@@ -16,8 +14,12 @@ export const REPORT_PROBLEM_CATEGORIES: TaskBlockerCategory[] = [
   'OTHER',
 ];
 
-export function reportProblemSheetHeight(windowHeight: number): number {
-  return Math.round(windowHeight * REPORT_PROBLEM_SHEET_HEIGHT_RATIO);
+export function reportProblemSheetHeight(windowHeight: number, isDesk = false): number {
+  return sheetPickerHeight(windowHeight, isDesk);
+}
+
+export function problemCategoryListMaxHeight(windowHeight: number, isDesk = false): number {
+  return sheetNestedListHeight(windowHeight, isDesk);
 }
 
 export function trimmedProblemReason(reason: string): string | null {

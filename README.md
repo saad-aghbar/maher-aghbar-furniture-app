@@ -10,8 +10,8 @@ Authorization is **Role → permissions**. Users inherit grants from the assigne
 |------|------------------|-----|
 | **Admin** | `ADMIN` / `SYSTEM_ADMINISTRATOR` | Admin web + Admin Mobile |
 | **Staff** | `STAFF` (e.g. Warehouse Management) | Admin web + Admin Mobile, limited by the type’s permissions |
-| **Worker** | `PRODUCTION_WORKER` | Employee portal + Worker Mobile |
-| **Customer** | `CUSTOMER` | Customer portal + Dealer Mobile — one login per dealer |
+| **Worker** | `PRODUCTION_WORKER` | Unified web `/worker` + Worker Mobile |
+| **Customer** | `CUSTOMER` | Unified web `/dealer` + Dealer Mobile — one login per dealer |
 
 Staff types are managed under **Users → Staff Types**. Add User only **selects** a type; it does not pick permissions. Editing a type updates every assignee.
 
@@ -21,9 +21,7 @@ The first system preset is **Warehouse Management** (`WAREHOUSE_MANAGEMENT`): in
 
 | App | URL / entry | Audience |
 |-----|-------------|----------|
-| Admin Web | http://localhost:3000 | Admin / staff |
-| Customer Portal | http://localhost:3001 | Customers (dealers) |
-| Employee Portal | http://localhost:3002 | Workers |
+| Unified Web | http://localhost:3000 | Admin, staff, dealers, workers |
 | Mobile (Expo SDK 54) | Physical iPhone: `pnpm mobile:dev-client` → **Maher Al-Aghbar Furniture** | Admin, staff, workers, dealers |
 | API + Swagger | http://localhost:4000/api/docs | Integrations |
 | Worker | background | PDF, AI/OCR, notifications |
@@ -81,9 +79,7 @@ Then in separate terminals (or use the combined command):
 
 ```bash
 pnpm --filter @maher/api dev              # API  → :4000
-pnpm --filter @maher/admin-web dev        # Admin → :3000
-pnpm --filter @maher/customer-portal dev  # Dealers → :3001
-pnpm --filter @maher/employee-portal dev  # Workers → :3002
+pnpm --filter @maher/web dev              # Unified web (admin/dealer/worker) → :3000
 ```
 
 Same thing from the repo root:
@@ -103,9 +99,7 @@ pnpm dev:apps
 
 Open:
 
-- Admin: http://localhost:3000/ar/login
-- Customer: http://localhost:3001/ar/login
-- Employee: http://localhost:3002/ar/login
+- Web: http://localhost:3000/ar/login (admin / dealer / worker after sign-in)
 - API docs: http://localhost:4000/api/docs
 - API health: http://localhost:4000/api/v1/health
 
@@ -315,14 +309,12 @@ Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user record
 | Command | Purpose |
 |---------|---------|
 | `pnpm prepare:launch` | Ensure Postgres/Redis, push schema, seed, build all web apps |
-| `pnpm launch` | Prepare if needed, then start API + 3 portals + worker |
-| `pnpm start:all` | Start API + portals + worker (prepare if builds missing) |
-| `pnpm stop:all` | Stop those services and free ports 3000–3002 and 4000 |
+| `pnpm launch` | Prepare if needed, then start API + unified web + worker |
+| `pnpm start:all` | Start API + web + worker (prepare if builds missing) |
+| `pnpm stop:all` | Stop those services and free ports 3000 and 4000 |
 | `pnpm --filter @maher/api dev` | API watch mode on `:4000` |
-| `pnpm dev:apps` | API + 3 portals in watch mode |
-| `pnpm --filter @maher/admin-web dev` | Admin web watch `:3000` |
-| `pnpm --filter @maher/customer-portal dev` | Customer portal watch `:3001` |
-| `pnpm --filter @maher/employee-portal dev` | Employee portal watch `:3002` |
+| `pnpm dev:apps` | API + unified web in watch mode |
+| `pnpm --filter @maher/web dev` | Unified web watch `:3000` (admin / dealer / worker) |
 
 ### Mobile
 

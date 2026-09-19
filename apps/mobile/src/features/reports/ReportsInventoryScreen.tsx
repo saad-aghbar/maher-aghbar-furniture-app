@@ -45,7 +45,13 @@ const CLASS_FILTER: Record<string, 'RAW' | 'SEMI' | 'FIN'> = {
   FINISHED_GOOD: 'FIN',
 };
 
-export function ReportsInventoryScreen() {
+export function ReportsInventoryScreen({
+  selectedItemId: _selectedItemId,
+  onSelectItem,
+}: {
+  selectedItemId?: string;
+  onSelectItem?: (id: string) => void;
+} = {}) {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -202,9 +208,13 @@ export function ReportsInventoryScreen() {
           <ListItemEnter index={index}>
             <InventoryItemCard
               row={item}
-              onPress={() =>
-                router.push(inventoryItemHref(item.id, { from: range.from, to: range.to, dateBasis }))
-              }
+              onPress={() => {
+                if (onSelectItem) {
+                  onSelectItem(item.id);
+                  return;
+                }
+                router.push(inventoryItemHref(item.id, { from: range.from, to: range.to, dateBasis }));
+              }}
             />
           </ListItemEnter>
         )}

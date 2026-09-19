@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -290,6 +291,7 @@ export function InventoryWarehouseSearchPicker({
 }) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { nestedListHeight } = useSheetListViewport();
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -368,7 +370,7 @@ export function InventoryWarehouseSearchPicker({
           borderRadius: theme.radius.xl,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          maxHeight: 200,
+          maxHeight: nestedListHeight,
           ...orderBoardShadow(colorScheme),
         }}
       >

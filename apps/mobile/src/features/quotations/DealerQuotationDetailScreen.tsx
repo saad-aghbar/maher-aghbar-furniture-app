@@ -39,6 +39,7 @@ import { dealerCanDecideQuotation, dealerQuoteRailTone } from './dealerQuotation
 type Props = {
   quotationId: string;
   backFallback: Href;
+  embedded?: boolean;
 };
 
 function money(locale: Locale, value: number): string {
@@ -49,10 +50,12 @@ function DetailTitle({
   title,
   titleWeight,
   backFallback,
+  embedded = false,
 }: {
   title: string;
   titleWeight: 'medium' | 'semibold';
   backFallback: Href;
+  embedded?: boolean;
 }) {
   const { isRTL } = useLocale();
   const { theme } = useTheme();
@@ -60,18 +63,20 @@ function DetailTitle({
 
   return (
     <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
-          zIndex: 1,
-          justifyContent: 'center',
-        }}
-      >
-        <ScreenBackLead fallback={backFallback} />
-      </View>
+      {embedded ? null : (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+            zIndex: 1,
+            justifyContent: 'center',
+          }}
+        >
+          <ScreenBackLead fallback={backFallback} />
+        </View>
+      )}
       <AppText
         variant="largeTitle"
         weight={titleWeight}
@@ -86,7 +91,7 @@ function DetailTitle({
   );
 }
 
-export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props) {
+export function DealerQuotationDetailScreen({ quotationId, backFallback, embedded = false }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -209,6 +214,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
           title={t('mobile.dealerQuotations.title')}
           titleWeight={titleWeight}
           backFallback={backFallback}
+          embedded={embedded}
         />
         <DealerEmptyState
           title={t('mobile.noModules')}
@@ -225,6 +231,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
           title={t('mobile.dealerQuotations.title')}
           titleWeight={titleWeight}
           backFallback={backFallback}
+          embedded={embedded}
         />
         <ErrorState
           title={t('mobile.adminQuotation.errorTitle')}
@@ -244,6 +251,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
         title={detail?.number ?? t('mobile.dealerQuotations.title')}
         titleWeight={titleWeight}
         backFallback={backFallback}
+        embedded={embedded}
       />
 
       <ScrollView

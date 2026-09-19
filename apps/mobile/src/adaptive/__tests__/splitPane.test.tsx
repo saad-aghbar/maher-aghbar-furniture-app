@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Text } from 'react-native';
 import { renderAdaptive } from '@/test/adaptiveHarness';
-import { SplitPane, SplitPanePlaceholder } from '../SplitPane';
+import { SplitPane, SplitPaneAside, SplitPanePlaceholder } from '../SplitPane';
 
 function Primary() {
   return <Text testID="primary-content">list</Text>;
@@ -80,6 +80,27 @@ describe('SplitPane', () => {
     await view.rerenderUi(<Host split />);
     expect(mounts).toBe(1);
     expect(view.getByTestId('counting')).toBeTruthy();
+  });
+
+  it('pads the third pane off the status bar and the window edge', async () => {
+    const view = await renderAdaptive(
+      <SplitPane
+        testID="sp"
+        split
+        primary={<Primary />}
+        detail={<Detail />}
+        secondary={
+          <SplitPaneAside testID="aside">
+            <Text testID="aside-content">readiness</Text>
+          </SplitPaneAside>
+        }
+      />,
+      { width: 1440 },
+    );
+    expect(view.getByTestId('aside-content')).toBeTruthy();
+    expect(view.getByTestId('aside').props.contentContainerStyle).toEqual(
+      expect.objectContaining({ paddingTop: 47 + 16, paddingHorizontal: 16 }),
+    );
   });
 
   it('honours a fixed primary width', async () => {

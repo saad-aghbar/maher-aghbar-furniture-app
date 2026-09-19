@@ -6,7 +6,6 @@ import { localizedName } from '@maher/i18n';
 import { can, canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -14,9 +13,7 @@ import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
-import { TextField } from '@/components/forms/TextField';
 import { ActionSheet } from '@/components/sheets/ActionSheet';
-import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
@@ -175,6 +172,10 @@ type Props = {
   initialTab?: string;
   selectedItemId?: string;
   onSelectItem?: (id: string) => void;
+  onSelectFinishedOrder?: (salesOrderId: string) => void;
+  onSelectSemiOrder?: (productionOrderId: string) => void;
+  onSelectSalesOrder?: (salesOrderId: string) => void;
+  onSelectProductionOrder?: (productionOrderId: string) => void;
 };
 
 /**
@@ -189,6 +190,10 @@ export function InventorySignatureHome({
   initialTab,
   selectedItemId,
   onSelectItem,
+  onSelectFinishedOrder,
+  onSelectSemiOrder,
+  onSelectSalesOrder,
+  onSelectProductionOrder,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -198,7 +203,6 @@ export function InventorySignatureHome({
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const { openScanner } = useCodeScanner();
-  const { isDesk } = useMaherLayout();
   const router = useRouter();
   const allowed = can(user, 'inventory.read');
   const canSync = can(user, 'inventory.adjust');
@@ -257,7 +261,6 @@ export function InventorySignatureHome({
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [scanResult, setScanResult] = useState<InventoryItem | 'not-found' | null>(null);
-  const [typedCode, setTypedCode] = useState('');
   const [inspectBin, setInspectBin] = useState<WarehouseBinContents | null>(null);
   const pendingBinPrintRef = useRef<WarehouseBinContents | null>(null);
   const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
@@ -945,33 +948,6 @@ export function InventorySignatureHome({
 
   const header = (
     <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-      {isDesk ? (
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.sm,
-            alignItems: 'flex-end',
-          }}
-        >
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <TextField
-              label={t('mobile.adaptive.scanDockLabel')}
-              value={typedCode}
-              onChangeText={setTypedCode}
-              placeholder={t('mobile.adaptive.scanDockPlaceholder')}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="go"
-              onSubmitEditing={() => void dispatchIdentifyCode(typedCode)}
-              accessibilityLabel={t('mobile.adaptive.scanDockLabel')}
-            />
-          </View>
-          <PrimaryButton
-            label={t('mobile.adaptive.scanSubmit')}
-            onPress={() => void dispatchIdentifyCode(typedCode)}
-          />
-        </View>
-      ) : null}
       <InventoryCompositionChrome
         title={
           lifecycle === 'finished'
@@ -1159,7 +1135,12 @@ export function InventorySignatureHome({
       ) : section === 'items' && lifecycle === 'materials' ? (
         categoryGroup === 'fabric' ? (
           <View style={{ marginBottom: theme.spacing.xs }}>
-            <FabricDeskSection q={q || undefined} enabled={allowed} />
+            <FabricDeskSection
+              q={q || undefined}
+              enabled={allowed}
+              onSelectSalesOrder={onSelectSalesOrder}
+              onSelectProductionOrder={onSelectProductionOrder}
+            />
           </View>
         ) : (
         <View style={{ gap: theme.spacing.sm, marginBottom: theme.spacing.xs }}>
@@ -1358,7 +1339,12 @@ export function InventorySignatureHome({
               order={item.model}
               index={index}
               animateEnter={false}
+              selected={selectedItemId === `semi:${item.model.productionOrderId}`}
               onPress={() => {
+                if (onSelectSemiOrder) {
+                  onSelectSemiOrder(item.model.productionOrderId);
+                  return;
+                }
                 router.push(
                   `/(app)/(admin)/inventory/semi/${item.model.productionOrderId}` as Href,
                 );
@@ -1369,7 +1355,12 @@ export function InventorySignatureHome({
               order={item.model}
               index={index}
               animateEnter={false}
+              selected={selectedItemId === `fg:${item.model.salesOrderId}`}
               onPress={() => {
+                if (onSelectFinishedOrder) {
+                  onSelectFinishedOrder(item.model.salesOrderId);
+                  return;
+                }
                 router.push(
                   `/(app)/(admin)/inventory/finished/${item.model.salesOrderId}` as Href,
                 );

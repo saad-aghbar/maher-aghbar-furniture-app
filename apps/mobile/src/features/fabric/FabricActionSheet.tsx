@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -48,11 +49,11 @@ export function FabricActionSheet({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const { height: windowH } = useWindowDimensions();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const cancel = secondaryLabel ?? t('mobile.purchasing.cancel');
-  const heightCap = Math.min(Math.round(windowH * 0.86), maxHeight ?? 720);
-  const scrollCap = Math.round(windowH * 0.5);
+  const heightCap = Math.min(sheetHeight, maxHeight ?? sheetHeight);
+  const scrollCap = listHeight;
 
   return (
     <BottomSheet

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { CustomerAddress } from '@/api/modules/customers';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -30,6 +31,7 @@ export function SavedAddressPickerSheet({
 }: Props) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const dark = colorScheme === 'dark';
   /** Defer nested Modal until this sheet fully unmounts (avoids iOS freeze). */
   const pendingSaveRef = useRef<(() => void) | null>(null);
@@ -44,10 +46,11 @@ export function SavedAddressPickerSheet({
         action?.();
       }}
       title={t('mobile.newOrder.savedAddressesTitle')}
-      sheetHeight={520}
+      sheetHeight={sheetHeight}
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        style={{ flex: 1, minHeight: listHeight }}
         contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.xl }}
       >
         <AppText

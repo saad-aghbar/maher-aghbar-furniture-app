@@ -3,7 +3,6 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -23,6 +22,7 @@ import { useToast } from '@/components/feedback/Toast';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { CategoryPickerSheet } from '@/features/catalog/components/CategoryPickerSheet';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -48,7 +48,6 @@ type ProductSection = {
 };
 
 const THUMB = 56;
-const LIST_MAX_H = 280;
 
 function productLabel(p: AdminProductListItem, locale: string): string {
   return localizedName(
@@ -118,7 +117,7 @@ export function AddPriceSheet({
   const { t, formatCurrency, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
-  const { height } = useWindowDimensions();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const mutation = useUpsertDealerPriceMutation(customerId);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
@@ -128,8 +127,6 @@ export function AddPriceSheet({
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const sheetHeight = Math.min(Math.round(height * 0.82), 680);
 
   const pricedIds = useMemo(() => {
     if (!pricedProductIds) return new Set<string>();
@@ -421,7 +418,7 @@ export function AddPriceSheet({
           <ScrollView
             nestedScrollEnabled
             keyboardShouldPersistTaps="handled"
-            style={{ maxHeight: LIST_MAX_H, flexGrow: 0 }}
+            style={{ maxHeight: listHeight, flexGrow: 0 }}
             contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.xs }}
             showsVerticalScrollIndicator
           >

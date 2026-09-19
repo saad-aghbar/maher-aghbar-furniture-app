@@ -15,9 +15,11 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
+import { FontScaleSwitcher } from '@/components/FontScaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
 import { rowDirection } from '@/i18n/rtl';
@@ -52,6 +54,7 @@ export function AdminHomeAtelierHero({
   const pip = useChromeSize(16);
   const router = useRouter();
   const reduce = useReducedMotion();
+  const { navigationMode } = useMaherLayout();
   const { width } = useWindowDimensions();
   const scrollY = useAtelierScrollY();
   const period = greetingPeriod(new Date().getHours());
@@ -200,6 +203,10 @@ export function AdminHomeAtelierHero({
             }}
           >
             <ExpandableLocaleSwitcher expandToward="end" />
+            {/* Sidebar widths drop the More tab, the only other home for text size. */}
+            {navigationMode === 'sidebar' ? (
+              <FontScaleSwitcher expandToward="end" />
+            ) : null}
             <ThemeSwitcher />
             {canOpenNotifications ? (
               <Pressable

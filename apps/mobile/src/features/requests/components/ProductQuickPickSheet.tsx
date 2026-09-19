@@ -4,6 +4,7 @@ import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useWindowMetrics } from '@/adaptive/windowMetrics';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import type { BrowseProduct } from '@/features/catalog/api';
 import { toProductCard } from '@/features/catalog/selectProductCard';
 import { useLocale } from '@/i18n';
@@ -37,6 +38,7 @@ export function ProductQuickPickSheet({
   const { colors, theme, colorScheme } = useTheme();
   const { width } = useWindowMetrics();
   const { columnCapacity, isCompact } = useMaherLayout();
+  const { sheetHeight } = useSheetListViewport();
   const dark = colorScheme === 'dark';
   const pad = theme.spacing.lg;
   const gap = theme.spacing.md;
@@ -46,7 +48,7 @@ export function ProductQuickPickSheet({
   const cards = products.map((p) => toProductCard(p, locale));
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={title} sheetHeight={560}>
+    <BottomSheet open={open} onClose={onClose} title={title} sheetHeight={sheetHeight}>
       <View style={{ gap: theme.spacing.md, flex: 1 }}>
         {subtitle ? (
           <AppText

@@ -2,6 +2,7 @@ import { ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -41,6 +42,7 @@ export function InventorySemiStagePickerSheet({
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   function pick(code: string | null) {
@@ -55,11 +57,12 @@ export function InventorySemiStagePickerSheet({
       onClose={onClose}
       title={t('mobile.inventory.semiStagePickerTitle')}
       fitContent
-      maxHeight={560}
+      maxHeight={sheetHeight}
     >
       <ScrollView
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
+        style={{ flex: 1, minHeight: listHeight, maxHeight: sheetHeight - 120 }}
         contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.md }}
       >
         <AppText variant="caption" color="muted">

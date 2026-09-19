@@ -110,6 +110,14 @@ import {
   patchBasketLine,
 } from './newOrderBasket';
 import {
+  applyLineAttachmentsToBasket,
+  attachmentsForLine,
+  replaceLineAttachments,
+  resolveRequestDealerPo,
+  seedLineDealerPo,
+  uniqueNonEmpty,
+} from './newOrderItemsLayout';
+import {
   previewHasLowConfidence,
   previewItemsToScanLines,
   scanLinesToBasket,
@@ -356,8 +364,9 @@ export function NewOrderScreen() {
             : [emptyDealerFabricRow()],
         })];
         if (!orderBasket.lines.some(lineHasProduct)) {
-          setLines(restored);
-          setActiveLineId(restored[0]?.id ?? null);
+          const seeded = seedLineDealerPo(restored, local.externalOrderNumber);
+          setLines(seeded);
+          setActiveLineId(seeded[0]?.id ?? null);
         }
         setExternalOrderNumber(local.externalOrderNumber);
         setPriority(local.priority);
@@ -375,8 +384,9 @@ export function NewOrderScreen() {
       } else if (local && fromCatalog) {
         // Keep non-product draft fields so returning dealers don't retype delivery/etc.
         if (local.lines.length && !orderBasket.lines.some(lineHasProduct)) {
-          setLines(local.lines);
-          setActiveLineId(local.lines[0]?.id ?? null);
+          const seeded = seedLineDealerPo(local.lines, local.externalOrderNumber);
+          setLines(seeded);
+          setActiveLineId(seeded[0]?.id ?? null);
         }
         setExternalOrderNumber(local.externalOrderNumber);
         setPriority(local.priority);
@@ -463,7 +473,7 @@ export function NewOrderScreen() {
       productId,
       customProductName,
       quantity,
-      externalOrderNumber,
+      externalOrderNumber: resolveRequestDealerPo(lines, externalOrderNumber),
       priority,
       fabric: fabrics[0]?.type ?? fabric,
       fabricDescription: fabrics[0]?.notes ?? fabricDescription,
@@ -644,12 +654,6 @@ export function NewOrderScreen() {
     requiredDeliveryDate.trim() && !isValidOptionalDate(requiredDeliveryDate)
       ? t('mobile.newOrder.errors.dateInvalid')
       : undefined;
-
-  const overallProgress =
-    attachments.length === 0
-      ? 0
-      : attachments.reduce((sum, a) => sum + (a.status === 'uploaded' ? 1 : a.progress), 0) /
-        attachments.length;
 
   const fail = (message: string) => {
     setError(message);
@@ -962,14 +966,20 @@ export function NewOrderScreen() {
     const seatLabel = t('mobile.newOrder.dimSeat');
     const basket = sourceLines.filter(lineHasProduct);
     const fallback = sourceLines[0] ?? activeLine;
+    const requestPo = resolveRequestDealerPo(sourceLines, externalOrderNumber);
+    const distinctPos = uniqueNonEmpty(
+      sourceLines.map((line) => line.externalOrderNumber),
+    );
     const items = (basket.length ? basket : [fallback]).map((line) => {
       const custom = isCustomCatalogProduct(line.productId, line.customProductName);
       const item = lineToRequestItem(line, untitled, seatLabel);
-      if (custom) {
-        item.notes = [t('mobile.newOrder.customOrderFactoryNote'), item.notes]
-          .filter(Boolean)
-          .join('\n\n');
-      }
+      const linePo = line.externalOrderNumber.trim();
+      const extraNotes = [
+        distinctPos.length > 1 && linePo ? `#${linePo}` : '',
+        custom ? t('mobile.newOrder.customOrderFactoryNote') : '',
+        item.notes,
+      ].filter(Boolean);
+      item.notes = extraNotes.length ? extraNotes.join('\n\n') : undefined;
       return item;
     });
     const baseNotes = composeRequestNotes({ deliveryNotes, orderNotes });
@@ -977,7 +987,7 @@ export function NewOrderScreen() {
       ? [t('mobile.newOrder.customOrderFactoryNote'), baseNotes].filter(Boolean).join('\n\n')
       : baseNotes;
     const external =
-      resolveExternalOrderNumber(externalOrderNumber, draftSaved?.number) ?? undefined;
+      resolveExternalOrderNumber(requestPo, draftSaved?.number) ?? undefined;
     return {
       source: 'PORTAL',
       externalOrderNumber: external,
@@ -1028,6 +1038,9 @@ export function NewOrderScreen() {
         setExternalOrderNumber(created.number);
       }
       await uploadAll(created.id);
+      const withLineFiles = applyLineAttachmentsToBasket(hydrated, attachmentsRef.current);
+      setLines(withLineFiles);
+      await updateRequest(created.id, buildBody(withLineFiles));
       await linkAi(created.id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.requests.all }),
@@ -1066,9 +1079,8 @@ export function NewOrderScreen() {
 
       if (draftSaved?.id) {
         created = await updateRequest(draftSaved.id, body);
-        created = await submitRequest(draftSaved.id);
       } else {
-        created = await createRequest(body, { submit: true });
+        created = await createRequest(body, { submit: false });
       }
 
       setDraftSaved({ id: created.id, number: created.number });
@@ -1076,6 +1088,10 @@ export function NewOrderScreen() {
         setExternalOrderNumber(created.number);
       }
       await uploadAll(created.id);
+      const withLineFiles = applyLineAttachmentsToBasket(hydrated, attachmentsRef.current);
+      setLines(withLineFiles);
+      await updateRequest(created.id, buildBody(withLineFiles));
+      created = await submitRequest(created.id);
       await linkAi(created.id);
 
       await Promise.all([
@@ -1171,17 +1187,27 @@ export function NewOrderScreen() {
     goNext();
   };
 
-  const uploadsEditor = (hint: string) => (
+  const uploadsEditor = (hint: string, lineId?: string) => {
+    const scoped = lineId ? attachmentsForLine(attachments, lineId) : attachments;
+    const scopedProgress =
+      scoped.length === 0
+        ? 0
+        : scoped.reduce((sum, a) => sum + (a.status === 'uploaded' ? 1 : a.progress), 0) /
+          scoped.length;
+    return (
     <UploadsStep
-      attachments={attachments}
+      attachments={scoped}
       onChange={(next) => {
-        attachmentsRef.current = next;
-        setAttachments(next);
+        const merged = lineId
+          ? replaceLineAttachments(attachmentsRef.current, lineId, next)
+          : next;
+        attachmentsRef.current = merged;
+        setAttachments(merged);
       }}
       canUpload={canUpload}
       aiState={aiState}
       error={error}
-      overallProgress={overallProgress}
+      overallProgress={scopedProgress}
       uploading={uploading}
       onUploadAll={() => void uploadAll(draftSaved?.id)}
       onAttachmentsQueued={() => {
@@ -1195,8 +1221,10 @@ export function NewOrderScreen() {
       onRetry={retryOne}
       showTitle={false}
       sectionHint={hint}
+      lineId={lineId}
     />
-  );
+    );
+  };
 
   const stepTitles: Record<NewOrderStep, string> = {
     1: t('mobile.newOrder.step1Title'),
@@ -1266,6 +1294,11 @@ export function NewOrderScreen() {
                             : activeLineId;
                         orderBasket.removeLine(id);
                         setActiveLineId(nextActive);
+                        setAttachments((prev) => {
+                          const next = prev.filter((row) => row.lineId !== id);
+                          attachmentsRef.current = next;
+                          return next;
+                        });
                       }}
                     />
                     </ListItemEnter>
@@ -1297,7 +1330,14 @@ export function NewOrderScreen() {
 
                   {basketLines.length ? (
                     <ListItemEnter index={1}>
-                    <DealerBoard title={stepTitles[1]} titleWeight={titleWeight}>
+                    <DealerBoard
+                      title={
+                        activeLine.customProductName.trim() ||
+                        activeLine.variantLabel.trim() ||
+                        stepTitles[1]
+                      }
+                      titleWeight={titleWeight}
+                    >
                     <AppText variant="caption" color="muted">
                       {stepBodies[1]}
                     </AppText>
@@ -1359,6 +1399,58 @@ export function NewOrderScreen() {
                         }))}
                       />
                     </View>
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+                    <View style={{ gap: theme.spacing.xs }}>
+                      <TextField
+                        label={t('mobile.newOrder.dealerPo')}
+                        value={activeLine.externalOrderNumber}
+                        onChangeText={(value) =>
+                          patchActive({ externalOrderNumber: value })
+                        }
+                        placeholder={t('mobile.newOrder.dealerPoPlaceholder')}
+                        autoCapitalize="characters"
+                      />
+                      <AppText
+                        variant="caption"
+                        color="muted"
+                        style={{ textAlign: isRTL ? 'right' : 'left' }}
+                      >
+                        {t('mobile.newOrder.dealerPoHint')}
+                      </AppText>
+                    </View>
+                    <View style={{ gap: theme.spacing.md }}>
+                      <AppText variant="label" weight={titleWeight}>
+                        {t('mobile.newOrder.notesSection')}
+                      </AppText>
+                      <View style={{ gap: theme.spacing.xs }}>
+                        <TextField
+                          label={t('mobile.newOrder.itemNotes')}
+                          value={activeLine.notes}
+                          onChangeText={(v) =>
+                            patchActive({ notes: clampNotes(v, NOTES_MAX) })
+                          }
+                          placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
+                          multiline
+                          style={{ minHeight: 88, textAlignVertical: 'top' }}
+                        />
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          style={{ textAlign: isRTL ? 'left' : 'right' }}
+                        >
+                          {activeLine.notes.length}/{NOTES_MAX}
+                        </AppText>
+                      </View>
+                    </View>
+                    {uploadsEditor(
+                      t('mobile.newOrder.attachmentsDetailsHint'),
+                      activeLine.id,
+                    )}
                     <AnimatedPressable
                       variant="button"
                       accessibilityRole="button"
@@ -1397,6 +1489,7 @@ export function NewOrderScreen() {
                         {t('mobile.newOrder.editItem')}
                       </AppText>
                     </AnimatedPressable>
+                    <NewOrderPriorityBar value={priority} onChange={setPriority} />
                     {error && step === 1 ? (
                       <AppText variant="caption" color="error">
                         {error}
@@ -1405,69 +1498,6 @@ export function NewOrderScreen() {
                     </DealerBoard>
                     </ListItemEnter>
                   ) : null}
-
-                  <ListItemEnter index={2}>
-                  <DealerBoard titleWeight={titleWeight}>
-                    <View style={{ gap: theme.spacing.md }}>
-                      <View style={{ gap: theme.spacing.xs }}>
-                        <TextField
-                          label={t('mobile.newOrder.dealerPo')}
-                          value={externalOrderNumber}
-                          onChangeText={setExternalOrderNumber}
-                          placeholder={t('mobile.newOrder.dealerPoPlaceholder')}
-                          autoCapitalize="characters"
-                        />
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{ textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {t('mobile.newOrder.dealerPoHint')}
-                        </AppText>
-                      </View>
-                      <NewOrderPriorityBar value={priority} onChange={setPriority} />
-                    </View>
-
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth * 2,
-                        backgroundColor: colors.border,
-                      }}
-                    />
-
-                    <View style={{ gap: theme.spacing.md }}>
-                      <AppText variant="label" weight={titleWeight}>
-                        {t('mobile.newOrder.notesSection')}
-                      </AppText>
-                      <View style={{ gap: theme.spacing.xs }}>
-                        <TextField
-                          label={t('mobile.newOrder.orderNotes')}
-                          value={orderNotes}
-                          onChangeText={(v) => setOrderNotes(clampNotes(v, NOTES_MAX))}
-                          placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
-                          multiline
-                          style={{ minHeight: 140, textAlignVertical: 'top' }}
-                        />
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{ textAlign: isRTL ? 'left' : 'right' }}
-                        >
-                          {orderNotes.length}/{NOTES_MAX}
-                        </AppText>
-                      </View>
-                    </View>
-
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth * 2,
-                        backgroundColor: colors.border,
-                      }}
-                    />
-
-                    {uploadsEditor(t('mobile.newOrder.attachmentsDetailsHint'))}
-                  </DealerBoard>
-                  </ListItemEnter>
                 </View>
               ) : null}
 
@@ -1591,7 +1621,7 @@ export function NewOrderScreen() {
                         orderNotes,
                         dealerPo:
                           resolveExternalOrderNumber(
-                            externalOrderNumber,
+                            resolveRequestDealerPo(lines, externalOrderNumber),
                             draftSaved?.number ?? submittedNumber,
                           ) ?? '—',
                         quantity,
@@ -1650,7 +1680,7 @@ export function NewOrderScreen() {
                       orderNotes,
                       dealerPo:
                         resolveExternalOrderNumber(
-                          externalOrderNumber,
+                          resolveRequestDealerPo(lines, externalOrderNumber),
                           draftSaved?.number ?? submittedNumber ?? draftSavedNumber,
                         ) ?? '—',
                       quantity,

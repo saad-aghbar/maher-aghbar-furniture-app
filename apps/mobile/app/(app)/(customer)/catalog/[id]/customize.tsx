@@ -1,29 +1,30 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useAuth } from '@/auth/AuthProvider';
-import { DealerModifyVariantScreen } from '@/features/catalog/DealerModifyVariantScreen';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import {
+  customizeVariantHref,
   parseDeepLinkQty,
   parseDeepLinkText,
   parseDeepLinkVariantId,
+  resolveCustomizeProductId,
 } from '@/features/catalog/newOrderDeepLink';
-import { PermissionGate } from '@/navigation/PermissionGate';
 
-export default function CustomerCustomizeVariantRoute() {
-  const { user } = useAuth();
-  const { id, variantId, qty, lineId } = useLocalSearchParams<{
-    id: string;
+/** Legacy nested path — Expo often treated `customize` as `catalog/[id]`. */
+export default function LegacyCustomerCustomizeVariantRoute() {
+  const { id, productId, variantId, qty, lineId } = useLocalSearchParams<{
+    id?: string;
+    productId?: string;
     variantId?: string;
     qty?: string;
     lineId?: string;
   }>();
+  const resolved = resolveCustomizeProductId(id, productId);
   return (
-    <PermissionGate user={user} require="catalog.read" mode="all">
-      <DealerModifyVariantScreen
-        productId={String(id ?? '')}
-        variantId={parseDeepLinkVariantId(variantId)}
-        qty={parseDeepLinkQty(qty)}
-        lineId={parseDeepLinkText(lineId)}
-      />
-    </PermissionGate>
+    <Redirect
+      href={customizeVariantHref(
+        resolved,
+        parseDeepLinkVariantId(variantId),
+        Number(parseDeepLinkQty(qty)),
+        { lineId: parseDeepLinkText(lineId) },
+      )}
+    />
   );
 }

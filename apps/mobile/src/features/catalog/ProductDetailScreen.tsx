@@ -282,7 +282,8 @@ export function ProductDetailScreen({
           <ProductImageCarousel
             uris={vm.imageUris}
             aspectRatio={1}
-            onBack={() => router.back()}
+            embedded={embedded}
+            onBack={embedded ? undefined : () => router.back()}
             favorited={isDealer ? favorites.isFavorite(vm.id) : false}
             onToggleFavorite={
               isDealer ? () => favorites.toggleFavorite(vm.id) : undefined

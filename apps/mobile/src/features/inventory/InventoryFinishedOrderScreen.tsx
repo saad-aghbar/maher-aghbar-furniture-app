@@ -325,9 +325,15 @@ function ActionRow({
 /**
  * Order-centric Finished Goods desk — floor cards, package list, working actions.
  */
-export function InventoryFinishedOrderScreen() {
+export function InventoryFinishedOrderScreen({
+  salesOrderId: salesOrderIdProp,
+  embedded = false,
+}: {
+  salesOrderId?: string;
+  embedded?: boolean;
+} = {}) {
   const { salesOrderId: soParam } = useLocalSearchParams<{ salesOrderId: string }>();
-  const salesOrderId = String(soParam ?? '');
+  const salesOrderId = String(salesOrderIdProp || soParam || '');
   const { t, locale, isRTL, formatDateTime } = useLocale();
   const { colors, theme } = useTheme();
   const { user } = useAuth();
@@ -588,8 +594,10 @@ export function InventoryFinishedOrderScreen() {
           minHeight: BACK_SLOT,
         }}
       >
-        <View style={{ width: BACK_SLOT }}>
-          <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+        <View style={{ width: embedded ? 0 : BACK_SLOT }}>
+          {embedded ? null : (
+            <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+          )}
         </View>
         <AppText
           variant="body"

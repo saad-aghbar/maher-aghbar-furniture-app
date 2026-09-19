@@ -28,6 +28,10 @@ function row(partial: Partial<FabricTrackerRow> & { id: string; label: string })
   return {
     id: partial.id,
     salesOrderId: 'so-fb1042',
+    productionOrderId: partial.productionOrderId ?? null,
+    productionOrderNumber: partial.productionOrderNumber ?? null,
+    salesOrderLineId: partial.salesOrderLineId ?? null,
+    itemLetter: partial.itemLetter ?? null,
     label: partial.label,
     role: partial.role ?? 'Main body',
     stageCode: 'UPHOLSTERY',
@@ -42,7 +46,7 @@ function row(partial: Partial<FabricTrackerRow> & { id: string; label: string })
     attentionCode: null,
     orderNumber: 'SO-FB1042',
     dealerName: 'Oasis Living',
-    productName: '3-Seater Sofa',
+    productName: partial.productName ?? '3-Seater Sofa',
     productImageUrl: null,
     supplierName: null,
     inventoryItemId: null,
@@ -97,6 +101,44 @@ describe('OrderFabricGroupCard', () => {
 
     fireEvent.press(view.getByLabelText('Velvet 302 · Sand'));
     expect(onPressFabric).toHaveBeenCalled();
+  });
+
+  it('nests fabrics under factory sub-orders on a multi-line sales order', async () => {
+    const group = groupFabricRowsBySalesOrder([
+      row({
+        id: 'a',
+        label: 'Velvet 302 · Sand',
+        productionOrderId: 'po-a',
+        productionOrderNumber: 'SO-FB1042.A',
+        itemLetter: 'A',
+        productName: 'Classic Chair',
+      }),
+      row({
+        id: 'b',
+        label: 'Bouclé 611 · Cream',
+        productionOrderId: 'po-b',
+        productionOrderNumber: 'SO-FB1042.B',
+        itemLetter: 'B',
+        productName: 'Luna Sofa',
+      }),
+    ])[0]!;
+
+    const view = await render(
+      <OrderFabricGroupCard group={group} onPressFabric={jest.fn()} />,
+      { wrapper: Wrapper },
+    );
+
+    expect(view.getByText('SO-FB1042')).toBeTruthy();
+    expect(view.getByText('Sales order')).toBeTruthy();
+    expect(view.getAllByText('Factory order')).toHaveLength(2);
+    expect(view.getByText('2 factory orders')).toBeTruthy();
+    expect(view.getByText('SO-FB1042.A')).toBeTruthy();
+    expect(view.getByText('SO-FB1042.B')).toBeTruthy();
+    expect(view.getByText('Classic Chair')).toBeTruthy();
+    expect(view.getByText('Luna Sofa')).toBeTruthy();
+    expect(view.getByText('Velvet 302 · Sand')).toBeTruthy();
+    expect(view.getByText('Bouclé 611 · Cream')).toBeTruthy();
+    expect(view.queryByText('3-Seater Sofa')).toBeNull();
   });
 });
 

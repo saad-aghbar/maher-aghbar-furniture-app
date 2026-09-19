@@ -1,6 +1,7 @@
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -38,7 +39,7 @@ export function BinContentsSheet({
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const { height } = useWindowDimensions();
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const warehouseName =
     locale === 'ar'
@@ -54,7 +55,7 @@ export function BinContentsSheet({
       onClose={onClose}
       onClosed={onClosed}
       title={t('mobile.inventory.binContents')}
-      sheetHeight={Math.min(Math.round(height * 0.72), 640)}
+      sheetHeight={sheetHeight}
     >
       <View style={{ flex: 1, gap: theme.spacing.md }}>
         <View

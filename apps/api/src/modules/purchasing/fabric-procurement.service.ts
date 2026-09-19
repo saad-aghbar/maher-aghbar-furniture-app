@@ -32,6 +32,8 @@ import {
 } from '../production/fabric-readiness';
 import { PurchasingService } from './purchasing.service';
 import { OpsNotifyService } from '../notifications/ops-notify.service';
+import { upsertCatalogFabric } from '../catalog/record-named-fabric';
+import { recordLeftoverFabricAsGeneralStock } from './goods-receipt-fabric-lots';
 
 const PROCUREMENT_INCLUDE = {
   requirement: {
@@ -81,6 +83,7 @@ const PROCUREMENT_INCLUDE = {
   salesOrderLine: {
     select: {
       id: true,
+      itemLetter: true,
       description: true,
       quantity: true,
       product: { select: { id: true, nameEn: true, nameAr: true, imageUrl: true } },
@@ -730,6 +733,7 @@ export class FabricProcurementService {
       });
     }
 
+    let leftoverQrCode: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       if (returnedQty > 0) {
         const returnUnitCost = resolveIssueUnitCost({
@@ -753,14 +757,34 @@ export class FabricProcurementService {
           idempotencyKey: `fabric-return:${lot.id}:${task.id}:${returnedQty}`,
           db: tx,
         });
-        const nextRemaining = (Number(lot.remainingQty ?? 0) || 0) + returnedQty;
-        await tx.inventoryLot.update({
-          where: { id: lot.id },
-          data: {
-            remainingQty: nextRemaining,
-            status: 'AVAILABLE',
-          },
+        const leftover = await recordLeftoverFabricAsGeneralStock({
+          tx,
+          orderLotId: lot.id,
+          taskId: task.id,
+          inventoryItemId: lot.inventoryItemId,
+          warehouseId: lot.warehouseId,
+          locationId: lot.locationId,
+          qty: returnedQty,
+          unitCost: returnUnitCost ?? undefined,
         });
+        leftoverQrCode = leftover.qrCode || null;
+        const item = await tx.inventoryItem.findUnique({
+          where: { id: lot.inventoryItemId },
+          select: { sku: true, nameEn: true, nameAr: true, nameHe: true, color: true },
+        });
+        if (item) {
+          try {
+            await upsertCatalogFabric(tx, {
+              code: item.sku,
+              nameEn: item.nameEn,
+              nameAr: item.nameAr,
+              nameHe: item.nameHe,
+              color: item.color,
+            });
+          } catch {
+            /* Catalog list is best-effort — leftover stock still exists. */
+          }
+        }
       }
       await tx.productionTaskMaterialUsage.update({
         where: { id: usage.id },
@@ -775,13 +799,19 @@ export class FabricProcurementService {
           procurementId: lot.fabricProcurementId!,
           kind: FabricProcurementEventKind.DISPOSITION,
           userId: params.user.id,
-          note: params.scrapReason ?? (returnedQty > 0 ? 'Leftover returned' : 'Scrap recorded'),
-          payload: { lotId: lot.id, returnedQty, scrapQty, taskId: task.id } as Prisma.InputJsonValue,
+          note: params.scrapReason ?? (returnedQty > 0 ? 'Leftover returned to stock' : 'Scrap recorded'),
+          payload: {
+            lotId: lot.id,
+            leftoverQrCode,
+            returnedQty,
+            scrapQty,
+            taskId: task.id,
+          } as Prisma.InputJsonValue,
         },
       });
     });
 
-    return { ok: true, returnedQty, scrapQty };
+    return { ok: true, returnedQty, scrapQty, leftoverQrCode };
   }
 
   async assessForProductionOrder(productionOrderId: string): Promise<FabricReadinessResult[]> {
@@ -897,7 +927,11 @@ export class FabricProcurementService {
     return {
       id: row.id,
       salesOrderId: row.salesOrderId,
-      salesOrderNumber: row.salesOrder?.number ?? row.productionOrder?.number ?? null,
+      salesOrderNumber: row.salesOrder?.number ?? null,
+      productionOrderId: row.productionOrderId ?? null,
+      productionOrderNumber: row.productionOrder?.number ?? null,
+      salesOrderLineId: row.salesOrderLineId ?? null,
+      itemLetter: row.salesOrderLine?.itemLetter ?? null,
       dealerName: row.salesOrder?.customer.nameEn ?? row.salesOrder?.customer.nameAr ?? null,
       productName:
         row.salesOrderLine?.description ||

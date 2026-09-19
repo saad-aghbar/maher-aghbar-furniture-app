@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { listBrowseProducts, type BrowseProduct } from '@/features/catalog/api';
 import { DealerSearchBar } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
@@ -17,6 +18,7 @@ type CatalogModelPickerProps = {
 export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPickerProps) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<BrowseProduct[]>([]);
@@ -46,9 +48,9 @@ export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPick
       open={open}
       onClose={onClose}
       title={t('mobile.newOrder.browseCatalog')}
-      sheetHeight={520}
+      sheetHeight={sheetHeight}
     >
-      <View style={{ gap: theme.spacing.md }}>
+      <View style={{ gap: theme.spacing.md, flex: 1, minHeight: 0 }}>
         <DealerSearchBar
           value={q}
           onChangeText={(v) => {
@@ -71,7 +73,7 @@ export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPick
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
-          style={{ maxHeight: 320 }}
+          style={{ flex: 1, minHeight: listHeight }}
           keyboardShouldPersistTaps="handled"
           ItemSeparatorComponent={() => <View style={{ height: theme.spacing.sm }} />}
           ListEmptyComponent={

@@ -23,6 +23,7 @@ import { CatalogSectionBoard } from '@/features/catalog/components/CatalogSectio
 import { DealerMeasurementsBoard } from '@/features/catalog/components/DealerMeasurementsBoard';
 import { DealerOrderSpecsBoard } from '@/features/catalog/components/DealerOrderSpecsBoard';
 import { ProductDetailSkeleton } from '@/features/catalog/components/ProductDetailSkeleton';
+import { resolveSelectedVariant } from '@/features/catalog/newOrderDeepLink';
 import { useBrowseProductQuery } from '@/features/catalog/query';
 import {
   selectProductDetail,
@@ -31,7 +32,7 @@ import {
 import { upsertBasketLine } from '@/features/requests/newOrderBasket';
 import { useOptionalOrderBasket } from '@/features/requests/OrderBasketProvider';
 import { seedModifiedLineFromVariant, catalogLineWasModified } from '@/features/requests/seedModifiedLineFromVariant';
-import type { NewOrderLine } from '@/features/requests/newOrderLine';
+import { emptyOrderLine, type NewOrderLine } from '@/features/requests/newOrderLine';
 import { NewOrderQtyStepper } from '@/features/requests/components/NewOrderQtyStepper';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -57,18 +58,30 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
   const allowed = can(user, 'catalog.read');
   const canCreate = can(user, 'request.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const editing = Boolean(lineId?.trim());
+  const lineIdTrim = lineId?.trim() ?? '';
+  const editing = Boolean(lineIdTrim);
+  const waitingBasket = Boolean(editing && basket && !basket.hydrated);
+  const existingLine =
+    editing && basket?.hydrated
+      ? basket.lines.find((row) => row.id === lineIdTrim) ?? null
+      : null;
+  const catalogProductId = productId.trim() || existingLine?.productId.trim() || '';
   const backFallback = (
     editing
-      ? '/(app)/(customer)/(tabs)/basket'
-      : `/(app)/(customer)/catalog/${productId}`
+      ? '/(app)/(customer)/(tabs)/new-order'
+      : catalogProductId
+        ? `/(app)/(customer)/catalog/${catalogProductId}`
+        : '/(app)/(customer)/(tabs)/catalog'
   ) as Href;
 
-  const productQuery = useBrowseProductQuery(productId, allowed && Boolean(productId));
+  const productQuery = useBrowseProductQuery(
+    catalogProductId,
+    allowed && Boolean(catalogProductId),
+  );
   const variantsQuery = useQuery({
-    queryKey: queryKeys.catalog.variants(productId, { includeInactive: false }),
-    queryFn: () => listProductVariants(productId, false),
-    enabled: allowed && Boolean(productId),
+    queryKey: queryKeys.catalog.variants(catalogProductId, { includeInactive: false }),
+    queryFn: () => listProductVariants(catalogProductId, false),
+    enabled: allowed && Boolean(catalogProductId),
     staleTime: 30_000,
   });
   const specGroupsQuery = useQuery({
@@ -85,9 +98,7 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
   });
 
   const variants = variantsQuery.data ?? [];
-  const selectedVariant = variantId
-    ? variants.find((row) => row.id === variantId) ?? null
-    : variants.find((row) => row.isDefault) ?? variants[0] ?? null;
+  const selectedVariant = resolveSelectedVariant(variants, variantId || existingLine?.variantId);
   const safeVariant = selectedVariant
     ? stripVariantCosts(selectedVariant as unknown as Record<string, unknown>)
     : null;
@@ -98,30 +109,56 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
   const seededKey = useRef('');
 
   useEffect(() => {
-    if (!product || !selectedVariant || !vm) return;
-    if (editing && basket && !basket.hydrated) return;
-    const key = `${product.id}:${selectedVariant.id}:${qty}:${lineId ?? ''}:${basket?.hydrated ?? false}`;
+    if (waitingBasket) return;
+
+    if (existingLine) {
+      const key = `line:${lineIdTrim}`;
+      if (seededKey.current === key) return;
+      seededKey.current = key;
+      setLine(existingLine);
+      return;
+    }
+
+    if (!product || !vm) return;
+    const key = `${catalogProductId}:${selectedVariant?.id ?? ''}:${qty}:${lineIdTrim}`;
     if (seededKey.current === key) return;
     seededKey.current = key;
-    if (editing) {
-      const existing = basket?.lines.find((row) => row.id === lineId?.trim());
-      if (existing) {
-        setLine(existing);
-        return;
-      }
+    if (selectedVariant) {
+      setLine(
+        seedModifiedLineFromVariant({
+          productId: product.id,
+          productName: vm.name,
+          quantity: qty,
+          variant: selectedVariant,
+          locale,
+          imageUrl: vm.imageUris[0],
+          dealerPrice: vm.price != null ? String(vm.price) : undefined,
+        }),
+      );
+      return;
     }
     setLine(
-      seedModifiedLineFromVariant({
+      emptyOrderLine({
         productId: product.id,
-        productName: vm.name,
+        customProductName: vm.name,
         quantity: qty,
-        variant: selectedVariant,
-        locale,
-        imageUrl: vm.imageUris[0],
-        dealerPrice: vm.price != null ? String(vm.price) : undefined,
+        variantId: variantId.trim(),
+        imageUrl: vm.imageUris[0] ?? '',
+        dealerPrice: vm.price != null ? String(vm.price) : '',
       }),
     );
-  }, [product, selectedVariant, vm, qty, locale, editing, lineId, basket]);
+  }, [
+    waitingBasket,
+    existingLine,
+    catalogProductId,
+    selectedVariant,
+    product,
+    vm,
+    qty,
+    locale,
+    lineIdTrim,
+    variantId,
+  ]);
 
   const footerClearance = stickyCtaBottomInset(
     insets.bottom,
@@ -139,7 +176,12 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
     );
   }
 
-  if (productQuery.isLoading || variantsQuery.isLoading) {
+  const waitingCatalog =
+    Boolean(catalogProductId) &&
+    !existingLine &&
+    (productQuery.isLoading || (variantsQuery.isLoading && !productQuery.isFetched));
+
+  if (waitingBasket || waitingCatalog) {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
         <ProductDetailSkeleton />
@@ -147,7 +189,7 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
     );
   }
 
-  if (productQuery.isError || !product || !vm || !selectedVariant) {
+  if (!existingLine && !line && (productQuery.isError || !product || !vm)) {
     return (
       <AppScreen>
         <ScreenBackLead fallback={backFallback} />
@@ -164,26 +206,37 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
     );
   }
 
-  const variantName = localizedName(locale, selectedVariant) || selectedVariant.code;
+  const heading =
+    (selectedVariant
+      ? localizedName(locale, selectedVariant) || selectedVariant.code
+      : '') ||
+    line?.variantLabel ||
+    line?.customProductName ||
+    vm?.name ||
+    t('mobile.newOrder.editItem');
+  const subtitle = vm?.name || line?.customProductName || '';
   const leadSize = theme.sizes.touch.min;
 
   const onAddToBasket = () => {
     if (!line || !basket || !canCreate) return;
     void haptics.confirmMedium();
-    const catalog = seedModifiedLineFromVariant({
-      productId: product.id,
-      productName: vm.name,
-      quantity: line.quantity,
-      variant: selectedVariant,
-      locale,
-      imageUrl: vm.imageUris[0],
-      dealerPrice: vm.price != null ? String(vm.price) : undefined,
-    });
+    const catalog =
+      product && selectedVariant && vm
+        ? seedModifiedLineFromVariant({
+            productId: product.id,
+            productName: vm.name,
+            quantity: line.quantity,
+            variant: selectedVariant,
+            locale,
+            imageUrl: vm.imageUris[0],
+            dealerPrice: vm.price != null ? String(vm.price) : undefined,
+          })
+        : null;
     const next: NewOrderLine = {
       ...line,
-      id: lineId?.trim() || line.id,
-      productId: product.id,
-      modifiedByDealer: catalogLineWasModified(line, catalog),
+      id: lineIdTrim || line.id,
+      productId: product?.id || line.productId,
+      modifiedByDealer: catalog ? catalogLineWasModified(line, catalog) : true,
     };
     basket.setLines((prev) => upsertBasketLine(prev, next));
     showToast({ variant: 'success', message: t('mobile.productDetail.addedToBasket') });
@@ -212,17 +265,19 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
           numberOfLines={2}
           style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
         >
-          {variantName}
+          {heading}
         </AppText>
-        <AppText
-          variant="caption"
-          color="muted"
-          align="center"
-          numberOfLines={1}
-          style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
-        >
-          {vm.name}
-        </AppText>
+        {subtitle ? (
+          <AppText
+            variant="caption"
+            color="muted"
+            align="center"
+            numberOfLines={1}
+            style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
+          >
+            {subtitle}
+          </AppText>
+        ) : null}
       </View>
 
       {line ? (
@@ -253,9 +308,9 @@ export function DealerModifyVariantScreen({ productId, variantId, qty, lineId }:
               <AppText variant="caption" color="muted">
                 {t('mobile.newOrder.modifyVariantHint')}
               </AppText>
-              {selectedVariant.sku ? (
+              {(selectedVariant?.sku || line.variantSku) ? (
                 <AppText variant="caption" color="muted" dir="ltr">
-                  {selectedVariant.sku}
+                  {selectedVariant?.sku || line.variantSku}
                 </AppText>
               ) : null}
               <NewOrderQtyStepper

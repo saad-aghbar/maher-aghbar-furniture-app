@@ -38,6 +38,8 @@ type UploadsStepProps = {
   showTitle?: boolean;
   /** Override the attachments caption (details vs review). */
   sectionHint?: string;
+  /** Stamp new files onto this basket line. */
+  lineId?: string;
 };
 
 async function ensureLibraryPermission(
@@ -129,6 +131,7 @@ export function UploadsStep({
   onAttachmentsQueued,
   showTitle = true,
   sectionHint,
+  lineId,
 }: UploadsStepProps) {
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
@@ -141,7 +144,10 @@ export function UploadsStep({
 
   const add = (items: PendingAttachment[]) => {
     if (!items.length) return;
-    const next = [...attachmentsRef.current, ...items];
+    const stamped = lineId
+      ? items.map((item) => ({ ...item, lineId }))
+      : items;
+    const next = [...attachmentsRef.current, ...stamped];
     attachmentsRef.current = next;
     onChange(next);
     void haptics.selection();

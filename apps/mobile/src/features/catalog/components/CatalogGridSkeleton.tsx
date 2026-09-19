@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { View, type DimensionValue } from 'react-native';
 import { SkeletonShimmer } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -6,6 +6,8 @@ import { useTheme } from '@/theme';
 export function CatalogGridSkeleton({ columns = 2 }: { columns?: number }) {
   const { theme, colors } = useTheme();
   const gap = theme.spacing.md;
+  const tileWidth: DimensionValue =
+    columns <= 1 ? '100%' : (`${(100 - 3 * (columns - 1)) / columns}%` as `${number}%`);
 
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
@@ -13,7 +15,7 @@ export function CatalogGridSkeleton({ columns = 2 }: { columns?: number }) {
         <View
           key={i}
           style={{
-            width: columns === 2 ? '47%' : '100%',
+            width: tileWidth,
             borderRadius: theme.radius.xl,
             borderWidth: 1,
             borderColor: colors.border,

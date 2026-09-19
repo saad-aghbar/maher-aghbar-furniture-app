@@ -31,13 +31,14 @@ describe('Wave 0 adaptive shell contracts', () => {
     }
   });
 
-  it('inventory identify keeps runIdentifyScan and routes typed input through dispatchIdentifyCode', () => {
+  it('inventory identify keeps runIdentifyScan and does not mount a desk scan dock', () => {
     const src = read('features/inventory/components/InventorySignatureHome.tsx');
     expect(src).toContain('async function runIdentifyScan');
     expect(src).toContain('async function dispatchIdentifyCode');
     expect(src).toContain('await dispatchIdentifyCode(code)');
     expect(src).toContain('resolveInventoryScan');
-    expect(src).toContain('mobile.adaptive.scanDockLabel');
+    expect(src).not.toContain('mobile.adaptive.scanDockLabel');
+    expect(src).not.toContain('useMaherLayout');
   });
 
   it('admin orders tab mounts the desk host rather than pushing the list alone', () => {

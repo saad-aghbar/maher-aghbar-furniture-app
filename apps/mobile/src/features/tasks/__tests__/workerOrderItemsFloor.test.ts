@@ -38,13 +38,16 @@ describe('Worker sales-order items floor', () => {
     const list = read('TasksListScreen.tsx');
     const items = read('WorkerSalesOrderItemsScreen.tsx');
     expect(list).toContain('WorkerSalesOrderCard');
+    expect(list).toContain('onSelectOrder');
     expect(card).toContain('workerSalesOrderHref');
+    expect(card).toContain('onSelect');
     expect(card).toContain('WorkerSalesOrderItemRow');
     expect(card).toContain('order.items');
     expect(href).toContain('/(app)/(employee)/orders/');
     expect(href).not.toContain('itemCount <= 1');
     expect(items).toContain('WorkerOrderCard');
     expect(items).toContain('WorkerSalesOrderIdentityBoard');
+    expect(items).toContain('embedded');
   });
 
   it('nested item rows open the same sales-order items picker', () => {
@@ -54,17 +57,32 @@ describe('Worker sales-order items floor', () => {
     expect(card).not.toContain('/(app)/(employee)/lane/');
   });
 
+  it('desk split shows factory items in the side pane instead of pushing a page', () => {
+    const host = read('WorkerTasksDeskHost.tsx');
+    expect(host).toContain('WorkerSalesOrderItemsScreen');
+    expect(host).toContain('embedded');
+    expect(host).toContain('onSelectOrder');
+    expect(host).toContain('selectedOrderId');
+    expect(host).not.toContain('TaskDetailScreen');
+    expect(host).not.toContain('selectOrPush');
+  });
+
   it('completed tab uses order boards with nested tasks and a photo identity picker', () => {
     const list = read('TasksListScreen.tsx');
     const card = read('components/WorkerCompletedSalesOrderCard.tsx');
     const items = read('WorkerCompletedSalesOrderItemsScreen.tsx');
     const select = read('selectTask.ts');
+    const host = read('WorkerCompletedDeskHost.tsx');
     expect(list).toContain('WorkerCompletedSalesOrderCard');
     expect(card).toContain('WorkerCompletedTaskRow');
-    expect(card).toContain('workerCompletedSalesOrderHref');
+    expect(card).toContain('onSelect');
+    expect(host).toContain('WorkerCompletedSalesOrderItemsScreen');
+    expect(host).toContain('embedded');
+    expect(host).toContain('onSelectOrder');
     expect(select).toContain('/(app)/(employee)/completed-orders/');
     expect(items).toContain('WorkerSalesOrderIdentityBoard');
     expect(items).toContain('completed');
     expect(items).toContain('TaskCard');
+    expect(items).toContain('embedded');
   });
 });

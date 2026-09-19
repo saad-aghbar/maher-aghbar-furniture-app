@@ -705,6 +705,29 @@ export function OrderProductionSetupLineScreen({
             requestedFabricLabel={line.requestedFabricLabel}
             editable={editable}
             onPickFabric={() => setFabricPickerOpen(true)}
+            onRecordRequested={() => {
+              const label =
+                line.fabric?.requestedLabel?.trim() ||
+                line.requestedFabricLabel?.trim() ||
+                '';
+              if (!label) return;
+              actions.recordCatalogFabric.mutate(
+                { nameEn: label, nameAr: label },
+                {
+                  onSuccess: () =>
+                    showToast({
+                      variant: 'success',
+                      message: t('mobile.productionSetup.fabric.recorded'),
+                    }),
+                  onError: () =>
+                    showToast({
+                      variant: 'error',
+                      message: t('mobile.productionSetup.actionFailed'),
+                    }),
+                },
+              );
+            }}
+            recording={actions.recordCatalogFabric.isPending}
           />
         </ListItemEnter>
 

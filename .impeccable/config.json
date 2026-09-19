@@ -1,0 +1,18 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/**/*.tsx",
+          "packages/ui/src/**/*.tsx"
+        ],
+        "createdAt": "2026-09-19T10:36:02.500Z",
+        "reason": "Maher floor aesthetic requires a 3px start-edge brand rail on parchment boards"
+      }
+    ]
+  }
+}

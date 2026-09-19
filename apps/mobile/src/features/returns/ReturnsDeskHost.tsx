@@ -5,10 +5,25 @@ import { useLocale } from '@/i18n';
 import { ReturnDetailScreen } from './ReturnDetailScreen';
 import { ReturnsListScreen } from './ReturnsListScreen';
 
-export function ReturnsDeskHost() {
+type Props = {
+  compactHref?: (id: string) => Href;
+  backFallback?: Href;
+  adminControls?: boolean;
+  dealerFacing?: boolean;
+  canCreate?: boolean;
+  createHref?: Href;
+};
+
+export function ReturnsDeskHost({
+  compactHref = (id) => `/(app)/(admin)/returns/${id}` as Href,
+  backFallback,
+  adminControls = true,
+  dealerFacing = false,
+  canCreate,
+  createHref,
+}: Props = {}) {
   const { t } = useLocale();
   const { split, selected, selectOrPush } = useDeskSelection();
-  const compactHref = (id: string) => `/(app)/(admin)/returns/${id}` as Href;
 
   return (
     <SplitPane
@@ -17,12 +32,24 @@ export function ReturnsDeskHost() {
       primary={
         <ReturnsListScreen
           detailHref={compactHref}
-          adminControls
+          adminControls={adminControls}
           selectedReturnId={selected}
           onSelectReturn={(id) => selectOrPush(id, compactHref(id))}
+          backFallback={backFallback}
+          canCreate={canCreate}
+          createHref={createHref}
         />
       }
-      detail={selected ? <ReturnDetailScreen returnId={selected} embedded /> : null}
+      detail={
+        selected ? (
+          <ReturnDetailScreen
+            returnId={selected}
+            embedded
+            dealerFacing={dealerFacing}
+            backFallback={backFallback}
+          />
+        ) : null
+      }
       detailPlaceholder={
         <SplitPanePlaceholder
           icon="return-down-back-outline"

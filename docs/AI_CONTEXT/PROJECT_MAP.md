@@ -7,9 +7,7 @@ Compact inventory. Prefer the cited docs over re-deriving this.
 | Path | Name | Role | Port |
 |------|------|------|------|
 | `apps/api` | `@maher/api` | Nest REST API | 4000 (`/api/v1/health`) |
-| `apps/admin-web` | `@maher/admin-web` | Admin / staff Next.js UI | 3000 |
-| `apps/customer-portal` | `@maher/customer-portal` | Dealer Next.js portal | 3001 |
-| `apps/employee-portal` | `@maher/employee-portal` | Worker Next.js portal | 3002 |
+| `apps/web` | `@maher/web` | Unified Next.js UI (admin / dealer / worker / staff) | 3000 |
 | `apps/mobile` | `@maher/mobile` | Expo / RN universal app (admin, dealer, worker) | Metro 8081 |
 | `apps/worker` | `@maher/worker` | BullMQ consumer | none |
 

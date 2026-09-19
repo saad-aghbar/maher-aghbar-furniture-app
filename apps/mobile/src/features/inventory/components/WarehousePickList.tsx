@@ -50,7 +50,7 @@ export function WarehousePickList({
   onSelect,
   label,
   balances = [],
-  listHeight = 220,
+  listHeight = 300,
   resetToken,
   allowNone = false,
   noneLabel,

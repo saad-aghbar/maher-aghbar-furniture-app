@@ -20,6 +20,10 @@ export type FabricQueueLane = (typeof FABRIC_QUEUE_LANES)[number];
 export type FabricTrackerRow = {
   id: string;
   salesOrderId: string | null;
+  productionOrderId: string | null;
+  productionOrderNumber: string | null;
+  salesOrderLineId: string | null;
+  itemLetter: string | null;
   label: string;
   role: string | null;
   stageCode: string | null;
@@ -62,6 +66,10 @@ export function selectFabricTrackerRow(item: FabricTrackerItem): FabricTrackerRo
   return {
     id: item.id,
     salesOrderId: item.salesOrderId ?? null,
+    productionOrderId: item.productionOrderId ?? null,
+    productionOrderNumber: item.productionOrderNumber ?? null,
+    salesOrderLineId: item.salesOrderLineId ?? null,
+    itemLetter: item.itemLetter ?? null,
     label: item.readiness.label,
     role: item.readiness.role,
     stageCode: item.readiness.stageCode,
@@ -109,6 +117,10 @@ export function fabricRowFromHolding(row: FabricHoldingRow): FabricTrackerRow {
   return {
     id: row.id,
     salesOrderId: row.salesOrderId ?? null,
+    productionOrderId: row.productionOrderId ?? null,
+    productionOrderNumber: row.productionOrderNumber ?? null,
+    salesOrderLineId: row.salesOrderLineId ?? null,
+    itemLetter: row.itemLetter ?? null,
     label: row.label,
     role: row.role,
     stageCode: row.stageCode ?? null,
@@ -523,6 +535,9 @@ function fabricRowHaystack(row: FabricTrackerRow): string {
     row.label,
     row.role,
     row.orderNumber,
+    row.productionOrderNumber,
+    fabricSubOrderNumber(row),
+    row.itemLetter,
     row.dealerName,
     row.productName,
     row.supplierName,
@@ -576,6 +591,20 @@ export function fabricStockMatchesQuery(
   return haystackMatches(fabricStockHaystack(item), tokens);
 }
 
+export type FabricSubOrderGroup = {
+  id: string;
+  productionOrderId: string | null;
+  productionOrderNumber: string | null;
+  itemLetter: string | null;
+  productName: string | null;
+  productImageUrl: string | null;
+  rows: FabricTrackerRow[];
+  readyCount: number;
+  requiredCount: number;
+  attention: boolean;
+  tone: FabricTone;
+};
+
 export type FabricOrderGroup = {
   id: string;
   key: string;
@@ -589,6 +618,7 @@ export type FabricOrderGroup = {
   supplierInvoiceId: string | null;
   supplierInvoiceNumber: string | null;
   rows: FabricTrackerRow[];
+  subOrders: FabricSubOrderGroup[];
   readyCount: number;
   requiredCount: number;
   attention: boolean;
@@ -617,6 +647,78 @@ export function fabricGroupReadiness(rows: FabricTrackerRow[]): { ready: number;
   };
 }
 
+/** Factory id for a line: `SO-2026-00026.A`. Prefer the lettered sales-order id. */
+export function fabricSubOrderNumber(
+  row: Pick<FabricTrackerRow, 'productionOrderNumber' | 'orderNumber' | 'itemLetter'>,
+): string | null {
+  const letter = row.itemLetter?.trim().toUpperCase();
+  if (row.orderNumber && letter) return `${row.orderNumber}.${letter}`;
+  const fromPo = row.productionOrderNumber?.trim();
+  return fromPo || null;
+}
+
+function subOrderBucketKey(row: FabricTrackerRow): string {
+  if (row.productionOrderId) return `po:${row.productionOrderId}`;
+  const number = fabricSubOrderNumber(row);
+  if (number) return `num:${number}`;
+  if (row.salesOrderLineId) return `line:${row.salesOrderLineId}`;
+  return 'loose';
+}
+
+function groupTone(
+  rows: FabricTrackerRow[],
+  ready: number,
+  required: number,
+  overridden: boolean,
+  attention: boolean,
+): FabricTone {
+  const allReady = required > 0 && ready === required && !overridden;
+  if (attention) return 'blocked';
+  if (allReady) return 'ready';
+  if (ready > 0) return 'waiting';
+  return 'neutral';
+}
+
+function buildSubOrderGroup(id: string, rows: FabricTrackerRow[]): FabricSubOrderGroup {
+  const { ready, required } = fabricGroupReadiness(rows);
+  const attention = rows.some(
+    (r) =>
+      fabricDeskBucketOf(r) === 'attention' ||
+      fabricToneForKind(fabricStatusKind(r)) === 'blocked',
+  );
+  const overridden = rows.some((r) => r.overridden);
+  return {
+    id,
+    productionOrderId: rows.map((r) => r.productionOrderId).find((v) => Boolean(v)) ?? null,
+    productionOrderNumber:
+      rows.map((r) => fabricSubOrderNumber(r)).find((v) => Boolean(v)) ?? null,
+    itemLetter: rows.map((r) => r.itemLetter).find((v) => Boolean(v)) ?? null,
+    productName: rows.map((r) => r.productName).find((v) => Boolean(v)) ?? null,
+    productImageUrl: pickGroupImage(rows),
+    rows,
+    readyCount: ready,
+    requiredCount: required,
+    attention,
+    tone: groupTone(rows, ready, required, overridden, attention),
+  };
+}
+
+function sortSubOrders(a: FabricSubOrderGroup, b: FabricSubOrderGroup): number {
+  if (a.id === 'loose' && b.id !== 'loose') return 1;
+  if (b.id === 'loose' && a.id !== 'loose') return -1;
+  return (a.productionOrderNumber ?? a.itemLetter ?? '').localeCompare(
+    b.productionOrderNumber ?? b.itemLetter ?? '',
+    undefined,
+    { numeric: true },
+  );
+}
+
+/** Nest factory lines when we have a lettered sub-order (or more than one line). */
+export function fabricOrderShowsSubOrders(group: FabricOrderGroup): boolean {
+  if (group.subOrders.length > 1) return true;
+  return Boolean(group.subOrders[0]?.productionOrderNumber);
+}
+
 export function groupFabricRowsBySalesOrder(rows: FabricTrackerRow[]): FabricOrderGroup[] {
   const map = new Map<string, FabricTrackerRow[]>();
   for (const row of rows) {
@@ -635,14 +737,25 @@ export function groupFabricRowsBySalesOrder(rows: FabricTrackerRow[]): FabricOrd
         fabricToneForKind(fabricStatusKind(r)) === 'blocked',
     );
     const overridden = groupRows.some((r) => r.overridden);
-    const allReady = required > 0 && ready === required && !overridden;
-    const tone: FabricTone = attention ? 'blocked' : allReady ? 'ready' : ready > 0 ? 'waiting' : 'neutral';
+    const buckets = new Map<string, FabricTrackerRow[]>();
+    for (const row of groupRows) {
+      const subKey = subOrderBucketKey(row);
+      const list = buckets.get(subKey);
+      if (list) list.push(row);
+      else buckets.set(subKey, [row]);
+    }
+    const subOrders = [...buckets.entries()]
+      .map(([id, subRows]) => buildSubOrderGroup(id, subRows))
+      .sort(sortSubOrders);
+    const namedProducts = [
+      ...new Set(subOrders.map((s) => s.productName).filter((v): v is string => Boolean(v))),
+    ];
     groups.push({
       id: key,
       key,
       salesOrderId: first.salesOrderId,
       orderNumber: first.orderNumber,
-      productName: groupRows.map((r) => r.productName).find((v) => Boolean(v)) ?? null,
+      productName: namedProducts.length === 1 ? namedProducts[0]! : null,
       dealerName: groupRows.map((r) => r.dealerName).find((v) => Boolean(v)) ?? null,
       productImageUrl: pickGroupImage(groupRows),
       purchaseOrderId: groupRows.map((r) => r.purchaseOrderId).find((v) => Boolean(v)) ?? null,
@@ -651,11 +764,12 @@ export function groupFabricRowsBySalesOrder(rows: FabricTrackerRow[]): FabricOrd
       supplierInvoiceNumber:
         groupRows.map((r) => r.supplierInvoiceNumber).find((v) => Boolean(v)) ?? null,
       rows: groupRows,
+      subOrders,
       readyCount: ready,
       requiredCount: required,
       attention,
       overridden,
-      tone,
+      tone: groupTone(groupRows, ready, required, overridden, attention),
     });
   }
   groups.sort((a, b) => groupSortKey(b).localeCompare(groupSortKey(a), undefined, { numeric: true }));
@@ -686,6 +800,10 @@ export function mergeFabricDeskRows(
       imageUrl: q.imageUrl ?? h.imageUrl,
       salesOrderId: q.salesOrderId ?? h.salesOrderId,
       dealerName: q.dealerName ?? h.dealerName,
+      productionOrderId: q.productionOrderId ?? h.productionOrderId,
+      productionOrderNumber: q.productionOrderNumber ?? h.productionOrderNumber,
+      salesOrderLineId: q.salesOrderLineId ?? h.salesOrderLineId,
+      itemLetter: q.itemLetter ?? h.itemLetter,
     };
   });
   for (const h of holding) {
@@ -761,11 +879,22 @@ export function fabricRowFromTaskItem(
       locationLabel?: string | null;
     }>;
   },
-  ctx?: { salesOrderId?: string | null; salesOrderNumber?: string | null },
+  ctx?: {
+    salesOrderId?: string | null;
+    salesOrderNumber?: string | null;
+    productionOrderId?: string | null;
+    productionOrderNumber?: string | null;
+    salesOrderLineId?: string | null;
+    itemLetter?: string | null;
+  },
 ): FabricTrackerRow {
   return {
     id: item.id,
     salesOrderId: ctx?.salesOrderId ?? null,
+    productionOrderId: ctx?.productionOrderId ?? null,
+    productionOrderNumber: ctx?.productionOrderNumber ?? null,
+    salesOrderLineId: ctx?.salesOrderLineId ?? null,
+    itemLetter: ctx?.itemLetter ?? null,
     label: item.label,
     role: item.role,
     stageCode: item.stageCode,

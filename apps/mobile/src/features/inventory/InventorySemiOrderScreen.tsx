@@ -57,9 +57,15 @@ function defaultHistoryTo(): string {
 /**
  * Semi-finished for one production order — kits grouped by producing stage.
  */
-export function InventorySemiOrderScreen() {
+export function InventorySemiOrderScreen({
+  orderId: orderIdProp,
+  embedded = false,
+}: {
+  orderId?: string;
+  embedded?: boolean;
+} = {}) {
   const { orderId: orderIdParam } = useLocalSearchParams<{ orderId: string }>();
-  const orderId = String(orderIdParam ?? '');
+  const orderId = String(orderIdProp || orderIdParam || '');
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const tabBarReserve = useTabBarReserve();
@@ -252,8 +258,10 @@ export function InventorySemiOrderScreen() {
                 minHeight: BACK_SLOT,
               }}
             >
-              <View style={{ width: BACK_SLOT, alignItems: 'center', justifyContent: 'center' }}>
-                <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+              <View style={{ width: embedded ? 0 : BACK_SLOT, alignItems: 'center', justifyContent: 'center' }}>
+                {embedded ? null : (
+                  <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+                )}
               </View>
               <View
                 style={{

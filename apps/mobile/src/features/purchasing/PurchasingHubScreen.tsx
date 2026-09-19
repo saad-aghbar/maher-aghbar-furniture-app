@@ -98,9 +98,16 @@ function PurchasingTitle({
 type Props = {
   selectedOrderId?: string;
   onSelectOrder?: (id: string) => void;
+  onSelectSalesOrder?: (id: string) => void;
+  onSelectProductionOrder?: (id: string) => void;
 };
 
-export function PurchasingHubScreen({ selectedOrderId, onSelectOrder }: Props = {}) {
+export function PurchasingHubScreen({
+  selectedOrderId,
+  onSelectOrder,
+  onSelectSalesOrder,
+  onSelectProductionOrder,
+}: Props = {}) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -504,13 +511,27 @@ export function PurchasingHubScreen({ selectedOrderId, onSelectOrder }: Props = 
                 showSupplier
                 onPressOrder={
                   canReadOrder && (item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]).salesOrderId
-                    ? () =>
-                        router.push(
-                          `/(app)/(admin)/orders/${(item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]).salesOrderId}` as Href,
-                        )
+                    ? () => {
+                        const soId = (item as ReturnType<typeof groupFabricRowsBySalesOrder>[number])
+                          .salesOrderId;
+                        if (!soId) return;
+                        if (onSelectSalesOrder) {
+                          onSelectSalesOrder(soId);
+                          return;
+                        }
+                        router.push(`/(app)/(admin)/orders/${soId}` as Href);
+                      }
                     : undefined
                 }
                 onPressFabric={(row) => router.push(fabricRowHref(row) as Href)}
+                onPressSubOrder={(sub) => {
+                  if (!sub.productionOrderId) return;
+                  if (onSelectProductionOrder) {
+                    onSelectProductionOrder(sub.productionOrderId);
+                    return;
+                  }
+                  router.push(`/(app)/(admin)/production/${sub.productionOrderId}` as Href);
+                }}
               />
             ) : (
               <SupplierInvoiceBoardCard

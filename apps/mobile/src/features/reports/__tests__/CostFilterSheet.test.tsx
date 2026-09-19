@@ -81,7 +81,7 @@ describe('CostFilterSheet geometry', () => {
     expect(onApply).toHaveBeenCalled();
   });
 
-  it('keyboard-open cap shrinks below the default 70% window', () => {
+  it('keyboard-open cap shrinks below the default picker window', () => {
     const defaultCap = resolveSheetHeightCap({ windowHeight: HARNESS_WINDOW.height });
     const withKeyboard = resolveSheetHeightCap({
       windowHeight: HARNESS_WINDOW.height,

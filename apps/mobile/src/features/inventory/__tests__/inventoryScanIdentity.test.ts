@@ -183,9 +183,12 @@ describe('inventory scan identity (mobile)', () => {
       join(inventoryDir, 'components/InventoryCompositionChrome.tsx'),
       'utf8',
     );
+    const home = readFileSync(join(inventoryDir, 'components/InventorySignatureHome.tsx'), 'utf8');
     expect(chrome).toContain('scanVisible');
     expect(chrome).toContain('qr-code-outline');
     expect(chrome).toContain('onScan');
+    expect(home).not.toContain('scanDockLabel');
+    expect(home).not.toContain('useMaherLayout');
   });
 
   it('bin contents sheet is wired on IDENTIFY and rows can open an item', () => {

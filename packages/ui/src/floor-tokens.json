@@ -1,0 +1,34 @@
+{
+  "light": {
+    "background": "#E1DFD3",
+    "surface": "#F5F1EA",
+    "surfaceSecondary": "#EBE6DC",
+    "surfaceElevated": "#FAF7F1",
+    "textPrimary": "#1E1A1B",
+    "textSecondary": "#5C574F",
+    "textMuted": "#8A857C",
+    "border": "#D4CFC4",
+    "borderMuted": "#E3DED4",
+    "borderStrong": "#C4BDB0",
+    "brand": "#776245",
+    "brandHover": "#635239",
+    "brandActive": "#372612",
+    "brandSoft": "#EDE6DA",
+    "onBrand": "#F5F1EA",
+    "success": "#5A6348",
+    "successSoft": "#E9EBE3",
+    "warning": "#8B7049",
+    "warningSoft": "#F3EDE3",
+    "error": "#7A4538",
+    "errorSoft": "#F2E8E4",
+    "info": "#6E6254",
+    "infoSoft": "#EEEAE4"
+  },
+  "radius": {
+    "sm": 6,
+    "md": 10,
+    "lg": 14,
+    "xl": 20,
+    "full": 9999
+  }
+}

@@ -4,6 +4,7 @@ import {
   FlatList,
   RefreshControl,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
@@ -40,7 +41,10 @@ import { CatalogStoreChrome } from './components/CatalogStoreChrome';
 import { CreateProductSheet } from './components/CreateProductSheet';
 import { DealerCatalogChrome } from './components/DealerCatalogChrome';
 import { DealerCatalogGridSkeleton } from './components/DealerCatalogGridSkeleton';
-import { ProductCard } from './components/ProductCard';
+import {
+  ProductCard,
+  PRODUCT_CARD_DESK_MEDIA_RATIO,
+} from './components/ProductCard';
 import {
   flattenCatalogPages,
   useBrowseCategoriesQuery,
@@ -51,6 +55,7 @@ import {
 import { toProductCard } from './selectProductCard';
 import { CATALOG_SEARCH_DEBOUNCE_MS } from './catalogSearchDebounce';
 import { adminCatalogFabBottom, adminCatalogListBottomPad } from './catalogGridInsets';
+import { catalogCardWidth, catalogGridColumns } from './catalogGridLayout';
 import { type CatalogBrowseMode } from './catalogBrowseMode';
 import { isCatalogPickForOrder } from './catalogPickForOrder';
 import { navigateToBasketReview } from './newOrderDeepLink';
@@ -94,7 +99,7 @@ export function CatalogScreen({
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
-  const { windowClass, columnCapacity, isCompact } = useMaherLayout();
+  const { windowClass, isCompact } = useMaherLayout();
   const { width: screenW } = useWindowMetrics();
   const tabBarReserve = useTabBarReserve();
   const router = useRouter();
@@ -216,8 +221,16 @@ export function CatalogScreen({
 
   const pad = theme.spacing.lg;
   const gap = theme.spacing.md;
-  const cols = isCompact ? 2 : Math.min(columnCapacity, 4);
-  const cardWidth = (screenW - pad * 2 - gap * (cols - 1)) / cols;
+  const [paneW, setPaneW] = useState(0);
+  const gridW = paneW > 0 ? paneW : screenW;
+  const cols = catalogGridColumns(gridW, pad, gap);
+  const cardWidth = catalogCardWidth(gridW, cols, pad, gap);
+  const mediaRatio = isCompact ? undefined : PRODUCT_CARD_DESK_MEDIA_RATIO;
+
+  const onGridLayout = (e: LayoutChangeEvent) => {
+    const next = Math.round(e.nativeEvent.layout.width);
+    if (next > 0 && next !== paneW) setPaneW(next);
+  };
   const filterActiveCount = countActiveCatalogFilters(applied);
 
   /** True first visit only — never when swapping filters. */
@@ -359,7 +372,7 @@ export function CatalogScreen({
         {pageHeader}
         {chrome}
         <View style={{ paddingHorizontal: isDealer ? pad : 0, paddingTop: theme.spacing.sm }}>
-          <GridSkeleton />
+          <GridSkeleton columns={cols} />
         </View>
       </AppScreen>
     );
@@ -415,6 +428,7 @@ export function CatalogScreen({
         keyExtractor={(item) => item.id}
         numColumns={cols}
         key={`catalog-cols-${cols}`}
+        onLayout={onGridLayout}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ paddingHorizontal: pad, paddingBottom: theme.spacing.sm, gap: theme.spacing.sm }}>
@@ -487,7 +501,7 @@ export function CatalogScreen({
         ListEmptyComponent={
           isFilterUpdating ? (
             <View style={{ paddingHorizontal: pad, paddingTop: theme.spacing.md }}>
-              <GridSkeleton />
+              <GridSkeleton columns={cols} />
             </View>
           ) : isDealer ? (
             <DealerEmptyState title={emptyTitle} body={emptyBody} />
@@ -498,7 +512,7 @@ export function CatalogScreen({
         ListFooterComponent={
           browseMode === 'all' && productsQuery.isFetchingNextPage ? (
             <View style={{ paddingVertical: theme.spacing.lg, paddingHorizontal: pad }}>
-              <GridSkeleton />
+              <GridSkeleton columns={cols} />
             </View>
           ) : null
         }
@@ -521,6 +535,8 @@ export function CatalogScreen({
               product={item}
               index={index}
               width={cardWidth}
+              selected={item.id === selectedProductId}
+              mediaRatio={mediaRatio}
               onPress={() => openProduct(item.id)}
             />
           )

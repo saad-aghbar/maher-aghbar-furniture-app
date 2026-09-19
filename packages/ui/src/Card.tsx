@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
 import { cn } from './cn';
 
 export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
@@ -27,19 +27,22 @@ export function Card({
   return (
     <div
       className={cn(
-        'maher-animate-rise group overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
-        'transition-[box-shadow,border-color,transform] duration-200 ease-out hover:shadow-[var(--maher-shadow-md)]',
-        interactive &&
-          'maher-lift maher-sheen cursor-pointer hover:border-[var(--maher-border-strong)]',
+        'maher-floor-board group relative overflow-hidden rounded-[20px] border border-[var(--maher-border-strong)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
+        interactive && 'maher-press cursor-pointer hover:shadow-[var(--maher-shadow-md)]',
         className,
       )}
       {...props}
     >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 start-0 w-[3px] opacity-55"
+        style={{ background: 'var(--maher-brand)' } satisfies CSSProperties}
+      />
       {(title || description || actions) && (
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--maher-border)] px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-5 py-3 ps-6">
           <div className="flex min-w-0 items-start gap-3">
             {icon ? (
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] bg-[var(--maher-brand-soft)] text-[var(--maher-brand)] transition-transform duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--maher-brand-soft)] text-[var(--maher-brand)]">
                 {icon}
               </span>
             ) : null}
@@ -57,9 +60,9 @@ export function Card({
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </div>
       )}
-      <div className={padded ? 'p-5' : undefined}>{children}</div>
+      <div className={cn(padded && 'p-5', 'ps-6')}>{children}</div>
       {footer ? (
-        <div className="border-t border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-5 py-3">
+        <div className="border-t border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-5 py-3 ps-6">
           {footer}
         </div>
       ) : null}

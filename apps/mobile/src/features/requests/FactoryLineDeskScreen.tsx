@@ -3,11 +3,17 @@ import { Image, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import { listSpecOptionGroups, listSpecOptionValues } from '@/api/modules/catalog';
+import {
+  listCatalogColors,
+  listCatalogFabrics,
+  listSpecOptionGroups,
+  listSpecOptionValues,
+} from '@/api/modules/catalog';
 import { getQuotation, updateQuotation } from '@/api/modules/quotations';
 import { getRequest, verifyRequestSpec } from '@/api/modules/requests';
 import { resolveDocumentUrl, uploadFile } from '@/api/modules/uploads';
@@ -117,6 +123,16 @@ export function FactoryLineDeskScreen(props: Props) {
     queryKey: queryKeys.catalog.specOptionValues({ pageSize: 200 }),
     queryFn: () => listSpecOptionValues({ page: 1, pageSize: 200 }),
     enabled: can(user, 'catalog.read'),
+    staleTime: 60_000,
+  });
+  const fabricsQuery = useQuery({
+    queryKey: queryKeys.catalog.fabrics(),
+    queryFn: () => listCatalogFabrics(),
+    staleTime: 60_000,
+  });
+  const colorsQuery = useQuery({
+    queryKey: queryKeys.catalog.colors(),
+    queryFn: () => listCatalogColors(),
     staleTime: 60_000,
   });
 
@@ -409,6 +425,16 @@ export function FactoryLineDeskScreen(props: Props) {
               <FabricSelectionsEditor
                 value={line.fabrics}
                 onChange={(fabrics) => onChangeLine({ ...line, fabrics })}
+                fabricOptions={(fabricsQuery.data?.data ?? []).map((row) => ({
+                  id: row.id,
+                  name: localizedName(locale, row) || row.code,
+                  caption: row.code,
+                }))}
+                colorOptions={(colorsQuery.data?.data ?? []).map((row) => ({
+                  id: row.id,
+                  name: localizedName(locale, row) || row.code,
+                  caption: row.code,
+                }))}
               />
             </CatalogSectionBoard>
           </View>

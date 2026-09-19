@@ -29,7 +29,7 @@ Primary sources: [UNIVERSAL_APP_COMPLETE_IMPLEMENTATION.md](../UNIVERSAL_APP_COM
 - Production store release: **NO** until Mac signing + camera + Stage Manager widths.
 - Apple Watch companion: Phases 0–10 in tree. Simulator identity + worker/admin/dealer glances **PASS**. Inspection seed + airplane photos not taken. Physical Watch / complications / APNs **BLOCKED** (Personal Team). Universal-app UAT is unchanged.
 - Windows: spike only ([WINDOWS_SPIKE.md](../WINDOWS_SPIKE.md)). No port.
-- Web (`admin-web`, customer/employee portals): not part of the universal-app UAT.
+- Unified web (`apps/web` on :3000): admin / dealer / worker surfaces folded into one app. Auth middleware + SurfaceGate + factory line desks + server basket cookie landed. Floor primitives + parity manifest in tree. Web Push and offline outbox remain deferred.
 
 ## Stack convention
 

@@ -13,6 +13,7 @@ type Props = {
   order: SemiOrderGroup;
   index?: number;
   animateEnter?: boolean;
+  selected?: boolean;
   onPress?: () => void;
 };
 
@@ -83,6 +84,7 @@ export function InventorySemiOrderGroupCard({
   order,
   index = 0,
   animateEnter = true,
+  selected = false,
   onPress,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -143,8 +145,8 @@ export function InventorySemiOrderGroupCard({
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : borderColor,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           marginBottom: theme.spacing.sm + 6,
           ...orderBoardShadow(colorScheme),

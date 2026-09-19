@@ -15,6 +15,7 @@ import {
 } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { AdaptiveOverlay } from '@/adaptive/AdaptiveOverlay';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -685,6 +686,7 @@ function DealerSearchPicker({
 }) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { nestedListHeight } = useSheetListViewport();
 
   const selected = dealers.find((d) => d.id === selectedId);
   const needle = query.trim().toLowerCase();
@@ -753,7 +755,7 @@ function DealerSearchPicker({
           borderRadius: theme.radius.xl,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          maxHeight: 200,
+          maxHeight: nestedListHeight,
           ...orderBoardShadow(colorScheme),
         }}
       >

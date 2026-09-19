@@ -48,6 +48,8 @@ export type NewOrderLine = {
   orientation: string;
   options: NewOrderLineOption[];
   notes: string;
+  /** Dealer's own number for this item. Request PO uses the first filled line. */
+  externalOrderNumber: string;
   photoUris: string[];
   photoDocumentIds: string[];
   primaryImageDocumentId: string;
@@ -84,6 +86,7 @@ export function emptyOrderLine(partial: Partial<NewOrderLine> = {}): NewOrderLin
     orientation: '',
     options: [],
     notes: '',
+    externalOrderNumber: '',
     photoUris: [],
     photoDocumentIds: [],
     primaryImageDocumentId: '',
@@ -176,6 +179,7 @@ export function normalizeOrderLine(raw: unknown, index: number): NewOrderLine | 
     accessories: String(row.accessories ?? ''),
     options,
     notes: String(row.notes ?? ''),
+    externalOrderNumber: String(row.externalOrderNumber ?? ''),
     photoUris: Array.isArray(row.photoUris)
       ? (row.photoUris as string[]).filter((uri) => String(uri ?? '').trim())
       : [],

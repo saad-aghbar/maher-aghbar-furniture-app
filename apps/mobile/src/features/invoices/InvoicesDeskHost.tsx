@@ -5,10 +5,21 @@ import { useLocale } from '@/i18n';
 import { InvoiceDetailScreen } from './InvoiceDetailScreen';
 import { InvoicesListScreen } from './InvoicesListScreen';
 
-export function InvoicesDeskHost() {
+type Props = {
+  compactHref?: (id: string) => Href;
+  listBackFallback?: Href;
+  detailBackFallback?: Href;
+  adminControls?: boolean;
+};
+
+export function InvoicesDeskHost({
+  compactHref = (id) => `/(app)/(admin)/invoices/${id}` as Href,
+  listBackFallback,
+  detailBackFallback = '/(app)/(admin)/invoices' as Href,
+  adminControls = true,
+}: Props = {}) {
   const { t } = useLocale();
   const { split, selected, selectOrPush } = useDeskSelection();
-  const compactHref = (id: string) => `/(app)/(admin)/invoices/${id}` as Href;
 
   return (
     <SplitPane
@@ -17,16 +28,17 @@ export function InvoicesDeskHost() {
       primary={
         <InvoicesListScreen
           detailHref={compactHref}
-          adminControls
+          adminControls={adminControls}
           selectedInvoiceId={selected}
           onSelectInvoice={(id) => selectOrPush(id, compactHref(id))}
+          {...(listBackFallback ? { backFallback: listBackFallback } : {})}
         />
       }
       detail={
         selected ? (
           <InvoiceDetailScreen
             invoiceId={selected}
-            backFallback={'/(app)/(admin)/invoices' as Href}
+            backFallback={detailBackFallback}
             embedded
           />
         ) : null

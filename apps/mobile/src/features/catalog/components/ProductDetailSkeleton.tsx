@@ -6,7 +6,7 @@ export function ProductDetailSkeleton() {
   const { theme, colors } = useTheme();
   return (
     <View>
-      <SkeletonShimmer height={360} />
+      <SkeletonShimmer height={300} />
       <View
         style={{
           marginTop: -theme.spacing.lg,

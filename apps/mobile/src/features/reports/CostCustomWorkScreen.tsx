@@ -19,7 +19,7 @@ import { useCostCustomWorkQuery } from './query';
 
 const BACK = '/(app)/(admin)/reports/products' as Href;
 
-export function CostCustomWorkScreen() {
+export function CostCustomWorkScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
@@ -42,7 +42,7 @@ export function CostCustomWorkScreen() {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK} />
+          {embedded ? null : <ScreenBackLead fallback={BACK} />}
         </View>
         <AppText
           variant="largeTitle"

@@ -45,6 +45,9 @@ describe('Dealer modify variant floor', () => {
     expect(screen).toContain('DealerMeasurementsBoard');
     expect(screen).toContain('upsertBasketLine');
     expect(screen).toContain('catalogLineWasModified');
+    expect(screen).toContain('existingLine');
+    expect(screen).toContain('resolveSelectedVariant');
+    expect(screen).not.toContain('|| !selectedVariant');
     expect(screen).not.toContain('OrderLineSpecSheet');
   });
 
@@ -65,5 +68,11 @@ describe('PDP customize navigates to the modify page', () => {
     expect(pdp).toContain('pdp-customize-variant');
     expect(pdp).not.toContain('OrderLineSpecSheet');
     expect(pdp).not.toContain('setCustomizeOpen');
+  });
+
+  it('does not deep-link Edit item through catalog/[id]/customize', () => {
+    const deepLink = readFileSync(join(__dirname, '../newOrderDeepLink.ts'), 'utf8');
+    expect(deepLink).toContain('/(app)/(customer)/order/modify');
+    expect(deepLink).not.toContain('catalog/${id}/customize');
   });
 });

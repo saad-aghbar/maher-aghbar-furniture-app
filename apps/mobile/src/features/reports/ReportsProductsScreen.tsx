@@ -27,7 +27,17 @@ import { productProfileHref, variantProfileHref } from './reportsDeskHrefs';
 import { useCostCustomWorkQuery, useCostProductsQuery } from './query';
 import type { CostProductRow, CostVariantRow } from '@/api/modules/reports';
 
-export function ReportsProductsScreen() {
+export function ReportsProductsScreen({
+  selectedKey: _selectedKey,
+  onSelectProduct,
+  onSelectVariant,
+  onSelectCustom,
+}: {
+  selectedKey?: string;
+  onSelectProduct?: (id: string) => void;
+  onSelectVariant?: (productId: string, variantId: string) => void;
+  onSelectCustom?: () => void;
+} = {}) {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -112,7 +122,13 @@ export function ReportsProductsScreen() {
               {(customQuery.data?.data ?? []).length ? (
                 <CostPressableRow
                   accessibilityLabel={t('mobile.reports.customWork')}
-                  onPress={() => router.push('/(app)/(admin)/reports/products/custom' as Href)}
+                  onPress={() => {
+                    if (onSelectCustom) {
+                      onSelectCustom();
+                      return;
+                    }
+                    router.push('/(app)/(admin)/reports/products/custom' as Href);
+                  }}
                 >
                   <AppText>{t('mobile.reports.customWork')}</AppText>
                   <AppText variant="caption" dir="ltr">
@@ -133,6 +149,10 @@ export function ReportsProductsScreen() {
                       onPress={() => {
                         const productId = row.variant?.productId;
                         if (!productId) return;
+                        if (onSelectVariant) {
+                          onSelectVariant(productId, row.variantId);
+                          return;
+                        }
                         router.push(
                           variantProfileHref(productId, row.variantId, {
                             from: range.from,
@@ -161,15 +181,19 @@ export function ReportsProductsScreen() {
             >
               <CostPressableRow
                 accessibilityLabel={item.product?.sku ?? item.productId}
-                onPress={() =>
+                onPress={() => {
+                  if (onSelectProduct) {
+                    onSelectProduct(item.productId);
+                    return;
+                  }
                   router.push(
                     productProfileHref(item.productId, {
                       from: range.from,
                       to: range.to,
                       dateBasis,
                     }),
-                  )
-                }
+                  );
+                }}
               >
                 <ProductFacts row={item} />
               </CostPressableRow>

@@ -8,8 +8,8 @@ test.use({
 });
 
 const ADMIN = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
-const CUSTOMER = process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ?? 'http://localhost:3001';
-const EMPLOYEE = process.env.NEXT_PUBLIC_EMPLOYEE_PORTAL_URL ?? 'http://localhost:3002';
+const CUSTOMER = process.env.NEXT_PUBLIC_WEB_URL ?? process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
+const EMPLOYEE = process.env.NEXT_PUBLIC_WEB_URL ?? process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
 const API = process.env.API_URL ?? 'http://localhost:4000';
 
 const LOCALES = ['ar', 'en', 'he'] as const;
@@ -106,19 +106,19 @@ test.describe('Web parity walk — authenticated desks', () => {
 
     for (const locale of LOCALES) {
       await loginPortal(page, ADMIN, locale, 'admin');
-      await assertPageOk(page, `${ADMIN}/${locale}/production`);
-      await assertPageOk(page, `${ADMIN}/${locale}/sales-orders/${goldenId}/production-plan`);
-      await assertPageOk(page, `${ADMIN}/${locale}/inventory`);
-      await assertPageOk(page, `${ADMIN}/${locale}/inventory/receive`);
-      await assertPageOk(page, `${ADMIN}/${locale}/inventory/low-stock`);
-      await assertPageOk(page, `${ADMIN}/${locale}/purchasing/fabric`);
-      await assertPageOk(page, `${ADMIN}/${locale}/reports`);
-      await assertPageOk(page, `${ADMIN}/${locale}/reports/inventory`);
-      await assertPageOk(page, `${ADMIN}/${locale}/reports/products/custom`);
-      await assertPageOk(page, `${ADMIN}/${locale}/reports/coverage/MISSING_PRICE`);
-      if (itemId) await assertPageOk(page, `${ADMIN}/${locale}/inventory/items/${itemId}`);
-      if (productId) await assertPageOk(page, `${ADMIN}/${locale}/reports/products/${productId}`);
-      await assertPageOk(page, `${ADMIN}/${locale}/requests`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/production`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/sales-orders/${goldenId}/production-plan`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/inventory`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/inventory/receive`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/inventory/low-stock`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/purchasing/fabric`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/reports`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/reports/inventory`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/reports/products/custom`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/reports/coverage/MISSING_PRICE`);
+      if (itemId) await assertPageOk(page, `${ADMIN}/${locale}/admin/inventory/items/${itemId}`);
+      if (productId) await assertPageOk(page, `${ADMIN}/${locale}/admin/reports/products/${productId}`);
+      await assertPageOk(page, `${ADMIN}/${locale}/admin/requests`);
       await page.screenshot({
         path: `e2e/screenshots/web-parity-admin-${locale}.png`,
         fullPage: true,
@@ -138,16 +138,16 @@ test.describe('Web parity walk — authenticated desks', () => {
 
     await page.setViewportSize({ width: 768, height: 1024 });
     await loginPortal(page, CUSTOMER, 'ar', 'nile');
-    await assertPageOk(page, `${CUSTOMER}/ar/catalog`);
-    await assertPageOk(page, `${CUSTOMER}/ar/catalog/${productId}`);
-    await assertPageOk(page, `${CUSTOMER}/ar/catalog/${productId}/customize`);
-    await assertPageOk(page, `${CUSTOMER}/ar/order/custom`);
-    await assertPageOk(page, `${CUSTOMER}/ar/basket`);
-    await assertPageOk(page, `${CUSTOMER}/ar/payments`);
-    await assertPageOk(page, `${CUSTOMER}/ar/statement`);
-    await assertPageOk(page, `${CUSTOMER}/ar/invoices`);
-    await assertPageOk(page, `${CUSTOMER}/ar/returns`);
-    await assertPageOk(page, `${CUSTOMER}/ar/profile`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/catalog`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/catalog/${productId}`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/catalog/${productId}/customize`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/order/custom`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/basket`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/payments`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/statement`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/invoices`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/returns`);
+    await assertPageOk(page, `${CUSTOMER}/ar/dealer/profile`);
     await page.screenshot({
       path: 'e2e/screenshots/web-parity-dealer-ar-tablet.png',
       fullPage: true,
@@ -155,9 +155,9 @@ test.describe('Web parity walk — authenticated desks', () => {
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await loginPortal(page, CUSTOMER, 'en', 'nile');
-    await assertPageOk(page, `${CUSTOMER}/en/catalog`);
+    await assertPageOk(page, `${CUSTOMER}/en/dealer/catalog`);
     await loginPortal(page, CUSTOMER, 'he', 'nile');
-    await assertPageOk(page, `${CUSTOMER}/he/payments`);
+    await assertPageOk(page, `${CUSTOMER}/he/dealer/payments`);
   });
 
   test('worker carpenter + driver floor routes', async ({ page }) => {
@@ -174,12 +174,12 @@ test.describe('Web parity walk — authenticated desks', () => {
     const taskId = tasks.data?.[0]?.id;
 
     await loginPortal(page, EMPLOYEE, 'ar', 'carpenter');
-    await assertPageOk(page, `${EMPLOYEE}/ar/tasks`);
-    if (soId) await assertPageOk(page, `${EMPLOYEE}/ar/orders/${soId}`);
-    if (poId) await assertPageOk(page, `${EMPLOYEE}/ar/lane/${poId}`);
+    await assertPageOk(page, `${EMPLOYEE}/ar/worker/tasks`);
+    if (soId) await assertPageOk(page, `${EMPLOYEE}/ar/worker/orders/${soId}`);
+    if (poId) await assertPageOk(page, `${EMPLOYEE}/ar/worker/lane/${poId}`);
     if (taskId) {
-      await assertPageOk(page, `${EMPLOYEE}/ar/tasks/${taskId}`);
-      await assertPageOk(page, `${EMPLOYEE}/ar/tasks/${taskId}/take-in`);
+      await assertPageOk(page, `${EMPLOYEE}/ar/worker/tasks/${taskId}`);
+      await assertPageOk(page, `${EMPLOYEE}/ar/worker/tasks/${taskId}/take-in`);
     }
     await page.screenshot({
       path: 'e2e/screenshots/web-parity-worker-ar.png',
@@ -193,7 +193,7 @@ test.describe('Web parity walk — authenticated desks', () => {
     );
     const deliveryId = deliveries.data?.[0]?.id;
     await loginPortal(page, EMPLOYEE, 'en', 'driver');
-    await assertPageOk(page, `${EMPLOYEE}/en/tasks`);
-    if (deliveryId) await assertPageOk(page, `${EMPLOYEE}/en/deliveries/${deliveryId}`);
+    await assertPageOk(page, `${EMPLOYEE}/en/worker/tasks`);
+    if (deliveryId) await assertPageOk(page, `${EMPLOYEE}/en/worker/deliveries/${deliveryId}`);
   });
 });

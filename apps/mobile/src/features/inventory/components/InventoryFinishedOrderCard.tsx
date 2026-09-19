@@ -14,6 +14,7 @@ type Props = {
   order: FinishedOrderGroup;
   index?: number;
   animateEnter?: boolean;
+  selected?: boolean;
   onPress?: () => void;
 };
 
@@ -38,6 +39,7 @@ export function InventoryFinishedOrderCard({
   order,
   index = 0,
   animateEnter = true,
+  selected = false,
   onPress,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -94,8 +96,8 @@ export function InventoryFinishedOrderCard({
         style={{
           borderRadius: theme.radius.xl,
           borderWidth: 1,
-          borderColor,
-          backgroundColor: colors.surface,
+          borderColor: selected ? colors.brand : borderColor,
+          backgroundColor: selected ? colors.brandSoft : colors.surface,
           overflow: 'hidden',
           marginBottom: theme.spacing.sm + 6,
           ...orderBoardShadow(colorScheme),

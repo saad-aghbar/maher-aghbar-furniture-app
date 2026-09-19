@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -13,6 +12,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
@@ -49,8 +49,7 @@ export function InvoicePartySheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.78), 640);
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const locked = segments.length === 1;
   const initialSegment = selected?.kind && segments.includes(selected.kind)

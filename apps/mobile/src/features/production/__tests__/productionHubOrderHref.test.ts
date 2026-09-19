@@ -1,4 +1,9 @@
-import { productionHubBoardHref, productionHubOrderHref } from '../productionHubOrderHref';
+import {
+  parseProductionDeskSelection,
+  productionDeskSelectedId,
+  productionHubBoardHref,
+  productionHubOrderHref,
+} from '../productionHubOrderHref';
 
 describe('productionHubOrderHref', () => {
   it('opens the sales-order plan for unreleased work with a sales order', () => {
@@ -88,5 +93,32 @@ describe('productionHubOrderHref', () => {
         },
       ]),
     ).toBe('/(app)/(admin)/orders/so-9/production-plan');
+  });
+
+  it('maps hub destinations onto desk selected tokens', () => {
+    expect(
+      productionDeskSelectedId('/(app)/(admin)/orders/so-9/production-plan'),
+    ).toBe('so:so-9');
+    expect(productionDeskSelectedId('/(app)/(admin)/production/po-ret/plan')).toBe(
+      'plan:po-ret',
+    );
+    expect(productionDeskSelectedId('/(app)/(admin)/production/po-floor')).toBe(
+      'po-floor',
+    );
+    expect(
+      productionDeskSelectedId('/(app)/(admin)/production/po-1/workflow'),
+    ).toBeNull();
+    expect(parseProductionDeskSelection('so:so-9')).toEqual({
+      kind: 'salesOrder',
+      id: 'so-9',
+    });
+    expect(parseProductionDeskSelection('plan:po-ret')).toEqual({
+      kind: 'plan',
+      id: 'po-ret',
+    });
+    expect(parseProductionDeskSelection('po-floor')).toEqual({
+      kind: 'factory',
+      id: 'po-floor',
+    });
   });
 });

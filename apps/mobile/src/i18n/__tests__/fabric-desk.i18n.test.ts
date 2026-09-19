@@ -18,6 +18,9 @@ const KEYS = [
   'mobile.inventory.fabricSearchNoMatches',
   'mobile.inventory.fabricSearchClear',
   'mobile.inventory.fabricChildrenEyebrow',
+  'mobile.inventory.fabricSalesOrderEyebrow',
+  'mobile.inventory.fabricSubOrderEyebrow',
+  'mobile.inventory.fabricSubOrdersCount',
   'mobile.inventory.fabricLaneAll',
   'mobile.inventory.fabricLaneEmpty',
   'mobile.inventory.fabricHoldingTitle',
@@ -135,6 +138,7 @@ const INTERPOLATED = [
   ['mobile.inventory.fabricCoversAll', { need: 8, unit: 'm' }, '8'],
   ['mobile.inventory.fabricCoversPartial', { free: 4, need: 10, unit: 'm' }, '4'],
   ['mobile.inventory.fabricReplacing', { fabric: 'Velvet 302' }, 'Velvet 302'],
+  ['mobile.inventory.fabricSubOrdersCount', { n: 2 }, '2'],
 ] as const;
 
 /** Fabric lane labels come from the shared statuses namespace, not mobile.json. */

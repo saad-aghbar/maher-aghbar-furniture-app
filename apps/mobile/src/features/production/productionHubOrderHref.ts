@@ -36,3 +36,36 @@ export function productionHubBoardHref(items: ProductionHubOrderHrefInput[]): st
   if (!target) return '/(app)/(admin)/production';
   return productionHubOrderHref(target);
 }
+
+const SO_PLAN = /\/orders\/([^/?]+)\/production-plan/;
+const PO_PLAN = /\/production\/([^/?]+)\/plan(?:\?|$)/;
+const PO_DETAIL = /\/production\/([^/?]+)(?:\?|$)/;
+
+/**
+ * Hub destination → `?selected=` token for the production desk.
+ * `so:` = sales-order line chooser. `plan:` = unreleased return-work editor.
+ * Bare id = factory order. Null means the stack should still push.
+ */
+export function productionDeskSelectedId(href: string): string | null {
+  const so = href.match(SO_PLAN);
+  if (so?.[1]) return `so:${so[1]}`;
+  const poPlan = href.match(PO_PLAN);
+  if (poPlan?.[1]) return `plan:${poPlan[1]}`;
+  if (href.includes('/workflow') || href.includes('/setup')) return null;
+  const po = href.match(PO_DETAIL);
+  return po?.[1] ?? null;
+}
+
+export type ProductionDeskSelection =
+  | { kind: 'salesOrder'; id: string }
+  | { kind: 'plan'; id: string }
+  | { kind: 'factory'; id: string };
+
+export function parseProductionDeskSelection(
+  selected: string | undefined,
+): ProductionDeskSelection | null {
+  if (!selected) return null;
+  if (selected.startsWith('so:')) return { kind: 'salesOrder', id: selected.slice(3) };
+  if (selected.startsWith('plan:')) return { kind: 'plan', id: selected.slice(5) };
+  return { kind: 'factory', id: selected };
+}

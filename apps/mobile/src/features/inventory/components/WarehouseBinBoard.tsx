@@ -7,6 +7,7 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { HoldingLocationPickList } from '@/features/purchasing/components/HoldingLocationPickList';
 import { PURCHASING_CHROME_CONTROL_H } from '@/features/purchasing/components/PurchasingFilterTriggers';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
@@ -272,7 +273,8 @@ export function WarehouseBinStrip({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
-  const listHeight = listHeightProp ?? pickerViewportHeights(height).bin;
+  const { isDesk } = useMaherLayout();
+  const listHeight = listHeightProp ?? pickerViewportHeights(height, isDesk).bin;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [binQuery, setBinQuery] = useState('');
   const locationRows = useMemo(() => {

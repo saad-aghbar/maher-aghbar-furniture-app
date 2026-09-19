@@ -163,9 +163,7 @@ unset NODE_ENV || true
 export NODE_ENV=production
 pnpm --filter @maher/api build
 pnpm --filter @maher/worker build
-NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/admin-web build
-NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/customer-portal build
-NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/employee-portal build
+NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/web build
 unset NODE_ENV || true
 
 echo ""

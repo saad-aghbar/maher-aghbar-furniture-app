@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Image, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -9,6 +9,7 @@ import {
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { ReturnSheetFooter } from './ReturnSheetFooter';
 import { DealerSearchBar } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -38,8 +39,7 @@ export function ReturnOrderPickerSheet({
 }: Props) {
   const { t, isRTL, locale, formatDate } = useLocale();
   const { theme } = useTheme();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.78), 680);
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const [search, setSearch] = useState('');

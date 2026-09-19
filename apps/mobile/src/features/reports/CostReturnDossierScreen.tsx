@@ -17,9 +17,9 @@ import { useCostReturnDossierQuery } from './query';
 
 const BACK_FALLBACK = '/(app)/(admin)/reports' as Href;
 
-type Props = { id: string };
+type Props = { id: string; embedded?: boolean };
 
-export function CostReturnDossierScreen({ id }: Props) {
+export function CostReturnDossierScreen({ id, embedded = false }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
@@ -46,7 +46,7 @@ export function CostReturnDossierScreen({ id }: Props) {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK_FALLBACK} />
+          {embedded ? null : <ScreenBackLead fallback={BACK_FALLBACK} />}
         </View>
         <AppText
           variant="largeTitle"

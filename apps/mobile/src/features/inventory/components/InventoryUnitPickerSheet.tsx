@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { UnitPickerPanel } from '@/features/catalog/components/MeasurementValueSheet';
 import { useLocale } from '@/i18n';
 
@@ -12,6 +13,7 @@ type Props = {
 
 export function InventoryUnitPickerSheet({ open, unit, onClose, onSelect }: Props) {
   const { t } = useLocale();
+  const { sheetHeight } = useSheetListViewport();
   const title = t('mobile.inventory.pickUnit');
   const sheetTitle = title === 'mobile.inventory.pickUnit' ? 'Unit' : title;
 
@@ -21,7 +23,7 @@ export function InventoryUnitPickerSheet({ open, unit, onClose, onSelect }: Prop
       onClose={onClose}
       title={sheetTitle}
       fitContent
-      maxHeight={520}
+      maxHeight={sheetHeight}
       overlay
     >
       <UnitPickerPanel

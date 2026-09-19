@@ -14,6 +14,7 @@
   "files": ["dist", "src/tokens.css"],
   "scripts": {
     "build": "tsc",
+    "codegen:tokens": "node ./scripts/codegen-floor-tokens.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint stub'"
   },

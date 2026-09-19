@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { recordCatalogFabric } from '@/api/modules/catalog';
 import { invalidateFactoryJourney } from '@/api/invalidateFactoryJourney';
 import { queryKeys } from '@/api/queryKeys';
 import {
@@ -49,6 +50,7 @@ function useInvalidateOrderSetup(salesOrderId: string) {
 }
 
 export function useOrderProductionSetupActions(salesOrderId: string) {
+  const qc = useQueryClient();
   const invalidate = useInvalidateOrderSetup(salesOrderId);
   return {
     patchLine: useMutation({
@@ -93,6 +95,13 @@ export function useOrderProductionSetupActions(salesOrderId: string) {
     release: useMutation({
       mutationFn: () => releaseOrderProductionSetup(salesOrderId),
       onSuccess: invalidate,
+    }),
+    recordCatalogFabric: useMutation({
+      mutationFn: (input: { nameEn: string; nameAr?: string; color?: string }) =>
+        recordCatalogFabric(input),
+      onSuccess: async () => {
+        await qc.invalidateQueries({ queryKey: queryKeys.catalog.fabrics() });
+      },
     }),
   };
 }

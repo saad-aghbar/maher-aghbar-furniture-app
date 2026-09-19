@@ -144,6 +144,34 @@ export async function createGeneralStockFabricLot(input: {
   return { id: lot.id, qrCode, reused: false };
 }
 
+/** Idempotent leftover stock key — same order lot + task + qty reuses the FB-STOCK bundle. */
+export function leftoverFabricSourceKey(orderLotId: string, taskId: string, qty: number): string {
+  const n = Math.round((Number(qty) || 0) * 1000) / 1000;
+  return `fabric-leftover:${orderLotId}:${taskId}:${n}`;
+}
+
+/** Leftover metres become a GENERAL_STOCK inventory lot, not extra qty on the order bundle. */
+export async function recordLeftoverFabricAsGeneralStock(input: {
+  tx: Tx;
+  orderLotId: string;
+  taskId: string;
+  inventoryItemId: string;
+  warehouseId: string;
+  locationId?: string | null;
+  qty: number;
+  unitCost?: number | null;
+}): Promise<{ id: string; qrCode: string; reused: boolean }> {
+  return createGeneralStockFabricLot({
+    tx: input.tx,
+    sourceKey: leftoverFabricSourceKey(input.orderLotId, input.taskId, input.qty),
+    inventoryItemId: input.inventoryItemId,
+    warehouseId: input.warehouseId,
+    locationId: input.locationId,
+    qty: input.qty,
+    unitCost: input.unitCost,
+  });
+}
+
 /**
  * Create ORDER_ALLOCATED fabric lots for GRN lines that carry a fabric procurement.
  * Existing PURCHASE_RECEIPT movements stay untouched — no double entry.

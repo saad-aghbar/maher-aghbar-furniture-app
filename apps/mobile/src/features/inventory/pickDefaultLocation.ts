@@ -38,21 +38,29 @@ export function locationPickerLabel(loc: BinLike | null | undefined): string {
   return name || code;
 }
 
-export const PICKER_WAREHOUSE_MIN = 220;
-export const PICKER_WAREHOUSE_MAX = 280;
-export const PICKER_BIN_MIN = 200;
-export const PICKER_BIN_MAX = 260;
+export const PICKER_WAREHOUSE_MIN = 300;
+export const PICKER_WAREHOUSE_MAX = 380;
+export const PICKER_WAREHOUSE_DESK_MIN = 400;
+export const PICKER_WAREHOUSE_DESK_MAX = 520;
+export const PICKER_BIN_MIN = 280;
+export const PICKER_BIN_MAX = 360;
+export const PICKER_BIN_DESK_MIN = 360;
+export const PICKER_BIN_DESK_MAX = 480;
 
 /** Independent scroll viewports for warehouse + bin boxes inside sheets. */
-export function pickerViewportHeights(windowHeight: number) {
+export function pickerViewportHeights(windowHeight: number, isDesk = false) {
   const h = Math.max(0, windowHeight);
+  const warehouseMin = isDesk ? PICKER_WAREHOUSE_DESK_MIN : PICKER_WAREHOUSE_MIN;
+  const warehouseMax = isDesk ? PICKER_WAREHOUSE_DESK_MAX : PICKER_WAREHOUSE_MAX;
+  const binMin = isDesk ? PICKER_BIN_DESK_MIN : PICKER_BIN_MIN;
+  const binMax = isDesk ? PICKER_BIN_DESK_MAX : PICKER_BIN_MAX;
   return {
-    sheet: Math.min(Math.round(h * 0.88), 760),
+    sheet: Math.round(h * (isDesk ? 0.88 : 0.86)),
     warehouse: Math.max(
-      PICKER_WAREHOUSE_MIN,
-      Math.min(PICKER_WAREHOUSE_MAX, Math.round(h * 0.22)),
+      warehouseMin,
+      Math.min(warehouseMax, Math.round(h * (isDesk ? 0.34 : 0.3))),
     ),
-    bin: Math.max(PICKER_BIN_MIN, Math.min(PICKER_BIN_MAX, Math.round(h * 0.2))),
+    bin: Math.max(binMin, Math.min(binMax, Math.round(h * (isDesk ? 0.3 : 0.26)))),
   };
 }
 

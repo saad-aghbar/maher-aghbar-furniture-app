@@ -16,6 +16,7 @@ import {
   stageNodeState,
   stageProgress,
 } from '../newOrderStageMath';
+import { NEW_ORDER_STAGE_RAIL_MAX } from '../newOrderItemsLayout';
 
 type NewOrderStageRailProps = {
   step: NewOrderStep;
@@ -49,7 +50,12 @@ export function NewOrderStageRail({ step }: NewOrderStageRailProps) {
 
   return (
     <View
-      style={{ gap: theme.spacing.sm }}
+      style={{
+        gap: theme.spacing.sm,
+        alignSelf: 'center',
+        width: '100%',
+        maxWidth: NEW_ORDER_STAGE_RAIL_MAX,
+      }}
       accessibilityRole="progressbar"
       accessibilityLabel={t('mobile.newOrder.stageOf', {
         current: step,

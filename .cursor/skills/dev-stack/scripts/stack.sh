@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dev stack: API :4000, admin-web :3000, Metro :8081
+# Dev stack: API :4000, unified web :3000, Metro :8081
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
@@ -298,7 +298,7 @@ cmd_stop_kill_only() {
   stop_named admin
   stop_named metro
   pkill -f "${ROOT}.*/(pnpm )?dev:api|${ROOT}.*/@maher/api" 2>/dev/null || true
-  pkill -f "${ROOT}.*/(pnpm )?dev:admin|${ROOT}.*/@maher/admin-web|next dev -p 3000" 2>/dev/null || true
+  pkill -f "${ROOT}.*/(pnpm )?dev:admin|${ROOT}.*/@maher/web|next dev -p 3000" 2>/dev/null || true
   pkill -f "${ROOT}.*/@maher/mobile|expo start --host lan" 2>/dev/null || true
   pkill -f 'pnpm (dev:api|dev:admin)' 2>/dev/null || true
   pkill -f 'pnpm --filter @maher/(api|admin-web|mobile)' 2>/dev/null || true

@@ -121,7 +121,45 @@ export function parseDeepLinkText(
   return raw?.trim() ?? '';
 }
 
-/** Dealer PDP Customize → modified-order desk for this catalog variant. */
+const JUNK_CATALOG_ROUTE_IDS = new Set(['customize', 'index', 'undefined', 'null']);
+
+/** True when Expo treated a static segment as `catalog/[id]`. */
+export function isJunkCatalogRouteId(value: string): boolean {
+  return JUNK_CATALOG_ROUTE_IDS.has(value.trim().toLowerCase());
+}
+
+/**
+ * Prefer an explicit `productId` query param. Ignore path `id` values that are
+ * leftover static segments (`customize`) so Edit item never 404s the PDP.
+ */
+export function resolveCustomizeProductId(
+  id: string | string[] | undefined,
+  productId?: string | string[] | undefined,
+): string {
+  const fromQuery = parseDeepLinkProductId(productId);
+  if (fromQuery && !isJunkCatalogRouteId(fromQuery)) return fromQuery;
+  const fromPath = parseDeepLinkProductId(id);
+  if (fromPath && !isJunkCatalogRouteId(fromPath)) return fromPath;
+  return fromQuery;
+}
+
+/** First matching variant, else default, else first — never null when any exist. */
+export function resolveSelectedVariant<T extends { id: string; isDefault?: boolean }>(
+  variants: T[],
+  variantId?: string | null,
+): T | null {
+  const wanted = variantId?.trim() ?? '';
+  if (wanted) {
+    const match = variants.find((row) => row.id === wanted);
+    if (match) return match;
+  }
+  return variants.find((row) => row.isDefault) ?? variants[0] ?? null;
+}
+
+/**
+ * Dealer PDP / Edit item → modify desk.
+ * Lives next to `order/custom` so Expo does not parse `customize` as `catalog/[id]`.
+ */
 export function customizeVariantHref(
   productId: string,
   variantId: string,
@@ -129,12 +167,15 @@ export function customizeVariantHref(
   extras?: { lineId?: string },
 ): Href {
   const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
-  const id = encodeURIComponent(productId);
-  const variant = encodeURIComponent(variantId.trim());
-  const line = extras?.lineId?.trim()
-    ? `&lineId=${encodeURIComponent(extras.lineId.trim())}`
-    : '';
-  return `/(app)/(customer)/catalog/${id}/customize?variantId=${variant}&qty=${q}${line}` as Href;
+  return {
+    pathname: '/(app)/(customer)/order/modify' as const,
+    params: {
+      productId: productId.trim(),
+      variantId: variantId.trim(),
+      qty: String(q),
+      ...(extras?.lineId?.trim() ? { lineId: extras.lineId.trim() } : {}),
+    },
+  } as Href;
 }
 
 /** Dealer basket → custom piece desk (no catalog product, no dealer price). */

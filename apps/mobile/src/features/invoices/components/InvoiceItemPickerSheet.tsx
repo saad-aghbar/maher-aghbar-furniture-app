@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
@@ -18,6 +12,7 @@ import { AppTextInput } from '@/components/forms/AppTextInput';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { flattenCatalogPages, useCatalogInfiniteQuery } from '@/features/catalog/query';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
@@ -57,7 +52,7 @@ export function InvoiceItemPickerSheet({
 }: Props) {
   const { t, isRTL, locale, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
-  const { height } = useWindowDimensions();
+  const { sheetHeight } = useSheetListViewport();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [mode, setMode] = useState<'list' | 'custom'>('list');
   const [search, setSearch] = useState('');
@@ -139,7 +134,7 @@ export function InvoiceItemPickerSheet({
       onClose={onClose}
       onClosed={onClosed}
       title={title ?? t('mobile.invoices.addItem')}
-      sheetHeight={Math.min(Math.round(height * 0.82), 680)}
+      sheetHeight={sheetHeight}
     >
       <View style={{ gap: theme.spacing.md, flex: 1, minHeight: 0 }}>
         <View

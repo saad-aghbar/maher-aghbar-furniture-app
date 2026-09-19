@@ -16,6 +16,7 @@ import {
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
 import { pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useScanWarehouseBin } from '@/features/inventory/useScanWarehouseBin';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -44,7 +45,8 @@ export function ReturnReceiveSheet({ open, loading, pieces, onClose, onConfirm }
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(height);
+  const { isDesk } = useMaherLayout();
+  const pickerHeights = pickerViewportHeights(height, isDesk);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const awaiting = pieces.filter((piece) => piece.state === 'AWAITING_RECEIPT');
   const [selected, setSelected] = useState<string[]>([]);

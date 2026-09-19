@@ -52,7 +52,14 @@ export function DealerProductCard({
   } as const;
 
   return (
-    <ListItemEnter index={index}>
+    <ListItemEnter
+      index={index}
+      style={
+        width
+          ? { width, maxWidth: width, flexGrow: 0, flexShrink: 0 }
+          : undefined
+      }
+    >
       <View
         style={{
           width: width ?? undefined,

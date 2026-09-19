@@ -51,7 +51,13 @@ function issueHref(
   return null;
 }
 
-export function CostCoverageIssuesScreen({ issueType }: { issueType: string }) {
+export function CostCoverageIssuesScreen({
+  issueType,
+  embedded = false,
+}: {
+  issueType: string;
+  embedded?: boolean;
+}) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
@@ -75,7 +81,7 @@ export function CostCoverageIssuesScreen({ issueType }: { issueType: string }) {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK} />
+          {embedded ? null : <ScreenBackLead fallback={BACK} />}
         </View>
         <AppText
           variant="largeTitle"

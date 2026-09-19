@@ -12,6 +12,8 @@ import {
   filterFabricRowsByPurchasingStatus,
   groupFabricRowsBySalesOrder,
   fabricGroupReadiness,
+  fabricOrderShowsSubOrders,
+  fabricSubOrderNumber,
   mergeFabricDeskRows,
   fabricRowHref,
   pickFabricBlockingRow,
@@ -187,6 +189,10 @@ function asRow(partial: Partial<FabricTrackerRow> & { id: string }): FabricTrack
   return {
     id: partial.id,
     salesOrderId: partial.salesOrderId ?? 'so-fb1042',
+    productionOrderId: partial.productionOrderId ?? null,
+    productionOrderNumber: partial.productionOrderNumber ?? null,
+    salesOrderLineId: partial.salesOrderLineId ?? null,
+    itemLetter: partial.itemLetter ?? null,
     label: partial.label ?? 'Velvet 302 · Sand',
     role: partial.role ?? 'Main body',
     stageCode: 'UPHOLSTERY',
@@ -286,6 +292,89 @@ describe('groupFabricRowsBySalesOrder', () => {
     const groups = groupFabricRowsBySalesOrder(waiting);
     expect(groups.map((g) => g.orderNumber).sort()).toEqual(['SO-1048', 'SO-FB1042']);
     expect(groups.find((g) => g.orderNumber === 'SO-FB1042')?.rows).toHaveLength(1);
+  });
+
+  it('nests lettered factory orders under the sales order', () => {
+    const groups = groupFabricRowsBySalesOrder([
+      asRow({
+        id: 'a',
+        productionOrderId: 'po-a',
+        productionOrderNumber: 'SO-FB1042.A',
+        itemLetter: 'A',
+        productName: 'Classic Chair',
+        label: 'Velvet 302 · Sand',
+      }),
+      asRow({
+        id: 'b',
+        productionOrderId: 'po-a',
+        productionOrderNumber: 'SO-FB1042.A',
+        itemLetter: 'A',
+        productName: 'Classic Chair',
+        label: 'Linen 180 · Natural',
+      }),
+      asRow({
+        id: 'c',
+        productionOrderId: 'po-b',
+        productionOrderNumber: 'SO-FB1042.B',
+        itemLetter: 'B',
+        productName: 'Luna Sofa',
+        derivedStatus: 'WAITING',
+        readyForProduction: false,
+        arrivedQty: 0,
+        expectedQty: 18,
+        qrCodes: [],
+      }),
+    ]);
+    expect(groups).toHaveLength(1);
+    const group = groups[0]!;
+    expect(group.orderNumber).toBe('SO-FB1042');
+    expect(group.productName).toBeNull();
+    expect(group.subOrders.map((s) => s.productionOrderNumber)).toEqual([
+      'SO-FB1042.A',
+      'SO-FB1042.B',
+    ]);
+    expect(group.subOrders[0]?.rows.map((r) => r.label)).toEqual([
+      'Velvet 302 · Sand',
+      'Linen 180 · Natural',
+    ]);
+    expect(group.subOrders[1]?.productName).toBe('Luna Sofa');
+    expect(fabricOrderShowsSubOrders(group)).toBe(true);
+  });
+
+  it('builds SO-xxx.A from the line letter when the PO number is missing', () => {
+    expect(
+      fabricSubOrderNumber({
+        productionOrderNumber: null,
+        orderNumber: 'SO-2026-00026',
+        itemLetter: 'a',
+      }),
+    ).toBe('SO-2026-00026.A');
+  });
+
+  it('prefers SO-xxx.A over a legacy production number', () => {
+    expect(
+      fabricSubOrderNumber({
+        productionOrderNumber: 'PO-2026-00056',
+        orderNumber: 'SO-2026-00026',
+        itemLetter: 'B',
+      }),
+    ).toBe('SO-2026-00026.B');
+  });
+
+  it('still nests a single lettered factory order under the sales order', () => {
+    const groups = groupFabricRowsBySalesOrder([
+      asRow({
+        id: 'a',
+        productionOrderId: 'po-a',
+        productionOrderNumber: 'SO-FB1042.A',
+        itemLetter: 'A',
+        productName: 'Classic Chair',
+      }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.orderNumber).toBe('SO-FB1042');
+    expect(fabricOrderShowsSubOrders(groups[0]!)).toBe(true);
+    expect(groups[0]!.subOrders.map((s) => s.productionOrderNumber)).toEqual(['SO-FB1042.A']);
   });
 });
 

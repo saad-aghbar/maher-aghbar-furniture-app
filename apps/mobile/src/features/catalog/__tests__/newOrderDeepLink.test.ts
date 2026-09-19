@@ -2,6 +2,7 @@ import {
   catalogNewOrderParams,
   customItemHref,
   customizeVariantHref,
+  isJunkCatalogRouteId,
   isCatalogOrderDeepLink,
   navigateToBasketReview,
   navigateToCreateOrder,
@@ -11,6 +12,8 @@ import {
   parseDeepLinkQty,
   parseDeepLinkText,
   parseDeepLinkVariantId,
+  resolveCustomizeProductId,
+  resolveSelectedVariant,
 } from '../newOrderDeepLink';
 import { catalogDimensionsNote } from '../catalogDimensionsNote';
 
@@ -121,19 +124,52 @@ describe('isCatalogOrderDeepLink', () => {
 });
 
 describe('customizeVariantHref', () => {
-  it('opens the dealer modify desk for the selected variant', () => {
-    const href = String(customizeVariantHref('prod-abc', 'v-olive', 2));
-    expect(href).toContain('/(app)/(customer)/catalog/prod-abc/customize');
-    expect(href).toContain('variantId=v-olive');
-    expect(href).toContain('qty=2');
-    expect(href).not.toContain('lineId=');
+  it('opens the dealer modify desk beside custom item, not catalog/[id]', () => {
+    expect(customizeVariantHref('prod-abc', 'v-olive', 2)).toEqual({
+      pathname: '/(app)/(customer)/order/modify',
+      params: {
+        productId: 'prod-abc',
+        variantId: 'v-olive',
+        qty: '2',
+      },
+    });
   });
 
   it('carries a basket line id when editing from the basket', () => {
-    const href = String(
+    expect(
       customizeVariantHref('prod-abc', 'v-olive', 2, { lineId: 'line-9' }),
-    );
-    expect(href).toContain('lineId=line-9');
+    ).toEqual({
+      pathname: '/(app)/(customer)/order/modify',
+      params: {
+        productId: 'prod-abc',
+        variantId: 'v-olive',
+        qty: '2',
+        lineId: 'line-9',
+      },
+    });
+  });
+});
+
+describe('resolveCustomizeProductId', () => {
+  it('ignores Expo leftover static segments', () => {
+    expect(isJunkCatalogRouteId('customize')).toBe(true);
+    expect(resolveCustomizeProductId('customize', 'prod-abc')).toBe('prod-abc');
+    expect(resolveCustomizeProductId('customize')).toBe('');
+    expect(resolveCustomizeProductId('prod-abc')).toBe('prod-abc');
+  });
+});
+
+describe('resolveSelectedVariant', () => {
+  const rows = [
+    { id: 'v-std', isDefault: true },
+    { id: 'v-olive', isDefault: false },
+  ];
+
+  it('falls back to default when the requested id is missing', () => {
+    expect(resolveSelectedVariant(rows, 'gone')?.id).toBe('v-std');
+    expect(resolveSelectedVariant(rows, '')?.id).toBe('v-std');
+    expect(resolveSelectedVariant(rows, 'v-olive')?.id).toBe('v-olive');
+    expect(resolveSelectedVariant([], 'v-olive')).toBeNull();
   });
 });
 

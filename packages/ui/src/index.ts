@@ -119,3 +119,14 @@ export {
   type QrDisplayProps,
   type UsbWedgeState,
 } from './desk';
+
+export {
+  FloorBoard,
+  FloorSheet,
+  FloorFilterTrigger,
+  StageSpine,
+  SummaryRail,
+  InboxCells,
+  ListItemEnter,
+  PressableCard,
+} from './floor';

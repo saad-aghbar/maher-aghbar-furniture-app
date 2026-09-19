@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -34,6 +33,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { SearchActionRow } from '@/components/layout/SearchActionRow';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import {
@@ -149,8 +149,7 @@ export function BomMaterialPickerSheet({
     allowCreate &&
     (can(user, 'inventory.adjust') || can(user, 'production.setup.edit'));
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.72), 640);
+  const { sheetHeight } = useSheetListViewport();
 
   const [category, setCategory] = useState<InventoryCategoryGroup>('fabric');
   const [q, setQ] = useState('');

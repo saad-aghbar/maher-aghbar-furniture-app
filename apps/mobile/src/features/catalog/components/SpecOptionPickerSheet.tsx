@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
@@ -15,6 +10,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
@@ -56,14 +52,9 @@ export function SpecOptionPickerSheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
-  const { height } = useWindowDimensions();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const [query, setQuery] = useState('');
   const [draftId, setDraftId] = useState<string | null>(selectedId);
-
-  const sheetHeight = Math.min(
-    Math.round(height * (requireConfirm ? 0.7 : 0.62)),
-    requireConfirm ? 620 : 580,
-  );
   const sheetTitle = title ?? t('catalog.pickSpecOption');
   const sheetHint = hint ?? t('catalog.pickSpecOptionHint');
   const emptyLabel = emptySelectionLabel ?? t('catalog.noSpecOption');
@@ -121,7 +112,7 @@ export function SpecOptionPickerSheet({
   const enter = (index: number) =>
     reduce ? undefined : FadeInDown.delay(30 + index * 35).duration(220);
 
-  const listMax = sheetHeight - (requireConfirm ? 300 : 210);
+  const listMax = Math.max(listHeight, sheetHeight - (requireConfirm ? 300 : 210));
 
   return (
     <BottomSheet
@@ -174,6 +165,7 @@ export function SpecOptionPickerSheet({
           <View
             style={{
               flex: 1,
+              minHeight: listHeight,
               maxHeight: listMax,
               borderRadius: theme.radius.xl,
               borderWidth: 1,

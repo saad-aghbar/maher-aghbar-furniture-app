@@ -3,6 +3,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { OrderProductionSetupReleasePreview } from '../../api';
@@ -40,6 +41,7 @@ export function ReleaseReviewSheet({
 }: Props) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const { sheetHeight, listHeight } = useSheetListViewport();
   const canRelease = Boolean(preview?.canRelease);
   const issues = preview?.validation.issues ?? [];
   const lines = preview?.lines ?? [];
@@ -67,7 +69,7 @@ export function ReleaseReviewSheet({
       onClose={onClose}
       title={t('mobile.productionSetup.releaseTitle')}
       fitContent
-      maxHeight={560}
+      maxHeight={sheetHeight}
     >
       <View style={{ gap: theme.spacing.md }}>
         <AppText variant="caption" color="secondary">
@@ -79,7 +81,7 @@ export function ReleaseReviewSheet({
             {t('mobile.productionSetup.loadingPreview')}
           </AppText>
         ) : (
-          <ScrollView style={{ maxHeight: 280 }} contentContainerStyle={{ gap: theme.spacing.sm }}>
+          <ScrollView style={{ maxHeight: listHeight }} contentContainerStyle={{ gap: theme.spacing.sm }}>
             <AppText variant="label" weight="semibold">
               {t('mobile.productionSetup.releaseSummary.products')}
             </AppText>

@@ -21,7 +21,9 @@ import { OrderFabricGroupCard } from '@/features/fabric/OrderFabricGroupCard';
 import {
   fabricAwaitsSupply,
   fabricDeskBucketCounts,
+  fabricOrderShowsSubOrders,
   fabricRemainingNeed,
+  fabricSubOrderNumber,
   fabricRowDestination,
   fabricRowFromHolding,
   fabricStockCoverage,
@@ -48,12 +50,19 @@ import { InventoryListSkeleton } from './InventorySkeleton';
 type Props = {
   q?: string;
   enabled?: boolean;
+  onSelectSalesOrder?: (salesOrderId: string) => void;
+  onSelectProductionOrder?: (productionOrderId: string) => void;
 };
 
 /**
  * Inventory fabric desk — order first, then fabric-native general stock rolls.
  */
-export function FabricDeskSection({ q, enabled = true }: Props) {
+export function FabricDeskSection({
+  q,
+  enabled = true,
+  onSelectSalesOrder,
+  onSelectProductionOrder,
+}: Props) {
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -206,7 +215,20 @@ export function FabricDeskSection({ q, enabled = true }: Props) {
 
   function openOrder(salesOrderId: string | null) {
     if (!salesOrderId || !canReadOrder) return;
+    if (onSelectSalesOrder) {
+      onSelectSalesOrder(salesOrderId);
+      return;
+    }
     router.push(`/(app)/(admin)/orders/${salesOrderId}` as Href);
+  }
+
+  function openSubOrder(productionOrderId: string | null) {
+    if (!productionOrderId) return;
+    if (onSelectProductionOrder) {
+      onSelectProductionOrder(productionOrderId);
+      return;
+    }
+    router.push(`/(app)/(admin)/production/${productionOrderId}` as Href);
   }
 
   function onSelectBucket(next: FabricDeskBucket | null) {
@@ -291,6 +313,9 @@ export function FabricDeskSection({ q, enabled = true }: Props) {
                     group.salesOrderId && canReadOrder
                       ? () => openOrder(group.salesOrderId)
                       : undefined
+                  }
+                  onPressSubOrder={
+                    (sub) => openSubOrder(sub.productionOrderId)
                   }
                   onPressFabric={openFabric}
                   surface="desk"
@@ -563,40 +588,65 @@ function AllocOrderGroup({
       <AppText weight={titleWeight} dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
         {group.orderNumber ?? t('mobile.inventory.fabricUnassignedOrder')}
       </AppText>
-      {group.rows.map((row) => {
-        const active = orderId === row.id;
-        const cover = coverageCaption(row, free, t);
-        return (
-          <AnimatedPressable
-            key={row.id}
-            variant="button"
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            onPress={() => onPick(row)}
-            style={{
-              minHeight: theme.sizes.touch.min,
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: active ? colors.brand : colors.border,
-              backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: 2,
-            }}
-          >
-            <AppText
-              weight={titleWeight}
-              style={{ color: active ? colors.brand : colors.textPrimary, textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {row.label}
-            </AppText>
-            {cover ? (
-              <AppText variant="caption" style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}>
-                {cover}
+      {(fabricOrderShowsSubOrders(group)
+        ? group.subOrders
+        : [{ id: 'flat', rows: group.rows, productionOrderNumber: null, productName: null }]
+      ).map((sub) => (
+          <View key={sub.id} style={{ gap: theme.spacing.xs }}>
+            {sub.productionOrderNumber ? (
+              <AppText
+                variant="caption"
+                weight={titleWeight}
+                dir="ltr"
+                style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {sub.productionOrderNumber}
+                {sub.productName ? ` · ${sub.productName}` : ''}
               </AppText>
             ) : null}
-          </AnimatedPressable>
-        );
-      })}
+            {sub.rows.map((row) => {
+              const active = orderId === row.id;
+              const cover = coverageCaption(row, free, t);
+              return (
+                <AnimatedPressable
+                  key={row.id}
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => onPick(row)}
+                  style={{
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: active ? colors.brand : colors.border,
+                    backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: 2,
+                  }}
+                >
+                  <AppText
+                    weight={titleWeight}
+                    style={{
+                      color: active ? colors.brand : colors.textPrimary,
+                      textAlign: isRTL ? 'right' : 'left',
+                    }}
+                  >
+                    {row.label}
+                  </AppText>
+                  {cover ? (
+                    <AppText
+                      variant="caption"
+                      style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {cover}
+                    </AppText>
+                  ) : null}
+                </AnimatedPressable>
+              );
+            })}
+          </View>
+        ),
+      )}
     </View>
   );
 }
@@ -622,6 +672,7 @@ function AllocQtyStep({
 }) {
   const { t, isRTL, formatNumber } = useLocale();
   const { colors, theme } = useTheme();
+  const subNumber = row ? fabricSubOrderNumber(row) : null;
   return (
     <View style={{ gap: theme.spacing.md }}>
       {row ? (
@@ -629,6 +680,11 @@ function AllocQtyStep({
           {row.orderNumber ? (
             <AppText weight="semibold" dir="ltr">
               {row.orderNumber}
+            </AppText>
+          ) : null}
+          {subNumber && subNumber !== row.orderNumber ? (
+            <AppText variant="caption" dir="ltr" color="muted">
+              {subNumber}
             </AppText>
           ) : null}
           <AppText style={{ textAlign: isRTL ? 'right' : 'left' }}>{row.label}</AppText>

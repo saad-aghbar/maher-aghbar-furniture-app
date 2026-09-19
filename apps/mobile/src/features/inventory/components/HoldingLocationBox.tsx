@@ -42,7 +42,7 @@ export function HoldingLocationBox({
   onRemove,
   onAddWarehouse,
   hasWarehouse = true,
-  listHeight = 168,
+  listHeight = 280,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -203,6 +204,14 @@ class FabricDto {
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
+class RecordNamedFabricDto {
+  @IsOptional() @IsString() nameEn?: string;
+  @IsOptional() @IsString() nameAr?: string;
+  @IsOptional() @IsString() nameHe?: string;
+  @IsOptional() @IsString() code?: string;
+  @IsOptional() @IsString() color?: string;
+}
+
 class ColorDto {
   @IsString() @MinLength(1) code!: string;
   @IsString() @MinLength(1) nameAr!: string;
@@ -272,6 +281,7 @@ import { VariantsService } from './variants.service';
 import { CatalogPromotionService } from './catalog-promotion.service';
 import { TranslationService } from './translation.service';
 import { preferDealerPrice } from './dealer-price-prefer';
+import { fabricListWhere, upsertCatalogFabric } from './record-named-fabric';
 
 @ApiTags('catalog')
 @Controller()
@@ -1017,17 +1027,37 @@ export class CatalogController {
 
   @Get('fabrics')
   @RequireAnyPermissions('catalog.manage', 'catalog.read', 'request.create')
-  listFabrics(@Query() query: ListQueryDto) {
+  listFabrics(@Query() query: ListActiveQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where = query.q
-      ? {
-          OR: [
-            { code: { contains: query.q, mode: 'insensitive' as const } },
-            { nameEn: { contains: query.q, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const where = fabricListWhere(query);
     return this.paged(this.prisma.fabric, { page, pageSize, skip, take }, where, { code: 'asc' });
+  }
+
+  @Post('fabrics/record')
+  @RequireAnyPermissions('catalog.manage', 'inventory.adjust', 'production.setup.edit')
+  async recordFabric(@Body() dto: RecordNamedFabricDto, @CurrentUser() user: AuthUser) {
+    try {
+      const row = await upsertCatalogFabric(this.prisma, {
+        nameEn: dto.nameEn ?? '',
+        nameAr: dto.nameAr,
+        nameHe: dto.nameHe,
+        code: dto.code,
+        color: dto.color,
+      });
+      await this.audit(
+        user.id,
+        row.created ? 'fabric.record' : 'fabric.record-existing',
+        'Fabric',
+        row.id,
+        row,
+      );
+      return row;
+    } catch {
+      throw new BadRequestException({
+        code: 'FABRIC_NAME_REQUIRED',
+        message: 'Enter a fabric name.',
+      });
+    }
   }
 
   @Post('fabrics')

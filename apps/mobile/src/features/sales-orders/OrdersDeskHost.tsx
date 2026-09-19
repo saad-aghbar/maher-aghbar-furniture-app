@@ -11,12 +11,13 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
+type Variant = 'admin' | 'dealer';
+
 /**
- * Admin Orders tab host. COMPACT/MEDIUM push into `/orders/[id]` exactly as
- * today. EXPANDED/WIDE keep the list mounted and show the same prop-driven
- * `OrderDetailScreen` for `?selected=<id>` (no stack push).
+ * Orders tab host. COMPACT/MEDIUM push. EXPANDED/WIDE keep the list mounted
+ * and show OrderDetailScreen for `?selected=<id>`.
  */
-export function OrdersDeskHost() {
+export function OrdersDeskHost({ variant = 'admin' }: { variant?: Variant }) {
   const { t } = useLocale();
   const router = useRouter();
   const params = useLocalSearchParams<{ selected?: string | string[] }>();
@@ -24,27 +25,34 @@ export function OrdersDeskHost() {
   const split = isAtLeast(windowClass, 'expanded');
   const selected = firstParam(params.selected);
 
+  const compactHref = (id: string): Href =>
+    variant === 'dealer'
+      ? (`/(app)/(customer)/orders/${id}` as Href)
+      : (`/(app)/(admin)/orders/${id}` as Href);
+
   const onSelectOrder = (id: string) => {
     if (split) {
       router.setParams({ selected: id });
       return;
     }
-    router.push(`/(app)/(admin)/orders/${id}` as Href);
+    router.push(compactHref(id));
   };
 
   return (
     <SplitPane
-      testID="orders-desk-split"
+      testID={variant === 'dealer' ? 'dealer-orders-desk-split' : 'orders-desk-split'}
       split={split}
       primary={
         <OrdersListScreen
-          variant="admin"
+          variant={variant}
           selectedOrderId={selected}
           onSelectOrder={onSelectOrder}
         />
       }
       detail={
-        selected ? <OrderDetailScreen orderId={selected} variant="admin" embedded /> : null
+        selected ? (
+          <OrderDetailScreen orderId={selected} variant={variant} embedded />
+        ) : null
       }
       detailPlaceholder={
         <SplitPanePlaceholder

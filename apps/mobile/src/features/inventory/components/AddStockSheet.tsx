@@ -34,6 +34,7 @@ import {
   WarehouseBinStrip,
 } from './WarehouseBinBoard';
 import { pickDefaultLocationId, pickerViewportHeights } from '../pickDefaultLocation';
+import { useMaherLayout } from '@/adaptive/useMaherLayout';
 import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
@@ -125,7 +126,8 @@ export function AddStockSheet({
   const { user } = useAuth();
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const pickerHeights = pickerViewportHeights(height);
+  const { isDesk } = useMaherLayout();
+  const pickerHeights = pickerViewportHeights(height, isDesk);
   const sheetHeight = pickerHeights.sheet;
   const warehouseListHeight = pickerHeights.warehouse;
   const canAddWarehouse = can(user, 'warehouse.manage');

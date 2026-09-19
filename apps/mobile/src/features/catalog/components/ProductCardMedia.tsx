@@ -77,6 +77,7 @@ export function ProductCardMedia({
         height,
         backgroundColor: colors.background,
         overflow: 'hidden',
+        flexShrink: 0,
       }}
     >
       {showingPhoto ? null : <EmptyProductImage />}
@@ -86,12 +87,12 @@ export function ProductCardMedia({
           <Animated.View
             key={current}
             entering={reduce ? undefined : FadeIn.duration(420)}
-            style={{ position: 'absolute', width, height }}
+            style={{ position: 'absolute', width: '100%', height: '100%' }}
           >
-            <View style={{ width, height, opacity: showingPhoto ? 1 : 0 }}>
+            <View style={{ width: '100%', height: '100%', opacity: showingPhoto ? 1 : 0 }}>
               <Image
                 source={{ uri: current }}
-                style={{ width, height }}
+                style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
                 onLoad={() => setLoaded((prev) => ({ ...prev, [current]: true }))}
                 onError={() => setFailed((prev) => ({ ...prev, [current]: true }))}

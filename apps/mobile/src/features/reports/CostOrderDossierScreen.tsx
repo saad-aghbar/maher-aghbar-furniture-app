@@ -21,9 +21,9 @@ import { useCostOrderDossierQuery } from './query';
 
 const BACK_FALLBACK = '/(app)/(admin)/reports' as Href;
 
-type Props = { id: string };
+type Props = { id: string; embedded?: boolean };
 
-export function CostOrderDossierScreen({ id }: Props) {
+export function CostOrderDossierScreen({ id, embedded = false }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
@@ -49,7 +49,9 @@ export function CostOrderDossierScreen({ id }: Props) {
             justifyContent: 'center',
           }}
         >
-          <ScreenBackLead fallback={BACK_FALLBACK} />
+          {embedded ? null : (
+            <ScreenBackLead fallback={BACK_FALLBACK} />
+          )}
         </View>
         <AppText
           variant="largeTitle"

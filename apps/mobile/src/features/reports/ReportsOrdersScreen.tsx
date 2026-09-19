@@ -28,7 +28,13 @@ import { orderDossierHref } from './reportsDeskHrefs';
 import { useCostOrdersQuery } from './query';
 import type { CostOrderRow } from '@/api/modules/reports';
 
-export function ReportsOrdersScreen() {
+export function ReportsOrdersScreen({
+  selectedOrderId: _selectedOrderId,
+  onSelectOrder,
+}: {
+  selectedOrderId?: string;
+  onSelectOrder?: (id: string) => void;
+} = {}) {
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -160,9 +166,13 @@ export function ReportsOrdersScreen() {
           <ListItemEnter index={index}>
             <OrderCostCard
               row={item}
-              onPress={() =>
-                router.push(orderDossierHref(item.id, { from: range.from, to: range.to, dateBasis }))
-              }
+              onPress={() => {
+                if (onSelectOrder) {
+                  onSelectOrder(item.id);
+                  return;
+                }
+                router.push(orderDossierHref(item.id, { from: range.from, to: range.to, dateBasis }));
+              }}
             />
           </ListItemEnter>
         )}

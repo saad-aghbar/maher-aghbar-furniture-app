@@ -17,18 +17,41 @@ import {
   selectTaskCard,
 } from './selectTask';
 
+type Props = {
+  salesOrderId?: string;
+  embedded?: boolean;
+  number?: string;
+  q?: string;
+};
+
 /**
  * Middle step for finished work: tall order photo identity, then task cards.
+ * On the worker desk this mounts in the side pane (`embedded`).
  */
-export function WorkerCompletedSalesOrderItemsScreen() {
-  const { salesOrderId, number: numberParam, q } = useLocalSearchParams<{
+export function WorkerCompletedSalesOrderItemsScreen({
+  salesOrderId: salesOrderIdProp,
+  embedded = false,
+  number: numberProp,
+  q: qProp,
+}: Props = {}) {
+  const params = useLocalSearchParams<{
     salesOrderId?: string;
     number?: string;
     q?: string;
   }>();
-  const id = String(Array.isArray(salesOrderId) ? salesOrderId[0] : salesOrderId ?? '');
-  const orderNumber = String(Array.isArray(numberParam) ? numberParam[0] : numberParam ?? '');
-  const needle = String(Array.isArray(q) ? q[0] : q ?? '');
+  const id = String(
+    salesOrderIdProp ||
+      (Array.isArray(params.salesOrderId) ? params.salesOrderId[0] : params.salesOrderId) ||
+      '',
+  );
+  const orderNumber = String(
+    numberProp ??
+      (Array.isArray(params.number) ? params.number[0] : params.number) ??
+      '',
+  );
+  const needle = String(
+    qProp ?? (Array.isArray(params.q) ? params.q[0] : params.q) ?? '',
+  );
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const onBack = useSmartBack('/(app)/(employee)/(tabs)/completed' as Href);
@@ -58,7 +81,7 @@ export function WorkerCompletedSalesOrderItemsScreen() {
   if (query.isError && !query.data) {
     return (
       <AppScreen>
-        <BackButton onPress={onBack} />
+        {embedded ? null : <BackButton onPress={onBack} />}
         <ErrorState
           title={t('mobile.tasks.errorTitle')}
           description={t('mobile.tasks.errorBody')}
@@ -95,12 +118,12 @@ export function WorkerCompletedSalesOrderItemsScreen() {
                 gap: theme.spacing.sm,
               }}
             >
-              <BackButton onPress={onBack} />
+              {embedded ? null : <BackButton onPress={onBack} />}
               <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
                 <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
                   {t('mobile.tasks.orderItemsEyebrow')}
                 </AppText>
-                <AppText variant="largeTitle" weight={titleWeight}>
+                <AppText variant={embedded ? 'title' : 'largeTitle'} weight={titleWeight}>
                   {t('mobile.tasks.orderItemsTitle')}
                 </AppText>
                 {group?.number || orderNumber ? (

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +12,7 @@ import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { productionInsetStyle } from '@/features/production/productionFloorStyle';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -49,8 +49,7 @@ export function WorkflowPickerSheet({
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.72), 640);
+  const { sheetHeight } = useSheetListViewport();
   const [q, setQ] = useState('');
   const workflowsQuery = useWorkflowsQuery(open);
 

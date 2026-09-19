@@ -43,6 +43,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { useToast } from '@/components/feedback/Toast';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useSheetListViewport } from '@/components/sheets/sheetListViewport';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -186,6 +187,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
   ) {
     const { t, locale, isRTL } = useLocale();
     const { colors, theme, colorScheme } = useTheme();
+    const { sheetHeight } = useSheetListViewport();
     const { showToast } = useToast();
     const { openScanner } = useCodeScanner();
     const queryClient = useQueryClient();
@@ -718,7 +720,7 @@ export const TaskIncomingWorkFloorSection = forwardRef<TaskIncomingFloorHandle, 
                 })
               : t('mobile.tasks.incomingReceiveTitle')
           }
-          sheetHeight={560}
+          sheetHeight={sheetHeight}
         >
           <ScrollView
             keyboardShouldPersistTaps="handled"

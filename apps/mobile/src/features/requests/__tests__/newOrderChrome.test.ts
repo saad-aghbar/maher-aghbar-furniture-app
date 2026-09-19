@@ -5,6 +5,7 @@ import {
   isFinalWizardStep,
   NEW_ORDER_STAGE_COUNT,
 } from '../newOrderStageMath';
+import { NEW_ORDER_STAGE_RAIL_MAX } from '../newOrderItemsLayout';
 import {
   newOrderDockMode,
   newOrderDockPrimaryKey,
@@ -89,5 +90,11 @@ describe('newOrderDockScrollPad', () => {
     expect(newOrderDockScrollPad(12)).toBeGreaterThanOrEqual(
       108 + NEW_ORDER_DOCK_BODY_HEIGHT,
     );
+  });
+});
+
+describe('new order stage rail', () => {
+  it('stays a compact three-step strip instead of stretching across iPad', () => {
+    expect(NEW_ORDER_STAGE_RAIL_MAX).toBe(360);
   });
 });
