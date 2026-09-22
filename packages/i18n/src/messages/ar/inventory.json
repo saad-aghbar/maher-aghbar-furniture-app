@@ -274,5 +274,12 @@
   "grnHistory": "سندات الاستلام",
   "noReceiptsYet": "لم يُستلم شيء على هذا الأمر بعد.",
   "loaded": "محمّلة",
-  "toLoad": "للتحميل"
+  "toLoad": "للتحميل",
+  "lowStockEmpty": "لا مخزون منخفض",
+  "lowStockEmptyHint": "كل المواد الخام فوق حدها الأدنى.",
+  "binLabels": "ملصقات الأرفف",
+  "printBinLabels": "اطبع كل ملصقات الأرفف",
+  "location": "الموقع",
+  "noBin": "بدون رف",
+  "scanCode": "رمز المسح"
 }

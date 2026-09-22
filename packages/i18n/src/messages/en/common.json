@@ -392,5 +392,6 @@
   "noBinsDefault": "This warehouse has no bins; the return goes to its default location.",
   "skip": "Skip",
   "saveAndContinue": "Save and continue",
-  "scan": "Scan"
+  "scan": "Scan",
+  "default": "Default"
 }

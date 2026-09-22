@@ -1077,7 +1077,7 @@ export default function InventoryPage() {
             })}
           />
 
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className={lowStock.length > 0 ? 'grid gap-5 xl:grid-cols-2' : 'grid gap-5'}>
             {lowStock.length > 0 ? (
               <Board tone="warning" wash="top">
                 <Board.Header

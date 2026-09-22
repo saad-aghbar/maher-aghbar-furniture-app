@@ -80,9 +80,32 @@ export function InventoryHero({ title, description, actions, overview, groups }:
 
 const HOLD_TONE = (s: string): BoardTone => (/READY|ARRIVED|RECEIVED|COMPLETE/.test(s) ? 'success' : /PARTIAL|WAITING|PENDING/.test(s) ? 'warning' : /MISSING|LATE|SHORT/.test(s) ? 'error' : 'info');
 
+const FABRIC_STATUS_KEY: Record<string, string> = {
+  NEEDS_ORDERING: 'needsOrdering',
+  REQUESTED: 'waitingSupplier',
+  SENT: 'waitingSupplier',
+  SUPPLIER_CONFIRMED: 'waitingSupplier',
+  DELAYED: 'waiting',
+  PARTIALLY_AVAILABLE: 'partial',
+  PARTIAL: 'partial',
+  READY_FOR_PICKUP: 'readyForPickup',
+  ARRIVED: 'inHolding',
+  RECEIVED: 'inHolding',
+  READY_FOR_PRODUCTION: 'ready',
+  ISSUED: 'taken',
+  UNAVAILABLE: 'unavailable',
+};
+
 /** Fabric holding — dealer fabric that arrived for a specific order and waits for the floor (mobile-only endpoint). */
 export function FabricHoldingBoard({ className }: { className?: string }) {
   const ti = useTranslations('inventory');
+  const tf = useTranslations('mobile.fabricStatus');
+  const holdingLabel = (s: string) => {
+    const key = FABRIC_STATUS_KEY[s.toUpperCase()];
+    if (key && tf.has(key as never)) return tf(key as never);
+    const t = s.replace(/_/g, ' ').toLowerCase();
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  };
   const q = useFabricHolding();
   const rows = q.data ?? [];
   const waiting = rows.filter((r) => HOLD_TONE(r.derivedStatus) !== 'success').length;
@@ -114,7 +137,7 @@ export function FabricHoldingBoard({ className }: { className?: string }) {
                   {pct != null ? <Meter className="mt-1 max-w-[220px]" value={r.arrivedQty} max={Math.max(1, r.expectedQty ?? r.arrivedQty)} size="sm" valueLabel={`${r.arrivedQty}/${r.expectedQty} ${r.unit}`} tone={HOLD_TONE(r.derivedStatus)} /> : null}
                 </span>
                 <Stamp tone={HOLD_TONE(r.derivedStatus)} size="sm">
-                  {r.derivedStatus.replace(/_/g, ' ')}
+                  {holdingLabel(r.derivedStatus)}
                 </Stamp>
               </li>
             );

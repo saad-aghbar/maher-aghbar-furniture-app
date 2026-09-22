@@ -274,5 +274,12 @@
   "grnHistory": "Goods receipts",
   "noReceiptsYet": "Nothing received against this order yet.",
   "loaded": "Loaded",
-  "toLoad": "To load"
+  "toLoad": "To load",
+  "lowStockEmpty": "Nothing is running low",
+  "lowStockEmptyHint": "Every raw material is above its minimum.",
+  "binLabels": "Bin labels",
+  "printBinLabels": "Print all bin labels",
+  "location": "Location",
+  "noBin": "No bin",
+  "scanCode": "Scan code"
 }

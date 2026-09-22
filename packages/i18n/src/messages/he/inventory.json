@@ -274,5 +274,12 @@
   "grnHistory": "תעודות קבלה",
   "noReceiptsYet": "עדיין לא התקבל דבר על הזמנה זו.",
   "loaded": "הועמס",
-  "toLoad": "להעמסה"
+  "toLoad": "להעמסה",
+  "lowStockEmpty": "אין מלאי נמוך",
+  "lowStockEmptyHint": "כל חומרי הגלם מעל המינימום.",
+  "binLabels": "תוויות תאים",
+  "printBinLabels": "הדפס את כל תוויות התאים",
+  "location": "מיקום",
+  "noBin": "ללא תא",
+  "scanCode": "קוד סריקה"
 }

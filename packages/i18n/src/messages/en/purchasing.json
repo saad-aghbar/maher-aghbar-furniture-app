@@ -77,5 +77,6 @@
   "binName": "Bin name",
   "binCreated": "Bin created",
   "fabricBundleLabel": "Bundle label",
-  "fabricLots": "Bundles"
+  "fabricLots": "Bundles",
+  "salesOrder": "Sales order"
 }
