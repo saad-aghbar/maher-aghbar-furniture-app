@@ -210,6 +210,8 @@
     "reviewChip": "לבדיקה",
     "chargesChip": "חיובים",
     "openCount": "פתוח",
-    "chargesPending": "חיובים ממתינים"
+    "chargesPending": "חיובים ממתינים",
+    "dealerMarkSent": "שלחתי",
+    "dealerMarkSentConfirm": "הודיעו למפעל שהרהיט בדרך. הם יאשרו כשיגיע."
   }
 }

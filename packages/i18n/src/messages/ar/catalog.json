@@ -991,5 +991,21 @@
   "reviewHistory": "سجل المراجعة",
   "reviewNoHistory": "لا إجراءات مراجعة بعد.",
   "noChanges": "لا تغييرات بعد",
-  "linkedPo": "أمر الشراء"
+  "linkedPo": "أمر الشراء",
+  "editRequest": "تعديل الطلب",
+  "editRequestHint": "ما زال بإمكانك تغيير هذه التفاصيل قبل أن يبدأ المصنع المراجعة.",
+  "editWindowLeft": "قابل للتعديل لمدة {time} أخرى",
+  "editLocked": "هذا الطلب الآن عند المصنع ولا يمكن تعديله.",
+  "resubmit": "أرسل الرد",
+  "resubmitHint": "أضف المعلومات الناقصة أدناه وأعد إرسال الطلب للمراجعة.",
+  "requestUpdated": "تم تحديث الطلب",
+  "requestResubmitted": "أُعيد الإرسال للمراجعة",
+  "journeySubmitted": "مُرسَل",
+  "journeyReview": "مراجعة المصنع",
+  "journeyQuoted": "مُسعَّر",
+  "journeyOrder": "أمر بيع",
+  "yourNotes": "ملاحظاتك",
+  "dealerNoQuoteYet": "لا عرض سعر بعد",
+  "dealerNoQuoteYetBody": "المصنع يراجع طلبك. سيظهر عرض السعر هنا فور إرساله.",
+  "itemsFromBasketHint": "البنود من سلتك. عدّل الكميات والمتغيرات والقماش لكل بند في السلة؛ هذه الصفحة لتفاصيل الطلب."
 }

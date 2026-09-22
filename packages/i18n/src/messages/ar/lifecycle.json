@@ -210,6 +210,8 @@
     "reviewChip": "للمراجعة",
     "chargesChip": "رسوم",
     "openCount": "مفتوح",
-    "chargesPending": "رسوم معلّقة"
+    "chargesPending": "رسوم معلّقة",
+    "dealerMarkSent": "أرسلتها",
+    "dealerMarkSentConfirm": "أخبر المصنع أن القطعة في طريقها. سيؤكدون عند وصولها."
   }
 }

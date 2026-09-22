@@ -147,5 +147,10 @@
   "READY_FOR_QUOTE": "جاهز للتسعير",
   "DELIVERY_CONFIRMED": "تأكيد التسليم",
   "DELIVERY_CHANGED": "تغيير التسليم",
-  "RESUBMITTED": "أُعيد الإرسال"
+  "RESUBMITTED": "أُعيد الإرسال",
+  "CASH": "نقداً",
+  "BANK_TRANSFER": "حوالة بنكية",
+  "CHEQUE": "شيك",
+  "CARD": "بطاقة",
+  "OTHER": "أخرى"
 }

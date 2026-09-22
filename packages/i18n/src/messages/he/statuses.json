@@ -147,5 +147,10 @@
   "READY_FOR_QUOTE": "מוכן להצעה",
   "DELIVERY_CONFIRMED": "אספקה אושרה",
   "DELIVERY_CHANGED": "אספקה שונתה",
-  "RESUBMITTED": "נשלח מחדש"
+  "RESUBMITTED": "נשלח מחדש",
+  "CASH": "מזומן",
+  "BANK_TRANSFER": "העברה בנקאית",
+  "CHEQUE": "שיק",
+  "CARD": "כרטיס",
+  "OTHER": "אחר"
 }

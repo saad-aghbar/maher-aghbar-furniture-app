@@ -991,5 +991,21 @@
   "reviewHistory": "מסלול הבדיקה",
   "reviewNoHistory": "אין פעולות בדיקה עדיין.",
   "noChanges": "אין שינויים עדיין",
-  "linkedPo": "הזמנת רכש"
+  "linkedPo": "הזמנת רכש",
+  "editRequest": "עריכת בקשה",
+  "editRequestHint": "עדיין אפשר לשנות פרטים אלו לפני שהמפעל מתחיל בבדיקה.",
+  "editWindowLeft": "ניתן לערוך עוד {time}",
+  "editLocked": "ההזמנה עברה למפעל ואי אפשר לערוך אותה יותר.",
+  "resubmit": "שלח תשובה",
+  "resubmitHint": "הוסיפו את המידע החסר למטה ושלחו את ההזמנה חזרה לבדיקה.",
+  "requestUpdated": "ההזמנה עודכנה",
+  "requestResubmitted": "נשלח חזרה לבדיקה",
+  "journeySubmitted": "נשלח",
+  "journeyReview": "בדיקת מפעל",
+  "journeyQuoted": "הוצע מחיר",
+  "journeyOrder": "הזמנה",
+  "yourNotes": "ההערות שלך",
+  "dealerNoQuoteYet": "אין הצעת מחיר עדיין",
+  "dealerNoQuoteYetBody": "המפעל בודק את ההזמנה. הצעת המחיר תופיע כאן מיד עם שליחתה.",
+  "itemsFromBasketHint": "הפריטים מגיעים מהסל. ערכו כמויות, וריאנטים ובד לכל פריט בסל; עמוד זה מחזיק את פרטי ההזמנה."
 }

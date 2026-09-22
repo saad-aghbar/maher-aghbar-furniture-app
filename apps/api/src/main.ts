@@ -20,7 +20,8 @@ async function bootstrap() {
   const logger = createLogger('api');
   const app = await NestFactory.create(AppModule, { rawBody: false });
 
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // The web app embeds API-served images (uploads, labels) from another origin in dev and behind CDNs.
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(cookieParser());
   const corsAllowlist = corsAllowlistFromEnv(process.env.CORS_ORIGINS);
   const allowPrivateLan = process.env.NODE_ENV !== 'production';

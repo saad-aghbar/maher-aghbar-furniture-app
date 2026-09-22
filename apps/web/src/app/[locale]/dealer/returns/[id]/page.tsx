@@ -17,6 +17,7 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tl = useTranslations('lifecycle');
+  const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
   const copy = useReturnCopy();
   const router = useRouter();
@@ -100,10 +101,11 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
         facts={[
           { label: tc('quantity'), value: Number(row.quantity), ltr: true },
           { label: tc('reason'), value: copy.reason(row.reason) },
+          ...(row.resolution ? [{ label: tl('returnDetail.resolution'), value: tStatus.has(row.resolution as never) ? tStatus(row.resolution as never) : row.resolution, tone: 'info' as const }] : []),
           { label: tl('returnDetail.pieces'), value: row.pieceSummary ? `${row.pieceSummary.returned + row.pieceSummary.recovered}/${row.pieceSummary.total}` : `${pieces.length}`, ltr: true },
           ...(chargeStatus !== 'NOT_REQUIRED' ? [{ label: tl('returnDetail.chargeStatus'), value: copy.chargeStatus(chargeStatus), tone: chargeTone(chargeStatus) }] : []),
         ]}
-        primary={canMarkSent ? <Button onClick={() => setConfirm('sent')}>{tl('returnDesk.markSent')}</Button> : awaitingCharge ? <Button onClick={() => setConfirm('accept')}>{tl('returnDetail.recordAccept')}</Button> : undefined}
+        primary={canMarkSent ? <Button onClick={() => setConfirm('sent')}>{tl('returnDesk.dealerMarkSent')}</Button> : awaitingCharge ? <Button onClick={() => setConfirm('accept')}>{tl('returnDetail.recordAccept')}</Button> : undefined}
       >
         <StageStrip stages={stages} compact />
       </DetailHero>
@@ -185,15 +187,15 @@ export default function ReturnDetailPage({ params }: { params: { id: string } })
 
       {canMarkSent || awaitingCharge ? (
         <ActionDock className="md:hidden" note={<Stamp tone={heroTone} size="sm">{copy.status(lifecycle)}</Stamp>}>
-          <Button className="flex-1" onClick={() => setConfirm(canMarkSent ? 'sent' : 'accept')}>{canMarkSent ? tl('returnDesk.markSent') : tl('returnDetail.recordAccept')}</Button>
+          <Button className="flex-1" onClick={() => setConfirm(canMarkSent ? 'sent' : 'accept')}>{canMarkSent ? tl('returnDesk.dealerMarkSent') : tl('returnDetail.recordAccept')}</Button>
         </ActionDock>
       ) : null}
 
       <ConfirmDialog
         open={Boolean(confirm)}
-        title={confirm === 'sent' ? tl('returnDesk.markSent') : confirm === 'reject' ? tl('returnDetail.recordReject') : tl('returnDetail.recordAccept')}
-        description={confirm === 'sent' ? tl('returnDesk.markSentConfirm') : confirm === 'reject' ? rejectNote || tl('returnDetail.rejectionNote') : `${tl('returnDetail.chargeAmount')}: ${copy.money(row.chargeAmount)}`}
-        confirmLabel={confirm === 'sent' ? tl('returnDesk.markSent') : confirm === 'reject' ? tl('returnDetail.recordReject') : tl('returnDetail.recordAccept')}
+        title={confirm === 'sent' ? tl('returnDesk.dealerMarkSent') : confirm === 'reject' ? tl('returnDetail.recordReject') : tl('returnDetail.recordAccept')}
+        description={confirm === 'sent' ? tl('returnDesk.dealerMarkSentConfirm') : confirm === 'reject' ? rejectNote || tl('returnDetail.rejectionNote') : `${tl('returnDetail.chargeAmount')}: ${copy.money(row.chargeAmount)}`}
+        confirmLabel={confirm === 'sent' ? tl('returnDesk.dealerMarkSent') : confirm === 'reject' ? tl('returnDetail.recordReject') : tl('returnDetail.recordAccept')}
         cancelLabel={tCommon('cancel')}
         danger={confirm === 'reject'}
         loading={markSent.isPending || respond.isPending}

@@ -688,6 +688,9 @@ function CreateOrderForm() {
             disabled={busy}
           />
 
+          {basketLines.length > 0 ? <p className="m-0 rounded-[10px] bg-[var(--maher-surface-muted)] px-3 py-2 text-[13px] text-[var(--maher-text-secondary)]">{tc('itemsFromBasketHint')}</p> : null}
+          {basketLines.length === 0 ? (
+            <>
           <Combobox<string>
             label={tc('modelName')}
             value={productId || null}
@@ -723,6 +726,8 @@ function CreateOrderForm() {
             disabled={busy}
           />
 
+            </>
+          ) : null}
           <DateField
             label={tc('preferredDeliveryDate')}
             hint={tc('deliveryLeadTimeNotice')}
@@ -740,6 +745,8 @@ function CreateOrderForm() {
             clearable
           />
 
+          {basketLines.length === 0 ? (
+            <>
           <div className="grid grid-cols-3 gap-3">
             <Input
               label={tc('width')}
@@ -816,6 +823,8 @@ function CreateOrderForm() {
             {tc('addDimension')}
           </Button>
 
+            </>
+          ) : null}
           <TextArea autoGrow
             label={tc('orderNotes')}
             value={notes}

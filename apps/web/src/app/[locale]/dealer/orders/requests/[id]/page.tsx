@@ -1,14 +1,16 @@
 'use client';
 
-import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
+import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { Link } from '@/i18n/navigation';
 import { apiFetch, API_URL } from '@/lib/api-client';
-import { Alert, Board, BoardSkeleton, ErrorBoard, Ltr, MotionSection, Stamp, type BoardTone } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
-import { Armchair } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useKitCopy } from '@/lib/kit-copy';
+import { Alert, Attachments, Board, BoardSkeleton, Button, DateField, DetailHero, ErrorBoard, FormFooter, Input, ListRow, ListRows, Ltr, RowThumb, Sheet, StageStrip, Stamp, TextArea, useToast, type BoardTone, type StageStripStage } from '@maher/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil, Send } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 
 interface RequestItem {
   id: string;
@@ -17,11 +19,17 @@ interface RequestItem {
   quantity: string | number;
   fabricType?: string | null;
   fabricColor?: string | null;
+  fabric?: string | null;
+  color?: string | null;
   width?: string | number | null;
   height?: string | number | null;
   depth?: string | number | null;
   notes?: string | null;
+  manufacturingComplexity?: string | null;
+  variantLabel?: string | null;
   customMeasurements?: Array<{ label: string; value: string }> | null;
+  photos?: Array<{ id: string; fileName: string; mimeType: string; url: string | null }> | null;
+  product?: { id: string; imageUrl?: string | null } | null;
 }
 
 interface RequestDoc {
@@ -29,25 +37,33 @@ interface RequestDoc {
   fileName: string;
   mimeType?: string | null;
   category?: string | null;
+  downloadPath?: string | null;
 }
 
 interface RequestDetail {
   id: string;
   number: string;
   status: string;
+  createdAt?: string;
+  submittedAt?: string | null;
   externalOrderNumber?: string | null;
+  projectName?: string | null;
   endCustomerName?: string | null;
   endCustomerPhone?: string | null;
   endCustomerFax?: string | null;
   deliveryAddress?: string | null;
   deliveryLat?: number | null;
   deliveryLng?: number | null;
+  requiredDeliveryDate?: string | null;
+  offeredDeliveryDate?: string | null;
   notes?: string | null;
   title?: string | null;
   imageUrl?: string | null;
   informationRequestReason?: string | null;
   items?: RequestItem[];
   documents?: RequestDoc[];
+  quotations?: Array<{ id: string; number: string; status: string }>;
+  editPolicy?: { canEdit: boolean; remainingMs: number; editWindowEndsAt: string | null; lockedFields?: string[] } | null;
 }
 
 function mediaSrc(url: string | null | undefined): string | null {
@@ -56,14 +72,18 @@ function mediaSrc(url: string | null | undefined): string | null {
   return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-function isImageDoc(doc: RequestDoc) {
-  if ((doc.mimeType ?? '').startsWith('image/')) return true;
-  if (['MODEL_IMAGE', 'ORDER_IMAGE', 'HANDWRITTEN_ORDER', 'PRODUCT_IMAGE'].includes(doc.category ?? '')) {
-    return true;
-  }
-  return /\.(png|jpe?g|webp|gif|heic)$/i.test(doc.fileName);
+function fmtRemaining(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
+/**
+ * Dealer request detail — what the dealer sent, where the factory is with it,
+ * and (inside the edit window or after a need-info question) a small editor
+ * to update the order and send it back. Mirrors the mobile customer request screen.
+ */
 export default function CustomerRequestDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -72,49 +92,41 @@ export default function CustomerRequestDetailPage() {
   const tCommon = useTranslations('common');
   const tStatus = useTranslations('statuses');
   const tNav = useTranslations('navigation');
+  const locale = useLocale();
+  const kit = useKitCopy();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
+  const [draft, setDraft] = useState({ externalOrderNumber: '', notes: '', requiredDeliveryDate: '', deliveryAddress: '' });
 
-  const query = useQuery({
-    queryKey: ['customer-request', id],
-    queryFn: () => apiFetch<RequestDetail>(`/api/v1/requests/${id}`),
-    enabled: Boolean(id),
-  });
+  const query = useQuery({ queryKey: ['dealer-request', id], queryFn: () => apiFetch<RequestDetail>(`/api/v1/requests/${id}`) });
+  const req = query.data;
+  useEffect(() => {
+    if (!req || !editOpen) return;
+    setDraft({ externalOrderNumber: req.externalOrderNumber ?? '', notes: req.notes ?? '', requiredDeliveryDate: req.requiredDeliveryDate?.slice(0, 10) ?? '', deliveryAddress: req.deliveryAddress ?? '' });
+  }, [req, editOpen]);
 
-  const docs = query.data?.documents ?? [];
-  const imageDocs = docs.filter(isImageDoc);
-
-  const docLinksQuery = useQuery({
-    queryKey: ['request-doc-links', id, imageDocs.map((d) => d.id).join(',')],
-    enabled: imageDocs.length > 0,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const entries = await Promise.all(
-        imageDocs.map(async (doc) => {
-          try {
-            const res = await apiFetch<{ downloadPath: string }>(
-              `/api/v1/uploads/documents/${doc.id}/link`,
-            );
-            return [doc.id, `${API_URL}${res.downloadPath}`] as const;
-          } catch {
-            return [doc.id, null] as const;
-          }
+  const needsInfo = /NEEDS_INFO/.test((req?.status ?? '').toUpperCase());
+  const save = useMutation({
+    mutationFn: async (resubmit: boolean) => {
+      await apiFetch(`/api/v1/requests/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          externalOrderNumber: draft.externalOrderNumber.trim() || undefined,
+          notes: draft.notes.trim() || undefined,
+          requiredDeliveryDate: draft.requiredDeliveryDate || undefined,
+          deliveryAddress: draft.deliveryAddress.trim() || undefined,
         }),
-      );
-      return Object.fromEntries(entries) as Record<string, string | null>;
+      });
+      if (resubmit) await apiFetch(`/api/v1/requests/${id}/submit`, { method: 'POST' });
     },
+    onSuccess: async (_r, resubmit) => {
+      toast.success(resubmit ? tc('requestResubmitted') : tc('requestUpdated'));
+      setEditOpen(false);
+      await Promise.all([qc.invalidateQueries({ queryKey: ['dealer-request', id] }), qc.invalidateQueries({ queryKey: ['dealer-requests'] })]);
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
-
-  const galleryUrls = useMemo(() => {
-    const urls: string[] = [];
-    const catalog = mediaSrc(query.data?.imageUrl);
-    if (catalog) urls.push(catalog);
-    for (const doc of imageDocs) {
-      const linked = docLinksQuery.data?.[doc.id];
-      if (linked && !urls.includes(linked)) urls.push(linked);
-    }
-    return urls;
-  }, [query.data?.imageUrl, imageDocs, docLinksQuery.data]);
-
-  const heroImage = galleryUrls[0] ?? null;
 
   if (query.isLoading) {
     return (
@@ -124,161 +136,161 @@ export default function CustomerRequestDetailPage() {
       </div>
     );
   }
-
-  if (query.isError || !query.data) {
-    return (
-      <ErrorBoard
-        title={tNav('myOrders')}
-        description={tCommon('loadFailed')}
-        onRetry={() => void query.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
+  if (query.isError || !req) {
+    return <ErrorBoard title={tNav('rfqRequests')} description={mutationErrorMessage(query.error)} onRetry={() => query.refetch()} retryLabel={tCommon('retry')} />;
   }
 
-  const req = query.data;
-  const item = req.items?.[0];
+  const items = req.items ?? [];
+  const first = items[0];
   const statusKey = req.status.toUpperCase();
-  const tone: BoardTone = /NEED/.test(statusKey) ? 'error' : /(QUOTED|READY)/.test(statusKey) ? 'success' : /(CLOSED|CANCEL|REJECT)/.test(statusKey) ? 'neutral' : 'warning';
-  const statusLabel = (() => {
-    try {
-      return tStatus(req.status as 'PENDING');
-    } catch {
-      return req.status.replaceAll('_', ' ').toLowerCase();
-    }
-  })();
+  const tone: BoardTone = /NEED/.test(statusKey) ? 'error' : /(QUOTED|READY)/.test(statusKey) ? 'success' : /(CLOSED|CANCEL|REJECT)/.test(statusKey) ? 'neutral' : 'info';
+  const statusLabel = tStatus.has(req.status as never) ? tStatus(req.status as never) : req.status.replace(/_/g, ' ').toLowerCase();
+  const hero = mediaSrc(req.imageUrl) ?? mediaSrc(first?.photos?.[0]?.url) ?? first?.product?.imageUrl ?? null;
+  const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmtDate = (v?: string | null) => (v ? dateFmt.format(new Date(v)) : '—');
+  const canEdit = Boolean(req.editPolicy?.canEdit) || needsInfo;
+  const quoted = (req.quotations?.length ?? 0) > 0 || /QUOTED|CLOSED/.test(statusKey);
+  const journey: StageStripStage[] = [
+    { key: 'submitted', label: tc('journeySubmitted'), state: 'done' },
+    { key: 'review', label: tc('journeyReview'), state: needsInfo ? 'blocked' : /UNDER_REVIEW|READY_FOR_QUOTATION|SUBMITTED/.test(statusKey) && !quoted ? 'current' : quoted ? 'done' : 'todo' },
+    { key: 'quoted', label: tc('journeyQuoted'), state: quoted ? (statusKey === 'CLOSED' ? 'done' : 'current') : 'todo' },
+    { key: 'order', label: tc('journeyOrder'), state: statusKey === 'CLOSED' ? 'done' : 'todo' },
+  ];
+  const docs = (req.documents ?? []).map((d) => ({ id: d.id, name: d.fileName, mime: d.mimeType ?? null, thumbUrl: (d.mimeType ?? '').startsWith('image/') && d.downloadPath ? `${API_URL}${d.downloadPath}` : null }));
 
   return (
     <div className="maher-stagger space-y-5">
-      <BackButton fallbackHref="/dealer/requests" />
+      <DetailHero
+        back={{ label: tNav('rfqRequests'), href: '/dealer/requests' }}
+        LinkComponent={Link}
+        code={<Ltr>{req.number}</Ltr>}
+        title={req.title ?? req.projectName ?? first?.productName ?? req.number}
+        subtitle={req.externalOrderNumber ? `${t('dealerOrderNumber')}: ${req.externalOrderNumber}` : undefined}
+        status={{ label: statusLabel, tone }}
+        tone={tone}
+        media={<RowThumb src={hero} className="h-[88px] w-[88px]" />}
+        facts={[
+          { label: tc('lineItems'), value: String(items.length), ltr: true },
+          { label: tc('requestedDelivery'), value: fmtDate(req.requiredDeliveryDate), ltr: true },
+          ...(req.offeredDeliveryDate ? [{ label: t('desk.deliveryDate'), value: fmtDate(req.offeredDeliveryDate), ltr: true, tone: 'success' as BoardTone }] : []),
+          { label: tc('journeySubmitted'), value: fmtDate(req.submittedAt ?? req.createdAt), ltr: true },
+        ]}
+        primary={
+          canEdit ? (
+            <Button leadingIcon={needsInfo ? <Send className="h-4 w-4 rtl:-scale-x-100" /> : <Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+              {needsInfo ? tc('resubmit') : tc('editRequest')}
+            </Button>
+          ) : undefined
+        }
+      >
+        <StageStrip stages={journey} />
+      </DetailHero>
 
-      <Board tone={tone} wash="top" className="overflow-hidden">
-        <div className="relative bg-[var(--maher-surface-muted)]">
-          <div className="relative mx-auto aspect-[4/3] w-full max-h-[22rem] sm:aspect-[16/10] sm:max-h-[26rem]">
-            {heroImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={heroImage}
-                alt={req.title ?? item?.productName ?? req.number}
-                className="absolute inset-0 h-full w-full object-cover object-center"
-              />
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-text-tertiary">
-                <Armchair className="h-12 w-12 opacity-40" />
-                <Ltr className="text-xs font-medium uppercase tracking-wide">{req.number}</Ltr>
-              </div>
-            )}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/35 to-transparent" />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-3 border-t border-[var(--maher-border)] px-5 py-4 sm:px-6">
-          <div className="min-w-0">
-            <Ltr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{req.number}</Ltr>
-            <h1 className="mt-1 text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{req.title ?? item?.productName ?? req.number}</h1>
-            {req.externalOrderNumber ? (
-              <p className="mt-1 text-[13px] text-[var(--maher-text-secondary)]">
-                {t('dealerOrderNumber')}: <Ltr className="font-medium">{req.externalOrderNumber}</Ltr>
-              </p>
-            ) : null}
-          </div>
-          <Stamp tone={tone}>{statusLabel}</Stamp>
-        </div>
-      </Board>
-
-      {req.informationRequestReason ? (
-        <MotionSection delayMs={40}>
-          <Alert variant="warning">
-            <p className="font-medium">{tc('informationRequestReason')}</p>
-            <p className="mt-1 text-sm">{req.informationRequestReason}</p>
-          </Alert>
-        </MotionSection>
+      {needsInfo && req.informationRequestReason ? (
+        <Alert variant="warning">
+          <p className="font-medium">{tc('informationRequestReason')}</p>
+          <p className="mt-1 text-sm">{req.informationRequestReason}</p>
+        </Alert>
       ) : null}
+      {!needsInfo && req.editPolicy?.canEdit && req.editPolicy.remainingMs > 0 ? <Alert variant="info">{tc('editWindowLeft', { time: fmtRemaining(req.editPolicy.remainingMs) })}</Alert> : null}
 
-      <MotionSection delayMs={60}>
-        <DealerOrderDetails
-          externalOrderNumber={req.externalOrderNumber}
-          notes={req.notes}
-          endCustomerName={req.endCustomerName}
-          endCustomerPhone={req.endCustomerPhone}
-          endCustomerFax={req.endCustomerFax}
-          deliveryAddress={req.deliveryAddress}
-          deliveryLat={req.deliveryLat}
-          deliveryLng={req.deliveryLng}
-          items={req.items}
-        />
-      </MotionSection>
-
-      {docs.length > 0 ? (
-        <MotionSection delayMs={100}>
-          <Board tone="neutral">
-            <Board.Header title={tc('attachmentsSection')} />
-            <Board.Body>
-            <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {docs.map((doc) => {
-                const preview = docLinksQuery.data?.[doc.id];
-                const isImage = isImageDoc(doc);
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-7">
+          <Board tone="brand">
+            <Board.Header title={tc('lineItems')} meta={<span className="tabular-nums">{items.length}</span>} />
+            <ListRows>
+              {items.map((item) => {
+                const dims = [item.width, item.height, item.depth].filter((v) => v != null && v !== '').join(' × ');
+                const complexity = item.manufacturingComplexity === 'CUSTOM' ? tc('lineKindCustom') : item.manufacturingComplexity === 'MODIFIED' ? tc('lineKindCustomized') : tc('lineKindStandard');
+                const fabric = [item.fabricType ?? item.fabric, item.fabricColor ?? item.color].filter(Boolean).join(' · ');
                 return (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    className="overflow-hidden rounded-xl border border-border text-start"
-                    onClick={async () => {
-                      try {
-                        const res = await apiFetch<{ downloadPath: string }>(
-                          `/api/v1/uploads/documents/${doc.id}/link`,
-                        );
-                        window.open(`${API_URL}${res.downloadPath}`, '_blank');
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                  >
-                    {isImage && preview ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={preview}
-                        alt={doc.fileName}
-                        className="aspect-[4/3] w-full object-cover object-center transition duration-300 hover:scale-[1.03]"
-                      />
-                    ) : (
-                      <div className="flex aspect-[4/3] items-center justify-center bg-[var(--maher-surface-muted)] text-xs text-text-tertiary">
-                        {doc.fileName.split('.').pop()?.toUpperCase() || 'FILE'}
-                      </div>
-                    )}
-                    <p className="truncate px-2 py-1.5 text-xs text-text-secondary">{doc.fileName}</p>
-                  </button>
+                  <ListRow
+                    key={item.id}
+                    chevron={false}
+                    leading={<RowThumb src={mediaSrc(item.photos?.[0]?.url) ?? item.product?.imageUrl} className="h-12 w-12" icon={<Stamp tone={item.manufacturingComplexity === 'CUSTOM' ? 'warning' : item.manufacturingComplexity === 'MODIFIED' ? 'info' : 'neutral'} />} />}
+                    title={item.productName}
+                    meta={
+                      <span className="block">
+                        <span className="block">{[complexity, item.variantLabel, dims ? `${dims} cm` : null, fabric || null].filter(Boolean).join(' · ')}</span>
+                        {item.notes || item.description ? <span className="block text-[var(--maher-text-tertiary)]">{item.notes || item.description}</span> : null}
+                      </span>
+                    }
+                    trailing={<Ltr className="text-[14px] font-semibold">× {String(item.quantity)}</Ltr>}
+                  />
                 );
               })}
-            </div>
-            </Board.Body>
+            </ListRows>
           </Board>
-        </MotionSection>
-      ) : galleryUrls.length > 1 ? (
-        <MotionSection delayMs={100}>
-          <Board tone="neutral">
-            <Board.Header title={tc('attachmentsSection')} />
-            <Board.Body>
-            <div className="maher-stagger grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {galleryUrls.map((url, index) => (
-                <button
-                  key={`${url}-${index}`}
-                  type="button"
-                  className="group overflow-hidden rounded-xl border border-border bg-[var(--maher-surface-muted)]"
-                  onClick={() => window.open(url, '_blank')}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={url}
-                    alt=""
-                    className="aspect-[4/3] w-full object-cover object-center transition duration-300 group-hover:scale-[1.05]"
-                  />
-                </button>
-              ))}
-            </div>
-            </Board.Body>
+
+          <DealerOrderDetails
+            externalOrderNumber={req.externalOrderNumber}
+            notes={req.notes}
+            endCustomerName={req.endCustomerName}
+            endCustomerPhone={req.endCustomerPhone}
+            endCustomerFax={req.endCustomerFax}
+            deliveryAddress={req.deliveryAddress}
+            deliveryLat={req.deliveryLat}
+            deliveryLng={req.deliveryLng}
+            items={items}
+          />
+        </div>
+
+        <div className="space-y-5 xl:col-span-5">
+          <Board tone={(req.quotations?.length ?? 0) ? 'success' : 'neutral'}>
+            <Board.Header title={tc('quotations')} meta={<span className="tabular-nums">{req.quotations?.length ?? 0}</span>} />
+            {(req.quotations?.length ?? 0) > 0 ? (
+              <ListRows>
+                {req.quotations!.map((q) => (
+                  <ListRow key={q.id} href={`/dealer/quotations/${q.id}`} LinkComponent={Link} tone="success" title={<Ltr>{q.number}</Ltr>} meta={tStatus.has(q.status as never) ? tStatus(q.status as never) : q.status} />
+                ))}
+              </ListRows>
+            ) : (
+              <Board.Empty title={tc('dealerNoQuoteYet')} description={tc('dealerNoQuoteYetBody')} />
+            )}
           </Board>
-        </MotionSection>
-      ) : null}
+
+          {docs.length > 0 ? (
+            <Board tone="neutral">
+              <Board.Header title={tc('attachmentsSection')} meta={<span className="tabular-nums">{docs.length}</span>} />
+              <Board.Body>
+                <Attachments
+                  copy={kit.attachments}
+                  items={docs}
+                  onOpen={async (item) => {
+                    try {
+                      const res = await apiFetch<{ downloadPath: string }>(`/api/v1/uploads/documents/${item.id}/link`);
+                      window.open(`${API_URL}${res.downloadPath}`, '_blank', 'noopener,noreferrer');
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                />
+              </Board.Body>
+            </Board>
+          ) : null}
+        </div>
+      </div>
+
+      <Sheet open={editOpen} onClose={() => !save.isPending && setEditOpen(false)} title={needsInfo ? tc('resubmit') : tc('editRequest')} description={needsInfo ? tc('resubmitHint') : tc('editRequestHint')} closeLabel={tCommon('close')}>
+        <div className="space-y-4">
+          <Input label={t('dealerOrderNumber')} value={draft.externalOrderNumber} onChange={(e) => setDraft({ ...draft, externalOrderNumber: e.target.value })} dir="ltr" />
+          <DateField label={tc('requestedDelivery')} value={draft.requiredDeliveryDate} onChange={(v) => setDraft({ ...draft, requiredDeliveryDate: v })} copy={kit.date} locale={locale} variant="dealer" />
+          <TextArea autoGrow rows={2} label={tc('deliveryAddress')} value={draft.deliveryAddress} onChange={(e) => setDraft({ ...draft, deliveryAddress: e.target.value })} />
+          <TextArea autoGrow rows={4} label={tc('yourNotes')} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder={needsInfo ? req.informationRequestReason ?? undefined : undefined} />
+          <FormFooter
+            secondary={
+              <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={save.isPending}>
+                {tCommon('cancel')}
+              </Button>
+            }
+            primary={
+              <Button loading={save.isPending} onClick={() => save.mutate(needsInfo)}>
+                {needsInfo ? tc('resubmit') : tCommon('save')}
+              </Button>
+            }
+          />
+        </div>
+      </Sheet>
     </div>
   );
 }

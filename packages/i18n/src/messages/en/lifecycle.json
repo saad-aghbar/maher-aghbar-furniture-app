@@ -210,6 +210,8 @@
     "reviewChip": "To review",
     "chargesChip": "Charges",
     "openCount": "Open",
-    "chargesPending": "Charges pending"
+    "chargesPending": "Charges pending",
+    "dealerMarkSent": "I have sent it",
+    "dealerMarkSentConfirm": "Tell the factory the furniture is on its way. They will confirm when it arrives."
   }
 }

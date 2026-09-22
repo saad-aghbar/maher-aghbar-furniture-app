@@ -147,5 +147,10 @@
   "READY_FOR_QUOTE": "Ready for quotation",
   "DELIVERY_CONFIRMED": "Delivery confirmed",
   "DELIVERY_CHANGED": "Delivery changed",
-  "RESUBMITTED": "Resubmitted"
+  "RESUBMITTED": "Resubmitted",
+  "CASH": "Cash",
+  "BANK_TRANSFER": "Bank transfer",
+  "CHEQUE": "Cheque",
+  "CARD": "Card",
+  "OTHER": "Other"
 }

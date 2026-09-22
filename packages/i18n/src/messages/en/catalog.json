@@ -991,5 +991,21 @@
   "reviewHistory": "Review trail",
   "reviewNoHistory": "No review actions yet.",
   "noChanges": "Nothing changed yet",
-  "linkedPo": "Purchase order"
+  "linkedPo": "Purchase order",
+  "editRequest": "Edit request",
+  "editRequestHint": "You can still change these details before the factory starts reviewing.",
+  "editWindowLeft": "Editable for {time} more",
+  "editLocked": "This order is now with the factory and can no longer be edited.",
+  "resubmit": "Send answer",
+  "resubmitHint": "Add the missing information below and send the order back for review.",
+  "requestUpdated": "Order updated",
+  "requestResubmitted": "Sent back for review",
+  "journeySubmitted": "Submitted",
+  "journeyReview": "Factory review",
+  "journeyQuoted": "Quoted",
+  "journeyOrder": "Order",
+  "yourNotes": "Your notes",
+  "dealerNoQuoteYet": "No quotation yet",
+  "dealerNoQuoteYetBody": "The factory is reviewing your order. The quotation will appear here as soon as it is sent.",
+  "itemsFromBasketHint": "Items come from your basket. Edit quantities, variants and fabric per item in the basket; this page holds the order details."
 }

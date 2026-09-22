@@ -841,11 +841,9 @@ export class SalesOrdersService {
         const productionPrice = costs.productionPrice;
         const costBreakdown = costs.costBreakdown;
         const profit = costs.profit;
-        const title =
-          hydratedLines[0]?.description ??
-          hydratedLines[0]?.product?.nameEn ??
-          row.projectName ??
-          row.number;
+        const firstLineTitle =
+          hydratedLines[0]?.description ?? hydratedLines[0]?.product?.nameEn ?? row.projectName ?? row.number;
+        const title = hydratedLines.length > 1 ? `${firstLineTitle} +${hydratedLines.length - 1}` : firstLineTitle;
         const imageUrl =
           hydratedLines[0]?.product?.imageUrl ??
           this.documentImageUrl(
@@ -1714,10 +1712,13 @@ export class SalesOrdersService {
 
     const primaryProduct = hydratedLines[0]?.product ?? order.lines[0]?.product ?? null;
     const titleFromRequest = customerRequest.items?.[0]?.productName?.trim() || null;
-    const title =
+    const firstTitle =
       (primaryProduct
         ? primaryProduct.nameEn || primaryProduct.nameAr || order.lines[0]?.description
         : order.lines[0]?.description ?? titleFromRequest) || null;
+    // A multi-line order is not "Classic Chair" — say how much more is in it.
+    const extraLines = Math.max(0, order.lines.length - 1);
+    const title = firstTitle && extraLines > 0 ? `${firstTitle} +${extraLines}` : firstTitle;
     let imageUrl =
       orderedItems.find((item) => item.imageUrl)?.imageUrl ?? primaryProduct?.imageUrl ?? null;
     if (!imageUrl && title && primaryProduct) {
