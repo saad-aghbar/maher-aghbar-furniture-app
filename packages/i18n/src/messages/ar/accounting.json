@@ -127,7 +127,7 @@
   "wallClock": "زمن الساعة",
   "reworkTime": "وقت إعادة العمل",
   "provenance": "المصدر",
-  "exportGapsNote": "تصدير CSV متاح حيث يظهر. تصدير PDF وExcel غير مدعوم في هذا الإصدار.",
+  "exportGapsNote": "يمكن تصدير كل تقرير كملف PDF بهوية الشركة أو CSV من لوحة التصدير، باللغة والورق الذي تختاره.",
   "reportDashboard": "لمحة لوحة التحكم",
   "reportSales": "المبيعات",
   "reportProduction": "الإنتاج",
@@ -331,5 +331,13 @@
   "receipt": "إيصال",
   "entries": "القيود",
   "debits": "مدين",
-  "credits": "دفعات"
+  "credits": "دفعات",
+  "exportSales": "تقرير المبيعات",
+  "exportProfit": "ربح الطلبيات",
+  "exportAp": "دفتر الموردين",
+  "exportPeriodPl": "أرباح وخسائر الفترة",
+  "exportCashFlow": "التدفق النقدي",
+  "exportFinancial": "أعمار الذمم",
+  "exportsTitle": "التصدير",
+  "exportHint": "يُفتح كل تصدير كملف PDF بهوية الشركة (شعار وعلامة مائية وتذييل) باللغة والورق الذي تختاره؛ وتتوفر نفس البيانات بصيغة CSV."
 }

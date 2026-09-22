@@ -199,7 +199,7 @@ export default function ProductionProblemsPage() {
         <div className="space-y-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
           {answering?.voiceDocumentId ? <VoiceNotePlayer documentId={answering.voiceDocumentId} label={t('problemsVoice')} /> : null}
-          <TextArea label={t('problemsAnswer')} value={resolution} onChange={(e) => setResolution(e.target.value)} rows={5} placeholder={t('problemsAnswerPlaceholder')} />
+          <TextArea autoGrow label={t('problemsAnswer')} value={resolution} onChange={(e) => setResolution(e.target.value)} rows={5} placeholder={t('problemsAnswerPlaceholder')} />
         </div>
       </Sheet>
     </div>

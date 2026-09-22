@@ -304,21 +304,21 @@ export default function StaffTypeEditorPage() {
             </Select>
           </FormSection>
           <FormSection title={t('descriptionEn')} description={t('optional')} columns={1} tone="neutral">
-            <TextArea
+            <TextArea autoGrow
               label={t('descriptionEn')}
               value={form.descriptionEn}
               onChange={(e) => setForm((f) => ({ ...f, descriptionEn: e.target.value }))}
               rows={2}
               disabled={readOnly}
             />
-            <TextArea
+            <TextArea autoGrow
               label={t('descriptionAr')}
               value={form.descriptionAr}
               onChange={(e) => setForm((f) => ({ ...f, descriptionAr: e.target.value }))}
               rows={2}
               disabled={readOnly}
             />
-            <TextArea
+            <TextArea autoGrow
               label={t('descriptionHe')}
               value={form.descriptionHe}
               onChange={(e) => setForm((f) => ({ ...f, descriptionHe: e.target.value }))}

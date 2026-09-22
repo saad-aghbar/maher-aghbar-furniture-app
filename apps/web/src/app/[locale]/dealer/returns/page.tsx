@@ -303,7 +303,7 @@ export default function ReturnsPage() {
               })}
             </div>
           </div>
-          <TextArea
+          <TextArea autoGrow
             label={tc('description')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}

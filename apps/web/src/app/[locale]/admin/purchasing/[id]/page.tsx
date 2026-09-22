@@ -947,7 +947,7 @@ export default function PurchaseOrderDetailPage({
               {tc("whatsappNoPhone")}
             </p>
           )}
-          <TextArea
+          <TextArea autoGrow
             label={tc("whatsappMessage")}
             value={whatsappDraftBody}
             onChange={(e) => setWhatsappDraftBody(e.target.value)}

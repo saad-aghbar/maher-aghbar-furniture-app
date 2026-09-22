@@ -140,5 +140,12 @@
   "DISPOSE": "تم التخلص",
   "SALES_ORDER": "أمر بيع",
   "RETURN_WORK": "عمل إرجاع",
-  "RETURN_RECOVERY": "استخلاص إرجاع"
+  "RETURN_RECOVERY": "استخلاص إرجاع",
+  "SPEC_CONFIRMED": "تم تأكيد المواصفات",
+  "SPEC_CORRECTED": "تم تصحيح المواصفات",
+  "NEEDS_INFO_REQUESTED": "طُلبت معلومات",
+  "READY_FOR_QUOTE": "جاهز للتسعير",
+  "DELIVERY_CONFIRMED": "تأكيد التسليم",
+  "DELIVERY_CHANGED": "تغيير التسليم",
+  "RESUBMITTED": "أُعيد الإرسال"
 }

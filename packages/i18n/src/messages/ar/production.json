@@ -301,7 +301,7 @@
     "editStage": "تعديل المرحلة",
     "stageName": "اسم المرحلة",
     "department": "القسم",
-    "estimatedDuration": "المدة التقديرية",
+    "estimatedDuration": "المقدّر",
     "required": "إلزامية",
     "optional": "اختيارية",
     "excluded": "غير مستخدمة",
@@ -533,7 +533,14 @@
     "estimatedHours": "الساعات المعيارية",
     "resourceConstrainedCount": "{count, plural, one {مرحلة واحدة بمورد مشترك} other {# مراحل بمورد مشترك}}",
     "resourceConstrained": "{slots, plural, one {فتحة واحدة} other {# فتحات}}",
-    "skilledWorkers": "{count, plural, one {عامل مؤهل واحد} other {# عمال مؤهلون}}"
+    "skilledWorkers": "{count, plural, one {عامل مؤهل واحد} other {# عمال مؤهلون}}",
+    "actualDuration": "الفعلي",
+    "liveElapsed": "المنقضي (مباشر)",
+    "overEstimate": "تجاوز التقدير بـ {n}",
+    "timeLeft": "متبقٍ {n}",
+    "timeRunning": "جارٍ",
+    "timePaused": "متوقف",
+    "timeNotStarted": "لم يبدأ"
   },
   "setup": {
     "title": "إعداد الإنتاج",
@@ -805,5 +812,19 @@
   "tracking": "التقدّم",
   "takeInHint": "امسح كل طقم وارد حتى تُستلم كل الأسطر؛ تُفتح المهمة عند استلام الكل.",
   "kitLines": "أسطر الطقم",
-  "scanNext": "امسح التالي"
+  "scanNext": "امسح التالي",
+  "stageTimeRequiredHint": "حدّد مدة المرحلة قبل التعيين.",
+  "assignDay": "يوم العمل",
+  "hubWipMove": "نقل إلى رف",
+  "hubWipMoveTitle": "نقل الطقم إلى رف مرحلة",
+  "hubWipEnsureBins": "إنشاء أرفف المراحل",
+  "hubWipEnsureBinsHint": "لا توجد أرفف مراحل في مستودع نصف المصنّع بعد.",
+  "hubWipMoved": "تم نقل الطقم",
+  "hubWipBinsCreated": "أرفف المراحل جاهزة",
+  "hubStageOutputs": "مخرجات المراحل",
+  "hubStageOutputsHint": "ما تسلّمه كل مرحلة للتالية — الأطقم والقطع المتوقعة مقابل المنجزة.",
+  "hubStageOutputNone": "لا مخرجات نصف مصنّعة",
+  "hubStageOutputNext": "التالي: {stages}",
+  "hubStageOutputPieces": "{done}/{expected} قطعة",
+  "hubStageOutputKits": "{count} أطقم"
 }

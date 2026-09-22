@@ -205,16 +205,13 @@ export function OrderWorkflowSection({
                     {selected.backForRework ? <Stamp tone="warning" size="sm">{t('workflow.backForRework')}</Stamp> : null}
                     {selected.isOptional ? <Stamp tone="neutral" size="sm">{t('workflow.optional')}</Stamp> : null}
                   </div>
-                  {selected.progressPercent > 0 && selected.progressPercent < 100 ? <Meter value={selected.progressPercent} max={100} size="sm" tone="info" valueLabel={`${Math.round(selected.progressPercent)}%`} /> : null}
+                  <StageTimePanel stage={selected} />
                   <KeyFacts
                     columns={2}
                     facts={[
                       { label: tFlow('productionFlow.workers'), value: selected.assignedEmployee?.name ?? tFlow('productionFlow.unassigned'), muted: !selected.assignedEmployee },
                       { label: t('plannedStart'), value: fmtWhen(selected.plannedStart ?? selected.actualStart, locale), ltr: true },
                       { label: t('plannedCompletion'), value: fmtWhen(selected.plannedEnd ?? selected.actualEnd, locale), ltr: true },
-                      ...(selected.estimatedMinutes != null || selected.actualMinutes != null
-                        ? [{ label: t('workflow.estimatedDuration'), value: selected.actualMinutes != null ? `${selected.actualMinutes} min` : `${selected.estimatedMinutes} min`, ltr: true }]
-                        : []),
                     ]}
                   />
                   {selected.blockers?.length ? (
@@ -268,5 +265,64 @@ export function OrderWorkflowSection({
         </Board.Footer>
       ) : null}
     </Board>
+  );
+}
+
+function fmtMinutes(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? `${h}h ${rest}m` : `${h}h`;
+}
+
+/**
+ * Estimated · actual · live elapsed for one stage. Elapsed ticks every second
+ * while the timer runs (the parent already re-renders with a fresh `now`), the
+ * meter turns warning once the floor is over the estimate.
+ */
+function StageTimePanel({ stage }: { stage: OrderWorkflowStage }) {
+  const t = useTranslations('production');
+  const done = stage.status === 'COMPLETED' || stage.status === 'DONE';
+  const started = Boolean(stage.actualStart) || (stage.elapsedMinutes ?? 0) > 0 || stage.running;
+  const estimated = stage.estimatedMinutes ?? null;
+  const actual = done ? (stage.actualMinutes ?? stage.elapsedMinutes ?? null) : null;
+  const elapsed = !done && started ? (stage.elapsedMinutes ?? 0) : null;
+  if (estimated == null && actual == null && elapsed == null) return null;
+  const spent = actual ?? elapsed ?? 0;
+  const over = estimated != null && spent > estimated;
+  const tone: BoardTone = done ? (over ? 'warning' : 'success') : over ? 'warning' : stage.running ? 'info' : 'neutral';
+  const stateLabel = done ? null : stage.running ? t('workflow.timeRunning') : started ? t('workflow.timePaused') : t('workflow.timeNotStarted');
+  return (
+    <div className="rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-3">
+      <div className="grid grid-cols-3 gap-2 text-[12px]">
+        <div>
+          <p className="m-0 text-[var(--maher-text-tertiary)]">{t('workflow.estimatedDuration')}</p>
+          <p className="m-0 font-semibold tabular-nums text-[var(--maher-text-primary)]" dir="ltr">{estimated != null ? fmtMinutes(estimated) : '—'}</p>
+        </div>
+        <div>
+          <p className="m-0 text-[var(--maher-text-tertiary)]">{t('workflow.actualDuration')}</p>
+          <p className="m-0 font-semibold tabular-nums text-[var(--maher-text-primary)]" dir="ltr">{actual != null ? fmtMinutes(actual) : '—'}</p>
+        </div>
+        <div>
+          <p className="m-0 flex items-center gap-1 text-[var(--maher-text-tertiary)]">
+            {t('workflow.liveElapsed')}
+            {stage.running ? <Stamp tone="info" pulse /> : null}
+          </p>
+          <p className="m-0 font-semibold tabular-nums text-[var(--maher-text-primary)]" dir="ltr">{elapsed != null ? fmtMinutes(elapsed) : '—'}</p>
+        </div>
+      </div>
+      {estimated != null && estimated > 0 && (actual != null || elapsed != null) ? (
+        <div className="mt-2.5">
+          <Meter value={Math.min(spent, estimated)} max={estimated} size="sm" tone={tone} showValue={false} />
+          <p className="m-0 mt-1 text-[11px] text-[var(--maher-text-tertiary)]" dir="auto">
+            {over ? t('workflow.overEstimate', { n: fmtMinutes(spent - estimated) }) : done ? null : t('workflow.timeLeft', { n: fmtMinutes(estimated - spent) })}
+            {stateLabel ? `${over || !done ? ' · ' : ''}${stateLabel}` : ''}
+          </p>
+        </div>
+      ) : stateLabel ? (
+        <p className="m-0 mt-2 text-[11px] text-[var(--maher-text-tertiary)]">{stateLabel}</p>
+      ) : null}
+    </div>
   );
 }

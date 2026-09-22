@@ -327,7 +327,7 @@ export function ProductionScheduleCard({
                 className="h-10 w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 text-sm text-text-primary focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
               />
             </div>
-            <TextArea
+            <TextArea autoGrow
               label={tCommon("reason")}
               value={reason}
               onChange={(e) => setReason(e.target.value)}

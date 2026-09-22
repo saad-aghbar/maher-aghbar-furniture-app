@@ -978,5 +978,17 @@
   "estimatedTotal": "Estimated total",
   "estimatedTotalHint": "Dealer prices before VAT. Custom pieces are priced after review.",
   "clearBasket": "Clear basket",
-  "clearBasketConfirm": "Remove every line from the basket?"
+  "clearBasketConfirm": "Remove every line from the basket?",
+  "woodType": "Wood",
+  "woodColor": "Wood colour",
+  "foamDensity": "Foam",
+  "finish": "Finish",
+  "accessories": "Accessories",
+  "specCorrectTitle": "Correct the spec",
+  "specCorrectHint": "Edit what the factory will build. The dealer sees the corrected values on the quotation.",
+  "specCorrected": "Spec corrected",
+  "specConfirmed": "Spec confirmed",
+  "reviewHistory": "Review trail",
+  "reviewNoHistory": "No review actions yet.",
+  "noChanges": "Nothing changed yet"
 }

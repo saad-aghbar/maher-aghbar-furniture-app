@@ -16,6 +16,7 @@ import {
   Board,
   Button,
   DataBoard,
+  type DataColumn,
   DateField,
   ErrorBoard,
   FilterDrawer,
@@ -28,8 +29,8 @@ import {
   Sheet,
   Stamp,
   StatusChips,
+  TextArea,
   useToast,
-  type DataColumn,
 } from '@maher/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -338,7 +339,7 @@ function QuotationsPageInner() {
             <Input label={tc('paymentTerms')} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
             <Input label={tc('deliveryTerms')} value={deliveryTerms} onChange={(e) => setDeliveryTerms(e.target.value)} />
             <DateField label={t('factoryDelivery')} value={offeredDeliveryDate} onChange={setOfferedDeliveryDate} locale={copy.locale} copy={kit.date} />
-            <Input label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} className="md:col-span-2" />
+            <div className="md:col-span-2"><TextArea autoGrow rows={2} label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
           </div>
         </div>
       </Sheet>

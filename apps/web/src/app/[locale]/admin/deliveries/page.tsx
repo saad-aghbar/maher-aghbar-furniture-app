@@ -10,11 +10,14 @@ import type { Paginated } from '@/lib/paginated';
 import { toApiQuery, useListParams } from '@/lib/use-list-params';
 import { localizedName } from '@maher/i18n';
 import {
+  addDaysYmd,
   Alert,
+  anyToYmd,
   Board,
   Button,
   Combobox,
   DataBoard,
+  type DataColumn,
   DayStrip,
   ErrorBoard,
   Figure,
@@ -30,11 +33,9 @@ import {
   Sheet,
   Stamp,
   StatusChips,
-  addDaysYmd,
-  anyToYmd,
+  TextArea,
   todayYmd,
   useToast,
-  type DataColumn,
 } from '@maher/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Truck } from 'lucide-react';
@@ -495,7 +496,7 @@ function DeliveriesPageInner() {
             clearLabel={kit.combobox.clear}
           />
           <Input label={tc('deliveryAddress')} value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} required />
-          <Input label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <TextArea autoGrow rows={2} label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
       </Sheet>
     </div>

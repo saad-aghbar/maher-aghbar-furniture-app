@@ -138,7 +138,7 @@ export function ChangeDateDialog({
         ) : null}
         <DateField label={tp('newPreferredDate')} value={date} onChange={setDate} copy={kit.date} locale={locale} minDate={todayYmd()} todayShortcut presentation="popover" />
         <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tp('changeDateHint')}</p>
-        <TextArea label={t('reasonLabel')} placeholder={t('reasonPlaceholder')} value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
+        <TextArea autoGrow label={t('reasonLabel')} placeholder={t('reasonPlaceholder')} value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
         {error ? <Alert variant="error">{error}</Alert> : null}
       </div>
     </Sheet>

@@ -482,7 +482,7 @@ export default function LowStockReviewPage() {
                     <StatusBadge status={card.status.toUpperCase()} />
                   ) : null}
                 </div>
-                <TextArea
+                <TextArea autoGrow
                   label={tPurchasing("whatsappPreview")}
                   value={card.body}
                   disabled={step === "results"}

@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Header, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { buildSimplePdf, parsePdfQuery, sendPdf, type PdfLocale, type PdfTheme } from '../../common/helpers/pdf.util';
+import { EXPORT_FILENAMES, exportLabel, periodMeta, type ReportExportDataset, type ReportExportName } from './report-exports';
 import type { AuthUser } from '@maher/types';
 import { ReportsService } from './reports.service';
 import { CostPerformanceService } from './cost-performance.service';
@@ -50,6 +52,16 @@ class CreateLaborRateDto {
   @Type(() => Number) @IsNumber() @Min(0.001) hourlyRate!: number;
   @IsString() effectiveFrom!: string;
   @IsOptional() @IsString() effectiveTo?: string;
+}
+
+class ExportFormatQuery {
+  @IsOptional()
+  @IsString()
+  lang?: string;
+
+  @IsOptional()
+  @IsString()
+  theme?: string;
 }
 
 @ApiTags('reports')
@@ -176,117 +188,142 @@ export class ReportsController {
     return this.reports.purchasing();
   }
 
+  /** One dataset per export; served as CSV or as a branded PDF. */
+  private async exportDataset(name: ReportExportName, query: PeriodReportQueryDto & SalesReportQueryDto, locale: PdfLocale): Promise<ReportExportDataset> {
+    switch (name) {
+      case 'sales': {
+        const data = await this.reports.sales(query);
+        return { name, columns: ['customer', 'orders', 'total'], meta: periodMeta(query, locale), rows: data.topCustomers.map((c) => ({ customer: c.customerName, orders: c.orderCount, total: c.total })) };
+      }
+      case 'order-profit': {
+        const data = await this.reports.orderProfit(query);
+        return {
+          name,
+          columns: ['number', 'customer', 'sellerPrice', 'productionPrice', 'profit', 'marginPercent', 'status', 'orderDate'],
+          meta: periodMeta(query, locale),
+          rows: data.orders.map((o) => ({ number: o.number, customer: o.customerName, sellerPrice: o.sellerPrice, productionPrice: o.productionPrice, profit: o.profit, marginPercent: o.marginPercent, status: o.status, orderDate: o.orderDate.slice(0, 10) })),
+        };
+      }
+      case 'ap-ledger': {
+        const data = await this.reports.apLedger(query);
+        return {
+          name,
+          columns: ['number', 'supplier', 'purchaseOrder', 'dueDate', 'outstanding', 'daysPastDue', 'status'],
+          meta: periodMeta(query, locale),
+          rows: data.openInvoices.map((i) => ({ number: i.number, supplier: i.supplierName, purchaseOrder: i.purchaseOrderNumber, dueDate: i.dueDate?.slice(0, 10) ?? '', outstanding: i.outstanding, daysPastDue: i.daysPastDue, status: i.status })),
+        };
+      }
+      case 'period-pl': {
+        const data = await this.reports.periodPl(query);
+        const t = data.totals;
+        return {
+          name,
+          columns: ['revenueOrders', 'revenueInvoiced', 'materialCogs', 'reworkCost', 'replacementCost', 'recoveredValue', 'scrapValue', 'returnWriteOff', 'supplierSpend', 'laborHours', 'laborCost', 'laborRateJod', 'grossProfit', 'contribution', 'orderCount'],
+          meta: periodMeta(query, locale),
+          rows: [{ revenueOrders: t.revenueOrders, revenueInvoiced: t.revenueInvoiced, materialCogs: t.materialCogs, reworkCost: t.reworkCost, replacementCost: t.replacementCost, recoveredValue: t.recoveredValue, scrapValue: t.scrapValue, returnWriteOff: t.returnWriteOff, supplierSpend: t.supplierSpend, laborHours: t.laborHours, laborCost: t.laborCost, laborRateJod: data.laborRateJod, grossProfit: t.grossProfit, contribution: t.contribution, orderCount: t.orderCount }],
+        };
+      }
+      case 'cash-flow': {
+        const data = await this.reports.cashFlow(query);
+        const rows = [
+          ...data.recentInflows.map((r) => ({ direction: 'IN', number: r.number, party: r.party, method: r.method, amount: r.amount, date: r.date.slice(0, 10) })),
+          ...data.recentOutflows.map((r) => ({ direction: 'OUT', number: r.number, party: r.party, method: r.method, amount: r.amount, date: r.date.slice(0, 10) })),
+        ];
+        return { name, columns: ['direction', 'number', 'party', 'method', 'amount', 'date'], meta: periodMeta(query, locale), rows };
+      }
+      case 'financial': {
+        const data = await this.reports.financial();
+        return { name, columns: ['number', 'customer', 'dueDate', 'outstanding'], meta: periodMeta({}, locale), rows: data.openInvoices.map((i) => ({ number: i.number, customer: i.customer, dueDate: i.dueDate ? new Date(i.dueDate as unknown as string).toISOString().slice(0, 10) : '', outstanding: Number(i.outstanding) })) };
+      }
+    }
+  }
+
+  private sendExportCsv(res: Response, dataset: ReportExportDataset, locale: PdfLocale) {
+    const headers = dataset.columns.map((c) => exportLabel(c, locale));
+    const csv = dataset.rows.length ? this.reports.toCsv(dataset.rows.map((row) => Object.fromEntries(dataset.columns.map((c, i) => [headers[i]!, row[c] ?? ''])))) : headers.join(',');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${EXPORT_FILENAMES[dataset.name]}.csv"`);
+    res.send(`\ufeff${csv}`);
+  }
+
+  private async sendExportPdf(res: Response, dataset: ReportExportDataset, locale: PdfLocale, theme: PdfTheme) {
+    const buffer = await buildSimplePdf({
+      locale,
+      theme,
+      title: exportLabel(dataset.name, locale),
+      subtitle: `${exportLabel('rows', locale)}: ${dataset.rows.length}`,
+      meta: dataset.meta,
+      columns: dataset.columns.map((c) => exportLabel(c, locale)),
+      rows: dataset.rows.map((row) => dataset.columns.map((c) => (row[c] == null ? '' : typeof row[c] === 'number' ? String(Math.round((row[c] as number) * 100) / 100) : String(row[c])))),
+    });
+    sendPdf(res, `${EXPORT_FILENAMES[dataset.name]}.pdf`, buffer);
+  }
+
+  private async serveExport(name: ReportExportName, format: 'csv' | 'pdf', query: PeriodReportQueryDto & SalesReportQueryDto & { lang?: string; theme?: string }, req: Request, res: Response) {
+    const { locale, theme } = parsePdfQuery({ lang: query.lang, theme: query.theme, acceptLanguage: req.headers['accept-language'] });
+    const dataset = await this.exportDataset(name, query, locale);
+    if (format === 'csv') return this.sendExportCsv(res, dataset, locale);
+    return this.sendExportPdf(res, dataset, locale, theme);
+  }
+
   @Get('export/sales.csv')
   @RequirePermissions('report.sales.read')
-  @Header('Content-Type', 'text/csv; charset=utf-8')
-  async exportSales(@Query() query: SalesReportQueryDto, @Res() res: Response) {
-    const data = await this.reports.sales(query);
-    const csv = this.reports.toCsv(
-      data.topCustomers.map((c) => ({
-        customer: c.customerName,
-        orders: c.orderCount,
-        total: c.total,
-      })),
-    );
-    res.setHeader('Content-Disposition', 'attachment; filename="sales-report.csv"');
-    res.send(csv);
+  exportSales(@Query() query: SalesReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('sales', 'csv', query, req, res);
+  }
+
+  @Get('export/sales.pdf')
+  @RequirePermissions('report.sales.read')
+  exportSalesPdf(@Query() query: SalesReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('sales', 'pdf', query, req, res);
   }
 
   @Get('export/order-profit.csv')
   @RequirePermissions('report.financial.read')
-  async exportOrderProfit(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
-    const data = await this.reports.orderProfit(query);
-    const csv = this.reports.toCsv(
-      data.orders.map((o) => ({
-        number: o.number,
-        customer: o.customerName,
-        sellerPrice: o.sellerPrice,
-        productionPrice: o.productionPrice,
-        profit: o.profit,
-        marginPercent: o.marginPercent,
-        status: o.status,
-        orderDate: o.orderDate.slice(0, 10),
-      })),
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="order-profit.csv"');
-    res.send(csv);
+  exportOrderProfit(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('order-profit', 'csv', query, req, res);
+  }
+
+  @Get('export/order-profit.pdf')
+  @RequirePermissions('report.financial.read')
+  exportOrderProfitPdf(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('order-profit', 'pdf', query, req, res);
   }
 
   @Get('export/ap-ledger.csv')
   @RequirePermissions('report.financial.read')
-  async exportApLedger(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
-    const data = await this.reports.apLedger(query);
-    const csv = this.reports.toCsv(
-      data.openInvoices.map((i) => ({
-        number: i.number,
-        supplier: i.supplierName,
-        purchaseOrder: i.purchaseOrderNumber,
-        dueDate: i.dueDate?.slice(0, 10) ?? '',
-        outstanding: i.outstanding,
-        daysPastDue: i.daysPastDue,
-        status: i.status,
-      })),
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="ap-ledger.csv"');
-    res.send(csv);
+  exportApLedger(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('ap-ledger', 'csv', query, req, res);
+  }
+
+  @Get('export/ap-ledger.pdf')
+  @RequirePermissions('report.financial.read')
+  exportApLedgerPdf(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('ap-ledger', 'pdf', query, req, res);
   }
 
   @Get('export/period-pl.csv')
   @RequirePermissions('report.financial.read')
-  async exportPeriodPl(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
-    const data = await this.reports.periodPl(query);
-    const csv = this.reports.toCsv([
-      {
-        revenueOrders: data.totals.revenueOrders,
-        revenueInvoiced: data.totals.revenueInvoiced,
-        materialCogs: data.totals.materialCogs,
-        reworkCost: data.totals.reworkCost,
-        replacementCost: data.totals.replacementCost,
-        recoveredValue: data.totals.recoveredValue,
-        scrapValue: data.totals.scrapValue,
-        returnWriteOff: data.totals.returnWriteOff,
-        supplierSpend: data.totals.supplierSpend,
-        laborHours: data.totals.laborHours,
-        laborCost: data.totals.laborCost,
-        laborRateJod: data.laborRateJod,
-        grossProfit: data.totals.grossProfit,
-        contribution: data.totals.contribution,
-        orderCount: data.totals.orderCount,
-      },
-    ]);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="period-pl.csv"');
-    res.send(csv);
+  exportPeriodPl(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('period-pl', 'csv', query, req, res);
+  }
+
+  @Get('export/period-pl.pdf')
+  @RequirePermissions('report.financial.read')
+  exportPeriodPlPdf(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('period-pl', 'pdf', query, req, res);
   }
 
   @Get('export/cash-flow.csv')
   @RequirePermissions('report.financial.read')
-  async exportCashFlow(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
-    const data = await this.reports.cashFlow(query);
-    const rows = [
-      ...data.recentInflows.map((r) => ({
-        direction: 'IN',
-        number: r.number,
-        party: r.party,
-        method: r.method,
-        amount: r.amount,
-        date: r.date.slice(0, 10),
-      })),
-      ...data.recentOutflows.map((r) => ({
-        direction: 'OUT',
-        number: r.number,
-        party: r.party,
-        method: r.method,
-        amount: r.amount,
-        date: r.date.slice(0, 10),
-      })),
-    ];
-    const csv = this.reports.toCsv(rows);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="cash-flow.csv"');
-    res.send(csv);
+  exportCashFlow(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('cash-flow', 'csv', query, req, res);
+  }
+
+  @Get('export/cash-flow.pdf')
+  @RequirePermissions('report.financial.read')
+  exportCashFlowPdf(@Query() query: PeriodReportQueryDto & ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('cash-flow', 'pdf', query, req, res);
   }
 
   @Get('cost/money')
@@ -418,18 +455,13 @@ export class ReportsController {
 
   @Get('export/financial.csv')
   @RequirePermissions('report.financial.read')
-  async exportFinancial(@Res() res: Response) {
-    const data = await this.reports.financial();
-    const csv = this.reports.toCsv(
-      data.openInvoices.map((i) => ({
-        number: i.number,
-        customer: i.customer,
-        dueDate: i.dueDate,
-        outstanding: i.outstanding,
-      })),
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="financial-aging.csv"');
-    res.send(csv);
+  exportFinancial(@Query() query: ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('financial', 'csv', query as PeriodReportQueryDto & SalesReportQueryDto & ExportFormatQuery, req, res);
+  }
+
+  @Get('export/financial.pdf')
+  @RequirePermissions('report.financial.read')
+  exportFinancialPdf(@Query() query: ExportFormatQuery, @Req() req: Request, @Res() res: Response) {
+    return this.serveExport('financial', 'pdf', query as PeriodReportQueryDto & SalesReportQueryDto & ExportFormatQuery, req, res);
   }
 }

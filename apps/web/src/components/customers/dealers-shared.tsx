@@ -237,7 +237,7 @@ export function DealerFormFields({ form, setForm, mode, error }: { form: DealerF
         </>
       ) : null}
       <div className="sm:col-span-2">
-        <TextArea label={t('notes')} value={form.notes} onChange={(e) => patch({ notes: e.target.value })} rows={3} />
+        <TextArea autoGrow label={t('notes')} value={form.notes} onChange={(e) => patch({ notes: e.target.value })} rows={3} />
       </div>
       {mode === 'create' ? (
         <div className="sm:col-span-2 grid gap-4 rounded-[14px] border border-[var(--maher-border)] p-4 sm:grid-cols-2">

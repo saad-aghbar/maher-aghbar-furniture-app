@@ -162,7 +162,7 @@ export function FactoryLineDesk({ mode, parentId, lineId }: { mode: 'rfq' | 'quo
         {mode === 'quote' ? (
           <MoneyField label={t('unitPrice')} currency={currency} value={unitPrice} onChange={setUnitPrice} min={0} disabled={!editable} />
         ) : (
-          <TextArea label={t('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={!editable} className="md:col-span-2" rows={3} />
+          <TextArea autoGrow label={t('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={!editable} className="md:col-span-2" rows={3} />
         )}
       </FormSection>
 

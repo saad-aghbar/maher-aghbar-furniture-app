@@ -96,5 +96,20 @@
   "laneAccepted": "مقبول",
   "laneRejected": "مرفوض",
   "laneExpired": "منتهي",
-  "laneDraft": "مسودات"
+  "laneDraft": "مسودات",
+  "costPlanned": "التكلفة المخططة",
+  "costLastActual": "آخر تكلفة فعلية",
+  "costAvgActual": "متوسط الفعلية",
+  "costSamples": "{n} عمليات إنتاج",
+  "costNoHistory": "لا سجل مصنع بعد",
+  "costMargin": "الهامش",
+  "costUsePlanned": "استخدم المخطط +{pct}%",
+  "costBelow": "أقل من التكلفة",
+  "costBasisVariant": "المتغيّر",
+  "costBasisProduct": "المنتج",
+  "costBasisModified": "مطابقة معدّل",
+  "costBasisCustom": "مجموعة مخصص",
+  "costMatchedProduct": "منتج مشابه",
+  "costMatchedCohort": "قطع مخصصة مشابهة",
+  "costHints": "مؤشرات تكلفة المصنع"
 }

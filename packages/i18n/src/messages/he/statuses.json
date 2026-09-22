@@ -140,5 +140,12 @@
   "DISPOSE": "הושלך",
   "SALES_ORDER": "הזמנת מכירה",
   "RETURN_WORK": "עבודת החזרה",
-  "RETURN_RECOVERY": "שחזור החזרה"
+  "RETURN_RECOVERY": "שחזור החזרה",
+  "SPEC_CONFIRMED": "המפרט אושר",
+  "SPEC_CORRECTED": "המפרט תוקן",
+  "NEEDS_INFO_REQUESTED": "התבקש מידע",
+  "READY_FOR_QUOTE": "מוכן להצעה",
+  "DELIVERY_CONFIRMED": "אספקה אושרה",
+  "DELIVERY_CHANGED": "אספקה שונתה",
+  "RESUBMITTED": "נשלח מחדש"
 }

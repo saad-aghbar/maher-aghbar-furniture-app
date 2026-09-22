@@ -127,7 +127,7 @@
   "wallClock": "Wall clock",
   "reworkTime": "Rework time",
   "provenance": "Provenance",
-  "exportGapsNote": "CSV export is available where listed. PDF and Excel workbook exports are not supported in this release.",
+  "exportGapsNote": "Every report exports as a branded PDF or CSV from the Exports board, in your chosen language and paper.",
   "reportDashboard": "Dashboard snapshot",
   "reportSales": "Sales",
   "reportProduction": "Production",
@@ -331,5 +331,13 @@
   "receipt": "Receipt",
   "entries": "Entries",
   "debits": "Charges",
-  "credits": "Payments"
+  "credits": "Payments",
+  "exportSales": "Sales report",
+  "exportProfit": "Order profit",
+  "exportAp": "Supplier ledger",
+  "exportPeriodPl": "Period P&L",
+  "exportCashFlow": "Cash flow",
+  "exportFinancial": "Receivables aging",
+  "exportsTitle": "Exports",
+  "exportHint": "Each export opens as a branded PDF (logo, watermark, footer) in your chosen language and paper; the same data is also available as CSV."
 }

@@ -35,6 +35,11 @@ class ReturnUnusedMaterialDto {
   @IsUUID()
   warehouseId?: string;
 
+  /** Bin / location inside the warehouse to receive the returned material. */
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
@@ -339,6 +344,7 @@ export class ProductionController {
       inventoryItemId: dto.inventoryItemId,
       quantity: dto.quantity,
       warehouseId: dto.warehouseId,
+      locationId: dto.locationId,
       userId: user.id,
       idempotencyKey: dto.idempotencyKey,
     });

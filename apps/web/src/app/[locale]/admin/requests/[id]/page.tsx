@@ -29,11 +29,14 @@ import {
   Menu,
   PhotoAttachField,
   Stamp,
+  Sheet,
   TextArea,
   Ticket,
+  Timeline,
   anyToYmd,
   useToast,
   type BoardTone,
+  type TimelineItem,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';
@@ -65,6 +68,28 @@ interface RequestItem {
   fabrics?: Array<{ type?: string | null; color?: string | null; role?: string | null }> | null;
   provenance?: Array<{ key: string; ai: string | null; dealer: string | null; source: string }> | null;
   product?: { id: string; imageUrl?: string | null } | null;
+}
+
+type SpecKey = 'width' | 'height' | 'depth' | 'woodType' | 'woodColor' | 'foamDensity' | 'finish' | 'accessories' | 'orientation' | 'notes';
+const SPEC_KEYS: SpecKey[] = ['width', 'height', 'depth', 'woodType', 'woodColor', 'foamDensity', 'finish', 'accessories', 'orientation', 'notes'];
+const EMPTY_SPEC: Record<SpecKey, string> = { width: '', height: '', depth: '', woodType: '', woodColor: '', foamDensity: '', finish: '', accessories: '', orientation: '', notes: '' };
+
+function specDraftFromItem(item: RequestItem): Record<SpecKey, string> {
+  return Object.fromEntries(SPEC_KEYS.map((k) => [k, item[k] == null ? '' : String(item[k])])) as Record<SpecKey, string>;
+}
+
+/** Only the fields the admin actually changed go to `verify-spec`. */
+function specChanges(item: RequestItem, draft: Record<SpecKey, string>): Record<string, string> {
+  const base = specDraftFromItem(item);
+  const out: Record<string, string> = {};
+  for (const k of SPEC_KEYS) if (draft[k].trim() !== base[k].trim()) out[k] = draft[k].trim();
+  return out;
+}
+
+function specHistoryMessage(message: string | null | undefined, items: RequestItem[]): string | undefined {
+  if (!message) return undefined;
+  const item = items.find((i) => i.id === message);
+  return item ? item.productName : message;
 }
 
 interface RequestDetail {
@@ -112,6 +137,8 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [draftLines, setDraftLines] = useState<LineItemDraft[]>([]);
   const [needsInfoOpen, setNeedsInfoOpen] = useState(false);
+  const [specItem, setSpecItem] = useState<RequestItem | null>(null);
+  const [specDraft, setSpecDraft] = useState<Record<SpecKey, string>>(EMPTY_SPEC);
   const [closeOpen, setCloseOpen] = useState(false);
   const [pickedDate, setPickedDate] = useState('');
   const [dateReason, setDateReason] = useState('');
@@ -225,8 +252,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   });
   const verifyMutation = useMutation({
     mutationFn: (body: { itemId?: string; action: 'CONFIRM' | 'CORRECT'; message?: string; fields?: Record<string, string> }) => apiFetch(`/api/v1/requests/${params.id}/verify-spec`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: async () => {
-      toast.success(tc('confirmSpec'));
+    onSuccess: async (_res, body) => {
+      toast.success(body.action === 'CORRECT' ? tc('specCorrected') : tc('specConfirmed'));
+      setSpecItem(null);
       await invalidate();
     },
     onError: (err) => toast.error(mutationErrorMessage(err)),
@@ -463,14 +491,10 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                                 size="sm"
                                 variant="ghost"
                                 loading={verifyMutation.isPending}
-                                onClick={() =>
-                                  verifyMutation.mutate({
-                                    itemId: item.id,
-                                    action: 'CORRECT',
-                                    message: [item.variantLabel, [item.width, item.height, item.depth].filter(Boolean).join('×')].filter(Boolean).join(' · '),
-                                    fields: { width: String(item.width ?? ''), height: String(item.height ?? ''), depth: String(item.depth ?? '') },
-                                  })
-                                }
+                                onClick={() => {
+                                  setSpecItem(item);
+                                  setSpecDraft(specDraftFromItem(item));
+                                }}
                               >
                                 {tc('correctSpec')}
                               </Button>
@@ -501,7 +525,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                 <Input label={tSales('dealerOrderNumber')} value={externalOrderNumber} onChange={(e) => setExternalOrderNumber(e.target.value)} dir="ltr" disabled={!isOpen} />
                 <Input label={tc('project')} value={projectName} onChange={(e) => setProjectName(e.target.value)} disabled={!isOpen} />
               </div>
-              <TextArea label={tc('internalNotes')} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={3} disabled={!isOpen} />
+              <TextArea autoGrow label={tc('internalNotes')} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={3} disabled={!isOpen} />
               {data.notes ? (
                 <div>
                   <p className="text-[12px] leading-4 text-[var(--maher-text-tertiary)]">{tSales('customerNotes')}</p>
@@ -586,7 +610,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             footer={
               isOpen ? (
                 <div className="flex w-full flex-col gap-3">
-                  <Input label={tc('changeDateReason')} value={dateReason} onChange={(e) => setDateReason(e.target.value)} placeholder={tSales('desk.changeDateReasonHint')} />
+                  <TextArea autoGrow rows={2} label={tc('changeDateReason')} value={dateReason} onChange={(e) => setDateReason(e.target.value)} placeholder={tSales('desk.changeDateReasonHint')} />
                   <div className="flex flex-wrap justify-end gap-2">
                     {requestedYmd && !confirmWouldOverrideLead && requestedYmd !== offeredYmd ? (
                       <Button size="sm" variant="secondary" loading={deliveryMutation.isPending} onClick={() => deliveryMutation.mutate({ kind: 'confirm', date: requestedYmd })}>
@@ -606,6 +630,31 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
               ) : null
             }
           />
+
+          {/* Review trail */}
+          <Board tone="neutral">
+            <Board.Header title={tc('reviewHistory')} meta={<span className="tabular-nums">{data.reviewHistory?.length ?? 0}</span>} />
+            <Board.Body>
+              {(data.reviewHistory?.length ?? 0) > 0 ? (
+                <Timeline
+                  dense
+                  items={[...(data.reviewHistory ?? [])]
+                    .slice()
+                    .reverse()
+                    .slice(0, 8)
+                    .map((row, i): TimelineItem => ({
+                      id: `${row.at}-${i}`,
+                      time: new Intl.DateTimeFormat(copy.locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(row.at)),
+                      title: copy.status(row.action),
+                      description: row.action === 'SPEC_CORRECTED' || row.action === 'SPEC_CONFIRMED' ? specHistoryMessage(row.message, data.items ?? []) : row.message ?? undefined,
+                      tone: row.action === 'SPEC_CORRECTED' ? 'warning' : row.action === 'SPEC_CONFIRMED' || row.action === 'READY_FOR_QUOTATION' ? 'success' : row.action === 'NEEDS_INFORMATION' ? 'error' : 'info',
+                    }))}
+                />
+              ) : (
+                <p className="text-[13px] text-[var(--maher-text-tertiary)]">{tc('reviewNoHistory')}</p>
+              )}
+            </Board.Body>
+          </Board>
 
           {/* Quotations */}
           <Board tone={(data.quotations?.length ?? 0) ? 'success' : 'neutral'} className="xl:flex-1">
@@ -634,6 +683,61 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           </Board>
         </div>
       </div>
+
+      <Sheet
+        open={Boolean(specItem)}
+        onClose={() => !verifyMutation.isPending && setSpecItem(null)}
+        title={tc('specCorrectTitle')}
+        description={specItem ? `${specItem.productName}${specItem.variantLabel ? ` · ${specItem.variantLabel}` : ''}` : tc('specCorrectHint')}
+        tone="warning"
+        closeLabel={tCommon('close')}
+        footer={
+          <>
+            <Button variant="ghost" disabled={verifyMutation.isPending} onClick={() => setSpecItem(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button
+              loading={verifyMutation.isPending}
+              disabled={!specItem || Object.keys(specChanges(specItem, specDraft)).length === 0}
+              onClick={() => {
+                if (!specItem) return;
+                const fields = specChanges(specItem, specDraft);
+                verifyMutation.mutate({
+                  itemId: specItem.id,
+                  action: 'CORRECT',
+                  message: Object.entries(fields)
+                    .map(([k, v]) => `${k}: ${v || '—'}`)
+                    .join(' · '),
+                  fields,
+                });
+              }}
+            >
+              {tc('correctSpec')}
+            </Button>
+          </>
+        }
+      >
+        {specItem ? (
+          <div className="space-y-4">
+            <p className="text-[13px] leading-5 text-[var(--maher-text-secondary)]">{tc('specCorrectHint')}</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(['width', 'height', 'depth'] as const).map((k) => (
+                <Input key={k} label={`${tc(k === 'width' ? 'dimWidth' : k === 'height' ? 'dimHeight' : 'dimDepth')} (cm)`} dir="ltr" inputMode="decimal" value={specDraft[k]} onChange={(e) => setSpecDraft((d) => ({ ...d, [k]: e.target.value }))} />
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label={tc('woodType')} value={specDraft.woodType} onChange={(e) => setSpecDraft((d) => ({ ...d, woodType: e.target.value }))} />
+              <Input label={tc('woodColor')} value={specDraft.woodColor} onChange={(e) => setSpecDraft((d) => ({ ...d, woodColor: e.target.value }))} />
+              <Input label={tc('foamDensity')} value={specDraft.foamDensity} onChange={(e) => setSpecDraft((d) => ({ ...d, foamDensity: e.target.value }))} />
+              <Input label={tc('finish')} value={specDraft.finish} onChange={(e) => setSpecDraft((d) => ({ ...d, finish: e.target.value }))} />
+              <Input label={tc('accessories')} value={specDraft.accessories} onChange={(e) => setSpecDraft((d) => ({ ...d, accessories: e.target.value }))} />
+              <Input label={tc('orientation')} value={specDraft.orientation} onChange={(e) => setSpecDraft((d) => ({ ...d, orientation: e.target.value }))} />
+            </div>
+            <TextArea label={tc('notes')} rows={3} value={specDraft.notes} onChange={(e) => setSpecDraft((d) => ({ ...d, notes: e.target.value }))} />
+            {Object.keys(specChanges(specItem, specDraft)).length === 0 ? <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tc('noChanges')}</p> : null}
+          </div>
+        ) : null}
+      </Sheet>
 
       <ActionDock className="md:hidden" note={<Ltr>{data.number}</Ltr>}>
         {menu}

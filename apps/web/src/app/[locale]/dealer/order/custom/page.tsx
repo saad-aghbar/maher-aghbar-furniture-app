@@ -82,7 +82,7 @@ export default function CustomItemPage() {
         <div className="space-y-5 xl:col-span-8">
           <FormSection title={tc('name')} columns={1} tone={name.trim() ? 'success' : 'info'}>
             <Input label={tc('name')} value={name} onChange={(e) => setName(e.target.value)} required />
-            <TextArea label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+            <TextArea autoGrow label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </FormSection>
           <FormSection title={tc('dimensions')} columns={2}>
             <NumberField label={tc('quantity')} value={Number(qty) || 1} onChange={(v) => setQty(String(Math.max(1, Math.round(v ?? 1))))} min={1} step={1} decimals={0} />

@@ -127,7 +127,7 @@
   "wallClock": "זמן שעון",
   "reworkTime": "זמן תיקון",
   "provenance": "מקור",
-  "exportGapsNote": "ייצוא CSV זמין היכן שמופיע. ייצוא PDF ו-Excel אינו נתמך בגרסה זו.",
+  "exportGapsNote": "כל דוח ניתן לייצוא כ־PDF ממותג או CSV מלוח הייצוא, בשפה ובנייר שבחרתם.",
   "reportDashboard": "תמונת מצב",
   "reportSales": "מכירות",
   "reportProduction": "ייצור",
@@ -331,5 +331,13 @@
   "receipt": "קבלה",
   "entries": "תנועות",
   "debits": "חיובים",
-  "credits": "תשלומים"
+  "credits": "תשלומים",
+  "exportSales": "דוח מכירות",
+  "exportProfit": "רווח הזמנות",
+  "exportAp": "ספר ספקים",
+  "exportPeriodPl": "רווח והפסד לתקופה",
+  "exportCashFlow": "תזרים מזומנים",
+  "exportFinancial": "גיול חובות",
+  "exportsTitle": "ייצוא",
+  "exportHint": "כל ייצוא נפתח כ־PDF ממותג (לוגו, סימן מים, כותרת תחתונה) בשפה ובנייר שבחרתם; אותם נתונים זמינים גם כ־CSV."
 }

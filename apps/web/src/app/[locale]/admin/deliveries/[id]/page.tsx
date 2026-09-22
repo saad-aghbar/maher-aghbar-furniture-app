@@ -11,6 +11,7 @@ import {
   ActionDock,
   Board,
   BoardSkeleton,
+  type BoardTone,
   Button,
   Checkbox,
   Combobox,
@@ -26,12 +27,12 @@ import {
   Meter,
   Sheet,
   StageStrip,
+  type StageStripStage,
   Stamp,
+  TextArea,
   Ticket,
   useCodeScanner,
   useToast,
-  type BoardTone,
-  type StageStripStage,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, ScanLine, Truck } from 'lucide-react';
@@ -505,7 +506,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
       >
         <div className="space-y-3">
           {formError ? <p className="text-[13px] text-[var(--maher-error)]">{formError}</p> : null}
-          <Input label={tc('failureReason')} value={failureReason} onChange={(e) => setFailureReason(e.target.value)} />
+          <TextArea autoGrow rows={2} label={tc('failureReason')} value={failureReason} onChange={(e) => setFailureReason(e.target.value)} />
         </div>
       </Sheet>
     </div>

@@ -301,7 +301,7 @@
     "editStage": "ערוך שלב",
     "stageName": "שם השלב",
     "department": "מחלקה",
-    "estimatedDuration": "משך משוער",
+    "estimatedDuration": "משוער",
     "required": "חובה",
     "optional": "אופציונלי",
     "excluded": "מוחרג",
@@ -533,7 +533,14 @@
     "estimatedHours": "שעות תקן",
     "resourceConstrainedCount": "{count, plural, one {שלב אחד עם משאב משותף} other {# שלבים עם משאב משותף}}",
     "resourceConstrained": "{slots, plural, one {מקום אחד} other {# מקומות}}",
-    "skilledWorkers": "{count, plural, one {עובד מיומן אחד} other {# עובדים מיומנים}}"
+    "skilledWorkers": "{count, plural, one {עובד מיומן אחד} other {# עובדים מיומנים}}",
+    "actualDuration": "בפועל",
+    "liveElapsed": "חלף (חי)",
+    "overEstimate": "מעבר להערכה ב־{n}",
+    "timeLeft": "נותרו {n}",
+    "timeRunning": "פועל",
+    "timePaused": "מושהה",
+    "timeNotStarted": "לא התחיל"
   },
   "setup": {
     "title": "הגדרת ייצור",
@@ -805,5 +812,19 @@
   "tracking": "התקדמות",
   "takeInHint": "סרקו כל ערכה נכנסת עד שכל השורות נקלטו; המשימה נפתחת כשהכול הגיע.",
   "kitLines": "שורות ערכה",
-  "scanNext": "סרקו את הבא"
+  "scanNext": "סרקו את הבא",
+  "stageTimeRequiredHint": "קבעו את זמן השלב לפני ההקצאה.",
+  "assignDay": "יום עבודה",
+  "hubWipMove": "העבר לתא",
+  "hubWipMoveTitle": "העברת ערכה לתא שלב",
+  "hubWipEnsureBins": "יצירת תאי שלבים",
+  "hubWipEnsureBinsHint": "אין עדיין תאי שלבים במחסן החצי־מוגמר.",
+  "hubWipMoved": "הערכה הועברה",
+  "hubWipBinsCreated": "תאי השלבים מוכנים",
+  "hubStageOutputs": "תוצרי שלבים",
+  "hubStageOutputsHint": "מה כל שלב מעביר לבא אחריו — ערכות וחלקים צפויים מול מה שהושלם.",
+  "hubStageOutputNone": "אין תוצר חצי־מוגמר",
+  "hubStageOutputNext": "הבא: {stages}",
+  "hubStageOutputPieces": "{done}/{expected} חלקים",
+  "hubStageOutputKits": "{count} ערכות"
 }

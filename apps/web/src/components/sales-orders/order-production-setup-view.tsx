@@ -1,6 +1,7 @@
 'use client';
 
 import { OrderLineSetupPanel } from '@/components/sales-orders/order-line-setup-panel';
+import { PlanStagesBoard } from '@/components/sales-orders/plan-stages-board';
 import { useOrdersCopy } from '@/components/orders/orders-shared';
 import { Link } from '@/i18n/navigation';
 import {
@@ -194,11 +195,17 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
         </div>
       </DetailHero>
 
-      {readOnly ? (
-        <Board tone="info" wash="top">
-          <Ticket tone="info" title={t('orderSetup.workerAssignmentRequired')} why={t('orderSetup.workerAssignmentHint')} href="/admin/production" LinkComponent={Link} action={t('orderSetup.openProduction')} />
-        </Board>
-      ) : null}
+      <Board tone="neutral" wash="top">
+        <Board.Body>
+          <p className="m-0 text-[13px] leading-5 text-[var(--maher-text-secondary)]">
+            <span className="font-semibold text-[var(--maher-text-primary)]">{t('orderSetup.prepareSurface')}</span>
+            {' · '}
+            <span className="font-semibold text-[var(--maher-text-primary)]">{t('orderSetup.factorySurface')}</span>
+            {' — '}
+            {t('orderSetup.surfaceHint')}
+          </p>
+        </Board.Body>
+      </Board>
 
       {!setup.validation.ok || readiness.anyShortage ? (
         <Board tone="warning" wash="top">
@@ -268,6 +275,8 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
           onUpdated={() => void invalidate()}
         />
       ))}
+
+      <PlanStagesBoard salesOrderId={salesOrderId} lines={setup.lines} released={readOnly} />
 
       {readOnly ? <ReleasedSpecSummary setup={setup} /> : null}
 

@@ -16,22 +16,14 @@ import { classifyPersistIssue, type PersistClass } from './domain/manual-control
 import { WorkingCalendar } from './domain/working-calendar';
 import type { FactoryCalendarInput, TimeOfDayRange } from './domain/types';
 
-const LOCKED_TASK = [
-  'COMPLETED',
-  'CANCELLED',
-  'IN_PROGRESS',
-  'PAUSED',
-  'READY_FOR_INSPECTION',
-  'BLOCKED',
-];
-const LOCKED_STAGE = [
-  'COMPLETED',
-  'SKIPPED',
-  'IN_PROGRESS',
-  'PAUSED',
-  'READY_FOR_INSPECTION',
-  'BLOCKED',
-];
+/**
+ * A stage is locked for (re)assignment only while it is actually running or
+ * already done. Not-started, ready and paused stages stay assignable even
+ * after the production order is on the floor, so a foreman can move work
+ * between people mid-order.
+ */
+const LOCKED_TASK = ['COMPLETED', 'CANCELLED', 'IN_PROGRESS', 'READY_FOR_INSPECTION', 'BLOCKED'];
+const LOCKED_STAGE = ['COMPLETED', 'SKIPPED', 'IN_PROGRESS', 'READY_FOR_INSPECTION', 'BLOCKED'];
 const OPEN_TASK = [
   'NOT_STARTED',
   'READY',
@@ -41,7 +33,6 @@ const OPEN_TASK = [
   'READY_FOR_INSPECTION',
 ] as const;
 const ACTIVE_SCHEDULE = ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] as const;
-const ON_FLOOR_ORDER = ['IN_PROGRESS', 'QUALITY_CHECK', 'READY_FOR_PACKAGING'];
 
 export type PlacementIssue = {
   code: string;
@@ -151,18 +142,6 @@ export class PlacementService {
     }
 
     const nextEmployeeId = input.employeeId === undefined ? task.assignedEmployeeId : input.employeeId;
-    if (
-      task.assignedEmployeeId &&
-      nextEmployeeId &&
-      task.assignedEmployeeId !== nextEmployeeId &&
-      orderStatus &&
-      ON_FLOOR_ORDER.includes(orderStatus)
-    ) {
-      throw new BadRequestException({
-        code: 'REASSIGN_LOCKED',
-        message: 'Cannot reassign after the production order is on the floor. Pause or complete the stage first.',
-      });
-    }
 
     if (nextEmployeeId) {
       await this.assertEligibleWorker(nextEmployeeId, task.stageDefinitionId ?? task.stageDefinition?.id ?? null);

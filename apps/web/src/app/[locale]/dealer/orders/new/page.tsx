@@ -816,7 +816,7 @@ function CreateOrderForm() {
             {tc('addDimension')}
           </Button>
 
-          <TextArea
+          <TextArea autoGrow
             label={tc('orderNotes')}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -845,7 +845,7 @@ function CreateOrderForm() {
             onChange={(e) => setFabric(e.target.value)}
             disabled={busy}
           />
-          <TextArea
+          <TextArea autoGrow
             label={tc('fabricDescription')}
             value={fabricDescription}
             onChange={(e) => setFabricDescription(e.target.value)}
@@ -928,7 +928,7 @@ function CreateOrderForm() {
             dir="ltr"
             disabled={busy}
           />
-          <TextArea
+          <TextArea autoGrow
             label={tc('deliveryAddress')}
             value={deliveryAddress}
             onChange={(e) => {

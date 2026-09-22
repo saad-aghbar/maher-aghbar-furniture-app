@@ -154,7 +154,21 @@
       "materials": "Materials",
       "workflow": "Workflow",
       "packaging": "Packaging"
-    }
+    },
+    "previewPath": "Preview:",
+    "stagesPeople": "Stages & people",
+    "stagesPeopleHint": "Each line becomes a factory order. Assign a worker per stage from their day plan; the factory floor takes over once work starts.",
+    "planStages": "Plan stages & people",
+    "planStagesHint": "Creates draft factory orders for these lines so you can assign workers before release.",
+    "openFactoryFloor": "Open factory floor",
+    "prepareSurface": "Prepare for production",
+    "factorySurface": "Factory floor",
+    "surfaceHint": "Prepare for production decides what and how (workflow, materials, notes, people). The factory floor runs it (start, tasks, WIP, quality).",
+    "noStagesYet": "Choose and confirm a workflow first.",
+    "unassigned": "Unassigned",
+    "assign": "Assign",
+    "reassign": "Reassign",
+    "workerAssigned": "Worker assigned"
   },
   "moreActions": "More actions",
   "cancelReason": {

@@ -465,7 +465,7 @@ function RequestsPageInner() {
             </div>
           </div>
           <LineItemsEditor lines={lines} onChange={setLines} showUnitPrice={false} showNotes />
-          <TextArea label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder={tc('rfqNotesHint')} />
+          <TextArea autoGrow label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder={tc('rfqNotesHint')} />
         </div>
       </Sheet>
     </div>

@@ -978,5 +978,17 @@
   "estimatedTotal": "סה\"כ משוער",
   "estimatedTotalHint": "מחירי סוחר לפני מע\"מ. פריטים מותאמים מתומחרים לאחר בדיקה.",
   "clearBasket": "ניקוי הסל",
-  "clearBasketConfirm": "להסיר את כל השורות מהסל?"
+  "clearBasketConfirm": "להסיר את כל השורות מהסל?",
+  "woodType": "עץ",
+  "woodColor": "גוון עץ",
+  "foamDensity": "ספוג",
+  "finish": "גימור",
+  "accessories": "אביזרים",
+  "specCorrectTitle": "תיקון המפרט",
+  "specCorrectHint": "ערכו את מה שהמפעל ייצר. הסוחר יראה את הערכים המתוקנים בהצעת המחיר.",
+  "specCorrected": "המפרט תוקן",
+  "specConfirmed": "המפרט אושר",
+  "reviewHistory": "מסלול הבדיקה",
+  "reviewNoHistory": "אין פעולות בדיקה עדיין.",
+  "noChanges": "אין שינויים עדיין"
 }

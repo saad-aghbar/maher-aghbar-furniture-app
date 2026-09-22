@@ -278,7 +278,7 @@ function OverviewPanel({ draft }: { draft: ProductDraft }) {
             <Input label={t('nameHe')} value={f.nameHe} onChange={(e) => f.setNameHe(e.target.value)} dir="rtl" />
             <Combobox label={t('category')} value={f.categoryId} onChange={(v) => f.setCategoryId(v)} options={cats.map((c) => ({ value: c.id, label: localizedName(copy.locale, c), description: c.code }))} placeholder={t('select')} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} />
             <div className="sm:col-span-2">
-              <TextArea label={t('description')} value={f.description} onChange={(e) => f.setDescription(e.target.value)} rows={3} />
+              <TextArea autoGrow label={t('description')} value={f.description} onChange={(e) => f.setDescription(e.target.value)} rows={3} />
             </div>
             <div className="sm:col-span-2">
               <Switch checked={f.isActive} onChange={f.setIsActive} label={t('active')} description={t('productsShopHint')} />
@@ -331,7 +331,7 @@ function OverviewPanel({ draft }: { draft: ProductDraft }) {
         <Board tone="neutral">
           <Board.Header title={t('adminNotes')} description={t('adminNotesHint')} />
           <Board.Body>
-            <TextArea value={f.adminNotes} onChange={(e) => f.setAdminNotes(e.target.value)} placeholder={t('adminNotesPlaceholder')} rows={5} />
+            <TextArea autoGrow value={f.adminNotes} onChange={(e) => f.setAdminNotes(e.target.value)} placeholder={t('adminNotesPlaceholder')} rows={5} />
           </Board.Body>
         </Board>
       </div>

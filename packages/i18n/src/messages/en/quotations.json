@@ -96,5 +96,20 @@
   "laneAccepted": "Accepted",
   "laneRejected": "Declined",
   "laneExpired": "Expired",
-  "laneDraft": "Drafts"
+  "laneDraft": "Drafts",
+  "costPlanned": "Planned cost",
+  "costLastActual": "Last actual",
+  "costAvgActual": "Avg actual",
+  "costSamples": "{n} builds",
+  "costNoHistory": "No factory history yet",
+  "costMargin": "Margin",
+  "costUsePlanned": "Use planned +{pct}%",
+  "costBelow": "Below cost",
+  "costBasisVariant": "Variant",
+  "costBasisProduct": "Product",
+  "costBasisModified": "Modified match",
+  "costBasisCustom": "Custom cohort",
+  "costMatchedProduct": "Similar product",
+  "costMatchedCohort": "Similar custom pieces",
+  "costHints": "Factory cost hints"
 }

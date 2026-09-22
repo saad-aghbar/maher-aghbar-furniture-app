@@ -4,6 +4,7 @@ import { ProductionLifecyclePanel } from '@/components/production/production-lif
 import { ProductionMaterialsPanel } from '@/components/production/production-materials-panel';
 import { ProductionQualityPanel } from '@/components/production/production-quality-panel';
 import { ProductionWipPanel } from '@/components/production/production-wip-panel';
+import { StageOutputsBoard } from '@/components/production/stage-outputs-board';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -44,8 +45,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Armchair, MoreHorizontal, Paperclip, Pause, Pin, PinOff, Play, RefreshCw, ShieldAlert, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PRIORITIES, complexityTone, priorityTone, productionTone, useProductionCopy } from '../production-shared';
+import { StageAssignSheet } from '@/components/production/stage-assign-sheet';
 import { LOCKED_STAGE, LOCKED_TASK, PRE_START, useProductionOrder, type ProductionOrderCtl, type Stage, type Task } from './use-production-order';
 
 const TABS = ['lifecycle', 'tasks', 'materials', 'quality', 'wip', 'workflow', 'schedule'] as const;
@@ -165,7 +167,12 @@ export function ProductionHub({ id }: { id: string }) {
       {tab === 'tasks' ? <TasksTab ctl={ctl} /> : null}
       {tab === 'materials' ? <MaterialsTab ctl={ctl} /> : null}
       {tab === 'quality' ? <ProductionQualityPanel productionOrderId={id} /> : null}
-      {tab === 'wip' ? <ProductionWipPanel productionOrderId={id} /> : null}
+      {tab === 'wip' ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <ProductionWipPanel productionOrderId={id} />
+          <StageOutputsBoard stages={order.stages} />
+        </div>
+      ) : null}
       {tab === 'workflow' ? <WorkflowTab ctl={ctl} /> : null}
       {tab === 'schedule' ? <ScheduleTab ctl={ctl} /> : null}
 
@@ -463,94 +470,23 @@ function TasksTab({ ctl }: { ctl: ProductionOrderCtl }) {
           </>
         }
       >
-        <TextArea value={notes} onChange={(e) => setNotes(e.target.value)} rows={6} placeholder={tc('notesOptional')} />
+        <TextArea autoGrow value={notes} onChange={(e) => setNotes(e.target.value)} rows={6} placeholder={tc('notesOptional')} />
       </Sheet>
     </>
   );
 }
 
 function AssignSheet({ ctl, stage, task, onClose }: { ctl: ProductionOrderCtl; stage: Stage; task: Task; onClose: () => void }) {
-  const copy = useProductionCopy();
-  const tp = useTranslations('production');
-  const tc = useTranslations('catalog');
-  const tm = useTranslations('mobile.production');
-  const tCommon = useTranslations('common');
-  const kit = useKitCopy();
   const gate = isQualityGateStageCode(stage.stageDefinition.code);
-  const [employeeId, setEmployeeId] = useState<string | null>(task.assignedEmployee?.id ?? null);
-  const [priority, setPriority] = useState(task.priority || 'NORMAL');
-  const [dueDate, setDueDate] = useState(ymd(task.plannedCompletion) || todayYmd());
-  const [dueTime, setDueTime] = useState(task.plannedCompletion ? new Date(task.plannedCompletion).toTimeString().slice(0, 5) : '17:00');
-  const [estimate, setEstimate] = useState<number | null>(task.estimatedMinutes ?? null);
-  const workers = useQuery({
-    queryKey: ['assignable-workers', stage.stageDefinition.id ?? stage.stageDefinition.code, task.id, dueDate],
-    queryFn: () => apiFetch<Array<{ id: string; firstName: string; lastName: string; activeTaskCount?: number; recommendBand?: string; recommendReason?: string | null }>>(`/api/v1/production-orders/assignable-workers?${new URLSearchParams({ ...(stage.stageDefinition.id ? { stageDefinitionId: stage.stageDefinition.id } : {}), taskId: task.id, plannedCompletion: `${dueDate}T${dueTime}:00` }).toString()}`),
-  });
-  const plannedCompletion = (() => {
-    const d = new Date(`${dueDate}T${dueTime}:00`);
-    return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
-  })();
-  const bandTone = (b?: string): BoardTone => (b === 'best' || b === 'good' || b === 'recommended' ? 'success' : b === 'busy' || b === 'overloaded' ? 'warning' : b === 'conflict' ? 'error' : 'neutral');
-
   return (
-    <Sheet
+    <StageAssignSheet
       open
       onClose={onClose}
-      title={task.assignedEmployee ? tm('reassignWorker') : tm('assignWorker')}
-      description={`${localizedName(copy.locale, stage.stageDefinition)} · ${task.name}`}
-      widthClassName="max-w-lg"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            {tCommon('cancel')}
-          </Button>
-          <Button loading={ctl.assign.isPending} disabled={!employeeId} onClick={() => employeeId && ctl.assign.mutate({ taskId: task.id, employeeId, priority, plannedCompletion, estimatedMinutes: gate ? 0 : (estimate ?? undefined) }, { onSuccess: onClose })}>
-            {tm('confirmAssign')}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <DateField label={tm('dueDate')} value={dueDate} onChange={setDueDate} copy={kit.date} locale={copy.locale} minDate={todayYmd()} todayShortcut />
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tm('dueTime')}</span>
-            <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="maher-input w-full" dir="ltr" />
-          </label>
-          {!gate ? <NumberField label={tc('estMinutes')} unit={tc('minutesUnit')} value={estimate} onChange={setEstimate} min={0} /> : null}
-          <div className={gate ? 'sm:col-span-2' : ''}>
-            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tc('priority')}</span>
-            <SegmentedControl size="sm" aria-label={tc('priority')} value={priority} onChange={setPriority} options={PRIORITIES.map((p) => ({ value: p, label: copy.priority(p) }))} />
-          </div>
-        </div>
-        <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tc('worker')}</span>
-          {workers.isLoading ? (
-            <p className="text-[13px] text-[var(--maher-text-tertiary)]">{tm('loadingWorkers')}</p>
-          ) : (workers.data ?? []).length === 0 ? (
-            <p className="text-[13px] text-[var(--maher-text-tertiary)]">{tm('noWorkers')}</p>
-          ) : (
-            <ul className="space-y-2">
-              {(workers.data ?? []).map((w) => (
-                <li key={w.id}>
-                  <button type="button" onClick={() => setEmployeeId(w.id)} className={`maher-press flex w-full items-center justify-between gap-3 rounded-[12px] border px-4 py-3 text-start ${employeeId === w.id ? 'border-[var(--maher-brand)] bg-[var(--maher-brand-soft)]' : 'border-[var(--maher-border)]'}`}>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-semibold text-[var(--maher-text-primary)]">{copy.worker(w)}</span>
-                      {w.recommendReason ? <span className="block truncate text-[12px] text-[var(--maher-text-secondary)]">{w.recommendReason}</span> : null}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      {w.recommendBand ? <Stamp tone={bandTone(w.recommendBand)} size="sm">{w.recommendBand}</Stamp> : null}
-                      <Stamp tone="neutral" size="sm">{tm('activeTasks', { count: w.activeTaskCount ?? 0 })}</Stamp>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {task.assignedEmployee ? <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tp('stageAssignLocked')}</p> : null}
-      </div>
-    </Sheet>
+      stage={{ ...stage.stageDefinition, gate }}
+      task={task}
+      busy={ctl.assign.isPending}
+      onAssign={(payload) => ctl.assign.mutate(payload, { onSuccess: onClose })}
+    />
   );
 }
 
@@ -565,6 +501,22 @@ function MaterialsTab({ ctl }: { ctl: ProductionOrderCtl }) {
   const [returning, setReturning] = useState<(typeof rows)[number] | null>(null);
   const [qty, setQty] = useState<number | null>(null);
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
+  const [locationId, setLocationId] = useState<string | null>(null);
+  const warehouseRows = ctl.queries.warehouses.data;
+  const warehouseOptions = useMemo(() => warehouseRows ?? [], [warehouseRows]);
+  const selectedWarehouse = warehouseOptions.find((w) => w.id === warehouseId) ?? null;
+  const binOptions = (selectedWarehouse?.locations ?? []).filter((b) => b.isActive !== false);
+  // Default to the default raw-material store and its default bin so a return is one tap.
+  useEffect(() => {
+    if (!returning) return;
+    const preferred = warehouseOptions.find((w) => w.isDefault) ?? warehouseOptions[0] ?? null;
+    setWarehouseId((prev) => prev ?? preferred?.id ?? null);
+  }, [returning, warehouseOptions]);
+  useEffect(() => {
+    const preferred = binOptions.find((b) => b.isDefault) ?? (binOptions.length === 1 ? binOptions[0] : null);
+    setLocationId(preferred?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseId]);
   const assigned = rows.reduce((s, r) => s + Number(r.assignedQty ?? 0), 0);
   const used = rows.reduce((s, r) => s + Number(r.usedQty ?? 0), 0);
   const over = rows.filter((r) => r.status === 'OVER' || r.status === 'EXTRA').length;
@@ -614,7 +566,7 @@ function MaterialsTab({ ctl }: { ctl: ProductionOrderCtl }) {
             <Button variant="ghost" onClick={() => setReturning(null)}>
               {tCommon('cancel')}
             </Button>
-            <Button loading={ctl.returnMaterial.isPending} disabled={!qty || qty <= 0} onClick={() => returning && qty && ctl.returnMaterial.mutate({ inventoryItemId: returning.inventoryItemId, quantity: qty, warehouseId: warehouseId ?? undefined }, { onSuccess: () => setReturning(null) })}>
+            <Button loading={ctl.returnMaterial.isPending} disabled={!qty || qty <= 0} onClick={() => returning && qty && ctl.returnMaterial.mutate({ inventoryItemId: returning.inventoryItemId, quantity: qty, warehouseId: warehouseId ?? undefined, locationId: locationId ?? undefined }, { onSuccess: () => setReturning(null) })}>
               {tCommon('confirm')}
             </Button>
           </>
@@ -622,7 +574,14 @@ function MaterialsTab({ ctl }: { ctl: ProductionOrderCtl }) {
       >
         <div className="space-y-4">
           <NumberField label={tCommon('quantity')} unit={returning?.unit} value={qty} onChange={setQty} min={0} decimals={3} />
-          <Combobox label={tCommon('warehouse')} value={warehouseId} onChange={setWarehouseId} options={(ctl.queries.warehouses.data ?? []).map((w) => ({ value: w.id, label: localizedName(copy.locale, w, w.code), description: w.code }))} placeholder={tCommon('select')} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} />
+          <Combobox label={tCommon('warehouse')} value={warehouseId} onChange={setWarehouseId} options={warehouseOptions.map((w) => ({ value: w.id, label: localizedName(copy.locale, w, w.code), description: w.code }))} placeholder={tCommon('select')} emptyText={ctl.queries.warehouses.isLoading ? kit.combobox.loading : kit.combobox.empty} clearLabel={kit.combobox.clear} />
+          {selectedWarehouse ? (
+            binOptions.length ? (
+              <Combobox label={tCommon('bin')} value={locationId} onChange={setLocationId} options={binOptions.map((b) => ({ value: b.id, label: b.name ?? b.code, description: b.code }))} placeholder={tCommon('select')} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} />
+            ) : (
+              <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tCommon('noBinsDefault')}</p>
+            )
+          ) : null}
         </div>
       </Sheet>
     </div>

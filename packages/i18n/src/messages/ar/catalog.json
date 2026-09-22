@@ -978,5 +978,17 @@
   "estimatedTotal": "الإجمالي التقديري",
   "estimatedTotalHint": "أسعار التاجر قبل الضريبة. القطع المخصصة تُسعَّر بعد المراجعة.",
   "clearBasket": "إفراغ السلة",
-  "clearBasketConfirm": "إزالة كل الأسطر من السلة؟"
+  "clearBasketConfirm": "إزالة كل الأسطر من السلة؟",
+  "woodType": "الخشب",
+  "woodColor": "لون الخشب",
+  "foamDensity": "الإسفنج",
+  "finish": "التشطيب",
+  "accessories": "الإكسسوارات",
+  "specCorrectTitle": "تصحيح المواصفات",
+  "specCorrectHint": "عدّل ما سيصنعه المصنع. يرى التاجر القيم المصحّحة في عرض السعر.",
+  "specCorrected": "تم تصحيح المواصفات",
+  "specConfirmed": "تم تأكيد المواصفات",
+  "reviewHistory": "سجل المراجعة",
+  "reviewNoHistory": "لا إجراءات مراجعة بعد.",
+  "noChanges": "لا تغييرات بعد"
 }

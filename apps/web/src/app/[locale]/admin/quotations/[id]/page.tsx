@@ -43,6 +43,17 @@ import { MoreHorizontal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
+interface QuoteLineCostHint {
+  lineId: string;
+  basis: 'variant' | 'product' | 'modified' | 'custom' | 'none';
+  plannedCost: number | null;
+  lastActualCost: number | null;
+  lastActualAt: string | null;
+  avgActualCost: number | null;
+  sampleCount: number;
+  matched: 'exact' | 'product' | 'cohort' | 'none';
+}
+
 interface QuoteLine {
   id: string;
   description: string;
@@ -111,6 +122,13 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
 
   const detail = useQuery({ queryKey: ['quotation', params.id], queryFn: () => apiFetch<QuotationDetail>(`/api/v1/quotations/${params.id}`) });
   const data = detail.data;
+  const costHints = useQuery({
+    queryKey: ['quotation-cost-hints', params.id],
+    queryFn: () => apiFetch<{ lines: QuoteLineCostHint[] }>(`/api/v1/quotations/${params.id}/cost-hints`),
+    enabled: Boolean(data) && data?.status === 'DRAFT' && !me.data?.customerId,
+    retry: false,
+  });
+  const hintByLine = useMemo(() => new Map((costHints.data?.lines ?? []).map((h) => [h.lineId, h])), [costHints.data]);
 
   useEffect(() => {
     if (!data || hydratedFor === `${data.id}:${data.status}`) return;
@@ -321,11 +339,60 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
       key: 'price',
       header: tc('price'),
       numeric: true,
-      width: isDraft ? '180px' : '120px',
+      width: isDraft ? '260px' : '120px',
       cell: (line) => {
         const unit = Number(draftPrices[line.id] ?? line.unitPrice);
         if (isDraft) {
-          return <MoneyField aria-label={tc('price')} currency={currency} value={draftPrices[line.id] ?? null} onChange={(v) => setDraftPrices((prev) => ({ ...prev, [line.id]: v }))} min={0} />;
+          const hint = hintByLine.get(line.id);
+          const reference = hint?.lastActualCost ?? hint?.avgActualCost ?? hint?.plannedCost ?? null;
+          const margin = reference != null && reference > 0 && Number.isFinite(unit) && unit > 0 ? Math.round(((unit - reference) / unit) * 100) : null;
+          const basisLabel = hint
+            ? hint.basis === 'variant'
+              ? t('costBasisVariant')
+              : hint.basis === 'product'
+                ? t('costBasisProduct')
+                : hint.basis === 'modified'
+                  ? t('costBasisModified')
+                  : t('costBasisCustom')
+            : null;
+          return (
+            <span className="block min-w-0 space-y-1.5 text-start">
+              <MoneyField aria-label={tc('price')} currency={currency} value={draftPrices[line.id] ?? null} onChange={(v) => setDraftPrices((prev) => ({ ...prev, [line.id]: v }))} min={0} />
+              {hint ? (
+                <span className="block rounded-[10px] bg-[var(--maher-surface-muted)] px-2.5 py-1.5 text-[11px] leading-4 text-[var(--maher-text-secondary)]">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <span>
+                      {t('costPlanned')} <Ltr className="font-semibold text-[var(--maher-text-primary)]">{hint.plannedCost != null ? copy.money(hint.plannedCost, currency) : '—'}</Ltr>
+                    </span>
+                    {hint.lastActualCost != null ? (
+                      <span>
+                        {t('costLastActual')} <Ltr className="font-semibold text-[var(--maher-text-primary)]">{copy.money(hint.lastActualCost, currency)}</Ltr>
+                      </span>
+                    ) : null}
+                    {hint.avgActualCost != null && hint.sampleCount > 1 ? (
+                      <span>
+                        {t('costAvgActual')} <Ltr className="font-semibold text-[var(--maher-text-primary)]">{copy.money(hint.avgActualCost, currency)}</Ltr> <span className="text-[var(--maher-text-tertiary)]">({t('costSamples', { n: hint.sampleCount })})</span>
+                      </span>
+                    ) : null}
+                    {hint.sampleCount === 0 && hint.plannedCost == null ? <span className="text-[var(--maher-text-tertiary)]">{t('costNoHistory')}</span> : null}
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {basisLabel ? <Stamp tone="neutral" size="sm">{hint.matched === 'product' ? t('costMatchedProduct') : hint.matched === 'cohort' ? t('costMatchedCohort') : basisLabel}</Stamp> : null}
+                    {margin != null ? (
+                      <Stamp tone={margin < 0 ? 'error' : margin < 15 ? 'warning' : 'success'} size="sm">
+                        {margin < 0 ? t('costBelow') : `${t('costMargin')} ${margin}%`}
+                      </Stamp>
+                    ) : null}
+                    {reference != null && reference > 0 && (draftPrices[line.id] ?? null) == null ? (
+                      <button type="button" className="font-medium text-[var(--maher-brand)] hover:underline" onClick={() => setDraftPrices((prev) => ({ ...prev, [line.id]: Math.round(reference * 1.35) }))}>
+                        {t('costUsePlanned', { pct: 35 })}
+                      </button>
+                    ) : null}
+                  </span>
+                </span>
+              ) : null}
+            </span>
+          );
         }
         return !Number.isFinite(unit) || unit <= 0 ? <Stamp tone="warning" size="sm">{t('priceRequired')}</Stamp> : copy.money(unit, currency);
       },

@@ -473,7 +473,7 @@ function MasterBoardInner<T extends { id: string }>({
             if (field.type === 'textarea') {
               return (
                 <div key={field.name} className={span}>
-                  <TextArea label={label} value={String(form[field.name] ?? '')} onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))} rows={3} dir={field.dir} />
+                  <TextArea autoGrow label={label} value={String(form[field.name] ?? '')} onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))} rows={3} dir={field.dir} />
                 </div>
               );
             }

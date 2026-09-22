@@ -1,12 +1,13 @@
 "use client";
 
 import { Link } from "@/i18n/navigation";
-import { apiFetch, ApiClientError, API_URL } from "@/lib/api-client";
+import { apiFetch, ApiClientError } from "@/lib/api-client";
 import type { ReactNode } from "react";
 import {
   Board,
   type BoardTone,
   Button,
+  DocumentActions,
   EmptyState,
   Figure,
   Ltr,
@@ -23,6 +24,7 @@ import {
 } from "@maher/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
+import { usePdfDownload } from "@/hooks/use-pdf-download";
 import { localizedName } from "@maher/i18n";
 import { MoneyDeskBoard } from "@/components/cost-performance/money-desk-board";
 import { useReportsFilterQs } from "@/components/cost-performance/reports-chrome";
@@ -201,19 +203,6 @@ function money(value: string | number | undefined | null) {
   return Number(value ?? 0).toFixed(2);
 }
 
-async function downloadCsv(path: string, filename: string) {
-  const res = await fetch(`${API_URL}${path}`, { credentials: "include" });
-  if (!res.ok)
-    throw new ApiClientError(`Export failed (${res.status})`, res.status);
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function useReportQuery<T>(key: string, path: string) {
   return useQuery({
     queryKey: ["reports", key, path],
@@ -258,6 +247,14 @@ export default function ReportsPage() {
   const locale = useLocale();
   const filterQs = useReportsFilterQs();
   const periodQs = filterQs;
+  const { openPdf, pdfDialog } = usePdfDownload();
+  const openExport = (name: string, label: string) =>
+    openPdf({
+      path: `/api/v1/reports/export/${name}.pdf${name === "financial" ? "" : periodQs}`,
+      csvPath: `/api/v1/reports/export/${name}.csv${name === "financial" ? "" : periodQs}`,
+      documentName: label,
+      filename: `${name}.pdf`,
+    });
 
   const dashboard = useReportQuery<DashboardReport>(
     "dashboard",
@@ -435,93 +432,76 @@ export default function ReportsPage() {
   return (
     <div className="maher-stagger space-y-5">
       <MoneyDeskBoard qs={filterQs} />
-      <div className="flex flex-wrap gap-2">
-        {showSales ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                `/api/v1/reports/export/sales.csv${filterQs}`,
-                "sales-report.csv",
-              )
-            }
-          >
-            {ta("exportSalesCsv")}
-          </Button>
-        ) : null}
-        {showOrderProfit ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                `/api/v1/reports/export/order-profit.csv${periodQs}`,
-                "order-profit.csv",
-              )
-            }
-          >
-            {ta("exportProfitCsv")}
-          </Button>
-        ) : null}
-        {showApLedger ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                `/api/v1/reports/export/ap-ledger.csv${periodQs}`,
-                "ap-ledger.csv",
-              )
-            }
-          >
-            {ta("exportApCsv")}
-          </Button>
-        ) : null}
-        {showPeriodPl ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                `/api/v1/reports/export/period-pl.csv${periodQs}`,
-                "period-pl.csv",
-              )
-            }
-          >
-            {ta("exportPeriodPlCsv")}
-          </Button>
-        ) : null}
-        {showCashFlow ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                `/api/v1/reports/export/cash-flow.csv${periodQs}`,
-                "cash-flow.csv",
-              )
-            }
-          >
-            {ta("exportCashFlowCsv")}
-          </Button>
-        ) : null}
-        {showFinancial ? (
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              void downloadCsv(
-                "/api/v1/reports/export/financial.csv",
-                "financial-aging.csv",
-              )
-            }
-          >
-            {ta("exportFinancialCsv")}
-          </Button>
-        ) : null}
-      </div>
-      <p className="text-sm text-text-secondary">{ta("csvExportHint")}</p>
+      <Board tone="neutral">
+        <Board.Header
+          title={ta("exportsTitle")}
+          description={ta("exportHint")}
+        />
+        <Board.Body>
+          <DocumentActions
+            actions={[
+              ...(showSales
+                ? [
+                    {
+                      id: "sales",
+                      label: ta("exportSales"),
+                      onClick: () => openExport("sales", ta("exportSales")),
+                    },
+                  ]
+                : []),
+              ...(showOrderProfit
+                ? [
+                    {
+                      id: "order-profit",
+                      label: ta("exportProfit"),
+                      onClick: () =>
+                        openExport("order-profit", ta("exportProfit")),
+                    },
+                  ]
+                : []),
+              ...(showApLedger
+                ? [
+                    {
+                      id: "ap-ledger",
+                      label: ta("exportAp"),
+                      onClick: () => openExport("ap-ledger", ta("exportAp")),
+                    },
+                  ]
+                : []),
+              ...(showPeriodPl
+                ? [
+                    {
+                      id: "period-pl",
+                      label: ta("exportPeriodPl"),
+                      onClick: () =>
+                        openExport("period-pl", ta("exportPeriodPl")),
+                    },
+                  ]
+                : []),
+              ...(showCashFlow
+                ? [
+                    {
+                      id: "cash-flow",
+                      label: ta("exportCashFlow"),
+                      onClick: () =>
+                        openExport("cash-flow", ta("exportCashFlow")),
+                    },
+                  ]
+                : []),
+              ...(showFinancial
+                ? [
+                    {
+                      id: "financial",
+                      label: ta("exportFinancial"),
+                      onClick: () =>
+                        openExport("financial", ta("exportFinancial")),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </Board.Body>
+      </Board>
       <MotionSection enter="rise" className="space-y-3">
         <h2 className="text-lg font-semibold">{ta("workerRates")}</h2>
         <p className="text-sm text-text-secondary">{ta("laborSlotHint")}</p>
@@ -1709,6 +1689,7 @@ export default function ReportsPage() {
           message={tCommon("loadFailed")}
         />
       ) : null}
+      {pdfDialog}
     </div>
   );
 }

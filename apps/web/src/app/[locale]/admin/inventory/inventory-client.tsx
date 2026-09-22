@@ -33,6 +33,7 @@ import {
   EmptyState,
   ErrorBoard,
   ErrorState,
+  ImageSourceField,
   Input,
   Ledger,
   LedgerRow,
@@ -45,11 +46,11 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableNumericCell,
   TableHead,
   TableHeaderCell,
+  TableNumericCell,
   TableRow,
-  ImageSourceField,
+  TextArea,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
@@ -1986,7 +1987,7 @@ export default function InventoryPage() {
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
           />
-          <Input label={ti('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <TextArea autoGrow rows={2} label={ti('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
       </Modal>
 

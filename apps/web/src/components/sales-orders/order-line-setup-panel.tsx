@@ -7,6 +7,7 @@ import {
 import {
   type OrderSetupLine,
   type PatchOrderSetupLineBody,
+  apiFetch,
   patchOrderSetupLine,
   putOrderSetupMaterials,
   seedOrderSetupLineFromCatalog,
@@ -22,8 +23,9 @@ import {
   Select,
   Stamp,
   StatusBadge,
+  TextArea,
 } from '@maher/ui';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useId, useState } from 'react';
 
@@ -410,13 +412,11 @@ export function OrderLineSetupPanel({
                 {t('orderSetup.confirmWorkflow')}
               </label>
             ) : null}
-            {line.workflow?.stagePath?.length ? (
-              <p className="text-xs text-text-tertiary">
-                {line.workflow.stagePath
-                  .map((s) => localizedName(locale, s, s.nameEn))
-                  .join(' → ')}
-              </p>
-            ) : null}
+            <WorkflowPathPreview
+              workflowId={workflowId}
+              fallback={line.workflow?.stagePath ?? null}
+              stale={Boolean(workflowId) && workflowId !== (line.workflowId ?? '')}
+            />
           </div>
 
           <div className="space-y-3">
@@ -475,7 +475,9 @@ export function OrderLineSetupPanel({
           </div>
 
           <div>
-            <Input
+            <TextArea
+              autoGrow
+              rows={3}
               label={t('orderSetup.factoryNotes')}
               value={notes}
               disabled={readOnly}
@@ -503,5 +505,36 @@ export function OrderLineSetupPanel({
         </div>
       ) : null}
     </Board>
+  );
+}
+
+type PathStage = { id?: string; code?: string; nameEn: string; nameAr?: string | null; nameHe?: string | null; isOptional?: boolean };
+
+/**
+ * Stage path for the *selected* workflow (not the saved one), so the plan
+ * previews what the factory will run before Save. Falls back to the saved path.
+ */
+function WorkflowPathPreview({ workflowId, fallback, stale }: { workflowId: string; fallback: PathStage[] | null; stale: boolean }) {
+  const locale = useLocale();
+  const t = useTranslations('sales');
+  const preview = useQuery({
+    queryKey: ['production-workflow-path', workflowId],
+    enabled: Boolean(workflowId) && stale,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const wf = await apiFetch<{ activeVersion?: { nodes?: Array<{ nodeKey: string; sortOrder: number; isOptional?: boolean; stageDefinition: PathStage }> } | null }>(`/api/v1/production-workflows/${workflowId}`);
+      return (wf.activeVersion?.nodes ?? []).map((n) => ({ ...n.stageDefinition, id: n.nodeKey, isOptional: n.isOptional }));
+    },
+  });
+  const path: PathStage[] | null = stale ? (preview.data ?? null) : fallback;
+  if (!path?.length) {
+    if (stale && preview.isLoading) return <p className="text-xs text-text-tertiary">…</p>;
+    return null;
+  }
+  return (
+    <p className="text-xs text-text-tertiary" dir="auto">
+      {stale ? <span className="me-1 text-[var(--maher-warning)]">{t('orderSetup.previewPath')}</span> : null}
+      {path.map((s) => `${localizedName(locale, s, s.nameEn)}${s.isOptional ? '?' : ''}`).join(' → ')}
+    </p>
   );
 }

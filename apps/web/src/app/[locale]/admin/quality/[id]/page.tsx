@@ -230,7 +230,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
                   </div>
                 </div>
                 {failing ? <Input label={tc('defectDescription')} value={defectDescription} onChange={(e) => setDefectDescription(e.target.value)} required /> : null}
-                <TextArea label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                <TextArea autoGrow label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
                 <div>
                   <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tp('qualityPhotos')}</span>
                   <PhotoAttachField accept="image/jpeg,image/png,image/webp,image/heic" uploadLabel={tp('attachFile')} uploadingLabel={tCommon('uploading')} onUploadFile={uploadPhoto} />
@@ -331,7 +331,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
       >
         <div className="space-y-4">
           <Combobox label={tp('chooseReworkStage')} value={reworkStageId} onChange={setReworkStageId} options={(stages.data?.eligible ?? []).map((s) => ({ value: (s.stageInstanceId ?? s.id) as string, label: localizedName(locale, s), description: `${s.stageCode}${stages.data?.recommended && (stages.data.recommended.stageInstanceId ?? stages.data.recommended.id) === (s.stageInstanceId ?? s.id) ? ` · ${tp('recommended')}` : ''}` }))} placeholder={tp('chooseReworkStage')} emptyText={kit.combobox.empty} loadingText={kit.combobox.loading} clearLabel={kit.combobox.clear} />
-          <TextArea label={tc('notes')} value={reworkNotes} onChange={(e) => setReworkNotes(e.target.value)} rows={3} />
+          <TextArea autoGrow label={tc('notes')} value={reworkNotes} onChange={(e) => setReworkNotes(e.target.value)} rows={3} />
         </div>
       </Sheet>
       <span className="hidden">{API_URL}</span>

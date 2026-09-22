@@ -23,6 +23,8 @@ export interface OpenPdfRequest {
   /** Show the statement/report range picker. */
   withRange?: boolean;
   defaultRange?: { from: string; to: string };
+  /** Sibling CSV route for the same dataset; enables the CSV button. */
+  csvPath?: string;
   /** Extra passthrough query params (report sections…). */
   extra?: PdfOptions['extra'];
   defaultTheme?: PdfTheme;
@@ -54,6 +56,8 @@ export function usePdfDownload() {
       rangeHint: t('pdfRangeHint'),
       download: t('download'),
       open: t('pdfOpen'),
+      csv: t('pdfCsv'),
+      csvHint: t('pdfCsvHint'),
       cancel: t('cancel'),
     }),
     [t],
@@ -63,14 +67,14 @@ export function usePdfDownload() {
   const close = useCallback(() => setRequest(null), []);
 
   const run = useCallback(
-    async (opts: PdfOptions, mode: 'download' | 'open') => {
+    async (opts: PdfOptions, mode: 'download' | 'open' | 'csv') => {
       if (!request) return;
       try {
         localStorage.setItem(THEME_KEY, opts.theme);
       } catch {
         /* ignore */
       }
-      const url = withPdfQuery(request.path, { ...opts, extra: request.extra });
+      const url = withPdfQuery(mode === 'csv' && request.csvPath ? request.csvPath : request.path, { ...opts, extra: request.extra });
       setBusy(true);
       try {
         const res = await fetch(url, { credentials: 'include' });
@@ -78,7 +82,8 @@ export function usePdfDownload() {
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
         objectUrls.current.push(objectUrl);
-        const filename = filenameFromDisposition(res.headers.get('content-disposition'), request.filename ?? 'document.pdf');
+        const fallbackName = mode === 'csv' ? (request.filename ?? 'export.pdf').replace(/\.pdf$/i, '.csv') : request.filename ?? 'document.pdf';
+        const filename = filenameFromDisposition(res.headers.get('content-disposition'), fallbackName);
         if (mode === 'open') {
           const win = window.open(objectUrl, '_blank', 'noopener');
           if (!win) {
@@ -125,6 +130,7 @@ export function usePdfDownload() {
       withRange={request?.withRange}
       defaultRange={request?.defaultRange}
       documentName={request?.documentName}
+      csv={Boolean(request?.csvPath)}
     />
   );
 

@@ -242,6 +242,16 @@ html.maher-theme-fade body {
   }
 }
 
+/* Live tone dot (running timer) */
+.maher-stamp-pulse {
+  animation: maher-pulse-soft 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .maher-stamp-pulse {
+    animation: none;
+  }
+}
+
 @keyframes maher-pulse-soft {
   0%,
   100% {

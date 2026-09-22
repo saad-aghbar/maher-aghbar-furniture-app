@@ -301,7 +301,7 @@
     "editStage": "Edit stage",
     "stageName": "Stage name",
     "department": "Department",
-    "estimatedDuration": "Estimated duration",
+    "estimatedDuration": "Estimated",
     "required": "Required",
     "optional": "Optional",
     "excluded": "Excluded",
@@ -533,7 +533,14 @@
     "estimatedHours": "Standard hours",
     "resourceConstrainedCount": "{count, plural, one {# shared-resource stage} other {# shared-resource stages}}",
     "resourceConstrained": "{slots, plural, one {# slot} other {# slots}}",
-    "skilledWorkers": "{count, plural, one {# skilled worker} other {# skilled workers}}"
+    "skilledWorkers": "{count, plural, one {# skilled worker} other {# skilled workers}}",
+    "actualDuration": "Actual",
+    "liveElapsed": "Elapsed (live)",
+    "overEstimate": "Over estimate by {n}",
+    "timeLeft": "{n} left",
+    "timeRunning": "Running",
+    "timePaused": "Paused",
+    "timeNotStarted": "Not started"
   },
   "setup": {
     "title": "Production setup",
@@ -805,5 +812,19 @@
   "tracking": "Progress",
   "takeInHint": "Scan each incoming kit until every line is received; the task unlocks when all are in.",
   "kitLines": "Kit lines",
-  "scanNext": "Scan next"
+  "scanNext": "Scan next",
+  "stageTimeRequiredHint": "Set the stage time before assigning.",
+  "assignDay": "Work day",
+  "hubWipMove": "Move to bin",
+  "hubWipMoveTitle": "Move kit to a stage bin",
+  "hubWipEnsureBins": "Create stage bins",
+  "hubWipEnsureBinsHint": "No stage bins exist in the semi-finished warehouse yet.",
+  "hubWipMoved": "Kit moved",
+  "hubWipBinsCreated": "Stage bins ready",
+  "hubStageOutputs": "Stage outputs",
+  "hubStageOutputsHint": "What each stage hands to the next — expected kits and pieces versus what is done.",
+  "hubStageOutputNone": "No semi-finished output",
+  "hubStageOutputNext": "Next: {stages}",
+  "hubStageOutputPieces": "{done}/{expected} pieces",
+  "hubStageOutputKits": "{count} kits"
 }

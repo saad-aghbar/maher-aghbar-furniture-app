@@ -836,7 +836,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
       >
         <div className="space-y-4">
           <DateField label={tSales('desk.committedDate')} value={dateDraft} onChange={setDateDraft} locale={copy.locale} copy={kit.date} minDate={anyToYmd(new Date())} presentation="popover" />
-          <TextArea label={tCommon('reason')} value={dateReason} onChange={(e) => setDateReason(e.target.value)} rows={3} />
+          <TextArea autoGrow label={tCommon('reason')} value={dateReason} onChange={(e) => setDateReason(e.target.value)} rows={3} />
         </div>
       </Sheet>
       <CancelImpactSheet

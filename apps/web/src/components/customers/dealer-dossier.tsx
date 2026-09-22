@@ -907,7 +907,7 @@ function NotesBoard({ customerId, notes, loading, onChanged }: { customerId: str
       >
         <div className="space-y-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
-          <TextArea label={t('noteSummary')} value={summary} onChange={(e) => setSummary(e.target.value)} rows={5} />
+          <TextArea autoGrow label={t('noteSummary')} value={summary} onChange={(e) => setSummary(e.target.value)} rows={5} />
         </div>
       </Sheet>
     </Board>

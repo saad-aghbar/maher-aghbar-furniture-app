@@ -281,7 +281,7 @@ export default function RequestQuotePage() {
                 }}
               />
               {file ? <p className="text-xs text-text-tertiary">{file.name}</p> : null}
-              <TextArea
+              <TextArea autoGrow
                 label={tc('notes')}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}

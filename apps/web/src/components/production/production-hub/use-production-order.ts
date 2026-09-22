@@ -10,6 +10,18 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import type { AssignableWorker } from '../production-shared';
 
+export interface ReturnWarehouseOption {
+  id: string;
+  code: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  type?: string;
+  isActive?: boolean;
+  isDefault?: boolean;
+  locations?: Array<{ id: string; code: string; name?: string | null; isDefault?: boolean; isActive?: boolean }>;
+}
+
 export interface Task {
   id: string;
   number: string;
@@ -65,6 +77,7 @@ export interface ProductionDetail {
   customer?: { id: string; code?: string; name: string; nameAr?: string | null; nameEn?: string | null; nameHe?: string | null } | null;
   product?: { id: string; sku?: string; nameEn?: string | null; nameAr?: string | null; nameHe?: string | null; imageUrl?: string | null } | null;
   salesOrder?: { id: string; number: string; externalOrderNumber?: string | null } | null;
+  salesOrderLineId?: string | null;
   returnRequest?: { id: string; number: string } | null;
   stages: Stage[];
   documents?: TaskDocument[];
@@ -91,8 +104,9 @@ export interface MaterialUsageRow {
 }
 
 export const PRE_START = new Set(['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS']);
-export const LOCKED_STAGE = new Set(['COMPLETED', 'SKIPPED', 'IN_PROGRESS', 'PAUSED', 'READY_FOR_INSPECTION', 'BLOCKED']);
-export const LOCKED_TASK = new Set(['COMPLETED', 'CANCELLED', 'IN_PROGRESS', 'PAUSED', 'READY_FOR_INSPECTION', 'BLOCKED']);
+/** Mirrors the API: only running / finished stages are locked; paused and not-started stay assignable. */
+export const LOCKED_STAGE = new Set(['COMPLETED', 'SKIPPED', 'IN_PROGRESS', 'READY_FOR_INSPECTION', 'BLOCKED']);
+export const LOCKED_TASK = new Set(['COMPLETED', 'CANCELLED', 'IN_PROGRESS', 'READY_FOR_INSPECTION', 'BLOCKED']);
 
 export function useProductionOrder(id: string) {
   const tp = useTranslations('production');
@@ -114,7 +128,15 @@ export function useProductionOrder(id: string) {
     },
   });
   const workers = useQuery({ queryKey: ['assignable-workers'], queryFn: () => apiFetch<AssignableWorker[]>('/api/v1/production-orders/assignable-workers'), staleTime: 60_000 });
-  const warehouses = useQuery({ queryKey: ['warehouses-pick'], queryFn: () => apiFetch<{ data: Array<{ id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null; type?: string }> }>('/api/v1/inventory/warehouses?pageSize=100').then((r) => r.data).catch(() => []), staleTime: 60_000 });
+  // `GET /inventory/warehouses` returns a bare array (with bins); raw-material stores only for returns.
+  const warehouses = useQuery({
+    queryKey: ['production-return-warehouses'],
+    queryFn: async () => {
+      const rows = await apiFetch<ReturnWarehouseOption[]>('/api/v1/inventory/warehouses?type=RAW_MATERIALS');
+      return Array.isArray(rows) ? rows.filter((w) => w.isActive !== false) : [];
+    },
+    staleTime: 60_000,
+  });
 
   // Live timer tick while any task runs.
   const [now, setNow] = useState(() => Date.now());
@@ -154,14 +176,20 @@ export function useProductionOrder(id: string) {
     onError,
   });
   const assign = useMutation({
-    mutationFn: (args: { taskId: string; employeeId: string; priority: string; plannedCompletion?: string; estimatedMinutes?: number }) =>
+    mutationFn: (args: { taskId: string; employeeId: string; priority: string; plannedStart?: string; plannedCompletion?: string; estimatedMinutes?: number }) =>
       apiFetch(`/api/v1/tasks/${args.taskId}/assign`, {
         method: 'POST',
-        body: JSON.stringify({ employeeId: args.employeeId, priority: args.priority, ...(args.plannedCompletion ? { plannedCompletion: args.plannedCompletion } : {}), ...(args.estimatedMinutes != null ? { estimatedMinutes: args.estimatedMinutes } : {}) }),
+        body: JSON.stringify({
+          employeeId: args.employeeId,
+          priority: args.priority,
+          ...(args.plannedStart ? { plannedStart: args.plannedStart } : {}),
+          ...(args.plannedCompletion ? { plannedCompletion: args.plannedCompletion } : {}),
+          ...(args.estimatedMinutes != null ? { estimatedMinutes: args.estimatedMinutes } : {}),
+        }),
       }),
     onSuccess: async () => {
       toast.success(tp('workerAssigned'));
-      await invalidate();
+      await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ['assignable-workers'] }), qc.invalidateQueries({ queryKey: ['production-order-workflow', id] }), qc.invalidateQueries({ queryKey: ['scheduling-order', id] })]);
     },
     onError,
   });
@@ -194,7 +222,7 @@ export function useProductionOrder(id: string) {
     onError,
   });
   const returnMaterial = useMutation({
-    mutationFn: (args: { inventoryItemId: string; quantity: number; warehouseId?: string }) =>
+    mutationFn: (args: { inventoryItemId: string; quantity: number; warehouseId?: string; locationId?: string }) =>
       apiFetch(`/api/v1/production-orders/${id}/materials/return`, { method: 'POST', body: JSON.stringify({ ...args, idempotencyKey: `${id}:${args.inventoryItemId}:${Date.now()}` }) }),
     onSuccess: async () => {
       toast.success(tCommon('saved'));
@@ -206,7 +234,15 @@ export function useProductionOrder(id: string) {
     mutationFn: (workflowId: string) => apiFetch(`/api/v1/production-orders/${id}/workflow/assign`, { method: 'POST', body: JSON.stringify({ workflowId }) }),
     onSuccess: async () => {
       toast.success(tCommon('saved'));
-      await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ['order-workflow', id] }), qc.invalidateQueries({ queryKey: ['production-workflow-graph', id] })]);
+      // The graph and the docs live under these keys (admin flow page, hub tab, dealer tracking).
+      await Promise.all([
+        invalidate(),
+        qc.invalidateQueries({ queryKey: ['production-order-workflow', id] }),
+        qc.invalidateQueries({ queryKey: ['production-order-docs', id] }),
+        qc.invalidateQueries({ queryKey: ['dealer-order-workflow', id] }),
+        qc.invalidateQueries({ queryKey: ['scheduling-order', id] }),
+        qc.invalidateQueries({ queryKey: ['order-production-setup'] }),
+      ]);
     },
     onError,
   });

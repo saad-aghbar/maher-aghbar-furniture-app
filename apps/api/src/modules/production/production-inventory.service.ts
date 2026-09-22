@@ -452,6 +452,7 @@ export class ProductionInventoryService {
     inventoryItemId: string;
     quantity: number;
     warehouseId?: string | null;
+    locationId?: string | null;
     userId: string;
     idempotencyKey?: string;
   }) {
@@ -507,10 +508,20 @@ export class ProductionInventoryService {
         where: { id: params.productionOrderId },
         select: { salesOrderId: true },
       });
+      if (params.locationId) {
+        const bin = await tx.warehouseLocation.findUnique({ where: { id: params.locationId } });
+        if (!bin || bin.warehouseId !== warehouse.id) {
+          throw new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'The chosen bin does not belong to the selected warehouse.',
+          });
+        }
+      }
       return this.inventory.applyMovement({
         type: InventoryTxType.PRODUCTION_RETURN,
         inventoryItemId: item.id,
         warehouseId: warehouse.id,
+        locationId: params.locationId ?? undefined,
         quantity: qty,
         unitCost: unitCost ?? undefined,
         userId: params.userId,

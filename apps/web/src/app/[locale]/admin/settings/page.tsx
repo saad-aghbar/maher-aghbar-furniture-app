@@ -650,7 +650,7 @@ export default function SettingsPage() {
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FormSection title={tc('purchasingWhatsApp')} description={tc('purchasingWhatsAppHint')} columns={1}>
-              <TextArea label={tc('whatsappTemplate')} value={whatsappForm.template} onChange={(e) => setWhatsappForm({ ...whatsappForm, template: e.target.value })} rows={6} />
+              <TextArea autoGrow label={tc('whatsappTemplate')} value={whatsappForm.template} onChange={(e) => setWhatsappForm({ ...whatsappForm, template: e.target.value })} rows={6} />
               <p className="-mt-2 text-[12px] text-[var(--maher-text-tertiary)]">{tc('templateTokens')}</p>
               <Input label={tc('signature')} value={whatsappForm.signature} onChange={(e) => setWhatsappForm({ ...whatsappForm, signature: e.target.value })} />
               <Switch label={tc('includePrices')} checked={whatsappForm.includePrices} onChange={(checked) => setWhatsappForm({ ...whatsappForm, includePrices: checked })} />

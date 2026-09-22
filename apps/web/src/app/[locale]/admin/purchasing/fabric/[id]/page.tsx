@@ -273,7 +273,7 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
           ) : null}
           {action === 'wait' || action === 'state' ? <DateField label={tp('expectedDate')} value={expected} onChange={setExpected} copy={kit.date} locale={locale} presentation="popover" clearable /> : null}
           {action === 'redirect' ? <Combobox label={tp('supplier')} value={supplierId} onChange={setSupplierId} options={(suppliers.data ?? []).map((s) => ({ value: s.id, label: s.nameAr || s.nameEn ? localizedName(locale, s, s.name) : s.name, description: s.code }))} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} /> : null}
-          {action === 'override' ? <TextArea label={tp('reason')} value={reason} onChange={(e) => setReason(e.target.value)} rows={3} /> : null}
+          {action === 'override' ? <TextArea autoGrow label={tp('reason')} value={reason} onChange={(e) => setReason(e.target.value)} rows={3} /> : null}
           {action === 'receive' || action === 'allocate' ? (
             <>
               {action === 'allocate' ? <Combobox label={ti('item')} value={stockItemId} onChange={setStockItemId} options={(stock.data ?? []).map((i) => ({ value: i.id, label: localizedName(locale, i, i.nameEn), description: `${i.sku}${i.availableQty != null ? ` · ${i.availableQty}` : ''}` }))} emptyText={kit.combobox.empty} loadingText={kit.combobox.loading} clearLabel={kit.combobox.clear} /> : null}
@@ -296,8 +296,8 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
               ) : null}
             </>
           ) : null}
-          {action !== 'override' && action !== 'allocate' ? <TextArea label={tCommon('notes')} value={note} onChange={(e) => setNote(e.target.value)} rows={3} /> : null}
-          {action === 'allocate' ? <TextArea label={tp('reason')} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} /> : null}
+          {action !== 'override' && action !== 'allocate' ? <TextArea autoGrow label={tCommon('notes')} value={note} onChange={(e) => setNote(e.target.value)} rows={3} /> : null}
+          {action === 'allocate' ? <TextArea autoGrow label={tp('reason')} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} /> : null}
         </div>
       </Sheet>
       {pdfDialog}

@@ -250,14 +250,38 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
     ).rejects.toMatchObject({ response: { code: 'DEPENDENCY_ORDER' } });
   });
 
-  it('rejects reassign after PO is on the floor', async () => {
+  it('allows reassigning a not-started stage after the PO is on the floor', async () => {
     const { service } = makeService({
       assignedEmployeeId: WORKER_A,
       productionOrder: { id: 'po-1', number: 'PO-1', status: 'IN_PROGRESS' },
     });
     await expect(
       service.assign('task-1', { employeeId: WORKER_B }, ['production-order.assign']),
-    ).rejects.toMatchObject({ response: { code: 'REASSIGN_LOCKED' } });
+    ).resolves.toBeDefined();
+  });
+
+  it('allows reassigning a paused stage', async () => {
+    const { service } = makeService({
+      status: 'PAUSED',
+      assignedEmployeeId: WORKER_A,
+      stageInstance: { status: 'PAUSED' },
+      productionOrder: { id: 'po-1', number: 'PO-1', status: 'IN_PROGRESS' },
+    });
+    await expect(
+      service.assign('task-1', { employeeId: WORKER_B }, ['production-order.assign']),
+    ).resolves.toBeDefined();
+  });
+
+  it('still rejects assigning a running stage', async () => {
+    const { service } = makeService({
+      status: 'IN_PROGRESS',
+      assignedEmployeeId: WORKER_A,
+      stageInstance: { status: 'IN_PROGRESS' },
+      productionOrder: { id: 'po-1', number: 'PO-1', status: 'IN_PROGRESS' },
+    });
+    await expect(
+      service.assign('task-1', { employeeId: WORKER_B }, ['production-order.assign']),
+    ).rejects.toMatchObject({ response: { code: 'ASSIGN_LOCKED' } });
   });
 
   it('rejects unqualified worker when skills exist', async () => {

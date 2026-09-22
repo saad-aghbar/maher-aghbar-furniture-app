@@ -1,11 +1,14 @@
 'use client';
 
 import { apiFetch } from '@/lib/api-client';
+import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { usePdfDownload } from '@/hooks/use-pdf-download';
-import { Board, BoardSkeleton, Button, QrDisplay, Stamp, type BoardTone } from '@maher/ui';
-import { FileText } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useKitCopy } from '@/lib/kit-copy';
+import { Board, BoardSkeleton, Button, Combobox, QrDisplay, Sheet, Stamp, useToast, type BoardTone } from '@maher/ui';
+import { FileText, MoveRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 type WipKit = {
   id: string;
@@ -15,7 +18,7 @@ type WipKit = {
   custody?: string | null;
   handoffCount?: number;
   pieces: Array<{ id: string }>;
-  location?: { code: string; name?: string | null } | null;
+  location?: { id?: string; code: string; name?: string | null } | null;
   claimedByUser?: { firstName: string; lastName: string } | null;
   productionOrder: { number: string };
   stageInstance?: {
@@ -40,6 +43,8 @@ type Props = {
   productionOrderId: string;
 };
 
+type StageBin = { id: string; code: string; name?: string | null; isDefault?: boolean };
+
 function stageName(section: WipSection, locale: string): string {
   if (locale === 'ar') return section.stageNameAr || section.stageNameEn;
   if (locale === 'he') return section.stageNameHe || section.stageNameEn;
@@ -56,8 +61,38 @@ function directionForKit(status: string): 'outgoing' | 'incoming' | 'in_use' | '
 
 export function ProductionWipPanel({ productionOrderId }: Props) {
   const tp = useTranslations('production');
+  const tCommon = useTranslations('common');
+  const kitCopy = useKitCopy();
+  const toast = useToast();
+  const qc = useQueryClient();
   const { openPdf, pdfDialog } = usePdfDownload();
   const locale = useLocale();
+  const [moving, setMoving] = useState<WipKit | null>(null);
+  const [targetBin, setTargetBin] = useState<string | null>(null);
+
+  const binsQuery = useQuery({
+    queryKey: ['wip-stage-bins'],
+    queryFn: () => apiFetch<{ warehouse: { id: string; code: string } | null; locations: StageBin[] }>('/api/v1/inventory/wip-kits/stage-bins'),
+    staleTime: 60_000,
+  });
+  const bins = binsQuery.data?.locations ?? [];
+  const ensureBins = useMutation({
+    mutationFn: () => apiFetch('/api/v1/inventory/wip-kits/ensure-stage-bins', { method: 'POST' }),
+    onSuccess: async () => {
+      toast.success(tp('hubWipBinsCreated'));
+      await qc.invalidateQueries({ queryKey: ['wip-stage-bins'] });
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
+  const moveKit = useMutation({
+    mutationFn: (args: { kitId: string; locationId: string | null }) => apiFetch(`/api/v1/inventory/wip-kits/${args.kitId}/location`, { method: 'PATCH', body: JSON.stringify({ locationId: args.locationId }) }),
+    onSuccess: async () => {
+      toast.success(tp('hubWipMoved'));
+      setMoving(null);
+      await qc.invalidateQueries({ queryKey: ['production-order-wip', productionOrderId] });
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
 
   const boardQuery = useQuery({
     queryKey: ['production-order-wip', productionOrderId],
@@ -132,9 +167,14 @@ export function ProductionWipPanel({ productionOrderId }: Props) {
           <Stamp tone={kit.status === 'CONSUMED' ? 'success' : kit.status === 'CLAIMED' ? 'info' : kit.status === 'READY' ? 'warning' : 'neutral'} size="sm">
             {kit.status.replace(/_/g, ' ')}
           </Stamp>
-          <Button size="sm" variant="secondary" leadingIcon={<FileText className="h-3.5 w-3.5" />} onClick={() => openPdf({ path: `/api/v1/inventory/wip-kits/${kit.id}/qr-label`, documentName: kit.qrCode, filename: `${kit.qrCode}.pdf` })}>
-            {tp('kitQr')}
-          </Button>
+          <span className="flex gap-1.5">
+            <Button size="sm" variant="ghost" leadingIcon={<MoveRight className="h-3.5 w-3.5 rtl:-scale-x-100" />} onClick={() => { setTargetBin(kit.location?.id ?? null); setMoving(kit); }}>
+              {tp('hubWipMove')}
+            </Button>
+            <Button size="sm" variant="secondary" leadingIcon={<FileText className="h-3.5 w-3.5" />} onClick={() => openPdf({ path: `/api/v1/inventory/wip-kits/${kit.id}/qr-label`, documentName: kit.qrCode, filename: `${kit.qrCode}.pdf` })}>
+              {tp('kitQr')}
+            </Button>
+          </span>
         </div>
       </li>
     );
@@ -150,7 +190,18 @@ export function ProductionWipPanel({ productionOrderId }: Props) {
 
   return (
     <Board tone="info">
-      <Board.Header title={tp('hubWip')} description={tp('hubWipHint')} meta={total > 0 ? <Stamp tone="info" size="sm">{total}</Stamp> : null} />
+      <Board.Header
+        title={tp('hubWip')}
+        description={tp('hubWipHint')}
+        meta={total > 0 ? <Stamp tone="info" size="sm">{total}</Stamp> : null}
+        actions={
+          binsQuery.isSuccess && bins.length === 0 ? (
+            <Button size="sm" variant="secondary" loading={ensureBins.isPending} onClick={() => ensureBins.mutate()} title={tp('hubWipEnsureBinsHint')}>
+              {tp('hubWipEnsureBins')}
+            </Button>
+          ) : null
+        }
+      />
       {boardQuery.isLoading ? (
         <BoardSkeleton header={false} rows={3} />
       ) : boardQuery.isError ? (
@@ -165,6 +216,34 @@ export function ProductionWipPanel({ productionOrderId }: Props) {
         </ul>
       )}
       {pdfDialog}
+      <Sheet
+        open={Boolean(moving)}
+        onClose={() => setMoving(null)}
+        title={tp('hubWipMoveTitle')}
+        description={moving ? <span dir="ltr">{moving.qrCode}</span> : undefined}
+        closeLabel={tCommon('close')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setMoving(null)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button loading={moveKit.isPending} disabled={!moving || targetBin === (moving.location?.id ?? null)} onClick={() => moving && moveKit.mutate({ kitId: moving.id, locationId: targetBin })}>
+              {tp('hubWipMove')}
+            </Button>
+          </>
+        }
+      >
+        {bins.length === 0 ? (
+          <div className="space-y-3">
+            <p className="text-[13px] text-[var(--maher-text-secondary)]">{tp('hubWipEnsureBinsHint')}</p>
+            <Button size="sm" variant="secondary" loading={ensureBins.isPending} onClick={() => ensureBins.mutate()}>
+              {tp('hubWipEnsureBins')}
+            </Button>
+          </div>
+        ) : (
+          <Combobox label={tCommon('bin')} value={targetBin} onChange={setTargetBin} options={bins.map((b) => ({ value: b.id, label: b.name?.trim() || b.code, description: b.code }))} placeholder={tCommon('select')} emptyText={kitCopy.combobox.empty} clearLabel={kitCopy.combobox.clear} />
+        )}
+      </Sheet>
     </Board>
   );
 }

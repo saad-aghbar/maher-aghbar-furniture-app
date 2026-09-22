@@ -253,7 +253,7 @@ export function ReturnDesk({ id }: { id: string }) {
               <Board.Header title={t('returnAttention.pendingReview')} description={t('returnDetail.approveDoesNotReceive')} />
               <Board.Body className="space-y-3">
                 {detail.description ? <p className="text-[14px] leading-6 text-[var(--maher-text-secondary)]">{detail.description}</p> : null}
-                <TextArea label={t('returnDetail.needInfoNote')} value={form.needInfoNote} onChange={(e) => form.setNeedInfoNote(e.target.value)} rows={3} placeholder={t('returnDetail.needInfoNotePlaceholder')} />
+                <TextArea autoGrow label={t('returnDetail.needInfoNote')} value={form.needInfoNote} onChange={(e) => form.setNeedInfoNote(e.target.value)} rows={3} placeholder={t('returnDetail.needInfoNotePlaceholder')} />
               </Board.Body>
               <Board.Footer>
                 <Button disabled={busy} onClick={() => desk.setConfirm('approve')}>{tCommon('approve')}</Button>
@@ -361,7 +361,7 @@ export function ReturnDesk({ id }: { id: string }) {
                     onChange={(value) => form.setReceivedLocationId(value ?? '')}
                   />
                 </div>
-                <TextArea label={tCommon('notes')} value={form.receiveNotes} onChange={(e) => form.setReceiveNotes(e.target.value)} rows={2} />
+                <TextArea autoGrow label={tCommon('notes')} value={form.receiveNotes} onChange={(e) => form.setReceiveNotes(e.target.value)} rows={2} />
               </Board.Body>
               <Board.Footer>
                 <Button disabled={busy || (awaiting.length > 0 && form.selectedPieceIds.length === 0)} loading={mutations.receive.isPending} onClick={() => desk.setConfirm('receive')}>
@@ -397,7 +397,7 @@ export function ReturnDesk({ id }: { id: string }) {
               <Board.Header title={t('returnDetail.reship')} description={`${readyPieces.length}/${pieces.length || 1}`} />
               <Board.Body className="grid gap-3 sm:grid-cols-2">
                 <Input label={t('returnDetail.reshipAddress')} value={form.reshipAddress} onChange={(e) => form.setReshipAddress(e.target.value)} />
-                <TextArea label={t('returnDetail.reshipNotes')} value={form.reshipNotes} onChange={(e) => form.setReshipNotes(e.target.value)} rows={2} />
+                <TextArea autoGrow label={t('returnDetail.reshipNotes')} value={form.reshipNotes} onChange={(e) => form.setReshipNotes(e.target.value)} rows={2} />
               </Board.Body>
               <Board.Footer>
                 {inWork.length ? (

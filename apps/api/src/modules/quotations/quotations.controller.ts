@@ -12,11 +12,15 @@ import {
   UpdateQuotationDto,
 } from './dto/quotation.dto';
 import { QuotationsService } from './quotations.service';
+import { QuoteCostHintService } from './quote-cost-hint.service';
 
 @ApiTags('quotations')
 @Controller('quotations')
 export class QuotationsController {
-  constructor(private readonly quotations: QuotationsService) {}
+  constructor(
+    private readonly quotations: QuotationsService,
+    private readonly costHints: QuoteCostHintService,
+  ) {}
 
   @RequirePermissions('quotation.read')
   @Get()
@@ -34,6 +38,13 @@ export class QuotationsController {
   @Get(':id')
   getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.quotations.getForClient(id, user);
+  }
+
+  /** Staff-only: BOM baseline + last/avg factory actual per line, for pricing. */
+  @RequirePermissions('quotation.update')
+  @Get(':id/cost-hints')
+  getCostHints(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.costHints.forQuotation(id, user);
   }
 
   @RequirePermissions('quotation.update')

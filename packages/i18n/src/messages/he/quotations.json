@@ -96,5 +96,20 @@
   "laneAccepted": "אושר",
   "laneRejected": "נדחה",
   "laneExpired": "פג תוקף",
-  "laneDraft": "טיוטות"
+  "laneDraft": "טיוטות",
+  "costPlanned": "עלות מתוכננת",
+  "costLastActual": "בפועל אחרונה",
+  "costAvgActual": "ממוצע בפועל",
+  "costSamples": "{n} ייצורים",
+  "costNoHistory": "אין היסטוריית מפעל עדיין",
+  "costMargin": "מרווח",
+  "costUsePlanned": "השתמש במתוכנן +{pct}%",
+  "costBelow": "מתחת לעלות",
+  "costBasisVariant": "וריאנט",
+  "costBasisProduct": "מוצר",
+  "costBasisModified": "התאמת שינוי",
+  "costBasisCustom": "קבוצת מותאם",
+  "costMatchedProduct": "מוצר דומה",
+  "costMatchedCohort": "פריטים מותאמים דומים",
+  "costHints": "רמזי עלות מפעל"
 }

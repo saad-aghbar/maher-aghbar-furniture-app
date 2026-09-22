@@ -21,6 +21,9 @@ export interface PdfDownloadCopy {
   download?: string;
   open?: string;
   cancel?: string;
+  /** Label for the CSV button when `csv` is offered. */
+  csv?: string;
+  csvHint?: string;
   languages?: Partial<Record<PdfLang, string>>;
 }
 
@@ -28,7 +31,9 @@ export interface PdfDownloadDialogProps {
   open: boolean;
   onClose: () => void;
   /** Called with the chosen options; `mode` tells whether to save or open in a tab. */
-  onConfirm: (opts: PdfOptions, mode: 'download' | 'open') => void | Promise<void>;
+  onConfirm: (opts: PdfOptions, mode: 'download' | 'open' | 'csv') => void | Promise<void>;
+  /** Offer a CSV download of the same dataset (language applies to headers; paper does not). */
+  csv?: boolean;
   defaultLang?: PdfLang;
   defaultTheme?: PdfTheme;
   /** Show a date range (statements, reports). */
@@ -63,6 +68,7 @@ export function PdfDownloadDialog({
   copy,
   locale,
   children,
+  csv,
 }: PdfDownloadDialogProps) {
   const [lang, setLang] = useState<PdfLang>(defaultLang);
   const [theme, setTheme] = useState<PdfTheme>(defaultTheme);
@@ -91,6 +97,11 @@ export function PdfDownloadDialog({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             {copy?.cancel ?? 'Cancel'}
           </Button>
+          {csv ? (
+            <Button variant="secondary" disabled={busy} onClick={() => void onConfirm(options(), 'csv')} title={copy?.csvHint}>
+              {copy?.csv ?? 'CSV'}
+            </Button>
+          ) : null}
           <Button variant="secondary" disabled={busy} onClick={() => void onConfirm(options(), 'open')}>
             {copy?.open ?? 'Open'}
           </Button>

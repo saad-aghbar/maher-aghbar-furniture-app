@@ -351,9 +351,9 @@ export default function ProductVariantEditorPage() {
           <Board tone="neutral" className="xl:col-span-2">
             <Board.Header title={t('factoryNotes')} description={t('factoryNotesHint')} />
             <Board.Body className="grid gap-4 lg:grid-cols-3">
-              <TextArea label={t('factoryNotesAr')} value={factoryNotesAr} onChange={(e) => setFactoryNotesAr(e.target.value)} rows={4} dir="rtl" />
-              <TextArea label={t('factoryNotesEn')} value={factoryNotesEn} onChange={(e) => setFactoryNotesEn(e.target.value)} rows={4} dir="ltr" />
-              <TextArea label={t('factoryNotesHe')} value={factoryNotesHe} onChange={(e) => setFactoryNotesHe(e.target.value)} rows={4} dir="rtl" />
+              <TextArea autoGrow label={t('factoryNotesAr')} value={factoryNotesAr} onChange={(e) => setFactoryNotesAr(e.target.value)} rows={4} dir="rtl" />
+              <TextArea autoGrow label={t('factoryNotesEn')} value={factoryNotesEn} onChange={(e) => setFactoryNotesEn(e.target.value)} rows={4} dir="ltr" />
+              <TextArea autoGrow label={t('factoryNotesHe')} value={factoryNotesHe} onChange={(e) => setFactoryNotesHe(e.target.value)} rows={4} dir="rtl" />
             </Board.Body>
           </Board>
         </div>

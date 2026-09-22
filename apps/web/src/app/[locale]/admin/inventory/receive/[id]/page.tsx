@@ -201,7 +201,7 @@ export default function InventoryReceivePoPage({ params }: { params: { id: strin
                 <Combobox label={ti('warehouse')} value={warehouseId} onChange={(v) => (setWarehouseId(v), setLocationId(ws.find((w) => w.id === v)?.locations?.find((l) => l.isDefault)?.id ?? null))} options={ws.map((w) => ({ value: w.id, label: localizedName(locale, w, w.code), description: w.code }))} clearable={false} emptyText={kit.combobox.empty} />
                 <Combobox label={ti('bin')} value={locationId} onChange={setLocationId} options={(selectedWh?.locations ?? []).filter((l) => l.isActive !== false).map((l) => ({ value: l.id, label: l.name && l.name !== l.code ? `${l.code} · ${l.name}` : l.code }))} emptyText={ti('noBins')} clearLabel={kit.combobox.clear} />
                 <Input label={ti('deliveryDocRef')} value={deliveryDocRef} onChange={(e) => setDeliveryDocRef(e.target.value)} dir="ltr" />
-                <TextArea label={tCommon('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                <TextArea autoGrow label={tCommon('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
               </Board.Body>
             </Board>
           ) : null}
