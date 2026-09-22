@@ -272,7 +272,7 @@
   "commercialIncomplete": "יש שורות שעדיין דורשות מחיר מכירה מאושר לפני חיוב.",
   "orderTotal": "סה״כ הזמנה",
   "grossDifference": "מכירה מול ייצור",
-  "requiredPriceLines": "{count} שורות דורשות מחיר מסחרי",
+  "requiredPriceLines": "{count, plural, one {שורה אחת דורשת מחיר מסחרי} other {# שורות דורשות מחיר מסחרי}}",
   "confirmCommercialPrices": "אישור מחירים מסחריים",
   "confirmPrices": "אישור מחירים",
   "commercialPriceInvalid": "הזינו מחיר גדול מאפס לכל שורה.",

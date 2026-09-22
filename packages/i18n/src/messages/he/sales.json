@@ -334,5 +334,6 @@
     "overdueCount": "{count, plural, one {# באיחור} other {# באיחור}}",
     "complexity": "מורכבות",
     "paymentsLast30": "תשלומים · 30 הימים האחרונים"
-  }
+  },
+  "productionSetupWhy": "בחרו תהליך, חומרים, הערות מפעל ואנשים לכל שורה, ואז שחררו למפעל."
 }

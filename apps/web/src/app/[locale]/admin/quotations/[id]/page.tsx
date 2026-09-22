@@ -90,6 +90,7 @@ interface QuotationDetail {
   customer?: { id?: string; name: string; nameAr?: string | null; nameEn?: string | null; nameHe?: string | null };
   pendingApproverRole?: string | null;
   approvalChain?: string[];
+  salesOrders?: Array<{ id: string; number: string; status: string }>;
   completedApprovalSteps?: string[];
   lines?: QuoteLine[];
   request?: { id: string; number: string; externalOrderNumber?: string | null } | null;
@@ -261,7 +262,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
   const done = new Set(data.completedApprovalSteps ?? []);
   const journey: StageStripStage[] = [
     { key: 'draft', label: copy.status('DRAFT'), state: data.status === 'DRAFT' ? 'current' : 'done' },
-    ...chain.map((role): StageStripStage => ({ key: role, label: copy.status(role), state: done.has(role) ? 'done' : data.status === 'INTERNAL_REVIEW' && data.pendingApproverRole === role ? 'current' : 'todo' })),
+    ...chain.map((role): StageStripStage => ({ key: role, label: t('approvalStep', { role: copy.status(role) }), state: done.has(role) ? 'done' : data.status === 'INTERNAL_REVIEW' && data.pendingApproverRole === role ? 'current' : 'todo' })),
     { key: 'sent', label: copy.status('SENT'), state: ['SENT', 'VIEWED', 'ACCEPTED', 'REJECTED', 'REVISION_REQUESTED'].includes(data.status) ? (data.status === 'SENT' || data.status === 'VIEWED' ? 'current' : 'done') : 'todo' },
     {
       key: 'answer',
@@ -270,7 +271,8 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     },
   ];
 
-  const attention: Array<{ id: string; tone: BoardTone; title: string; why: string; action?: string; onClick?: () => void }> = [];
+  const attention: Array<{ id: string; tone: BoardTone; title: string; why: string; action?: string; onClick?: () => void; href?: string }> = [];
+  for (const so of data.salesOrders ?? []) attention.push({ id: `so-${so.id}`, tone: 'success', title: t('salesOrderCreated'), why: t('salesOrderCreatedWhy', { number: so.number }), action: t('openSalesOrder'), href: `/admin/sales-orders/${so.id}` });
   if (data.commerciallyExpired) attention.push({ id: 'expired', tone: 'neutral', title: copy.status('EXPIRED'), why: t('expiredCannotAccept'), action: canRevise ? tc('revise') : undefined, onClick: canRevise ? () => reviseMutation.mutate() : undefined });
   if (data.rejectionReason) attention.push({ id: 'rejected', tone: 'error', title: t('rejectionReason'), why: data.rejectionReason, action: canRevise ? tc('revise') : undefined, onClick: canRevise ? () => reviseMutation.mutate() : undefined });
   if (data.pendingApproverRole) attention.push({ id: 'approval', tone: 'warning', title: tc('pendingApproval'), why: tSales('desk.pendingApproverWhy', { role: copy.status(data.pendingApproverRole) }), action: canApprove ? tSales('desk.approve') : undefined, onClick: canApprove ? approve : undefined });
@@ -434,12 +436,12 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
       </DetailHero>
 
       {attention.length ? (
-        <Board tone={attention.some((a) => a.tone === 'error') ? 'error' : 'warning'} wash="top">
-          <Board.Header title={tSales('desk.needsAttention')} meta={<Stamp tone={attention.some((a) => a.tone === 'error') ? 'error' : 'warning'} size="sm">{attention.length}</Stamp>} />
+        <Board tone={attention.some((a) => a.tone === 'error') ? 'error' : attention.every((a) => a.tone === 'success') ? 'success' : 'warning'} wash="top">
+          <Board.Header title={attention.every((a) => a.tone === 'success') ? t('salesOrderCreated') : tSales('desk.needsAttention')} meta={<Stamp tone={attention.some((a) => a.tone === 'error') ? 'error' : 'warning'} size="sm">{attention.length}</Stamp>} />
           <ul className="m-0 list-none divide-y divide-[var(--maher-border)] p-0">
             {attention.map((a) => (
               <li key={a.id}>
-                <Ticket tone={a.tone} title={a.title} why={a.why} action={a.action} onClick={a.onClick} wash={a.tone === 'error'} />
+                <Ticket tone={a.tone} title={a.title} why={a.why} action={a.action} onClick={a.onClick} href={a.href} LinkComponent={Link} wash={a.tone === 'error'} />
               </li>
             ))}
           </ul>

@@ -327,7 +327,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
   const stages = journeyStages(order, copy.journey);
 
   const attention: Array<{ id: string; tone: BoardTone; title: string; why: string; href?: string; action?: string; onClick?: () => void }> = [];
-  if (needsProductionSetup) attention.push({ id: 'setup', tone: 'warning', title: tSales('orderAcceptedSetup'), why: tSales('productionSetupRequired'), href: `/admin/sales-orders/${params.id}/production-plan`, action: tSales('prepareProduction') });
+  if (needsProductionSetup) attention.push({ id: 'setup', tone: 'warning', title: tSales('orderAcceptedSetup'), why: tSales('productionSetupWhy'), href: `/admin/sales-orders/${params.id}/production-plan`, action: tSales('prepareProduction') });
   if (setupReleased && (setupData?.progress.needsReviewLines ?? 0) === 0 && (order.productionOrders?.length ?? 0) > 0 && order.status === 'READY_FOR_PRODUCTION')
     attention.push({ id: 'assign', tone: 'info', title: tSales('orderSetup.workerAssignmentRequired'), why: tSales('orderSetup.workerAssignmentHint'), href: '/admin/production', action: tSales('orderSetup.openProduction') });
   if (requiredPriceLines.length) attention.push({ id: 'prices', tone: 'warning', title: ta('commercialSummary'), why: ta('requiredPriceLines', { count: requiredPriceLines.length }), href: '#commercial', action: ta('confirmCommercialPrices') });

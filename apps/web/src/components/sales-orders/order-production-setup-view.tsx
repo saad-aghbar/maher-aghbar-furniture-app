@@ -47,6 +47,7 @@ type WorkflowRow = {
   nameAr?: string | null;
   nameHe?: string | null;
   status: string;
+  scope?: 'STANDARD' | 'RETURN' | string | null;
   activeVersionId?: string | null;
   activeVersion?: { id: string } | null;
 };
@@ -84,7 +85,8 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
     queryKey: ['production-workflows'],
     queryFn: async () => {
       const rows = await apiFetch<WorkflowRow[]>('/api/v1/production-workflows');
-      return rows.map((w) => ({ ...w, activeVersionId: w.activeVersionId ?? w.activeVersion?.id ?? null }));
+      // Return-scoped workflows (repair / dismantle) never apply to a new order.
+      return rows.filter((w) => (w.scope ?? 'STANDARD') !== 'RETURN').map((w) => ({ ...w, activeVersionId: w.activeVersionId ?? w.activeVersion?.id ?? null }));
     },
   });
 
@@ -288,7 +290,7 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
       <ConfirmDialog
         open={releaseOpen}
         title={t('orderSetup.releaseConfirmTitle')}
-        description={preview ? [t('orderSetup.releaseConfirmDescription'), preview.materialReadiness.anyShortage ? t('orderSetup.releaseShortageWarning') : null, preview.note ?? null].filter(Boolean).join(' ') : t('orderSetup.releaseConfirmDescription')}
+        description={preview ? [t('orderSetup.releaseConfirmDescription'), preview.materialReadiness.anyShortage ? t('orderSetup.releaseShortageWarning') : null].filter(Boolean).join(' ') : t('orderSetup.releaseConfirmDescription')}
         confirmLabel={t('orderSetup.release')}
         cancelLabel={tCommon('cancel')}
         loading={releaseMutation.isPending}

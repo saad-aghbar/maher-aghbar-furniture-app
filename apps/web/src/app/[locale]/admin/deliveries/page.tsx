@@ -452,7 +452,7 @@ function DeliveriesPageInner() {
         <FilterGroup title={copy.tm('filterDealerTitle')} layout="stack">
           <DealerCombobox value={draft.dealerId || null} onChange={(id) => setDraft((d) => ({ ...d, dealerId: id ?? '' }))} />
         </FilterGroup>
-        <FilterGroup title={tl('returns.warehouse')}>
+        <FilterGroup title={tCommon('warehouse')}>
           <FilterChip selected={!draft.warehouseId} onClick={() => setDraft((d) => ({ ...d, warehouseId: '' }))}>
             {tCommon('all')}
           </FilterChip>

@@ -597,7 +597,14 @@ function WorkflowTab({ ctl }: { ctl: ProductionOrderCtl }) {
   const kit = useKitCopy();
   const order = ctl.order!;
   const [workflowId, setWorkflowId] = useState<string | null>(null);
-  const workflows = useQuery({ queryKey: ['production-workflows'], queryFn: () => apiFetch<Array<{ id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null }>>('/api/v1/production-workflows') });
+  const workflows = useQuery({
+    queryKey: ['production-workflows', order.originType ?? 'SALES_ORDER'],
+    queryFn: async () => {
+      const rows = await apiFetch<Array<{ id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null; status?: string; scope?: string | null }>>('/api/v1/production-workflows');
+      const wantReturn = order.originType === 'RETURN';
+      return rows.filter((w) => w.status !== 'ARCHIVED' && ((w.scope ?? 'STANDARD') === 'RETURN') === wantReturn);
+    },
+  });
   const canAssign = PRE_START.has(order.status);
   return (
     <div className="space-y-5">

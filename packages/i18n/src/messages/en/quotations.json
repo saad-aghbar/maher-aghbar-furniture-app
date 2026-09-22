@@ -111,5 +111,9 @@
   "costBasisCustom": "Custom cohort",
   "costMatchedProduct": "Similar product",
   "costMatchedCohort": "Similar custom pieces",
-  "costHints": "Factory cost hints"
+  "costHints": "Factory cost hints",
+  "approvalStep": "Approval · {role}",
+  "salesOrderCreated": "Sales order created",
+  "salesOrderCreatedWhy": "{number} was created when the dealer accepted. Continue in Orders → prepare for production.",
+  "openSalesOrder": "Open sales order"
 }

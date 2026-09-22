@@ -394,8 +394,28 @@ export class RequestsService {
         ? `/api/v1/uploads/download?token=${this.storage.createAccessToken(storageKey, 3600)}`
         : null,
     }));
+    // Resolve each line's photo ids to signed URLs so clients can show thumbnails.
+    const photoIds = [
+      ...new Set(
+        (request.items ?? []).flatMap((item) =>
+          Array.isArray(item.photoDocumentIds) ? (item.photoDocumentIds as unknown[]).filter((v): v is string => typeof v === 'string') : [],
+        ),
+      ),
+    ];
+    const photoDocs = photoIds.length
+      ? await this.prisma.document.findMany({
+          where: { id: { in: photoIds } },
+          select: { id: true, fileName: true, mimeType: true, storageKey: true },
+        })
+      : [];
+    const photoById = new Map(photoDocs.map((d) => [d.id, d]));
     const items = (request.items ?? []).map((item, index) => ({
       ...item,
+      photos: (Array.isArray(item.photoDocumentIds) ? (item.photoDocumentIds as unknown[]) : [])
+        .filter((v): v is string => typeof v === 'string')
+        .map((id) => photoById.get(id))
+        .filter((d): d is NonNullable<typeof d> => Boolean(d))
+        .map((d) => ({ id: d.id, fileName: d.fileName, mimeType: d.mimeType, url: this.documentImageUrl(d) })),
       provenance: specProvenance({
         item,
         jobFields: latestJob?.fields,

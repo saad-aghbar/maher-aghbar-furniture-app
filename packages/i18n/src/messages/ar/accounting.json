@@ -272,7 +272,7 @@
   "commercialIncomplete": "بعض البنود ما زالت تحتاج سعر بيع مؤكد قبل الفوترة.",
   "orderTotal": "إجمالي الطلبية",
   "grossDifference": "البيع مقابل التصنيع",
-  "requiredPriceLines": "{count} بنود تحتاج سعراً تجارياً",
+  "requiredPriceLines": "{count, plural, one {بند واحد يحتاج سعراً تجارياً} two {بندان يحتاجان سعراً تجارياً} few {# بنود تحتاج سعراً تجارياً} other {# بنداً تحتاج سعراً تجارياً}}",
   "confirmCommercialPrices": "تأكيد الأسعار التجارية",
   "confirmPrices": "تأكيد الأسعار",
   "commercialPriceInvalid": "أدخل سعراً أكبر من صفر لكل بند.",

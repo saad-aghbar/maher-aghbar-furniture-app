@@ -334,5 +334,6 @@
     "overdueCount": "{count, plural, one {# overdue} other {# overdue}}",
     "complexity": "Complexity",
     "paymentsLast30": "Payments · last 30 days"
-  }
+  },
+  "productionSetupWhy": "Choose the workflow, materials, factory notes and people for each line, then release to the factory."
 }

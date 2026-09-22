@@ -272,7 +272,7 @@
   "commercialIncomplete": "Some lines still need a confirmed sale price before invoicing.",
   "orderTotal": "Order total",
   "grossDifference": "Sale vs manufacturing",
-  "requiredPriceLines": "{count} lines need a commercial price",
+  "requiredPriceLines": "{count, plural, one {# line needs a commercial price} other {# lines need a commercial price}}",
   "confirmCommercialPrices": "Confirm commercial prices",
   "confirmPrices": "Confirm prices",
   "commercialPriceInvalid": "Enter a price greater than zero for each line.",

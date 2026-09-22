@@ -111,5 +111,9 @@
   "costBasisCustom": "קבוצת מותאם",
   "costMatchedProduct": "מוצר דומה",
   "costMatchedCohort": "פריטים מותאמים דומים",
-  "costHints": "רמזי עלות מפעל"
+  "costHints": "רמזי עלות מפעל",
+  "approvalStep": "אישור · {role}",
+  "salesOrderCreated": "הזמנת מכירה נוצרה",
+  "salesOrderCreatedWhy": "{number} נוצרה כשהסוחר אישר. המשיכו בהזמנות ← הכנה לייצור.",
+  "openSalesOrder": "פתח הזמנת מכירה"
 }

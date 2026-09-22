@@ -7,6 +7,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { API_URL, apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
 import { useKitCopy } from '@/lib/kit-copy';
+import { quotationLinesFromRequestItems } from '@/lib/quotation-lines-from-request';
 import { isHandwrittenDocument, latestJobNotes, lineHasAiFill, requestAiReadingFlags } from '@/lib/request-ai-reading';
 import { localizedName } from '@maher/i18n';
 import { manufacturingComplexityDisplayKey } from '@maher/types';
@@ -58,7 +59,14 @@ interface RequestItem {
   width?: number | string | null;
   height?: number | string | null;
   depth?: number | string | null;
+  variantId?: string | null;
+  variantSku?: string | null;
   variantLabel?: string | null;
+  options?: Array<{ specOptionValueId?: string | null; groupCode?: string | null }> | null;
+  customMeasurements?: unknown[] | null;
+  photoDocumentIds?: string[] | null;
+  primaryImageDocumentId?: string | null;
+  photos?: Array<{ id: string; fileName: string; mimeType: string; url: string | null }> | null;
   woodType?: string | null;
   woodColor?: string | null;
   foamDensity?: string | null;
@@ -224,26 +232,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           requestId: data.id,
           offeredDeliveryDate: data.offeredDeliveryDate ?? undefined,
           customerNotes: data.notes ?? undefined,
-          lines: data.items.map((item) => {
-            const complexity = item.manufacturingComplexity === 'MODIFIED' || item.manufacturingComplexity === 'CUSTOM' ? item.manufacturingComplexity : item.manufacturingComplexity === 'STANDARD' ? 'STANDARD' : undefined;
-            const width = Number(item.width);
-            const height = Number(item.height);
-            const depth = Number(item.depth);
-            return {
-              description: item.productName,
-              quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
-              unitPrice: 0,
-              unit: 'pcs',
-              ...(item.material ? { material: item.material } : {}),
-              ...(item.fabric ? { fabric: item.fabric } : {}),
-              ...(item.color ? { color: item.color } : {}),
-              ...(complexity ? { manufacturingComplexity: complexity } : {}),
-              ...(Number.isFinite(width) && width > 0 ? { width } : {}),
-              ...(Number.isFinite(height) && height > 0 ? { height } : {}),
-              ...(Number.isFinite(depth) && depth > 0 ? { depth } : {}),
-              taxRate: 0.16,
-            };
-          }),
+          lines: quotationLinesFromRequestItems(data.items),
         }),
       });
     },
@@ -441,12 +430,20 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                     item.color,
                     ...(item.fabrics ?? []).map((row) => [row.type, row.color, row.role].filter(Boolean).join(' · ')),
                   ].filter(Boolean) as string[];
-                  const provenance = (item.provenance ?? []).filter((row) => row.source !== 'missing');
+                  // Only fields where the AI sheet reading exists and disagrees with the dealer are worth a line.
+                  const provenance = (item.provenance ?? []).filter((row) => row.source !== 'missing' && row.ai != null && String(row.ai).trim() !== '' && String(row.ai).trim() !== String(row.dealer ?? '').trim());
                   return (
                     <li key={item.id} className="px-5 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          <Stamp tone={item.manufacturingComplexity === 'CUSTOM' ? 'warning' : item.manufacturingComplexity === 'MODIFIED' ? 'info' : 'neutral'} className="mt-[7px]" />
+                          {item.photos?.length ? (
+                            <button type="button" className="maher-press shrink-0 overflow-hidden rounded-[10px] border border-[var(--maher-border)]" onClick={() => void openDocument(item.photos![0]!.id)} aria-label={item.photos[0]!.fileName}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={`${API_URL}${item.photos[0]!.url ?? ''}`} alt="" className="h-14 w-14 object-cover" />
+                            </button>
+                          ) : (
+                            <Stamp tone={item.manufacturingComplexity === 'CUSTOM' ? 'warning' : item.manufacturingComplexity === 'MODIFIED' ? 'info' : 'neutral'} className="mt-[7px]" />
+                          )}
                           <div className="min-w-0">
                             <Link href={`/admin/requests/${params.id}/lines/${item.id}`} className="text-[14px] font-semibold leading-5 text-[var(--maher-text-primary)] hover:text-[var(--maher-brand)] hover:underline">
                               {item.productName}
@@ -457,6 +454,11 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
                                 <Stamp tone="info" size="sm">
                                   {tc('filledFromSheet')}
                                 </Stamp>
+                              ) : null}
+                              {(item.photos?.length ?? 0) > 1 ? (
+                                <button type="button" className="text-[var(--maher-brand)] hover:underline" onClick={() => void openDocument(item.photos![1]!.id)}>
+                                  +{item.photos!.length - 1}
+                                </button>
                               ) : null}
                             </p>
                             {item.notes || item.description ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--maher-text-secondary)]">{item.notes || item.description}</p> : null}

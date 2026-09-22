@@ -111,5 +111,9 @@
   "costBasisCustom": "مجموعة مخصص",
   "costMatchedProduct": "منتج مشابه",
   "costMatchedCohort": "قطع مخصصة مشابهة",
-  "costHints": "مؤشرات تكلفة المصنع"
+  "costHints": "مؤشرات تكلفة المصنع",
+  "approvalStep": "اعتماد · {role}",
+  "salesOrderCreated": "تم إنشاء أمر البيع",
+  "salesOrderCreatedWhy": "أُنشئ {number} عند قبول التاجر. تابع في الطلبيات ← التحضير للإنتاج.",
+  "openSalesOrder": "افتح أمر البيع"
 }
