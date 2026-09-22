@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { useReportsFilterQs } from '@/components/cost-performance/reports-chrome';
-import { Card, ErrorState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableNumericCell, TableRow } from '@maher/ui';
+import { Board, ErrorState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableNumericCell, TableRow } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -36,7 +36,7 @@ export default function ReportsProductProfilePage({ params }: { params: { produc
         title={query.data.product?.sku ?? params.productId}
         description={query.data.product?.nameEn ?? undefined}
       />
-      <Card className="p-4">
+      <Board className="p-4"><Board.Body>
         <p className="text-sm">
           {ta('orderCount')}: {query.data.orderCount ?? 0}
         </p>
@@ -68,7 +68,7 @@ export default function ReportsProductProfilePage({ params }: { params: { produc
             ))}
           </TableBody>
         </Table>
-      </Card>
+      </Board.Body></Board>
     </div>
   );
 }

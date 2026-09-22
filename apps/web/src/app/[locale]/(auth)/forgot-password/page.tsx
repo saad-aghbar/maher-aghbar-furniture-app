@@ -1,5 +1,6 @@
 'use client';
 
+import { AuthPanelLayout } from '@/components/auth/auth-panel-layout';
 import { apiFetch } from '@/lib/api-client';
 import { Link } from '@/i18n/navigation';
 import { Alert, Button, Input } from '@maher/ui';
@@ -18,10 +19,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
     try {
-      await apiFetch('/api/v1/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: email.trim() }),
-      });
+      await apiFetch('/api/v1/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: email.trim() }) });
       setSent(true);
     } catch {
       setError(t('loginError'));
@@ -31,19 +29,18 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md items-center px-6">
-      <form onSubmit={onSubmit} className="w-full space-y-4 rounded-[var(--maher-radius-xl)] border border-border bg-surface p-8">
-        <h1 className="text-2xl font-semibold">{t('forgotPassword')}</h1>
+    <AuthPanelLayout title={t('forgotPassword')} hint={t('forgotPasswordHint')} panelTitle={t('resetPassword')} stamp={sent ? { label: t('resetLinkSent'), tone: 'success' } : undefined}>
+      <form onSubmit={onSubmit} className="space-y-4">
         {error ? <Alert variant="error">{error}</Alert> : null}
-        {sent ? <Alert variant="success">{t('forgotPassword')}</Alert> : null}
-        <Input label={t('email')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Button type="submit" loading={loading} className="w-full">
+        {sent ? <Alert variant="success">{t('resetLinkSent')}</Alert> : null}
+        <Input label={t('email')} type="email" inputMode="email" autoComplete="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={sent} />
+        <Button type="submit" size="lg" loading={loading} className="w-full" disabled={sent}>
           {t('resetPassword')}
         </Button>
-        <Link href="/login" className="block text-sm text-brand">
+        <Link href="/login" className="block text-center text-sm font-medium text-[var(--maher-brand)] hover:underline">
           {t('login')}
         </Link>
       </form>
-    </div>
+    </AuthPanelLayout>
   );
 }

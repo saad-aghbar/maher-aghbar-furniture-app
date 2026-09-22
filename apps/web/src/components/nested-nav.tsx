@@ -1,50 +1,47 @@
 'use client';
 
 import { Link, usePathname } from '@/i18n/navigation';
-import { cn } from '@maher/ui';
-import { useTranslations } from 'next-intl';
-import { nestedNavGroups, canSeeNav } from './nav-items';
 import { useAuthMe } from '@/hooks/use-auth-me';
+import { SectionTabs } from '@maher/ui';
+import { useTranslations } from 'next-intl';
+import { useSectionCounts } from './nested-nav-counts';
+import { canSeeNav, nestedNavGroups } from './nav-items';
 
+/**
+ * Section strip under the topbar: paper SectionTabs with live counts.
+ * Groups and permission gates come from `nav-items.ts`.
+ */
 export function NestedNav() {
   const pathname = usePathname();
   const t = useTranslations('navigation');
   const me = useAuthMe();
   const permissions = me.data?.permissions ?? [];
 
-  const group = nestedNavGroups.find((g) =>
-    g.matchPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)),
-  );
-  if (!group) return null;
+  const group = nestedNavGroups.find((g) => g.matchPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)));
+  const items = group ? group.items.filter((item) => canSeeNav(item, permissions)) : [];
+  const counts = useSectionCounts(group?.key ?? null, items.length >= 2);
 
-  const items = group.items.filter((item) => canSeeNav(item, permissions));
+  if (!group || items.length < 2) return null;
 
-  if (items.length < 2) return null;
+  const active =
+    items.find((item) => item.href !== group.parentHref && (pathname === item.href || pathname.startsWith(`${item.href}/`)))?.href ??
+    items.find((item) => pathname === item.href)?.href ??
+    group.parentHref;
 
   return (
-    <nav
-      aria-label={t('groupOperations')}
-      className="mb-6 flex flex-wrap gap-2 border-b border-border pb-3"
-    >
-      {items.map((item) => {
-        const active =
-          pathname === item.href ||
-          (item.href !== group.parentHref && pathname.startsWith(`${item.href}/`));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium transition',
-              active
-                ? 'bg-surface-muted text-text-primary shadow-sm'
-                : 'text-text-secondary hover:bg-surface-muted/70 hover:text-text-primary',
-            )}
-          >
-            {t(item.key)}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className="mb-6">
+      <SectionTabs
+        aria-label={t('groupOperations')}
+        LinkComponent={Link}
+        value={active}
+        items={items.map((item) => ({
+          id: item.href,
+          href: item.href,
+          label: t(item.key),
+          count: counts[item.href]?.count ?? null,
+          tone: counts[item.href]?.tone,
+        }))}
+      />
+    </div>
   );
 }

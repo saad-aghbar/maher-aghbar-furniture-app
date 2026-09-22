@@ -1,4 +1,3 @@
-export { FloorBoard } from './FloorBoard';
 export { FloorSheet } from './FloorSheet';
 export { FloorFilterTrigger } from './FloorFilterTrigger';
 export { StageSpine } from './StageSpine';

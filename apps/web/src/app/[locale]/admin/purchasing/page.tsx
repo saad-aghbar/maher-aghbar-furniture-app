@@ -25,7 +25,6 @@ import {
   Modal,
   MotionSection,
   DateRangeField,
-  PageHero,
   Select,
   Skeleton,
   StatusBadge,
@@ -34,6 +33,11 @@ import {
   Tab,
   TabPanel,
   cn,
+  Board,
+  Figure,
+  Ribbon,
+  Stamp,
+  Ticket,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -318,6 +322,12 @@ export default function PurchasingPage() {
     queryFn: () =>
       apiFetch<{ data: Warehouse[] }>('/api/v1/warehouses?pageSize=50').then((r) => r.data),
   });
+  const buyAlertQuery = useQuery({
+    queryKey: ['purchase-orders-buy-alert'],
+    queryFn: () => apiFetch<{ count: number; lowStockCount: number; productionCount: number }>('/api/v1/purchase-orders/buy-alert'),
+    staleTime: 60_000,
+    retry: false,
+  });
   const demandQuery = useQuery({
     queryKey: ['material-demand', demandParams],
     queryFn: () =>
@@ -502,34 +512,54 @@ export default function PurchasingPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <PageHero
-        title={tNav('purchasing')}
-        tone="soft"
-        actions={
-          <>
-            <Button
-              variant="ghost"
-              className="maher-lift"
-              onClick={() => router.push('/admin/purchasing/low-stock')}
-            >
+    <div className="maher-stagger space-y-5">
+      <Board tone={(buyAlertQuery.data?.count ?? 0) > 0 ? 'warning' : 'brand'} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:items-center">
+          <div className="min-w-0">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{tNav('purchasing')}</h1>
+            <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('purchaseOrdersHint')}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => router.push('/admin/purchasing/new')}>{tc('newPurchaseOrder')}</Button>
+              <Button variant="secondary" onClick={() => router.push('/admin/purchasing/low-stock')}>
+                {tc('lowStockOrders')}
+              </Button>
+              <Button variant="secondary" onClick={() => router.push('/admin/suppliers')}>
+                {tc('actionSuppliers')}
+              </Button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <Ribbon
+              size="sm"
+              segments={[
+                { key: 'orders', label: tc('purchaseOrders'), value: orders.length, tone: 'brand' },
+                { key: 'requests', label: tc('purchaseRequests'), value: requests.length, tone: 'info' },
+                { key: 'invoices', label: tc('supplierInvoices'), value: supplierInvoices.length, tone: 'neutral' },
+              ]}
+            />
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <Figure size="sm" value={orders.length} label={tc('purchaseOrders')} />
+              <Figure size="sm" value={requests.length} label={tc('purchaseRequests')} tone="info" />
+              <Figure size="sm" value={buyAlertQuery.data?.lowStockCount ?? 0} label={tc('lowStockOrders')} tone={(buyAlertQuery.data?.lowStockCount ?? 0) > 0 ? 'warning' : 'success'} />
+              <Figure size="sm" value={buyAlertQuery.data?.productionCount ?? demandQuery.data?.length ?? 0} label={tc('materialDemand')} tone={(buyAlertQuery.data?.productionCount ?? 0) > 0 ? 'error' : 'success'} />
+            </div>
+          </div>
+        </div>
+      </Board>
+      {(buyAlertQuery.data?.count ?? 0) > 0 ? (
+        <Ticket
+          tone="warning"
+          title={tc('buyAlertTitle', { count: buyAlertQuery.data!.count })}
+          why={tc('buyAlertBody', { low: buyAlertQuery.data!.lowStockCount, production: buyAlertQuery.data!.productionCount })}
+          action={
+            <Button size="sm" onClick={() => router.push('/admin/purchasing/low-stock')}>
               {tc('lowStockOrders')}
             </Button>
-            <Button
-              variant="secondary"
-              className="maher-lift"
-              onClick={() => router.push('/admin/suppliers')}
-            >
-              {tc('actionSuppliers')}
-            </Button>
-            <Button className="maher-lift" onClick={() => router.push('/admin/purchasing/new')}>
-              {tc('newPurchaseOrder')}
-            </Button>
-          </>
-        }
-      />
+          }
+        />
+      ) : null}
       {banner ? (
-        <MotionSection enter="drop" className="maher-animate-bounce-in">
+        <MotionSection enter="drop">
           <Alert variant="success">{banner}</Alert>
         </MotionSection>
       ) : null}
@@ -592,12 +622,12 @@ export default function PurchasingPage() {
                   {supplierFilterOptions}
                 </Select>
                 <DateRangeField
-                  fromLabel={tc('dateFrom')}
-                  toLabel={tc('dateTo')}
                   from={poDateFrom}
                   to={poDateTo}
-                  onFromChange={setPoDateFrom}
-                  onToChange={setPoDateTo}
+                  onChange={(range) => {
+                    setPoDateFrom(range.from);
+                    setPoDateTo(range.to);
+                  }}
                 />
               </div>
               <div
@@ -617,9 +647,9 @@ export default function PurchasingPage() {
                     return (
                       <article
                         key={row.id}
-                        className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
+                        className="maher-board maher-purchasing-card flex flex-col overflow-hidden rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)]"
                       >
-                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                        <div className="flex items-center justify-between gap-3 border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-4 py-3">
                           <div className="flex items-center gap-2">
                             <StatusBadge
                               status={row.presentation?.phase ?? row.status}
@@ -689,9 +719,9 @@ export default function PurchasingPage() {
                   return (
                     <article
                       key={`pr-${row.id}`}
-                      className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
+                      className="maher-board maher-purchasing-card flex flex-col overflow-hidden rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)]"
                     >
-                      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                      <div className="flex items-center justify-between gap-3 border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-4 py-3">
                         <div className="flex items-center gap-2">
                           <StatusBadge status={row.status} />
                           <StatusBadge status="REQUEST" label={tc('requestChip')} />
@@ -774,9 +804,9 @@ export default function PurchasingPage() {
                     return (
                       <article
                         key={row.id}
-                        className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
+                        className="maher-board maher-purchasing-card flex flex-col overflow-hidden rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)]"
                       >
-                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                        <div className="flex items-center justify-between gap-3 border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-4 py-3">
                           <StatusBadge status={row.status} />
                           <Link
                             href={`/admin/purchasing/requests/${row.id}`}
@@ -885,7 +915,7 @@ export default function PurchasingPage() {
                             : 'border-border',
                         )}
                       >
-                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                        <div className="flex items-center justify-between gap-3 border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-4 py-3">
                           <StatusBadge status={row.status} />
                           <Link
                             href={`/admin/purchasing/supplier-invoices/${row.id}`}
@@ -1008,7 +1038,7 @@ export default function PurchasingPage() {
                     return (
                       <article
                         key={row.sku}
-                        className="rounded-2xl border border-border bg-surface p-4"
+                        className="maher-board rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-4"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="flex min-w-0 items-center gap-3 font-semibold" dir="ltr">

@@ -1,28 +1,35 @@
 'use client';
 
-import { BackButton } from '@/components/back-button';
 import { VoiceNote } from '@/components/voice-note';
-import { Link } from '@/i18n/navigation';
+import { useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { isScheduledForToday, toDateOnly } from '@/lib/worker-scheduling';
 import {
+  ActionDock,
   Alert,
-  Badge,
+  Board,
+  BoardSkeleton,
   Button,
   CameraCapture,
-  Card,
-  ErrorState,
+  DetailHero,
+  ErrorBoard,
+  Figure,
+  HoldButton,
+  KeyFacts,
   Ltr,
-  MotionSection,
-  PageHero,
+  Menu,
+  Meter,
   PhotoAttachField,
-  Skeleton,
-  StatusBadge,
+  Sheet,
+  Stamp,
+  TextArea,
+  Ticket,
   useCodeScanner,
+  type BoardTone,
 } from '@maher/ui';
 import { localizedName, translateApiError } from '@maher/i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Armchair, CalendarClock, ImageIcon } from 'lucide-react';
+import { AlertTriangle, Armchair, CheckCircle2, ImageIcon, MoreHorizontal, PackageOpen, Pause, Play, ScanLine, XCircle } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -75,6 +82,16 @@ interface TaskDetail {
   }>;
 }
 
+function statusTone(status: string): BoardTone {
+  const key = status.toUpperCase();
+  if (key === 'IN_PROGRESS') return 'brand';
+  if (key === 'COMPLETED') return 'success';
+  if (key === 'PAUSED') return 'warning';
+  if (key === 'BLOCKED' || key === 'CANCELLED') return 'error';
+  if (key === 'READY') return 'info';
+  return 'neutral';
+}
+
 function mediaSrc(url: string | null | undefined): string | null {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
@@ -93,6 +110,10 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const [banner, setBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [problemOpen, setProblemOpen] = useState(false);
+  const [problemReason, setProblemReason] = useState('');
+  const tStatus = useTranslations('statuses');
+  const router = useRouter();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['task', params.id],
@@ -111,15 +132,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       await qc.invalidateQueries({ queryKey: ['task', params.id] });
       await qc.invalidateQueries({ queryKey: ['my-tasks'] });
       await qc.invalidateQueries({ queryKey: ['my-tasks-completed'] });
-      setBanner(
-        path === 'start'
-          ? 'Started'
-          : path === 'pause'
-            ? 'Timer stopped'
-            : path === 'resume'
-              ? 'Resumed'
-              : 'Completed',
-      );
+      setBanner(path === 'start' ? t('startTask') : path === 'pause' ? t('stopTimer') : path === 'resume' ? t('resumeTask') : t('complete'));
     } catch (err) {
       setError(translateApiError(locale, err, tCommon('actionFailed')));
     } finally {
@@ -180,20 +193,17 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
-        <Skeleton className="h-64 w-full rounded-xl" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={3} />
+        <BoardSkeleton rows={6} />
       </div>
     );
   }
   if (isError || !data) {
-    return <ErrorState title={t('taskDetail')} onRetry={() => refetch()} />;
+    return <ErrorBoard title={t('taskDetail')} description={tCommon('loadFailed')} onRetry={() => refetch()} retryLabel={tCommon('retry')} />;
   }
 
-  const waiting =
-    data.status === 'NOT_STARTED' && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0
-      ? data.stageDefinition!.dependsOnCodes!.join(', ')
-      : null;
+  const waiting = data.status === 'NOT_STARTED' && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0 ? data.stageDefinition!.dependsOnCodes!.join(', ') : null;
   const canFinish = !['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(data.status);
   const canStart = ['NOT_STARTED', 'READY'].includes(data.status) && !waiting;
   const canStop = data.status === 'IN_PROGRESS';
@@ -201,344 +211,252 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const canAttach = canFinish;
   const openBlockers = (data.blockers ?? []).filter((b) => !b.resolvedAt);
   const needsPhotos = Boolean(data.stageDefinition?.requiresPhotos) && !(data.photos?.length);
-  const factoryNo =
-    data.factoryOrderNumber ?? data.productionOrder?.number ?? '—';
-  const salesNo =
-    data.salesOrderNumber ?? data.productionOrder?.salesOrder?.number ?? null;
-  const productImage = mediaSrc(
-    data.productImageUrl ?? data.productionOrder?.product?.imageUrl ?? null,
-  );
-  const productTitle =
-    data.productionOrder?.productDescription ??
-    (data.productionOrder?.product
-      ? localizedName(locale, data.productionOrder.product)
-      : null);
-  const qty =
-    data.productionOrder?.quantity != null ? Number(data.productionOrder.quantity) : null;
-  const scheduledToday =
-    isScheduledForToday(data.plannedStart) || isScheduledForToday(data.plannedCompletion);
+  const factoryNo = data.factoryOrderNumber ?? data.productionOrder?.number ?? '—';
+  const salesNo = data.salesOrderNumber ?? data.productionOrder?.salesOrder?.number ?? null;
+  const productImage = mediaSrc(data.productImageUrl ?? data.productionOrder?.product?.imageUrl ?? null);
+  const productTitle = data.productionOrder?.productDescription ?? (data.productionOrder?.product ? localizedName(locale, data.productionOrder.product) : null);
+  const qty = data.productionOrder?.quantity != null ? Number(data.productionOrder.quantity) : null;
+  const scheduledToday = isScheduledForToday(data.plannedStart) || isScheduledForToday(data.plannedCompletion);
+  const tone = openBlockers.length ? 'error' : statusTone(data.status);
+  const statusLabel = (() => {
+    try {
+      return tStatus(data.status as 'PENDING');
+    } catch {
+      return data.status.replaceAll('_', ' ').toLowerCase();
+    }
+  })();
+  const elapsed = data.timing?.elapsedMinutes ?? 0;
+  const estimated = data.timing?.estimatedMinutes ?? null;
+  const finishBlocked = !canFinish || openBlockers.length > 0 || needsPhotos || uploading;
+  const stageTitle = data.stageDefinition ? localizedName(locale, data.stageDefinition, data.name) : data.name;
+  const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+
+  async function quickAction(kind: 'qc-pass' | 'qc-fail' | 'identify') {
+    setError(null);
+    setBanner(null);
+    try {
+      if (kind === 'identify') {
+        const code = await openScanner({ title: t('materialsIdentify') });
+        if (!code) return;
+        await apiFetch(`/api/v1/tasks/${params.id}/material-usage/identify`, { method: 'POST', body: JSON.stringify({ code }) });
+        setBanner(t('materialsIdentify'));
+        return;
+      }
+      await apiFetch('/api/v1/quality-inspections', { method: 'POST', body: JSON.stringify({ taskId: data!.id, productionOrderId: data!.productionOrder?.id, result: kind === 'qc-pass' ? 'PASS' : 'FAIL' }) });
+      setBanner(kind === 'qc-pass' ? t('qcPass') : t('qcFail'));
+    } catch (err) {
+      setError(translateApiError(locale, err, tCommon('actionFailed')));
+    }
+  }
+
+  async function reportProblem() {
+    setError(null);
+    setLoading(true);
+    try {
+      await apiFetch(`/api/v1/tasks/${params.id}/block`, { method: 'POST', body: JSON.stringify({ reason: problemReason.trim() || t('reportProblem'), category: 'OTHER' }) });
+      setBanner(t('reportProblem'));
+      setProblemOpen(false);
+      setProblemReason('');
+      await qc.invalidateQueries({ queryKey: ['task', params.id] });
+    } catch (err) {
+      setError(translateApiError(locale, err, tCommon('actionFailed')));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const primaryControl = canStart ? (
+    <Button size="lg" leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('start')} loading={loading}>
+      {t('startTask')}
+    </Button>
+  ) : canResume ? (
+    <Button size="lg" leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('resume')} loading={loading}>
+      {t('resumeTask')}
+    </Button>
+  ) : canStop ? (
+    <Button size="lg" variant="secondary" leadingIcon={<Pause className="h-4 w-4" />} onClick={() => void runAction('pause')} loading={loading}>
+      {t('stopTimer')}
+    </Button>
+  ) : undefined;
 
   return (
-    <div className="space-y-4">
-      <BackButton fallbackHref="/worker/tasks" />
-      <PageHero
-        tone="soft"
-        title={
-          data.stageDefinition
-            ? localizedName(locale, data.stageDefinition, data.name)
-            : data.name
+    <div className="maher-stagger space-y-5 pb-28 md:pb-0">
+      <DetailHero
+        tone={tone}
+        back={{ label: tNav('tasks'), onClick: () => router.push('/worker/tasks') }}
+        code={data.number}
+        title={stageTitle}
+        subtitle={productTitle ? <span>{productTitle}{qty != null ? <Ltr className="ms-1 text-[var(--maher-text-tertiary)]">× {qty}</Ltr> : null}</span> : undefined}
+        status={{ label: statusLabel, tone }}
+        media={
+          <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[14px] bg-[var(--maher-surface-muted)] sm:h-20 sm:w-20">
+            {productImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={productImage} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Armchair className="h-7 w-7 text-[var(--maher-text-tertiary)] opacity-60" />
+            )}
+          </span>
         }
-        description={`${factoryNo} · ${data.number}`}
-        meta={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={data.status} />
-            <span className="text-xs text-text-secondary">
-              {t('priority')}: {data.priority}
-            </span>
-            {scheduledToday ? (
-              <Badge variant="brand">
-                <CalendarClock className="h-3 w-3" />
-                {t('scheduledForToday')}
-              </Badge>
-            ) : null}
-          </div>
+        facts={[
+          { label: t('factoryOrderNumber'), value: factoryNo, ltr: true },
+          ...(salesNo ? [{ label: t('salesOrderNumber'), value: salesNo, ltr: true }] : []),
+          { label: t('priority'), value: data.priority.toLowerCase(), tone: /URGENT|HIGH|CRITICAL/i.test(data.priority) ? ('error' as const) : undefined },
+          ...(data.plannedCompletion ? [{ label: t('plannedCompletion'), value: toDateOnly(data.plannedCompletion) ?? '—', ltr: true, tone: scheduledToday ? ('brand' as const) : undefined }] : []),
+        ]}
+        primary={primaryControl}
+        actions={
+          <Menu
+            aria-label={t('taskActions')}
+            trigger={<Button variant="secondary" size="lg" aria-label={t('taskActions')}><MoreHorizontal className="h-4 w-4" /></Button>}
+            items={[
+              { id: 'take-in', label: tNav('takeIn'), icon: <PackageOpen className="h-4 w-4" />, onSelect: () => router.push(`/worker/tasks/${params.id}/take-in`) },
+              { id: 'identify', label: t('materialsIdentify'), icon: <ScanLine className="h-4 w-4" />, onSelect: () => void quickAction('identify') },
+              { id: 'qc-pass', label: t('qcPass'), icon: <CheckCircle2 className="h-4 w-4" />, separator: true, onSelect: () => void quickAction('qc-pass') },
+              { id: 'qc-fail', label: t('qcFail'), icon: <XCircle className="h-4 w-4" />, tone: 'error' as const, onSelect: () => void quickAction('qc-fail') },
+              { id: 'problem', label: t('reportProblem'), icon: <AlertTriangle className="h-4 w-4" />, tone: 'error' as const, separator: true, onSelect: () => setProblemOpen(true) },
+            ]}
+          />
         }
-      />
+      >
+        {estimated ? <Meter value={Math.min(elapsed, estimated)} max={estimated} tone={elapsed > estimated ? 'warning' : tone} label={t('timerLabel')} valueLabel={`${fmtMinutes(elapsed)} / ${fmtMinutes(estimated)}`} /> : null}
+      </DetailHero>
 
-      {productTitle ? (
-        <MotionSection delayMs={40}>
-          <p className="text-sm font-medium text-text-primary">
-            {productTitle}
-            {qty != null ? (
-              <Ltr className="ms-1 text-text-secondary">× {qty}</Ltr>
-            ) : null}
-          </p>
-        </MotionSection>
-      ) : null}
-
-      {waiting ? (
-        <Alert variant="warning">
-          {t('notReady')} ({t('waitingFor')}: {waiting})
-        </Alert>
-      ) : null}
+      {waiting ? <Ticket tone="warning" wash title={t('notReady')} why={`${t('waitingFor')}: ${waiting}`} /> : null}
+      {openBlockers.length > 0 ? <Ticket tone="error" wash title={t('blockedReason')} why={openBlockers[0]?.reason} /> : null}
+      {needsPhotos ? <Alert variant="warning">{tc('photosRequired')}</Alert> : null}
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
-      {needsPhotos ? <Alert variant="warning">{tc('photosRequired')}</Alert> : null}
-      {openBlockers.length > 0 ? (
-        <Alert variant="warning">{t('blockedReason')}: {openBlockers[0]?.reason}</Alert>
-      ) : null}
 
-      <MotionSection delayMs={80}>
-        <Card title={t('taskDetail')} className="maher-form-section">
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-text-tertiary">{t('factoryOrderNumber')}</p>
-                <p className="mt-0.5 font-semibold tracking-tight">
-                  <Ltr>{factoryNo}</Ltr>
-                </p>
-                {salesNo ? (
-                  <p className="mt-1 text-[11px] text-text-tertiary">
-                    {t('salesOrderNumber')}: <Ltr>{salesNo}</Ltr>
-                  </p>
-                ) : null}
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-7">
+          <Board tone={data.timing?.status === 'running' ? 'brand' : 'neutral'} wash={data.timing?.status === 'running' ? 'top' : 'none'}>
+            <Board.Header title={t('timerLabel')} meta={data.timing?.status === 'running' ? <Stamp tone="brand" size="sm">{t('timerLive')}</Stamp> : <Stamp tone={tone} size="sm">{statusLabel}</Stamp>} />
+            <Board.Body className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Figure size="lg" value={<Ltr>{fmtMinutes(elapsed)}</Ltr>} label={t('elapsed')} tone={data.timing?.status === 'running' ? 'brand' : 'neutral'} />
+                <Figure size="lg" value={<Ltr>{estimated ? fmtMinutes(estimated) : '—'}</Ltr>} label={t('estimated')} />
               </div>
-              <div>
-                <p className="text-xs text-text-tertiary">{t('taskNumber')}</p>
-                <p className="mt-0.5 font-medium">
-                  <Ltr>{data.number}</Ltr>
-                </p>
+              <div className="flex flex-wrap gap-2">
+                {canStart ? <Button leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('start')} loading={loading}>{t('startTask')}</Button> : null}
+                {canStop ? <Button variant="secondary" leadingIcon={<Pause className="h-4 w-4" />} onClick={() => void runAction('pause')} loading={loading}>{t('stopTimer')}</Button> : null}
+                {canResume ? <Button leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('resume')} loading={loading}>{t('resumeTask')}</Button> : null}
               </div>
-              {data.plannedStart ? (
-                <div>
-                  <p className="text-xs text-text-tertiary">{t('plannedStart')}</p>
-                  <p className="mt-0.5 font-medium">
-                    <Ltr>{toDateOnly(data.plannedStart)}</Ltr>
-                  </p>
+              {canFinish ? (
+                <div className="space-y-1.5">
+                  <HoldButton onHold={() => void finish()} disabled={finishBlocked} loading={loading} holdingLabel={t('finishing')}>
+                    {t('holdToFinish')}
+                  </HoldButton>
+                  <p className="text-center text-[12px] text-[var(--maher-text-tertiary)]">{needsPhotos ? tc('photosRequired') : openBlockers.length ? t('blockedReason') : t('holdToFinishHint')}</p>
                 </div>
               ) : null}
-              {data.plannedCompletion ? (
-                <div>
-                  <p className="text-xs text-text-tertiary">{t('plannedCompletion')}</p>
-                  <p className="mt-0.5 font-medium">
-                    <Ltr>{toDateOnly(data.plannedCompletion)}</Ltr>
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            </Board.Body>
+          </Board>
 
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-text-tertiary">{t('orderProduct')}</p>
-              <div className="overflow-hidden rounded-xl border border-border bg-[var(--maher-surface-muted)]">
-                {productImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={productImage}
-                    alt={productTitle ?? factoryNo}
-                    className="aspect-[5/4] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                  />
-                ) : (
-                  <div className="flex aspect-[5/4] flex-col items-center justify-center gap-2 text-text-tertiary">
-                    <Armchair className="h-10 w-10 opacity-40" />
-                    <span className="text-xs">{t('noProductImage')}</span>
+          {data.description || data.productionOrder?.specifications ? (
+            <Board tone="neutral">
+              <Board.Header title={t('stageInstructions')} />
+              <Board.Body className="space-y-4">
+                {data.description ? <p className="whitespace-pre-wrap text-[15px] leading-7 text-[var(--maher-text-primary)]">{data.description}</p> : null}
+                {data.productionOrder?.specifications ? (
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{t('specifications')}</p>
+                    <p className="text-[14px] leading-6 text-[var(--maher-text-secondary)]">{data.productionOrder.specifications}</p>
                   </div>
-                )}
-              </div>
-            </div>
+                ) : null}
+              </Board.Body>
+            </Board>
+          ) : null}
 
-            {data.description ? (
-              <div>
-                <p className="mb-1.5 text-xs font-medium text-text-tertiary">
-                  {t('stageInstructions')}
-                </p>
-                <div className="whitespace-pre-wrap rounded-xl border border-border bg-surface px-3 py-2.5 text-sm leading-relaxed text-text-primary">
-                  {data.description}
-                </div>
-              </div>
-            ) : null}
-
-            {data.productionOrder?.specifications ? (
-              <div>
-                <p className="mb-1 text-xs text-text-tertiary">{t('specifications')}</p>
-                <p className="text-sm text-text-secondary">{data.productionOrder.specifications}</p>
-              </div>
-            ) : null}
-
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-text-tertiary">{t('attachedPhotos')}</p>
+          <Board tone={needsPhotos ? 'warning' : 'neutral'}>
+            <Board.Header title={t('attachedPhotos')} meta={<Stamp tone={data.photos?.length ? 'success' : needsPhotos ? 'warning' : 'neutral'} size="sm">{data.photos?.length ?? 0}</Stamp>} />
+            <Board.Body className="space-y-3">
               {canAttach ? (
-                <PhotoAttachField
-                  className="mb-3"
-                  hint={tCommon('photoUrlHint')}
-                  disabled={uploading || loading}
-                  uploadLabel={t('addPhoto')}
-                  uploadingLabel={t('uploadingPhoto')}
-                  attachUrlLabel={tCommon('attachFromUrl')}
-                  onUploadFile={onPickPhoto}
-                  onAttachUrl={onAttachUrl}
-                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <CameraCapture label={t('addPhoto')} disabled={uploading || loading} onUploadFile={onPickPhoto} onAttachUrl={onAttachUrl} />
+                  <PhotoAttachField hint={tCommon('photoUrlHint')} disabled={uploading || loading} uploadLabel={t('addPhoto')} uploadingLabel={t('uploadingPhoto')} attachUrlLabel={tCommon('attachFromUrl')} onUploadFile={onPickPhoto} onAttachUrl={onAttachUrl} />
+                </div>
               ) : null}
               {(data.photos?.length ?? 0) > 0 ? (
-                <div className="maher-stagger grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="maher-stagger grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {data.photos!.map((photo) => {
                     const src = mediaSrc(photo.downloadPath);
                     return (
-                      <a
-                        key={photo.id}
-                        href={src ?? '#'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="maher-list-card group overflow-hidden rounded-lg border border-border bg-[var(--maher-surface-muted)]"
-                      >
+                      <a key={photo.id} href={src ?? '#'} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface-muted)]">
                         {src ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={src}
-                            alt={photo.fileName}
-                            className="aspect-square w-full object-cover transition group-hover:scale-[1.05]"
-                          />
+                          <img src={src} alt={photo.fileName} className="aspect-square w-full object-cover transition group-hover:scale-[1.04]" />
                         ) : (
-                          <div className="flex aspect-square items-center justify-center text-text-tertiary">
+                          <div className="flex aspect-square items-center justify-center text-[var(--maher-text-tertiary)]">
                             <ImageIcon className="h-5 w-5 opacity-50" />
                           </div>
                         )}
-                        <p className="truncate px-1.5 py-1 text-[10px] text-text-tertiary">
-                          {photo.fileName}
-                        </p>
                       </a>
                     );
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-text-tertiary">{t('noAttachedPhotos')}</p>
+                <p className="text-[13px] text-[var(--maher-text-tertiary)]">{t('noAttachedPhotos')}</p>
+              )}
+            </Board.Body>
+          </Board>
+        </div>
+
+        <div className="space-y-5 xl:col-span-5">
+          <Board tone="neutral" className="overflow-hidden">
+            <div className="aspect-[5/4] bg-[var(--maher-surface-muted)]">
+              {productImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={productImage} alt={productTitle ?? factoryNo} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--maher-text-tertiary)]">
+                  <Armchair className="h-10 w-10 opacity-40" />
+                  <span className="text-[12px]">{t('noProductImage')}</span>
+                </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={`/worker/tasks/${params.id}/take-in`}>
-                <Button variant="secondary">{tNav('takeIn')}</Button>
-              </Link>
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  try {
-                    await apiFetch('/api/v1/quality-inspections', {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        taskId: data.id,
-                        productionOrderId: data.productionOrder?.id,
-                        result: 'PASS',
-                      }),
-                    });
-                    setBanner(t('qcPass'));
-                  } catch (err) {
-                    setError(translateApiError(locale, err, tCommon('actionFailed')));
-                  }
-                }}
-              >
-                {t('qcPass')}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  try {
-                    await apiFetch('/api/v1/quality-inspections', {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        taskId: data.id,
-                        productionOrderId: data.productionOrder?.id,
-                        result: 'FAIL',
-                      }),
-                    });
-                    setBanner(t('qcFail'));
-                  } catch (err) {
-                    setError(translateApiError(locale, err, tCommon('actionFailed')));
-                  }
-                }}
-              >
-                {t('qcFail')}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  const code = await openScanner({ title: t('materialsIdentify') });
-                  if (!code) return;
-                  try {
-                    await apiFetch(`/api/v1/tasks/${params.id}/material-usage/identify`, {
-                      method: 'POST',
-                      body: JSON.stringify({ code }),
-                    });
-                    setBanner(t('materialsIdentify'));
-                  } catch (err) {
-                    setError(translateApiError(locale, err, tCommon('actionFailed')));
-                  }
-                }}
-              >
-                {t('materialsIdentify')}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  try {
-                    await apiFetch(`/api/v1/tasks/${params.id}/block`, {
-                      method: 'POST',
-                      body: JSON.stringify({ reason: t('reportProblem'), category: 'OTHER' }),
-                    });
-                    setBanner(t('reportProblem'));
-                    await qc.invalidateQueries({ queryKey: ['task', params.id] });
-                  } catch (err) {
-                    setError(translateApiError(locale, err, tCommon('actionFailed')));
-                  }
-                }}
-              >
+            <Board.Header title={productTitle ?? factoryNo} description={t('orderProduct')} />
+            <KeyFacts
+              className="px-5 pb-5"
+              columns={2}
+              facts={[
+                { label: t('factoryOrderNumber'), value: factoryNo, ltr: true },
+                { label: t('taskNumber'), value: data.number, ltr: true },
+                ...(qty != null ? [{ label: tc('quantity'), value: String(qty), ltr: true }] : []),
+                ...(data.plannedStart ? [{ label: t('plannedStart'), value: toDateOnly(data.plannedStart) ?? '—', ltr: true }] : []),
+                ...(data.plannedCompletion ? [{ label: t('plannedCompletion'), value: toDateOnly(data.plannedCompletion) ?? '—', ltr: true }] : []),
+              ]}
+            />
+          </Board>
+          <Board tone="neutral">
+            <Board.Header title={t('reportProblem')} description={t('problemHint')} />
+            <Board.Body className="space-y-3">
+              <VoiceNote />
+              <Button variant="secondary" leadingIcon={<AlertTriangle className="h-4 w-4" />} onClick={() => setProblemOpen(true)}>
                 {t('reportProblem')}
               </Button>
-            </div>
-            <CameraCapture
-              label={t('addPhoto')}
-              disabled={uploading || loading}
-              onUploadFile={onPickPhoto}
-              onAttachUrl={onAttachUrl}
-            />
-            <VoiceNote />
+            </Board.Body>
+          </Board>
+        </div>
+      </div>
 
-            {data.timing ? (
-              <div className="rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface-secondary)] p-3">
-                <p className="text-xs text-text-tertiary">{t('timerLabel')}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums" dir="ltr">
-                  {Math.floor((data.timing.elapsedMinutes ?? 0) / 60)}h{' '}
-                  {(data.timing.elapsedMinutes ?? 0) % 60}m
-                  {data.timing.status === 'running' ? (
-                    <span className="ms-2 text-sm text-[var(--maher-brand)]">{t('timerLive')}</span>
-                  ) : null}
-                </p>
-              </div>
-            ) : null}
-
-            <div className="maher-detail-sticky-actions flex flex-col gap-2">
-              {canStart ? (
-                <Button
-                  size="lg"
-                  className="w-full"
-                  onClick={() => void runAction('start')}
-                  loading={loading}
-                >
-                  {t('startTask')}
-                </Button>
-              ) : null}
-              {canStop ? (
-                <Button
-                  size="lg"
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => void runAction('pause')}
-                  loading={loading}
-                >
-                  {t('stopTimer')}
-                </Button>
-              ) : null}
-              {canResume ? (
-                <Button
-                  size="lg"
-                  className="w-full"
-                  onClick={() => void runAction('resume')}
-                  loading={loading}
-                >
-                  {t('resumeTask')}
-                </Button>
-              ) : null}
-              <Button
-                size="lg"
-                className="w-full"
-                onClick={() => void finish()}
-                loading={loading}
-                disabled={!canFinish || openBlockers.length > 0 || needsPhotos || uploading}
-              >
-                {t('complete')}
-              </Button>
-            </div>
+      {canFinish ? (
+        <ActionDock className="md:hidden" note={<Stamp tone={tone} size="sm">{statusLabel}</Stamp>}>
+          {primaryControl ? <div className="shrink-0">{primaryControl}</div> : null}
+          <div className="min-w-0 flex-1">
+            <HoldButton onHold={() => void finish()} disabled={finishBlocked} loading={loading} holdingLabel={t('finishing')}>
+              {t('holdToFinish')}
+            </HoldButton>
           </div>
-        </Card>
-      </MotionSection>
+        </ActionDock>
+      ) : null}
+
+      <Sheet open={problemOpen} onClose={() => !loading && setProblemOpen(false)} title={t('reportProblem')} description={t('problemHint')} tone="error" closeLabel={tCommon('close')} footer={<><Button variant="ghost" onClick={() => setProblemOpen(false)} disabled={loading}>{tCommon('cancel')}</Button><Button variant="danger" loading={loading} onClick={() => void reportProblem()}>{t('reportProblem')}</Button></>}>
+        <div className="space-y-3">
+          <TextArea label={t('problemReason')} rows={4} value={problemReason} onChange={(e) => setProblemReason(e.target.value)} />
+          <VoiceNote />
+        </div>
+      </Sheet>
     </div>
   );
 }

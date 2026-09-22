@@ -190,5 +190,26 @@
     "action_open_returns": "فتح المرتجعات",
     "action_review_finance": "مراجعة المالية",
     "action_review_semi": "مراجعة شبه التام"
+  },
+  "returnDesk": {
+    "photos": "الصور",
+    "lifecycle": "مسار الإرجاع",
+    "markSent": "التاجر أرسلها",
+    "markSentConfirm": "تأكيد أن الأثاث في طريقه إلى المصنع؟ لا يتحرك أي مخزون بعد.",
+    "linkedWork": "أوامر العمل المرتبطة",
+    "piecesDone": "أُغلقت {done} من {total} قطعة",
+    "decisionRepair": "إصلاح",
+    "decisionReplacement": "استبدال",
+    "decisionRecovery": "إتلاف واستخلاص",
+    "openReturn": "فتح الإرجاع",
+    "attentionChip": "يحتاج متابعة",
+    "allChip": "الكل",
+    "closedChip": "مغلق",
+    "inFactoryChip": "في المصنع",
+    "waitingChip": "بانتظار الإرجاع",
+    "reviewChip": "للمراجعة",
+    "chargesChip": "رسوم",
+    "openCount": "مفتوح",
+    "chargesPending": "رسوم معلّقة"
   }
 }

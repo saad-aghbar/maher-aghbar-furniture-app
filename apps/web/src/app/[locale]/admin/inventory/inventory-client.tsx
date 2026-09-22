@@ -1,5 +1,6 @@
 'use client';
 
+import { FabricHoldingBoard, InventoryHero, groupLabel, useInventoryGroups } from '@/components/inventory/inventory-hero';
 import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import {
   binsForWarehouse,
@@ -8,7 +9,7 @@ import {
   warehouseTypeForItemClass,
   warehousesForItem,
 } from '@/lib/inventory-warehouse';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { useAuthMe } from '@/hooks/use-auth-me';
@@ -27,15 +28,20 @@ import {
 import type { SemiOrderFilter } from '@/lib/select-semi-orders';
 import {
   Alert,
+  Board,
   Button,
   EmptyState,
+  ErrorBoard,
   ErrorState,
   Input,
+  Ledger,
+  LedgerRow,
   Modal,
-  PageHero,
+  SectionTabs,
   Select,
   Skeleton,
   StatusBadge,
+  StatusChips,
   Table,
   TableBody,
   TableCell,
@@ -549,6 +555,7 @@ export default function InventoryPage() {
     enabled: tab === 'items' && lifecycle === 'finished',
   });
 
+  const groupsQuery = useInventoryGroups();
   const overviewQuery = useQuery({
     queryKey: ['inventory-overview'],
     queryFn: () => apiFetch<Overview>('/api/v1/inventory/overview'),
@@ -938,19 +945,7 @@ export default function InventoryPage() {
     );
   }
   if (itemsFailed) {
-    return (
-      <ErrorState
-        title={t('inventory')}
-        onRetry={() =>
-          lifecycle === 'semiFinished'
-            ? wipQuery.refetch()
-            : lifecycle === 'finished'
-              ? finishedLotsQuery.refetch()
-              : itemsQuery.refetch()
-        }
-        retryLabel={tCommon('retry')}
-      />
-    );
+    return <ErrorBoard title={t('inventory')} onRetry={() => (lifecycle === 'semiFinished' ? wipQuery.refetch() : lifecycle === 'finished' ? finishedLotsQuery.refetch() : itemsQuery.refetch())} />;
   }
 
   const rows = itemsQuery.data?.data ?? [];
@@ -999,216 +994,112 @@ export default function InventoryPage() {
     setTransferOpen(true);
   }
 
+  const heroActions =
+    tab === 'transfers' && canTransfer ? (
+      <Button onClick={openTransfer}>{ti('newTransfer')}</Button>
+    ) : tab === 'counts' && canCount ? (
+      <Button
+        onClick={() => {
+          setCountWarehouseId(warehouses[0]?.id ?? '');
+          setCountLocationId(defaultBinId(warehouses, warehouses[0]?.id ?? ''));
+          setCountNotes('');
+          setCountLines([{ itemId: '', qty: '' }]);
+          setFormError(null);
+          setCountOpen(true);
+        }}
+      >
+        {ti('newCount')}
+      </Button>
+    ) : tab === 'items' && lifecycle === 'materials' && canAdjust ? (
+      <Button variant="secondary" loading={syncMaterialsMutation.isPending} onClick={() => syncMaterialsMutation.mutate()}>
+        {ti('syncFromMaterials')}
+      </Button>
+    ) : null;
+
   return (
-    <div className="space-y-6">
-      <PageHero
-        title={t('inventory')}
-        tone="soft"
-        actions={
-          tab === 'transfers' && canTransfer ? (
-            <Button size="sm" onClick={openTransfer}>
-              {ti('newTransfer')}
-            </Button>
-          ) : tab === 'counts' && canCount ? (
-            <Button
-              size="sm"
-              onClick={() => {
-                setCountWarehouseId(warehouses[0]?.id ?? '');
-                setCountLocationId(defaultBinId(warehouses, warehouses[0]?.id ?? ''));
-                setCountNotes('');
-                setCountLines([{ itemId: '', qty: '' }]);
-                setFormError(null);
-                setCountOpen(true);
-              }}
-            >
-              {ti('newCount')}
-            </Button>
-          ) : tab === 'items' && lifecycle === 'materials' && canAdjust ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={syncMaterialsMutation.isPending}
-              onClick={() => syncMaterialsMutation.mutate()}
-            >
-              {ti('syncFromMaterials')}
-            </Button>
-          ) : null
-        }
-      />
+    <div className="maher-stagger space-y-5">
+      <InventoryHero title={t('inventory')} description={ti('hubHint')} actions={heroActions} overview={overview} groups={groupsQuery.data} />
       <InventoryScanBar />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {actionError ? <Alert variant="error">{actionError}</Alert> : null}
 
-      {overview ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
-            <p className="text-xs text-text-secondary">{ti('overviewRaw')}</p>
-            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
-              {overview.rawMaterials.itemCount}
-            </p>
-            {overview.rawMaterials.lowStockCount > 0 ? (
-              <p className="text-xs text-amber-700">
-                {ti('lowStock')}: {overview.rawMaterials.lowStockCount}
-              </p>
-            ) : null}
-          </div>
-          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
-            <p className="text-xs text-text-secondary">{ti('overviewSemi')}</p>
-            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
-              {overview.semiFinished.itemCount}
-            </p>
-            <p className="text-xs text-text-secondary" dir="ltr">
-              {overview.semiFinished.totalQty}
-            </p>
-          </div>
-          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
-            <p className="text-xs text-text-secondary">{ti('overviewFinished')}</p>
-            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
-              {overview.finishedGoods.onHandQty ?? overview.finishedGoods.availableQty}
-            </p>
-            <p className="text-xs text-text-secondary">
-              {ti('reserved')} {overview.finishedGoods.reservedQty} · {ti('available')}{' '}
-              {overview.finishedGoods.freeQty ?? overview.finishedGoods.readyForDeliveryQty}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant={tab === 'items' ? 'primary' : 'subtle'}
-          onClick={() => setTab('items')}
-        >
-          {ti('items')}
-        </Button>
-        {canTransfer || canReceive ? (
-          <Button
-            size="sm"
-            variant={tab === 'transfers' ? 'primary' : 'subtle'}
-            onClick={() => setTab('transfers')}
-          >
-            {ti('transfers')}
-          </Button>
-        ) : null}
-        {canCount ? (
-          <Button
-            size="sm"
-            variant={tab === 'counts' ? 'primary' : 'subtle'}
-            onClick={() => setTab('counts')}
-          >
-            {ti('counts')}
-          </Button>
-        ) : null}
-      </div>
+      <SectionTabs
+        size="sm"
+        aria-label={t('inventory')}
+        value={tab}
+        onChange={(id) => setTab(id as Tab)}
+        items={[
+          { id: 'items', label: ti('items') },
+          ...(canTransfer || canReceive ? [{ id: 'transfers', label: ti('transfers'), count: null }] : []),
+          ...(canCount ? [{ id: 'counts', label: ti('counts') }] : []),
+        ]}
+      />
 
       {tab === 'items' ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={lifecycle === 'materials' ? 'primary' : 'subtle'}
-            onClick={() => {
-              setLifecycle('materials');
-              setPage(1);
-            }}
-          >
-            {ti('lifecycleMaterials')}
-          </Button>
-          <Button
-            size="sm"
-            variant={lifecycle === 'semiFinished' ? 'primary' : 'subtle'}
-            onClick={() => {
-              setLifecycle('semiFinished');
-              setPage(1);
-            }}
-          >
-            {ti('lifecycleSemi')}
-          </Button>
-          <Button
-            size="sm"
-            variant={lifecycle === 'finished' ? 'primary' : 'subtle'}
-            onClick={() => {
-              setLifecycle('finished');
-              setPage(1);
+        <StatusChips
+          aria-label={ti('lifecycleMaterials')}
+          value={lifecycle}
+          onChange={(id) => {
+            const next = id as 'materials' | 'semiFinished' | 'finished';
+            setLifecycle(next);
+            setPage(1);
+            if (next === 'finished') {
               setFgPage(1);
               setFgSearch('');
               setFgFilter('all');
               setFgScope('inWarehouse');
               setFgWarehouseId('');
-            }}
-          >
-            {ti('lifecycleFinished')}
-          </Button>
-        </div>
+            }
+          }}
+          items={[
+            { id: 'materials', label: ti('lifecycleMaterials'), count: overview?.rawMaterials.itemCount ?? null, tone: 'brand' },
+            { id: 'semiFinished', label: ti('lifecycleSemi'), count: overview?.semiFinished.itemCount ?? null, tone: 'info' },
+            { id: 'finished', label: ti('lifecycleFinished'), count: overview ? Number(overview.finishedGoods.onHandQty ?? overview.finishedGoods.availableQty ?? 0) : null, tone: 'success' },
+          ]}
+        />
       ) : null}
 
       {tab === 'items' ? (
         <>
           {lifecycle === 'materials' ? (
             <>
-          <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {CATEGORY_TILES.map((tile) => (
-              <button
-                key={tile.key}
-                type="button"
-                onClick={() => {
-                  setCategoryGroup(tile.key);
-                  setPage(1);
-                }}
-                className={`maher-list-card rounded-[var(--maher-radius-lg)] border p-4 text-start shadow-card transition-all hover:shadow-elevated ${
-                  categoryGroup === tile.key
-                    ? 'border-brand bg-brand/5'
-                    : 'border-border bg-surface'
-                }`}
-              >
-                <p className="font-semibold text-text-primary">{ti(tile.labelKey as 'categoryFabric')}</p>
-                <p className="mt-1 text-xs text-text-secondary">{ti('categoryTileHint')}</p>
-              </button>
-            ))}
-          </div>
+          <StatusChips
+            aria-label={ti('category')}
+            value={categoryGroup}
+            onChange={(id) => {
+              setCategoryGroup(id as CategoryGroup);
+              setPage(1);
+            }}
+            items={CATEGORY_TILES.map((tile) => {
+              const g = (groupsQuery.data ?? []).find((x) => x.categoryGroup === tile.key);
+              return { id: tile.key, label: groupLabel(ti, tile.key), count: g?.materialCount ?? null, tone: g && g.lowStockCount > 0 ? ('warning' as const) : undefined };
+            })}
+          />
 
-          {lowStock.length > 0 ? (
-            <div className="relative space-y-2 overflow-hidden rounded-[var(--maher-radius-md)] border border-border bg-surface p-4 ps-6">
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 start-0 w-[3px] bg-[var(--maher-brand)] opacity-55"
-              />
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <h2 className="text-sm font-semibold text-text-primary">{ti('lowStock')}</h2>
-                  <p className="text-sm text-text-secondary">{ti('lowStockHint')}</p>
-                </div>
-                <Button
-                  size="sm"
-                  className="shrink-0"
-                  loading={orderMaterialsMutation.isPending}
-                  onClick={() => {
-                    setActionError(null);
-                    orderMaterialsMutation.mutate();
-                  }}
-                >
-                  {ti('orderMaterials')}
-                </Button>
-              </div>
-              <ul className="divide-y divide-border">
-                {lowStock.slice(0, 8).map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
-                  >
-                    <span>
-                      <span className="font-medium">{item.sku}</span>
-                      {' — '}
-                      {localizedName(locale, item)}
-                    </span>
-                    <span className="text-text-secondary" dir="ltr">
-                      {item.onHandQty ?? item.availableQty} / {Number(item.minStock)} {item.unit}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <div className="grid gap-5 xl:grid-cols-2">
+            {lowStock.length > 0 ? (
+              <Board tone="warning" wash="top">
+                <Board.Header
+                  title={ti('lowStock')}
+                  description={ti('lowStockHint')}
+                  meta={<span className="text-[12px] font-semibold text-[var(--maher-warning)]" dir="ltr">{lowStock.length}</span>}
+                  actions={
+                    <Button size="sm" loading={orderMaterialsMutation.isPending} onClick={() => (setActionError(null), orderMaterialsMutation.mutate())}>
+                      {ti('orderMaterials')}
+                    </Button>
+                  }
+                />
+                <Ledger className="px-5 pb-2">
+                  {lowStock.slice(0, 8).map((item) => {
+                    const onHand = Number(item.onHandQty ?? item.availableQty ?? 0);
+                    const min = Number(item.minStock) || 0;
+                    return <LedgerRow key={item.id} tone={onHand <= 0 ? 'error' : 'warning'} stamp label={localizedName(locale, item)} hint={item.sku} value={`${onHand} / ${min} ${item.unit}`} href={`/admin/inventory/items/${item.id}`} LinkComponent={Link} />;
+                  })}
+                </Ledger>
+              </Board>
+            ) : null}
+            <FabricHoldingBoard />
+          </div>
             </>
           ) : null}
 

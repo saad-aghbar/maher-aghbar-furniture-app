@@ -1,30 +1,13 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
-import { apiFetch, ApiClientError, API_URL } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { usePdfDownload } from '@/hooks/use-pdf-download';
+import { useKitCopy } from '@/lib/kit-copy';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import {
-  Alert,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Input,
-  Select,
-  Skeleton,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableNumericCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  MotionSection,
-} from '@maher/ui';
+import { ActionDock, Alert, Board, BoardSkeleton, Button, DateField, DetailHero, DocumentActions, ErrorBoard, Figure, Input, KeyFacts, Ledger, LedgerRow, Ltr, Meter, MoneyField, Sheet, Stamp, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableNumericCell, TableRow, Timeline, todayYmd, type BoardTone, SegmentedControl } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'OTHER'] as const;
@@ -98,6 +81,8 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const tc = useTranslations('catalog');
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
+  const tStatus = useTranslations('statuses');
+  const t = useTranslations('navigation');
   const queryClient = useQueryClient();
 
   const [banner, setBanner] = useState<string | null>(null);
@@ -108,6 +93,12 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const [creditAmount, setCreditAmount] = useState('');
   const [creditPreview, setCreditPreview] = useState<ApplyCreditPreview | null>(null);
   const [creditBusy, setCreditBusy] = useState(false);
+  const [paymentDate, setPaymentDate] = useState(todayYmd());
+  const [payOpen, setPayOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
+  const locale = useLocale();
+  const kit = useKitCopy();
+  const { openPdf, pdfDialog } = usePdfDownload();
 
   const detailQuery = useQuery({
     queryKey: ['invoice', params.id],
@@ -135,6 +126,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           amount: payAmount,
           method,
           ...(reference.trim() ? { referenceNumber: reference.trim() } : {}),
+          ...(paymentDate ? { paymentDate } : {}),
           idempotencyKey: `pay-${invoice.id}-${Date.now()}`,
           allocations: allocated > 0 ? [{ invoiceId: invoice.id, amount: allocated }] : [],
         }),
@@ -197,24 +189,8 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
     }
   };
 
-  if (detailQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    );
-  }
-
-  if (detailQuery.isError || !detailQuery.data) {
-    return (
-      <ErrorState
-        title={ta('detail')}
-        onRetry={() => detailQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
-  }
+  if (detailQuery.isLoading) return <BoardSkeleton rows={6} />;
+  if (detailQuery.isError || !detailQuery.data) return <ErrorBoard title={ta('detail')} description={mutationErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} />;
 
   const invoice = detailQuery.data;
   const lines = invoice.lines ?? [];
@@ -227,322 +203,237 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   }));
   const showApplyCredit = outstanding > 0 && availableCredit > 0;
 
+  const total = Number(invoice.total ?? 0);
+  const paid = Number(invoice.paidAmount ?? 0);
+  const overdue = outstanding > 0 && Boolean(invoice.dueDate) && new Date(invoice.dueDate as string).getTime() < Date.now();
+  const tone: BoardTone = outstanding <= 0 && invoice.status !== 'DRAFT' && invoice.status !== 'VOID' ? 'success' : overdue ? 'error' : paid > 0 ? 'warning' : invoice.status === 'DRAFT' ? 'neutral' : 'info';
+  const date = (v?: string | null) => (v ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(v)) : '—');
+  const daysUntilDue = invoice.dueDate ? Math.round((new Date(invoice.dueDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000) : null;
+  const statusLabel = (s: string) => (tStatus.has(s as never) ? tStatus(s as never) : s.replace(/_/g, ' '));
+  const openPay = () => (setAmount(String(outstanding)), setReference(''), setPaymentDate(todayYmd()), setFormError(null), setPayOpen(true));
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        backHref="/admin/invoices"
-        title={invoice.number}
-        description={invoice.customer?.name}
+    <div className="maher-stagger space-y-5 pb-28 md:pb-0">
+      <DetailHero
+        back={{ label: t('invoices'), href: '/admin/invoices' }}
+        LinkComponent={Link}
+        code={invoice.number}
+        title={invoice.customer?.name ?? invoice.number}
+        subtitle={[invoice.salesOrder?.number, invoice.salesOrder?.externalOrderNumber, invoice.returnRequest?.number].filter(Boolean).join(' · ') || undefined}
+        status={{ label: statusLabel(invoice.status), tone }}
+        tone={tone}
+        media={
+          <span className="flex h-20 w-20 flex-col items-center justify-center rounded-[14px] bg-[var(--maher-surface-muted)] text-center sm:h-24 sm:w-24">
+            <span className="text-[11px] uppercase tracking-[0.06em] text-[var(--maher-text-tertiary)] rtl:tracking-normal">{ta('balance')}</span>
+            <Ltr className={`text-[15px] font-semibold ${outstanding > 0 ? (overdue ? 'text-[var(--maher-error)]' : 'text-[var(--maher-text-primary)]') : 'text-[var(--maher-success)]'}`}>{money(outstanding)}</Ltr>
+          </span>
+        }
+        facts={[
+          { label: ta('total'), value: money(total), ltr: true },
+          { label: ta('paidAmount'), value: money(paid), ltr: true, tone: paid > 0 ? 'success' : undefined },
+          { label: ta('balance'), value: money(outstanding), ltr: true, tone: outstanding > 0 ? tone : 'success' },
+          { label: ta('invoiceDate'), value: date(invoice.invoiceDate), ltr: true },
+          { label: ta('dueDate'), value: daysUntilDue == null ? date(invoice.dueDate) : `${date(invoice.dueDate)} · ${overdue ? tSales('desk.lateBy', { count: Math.abs(daysUntilDue) }) : tSales('desk.dueIn', { count: daysUntilDue })}`, ltr: true, tone: overdue ? 'error' : undefined },
+        ]}
+        primary={outstanding > 0 ? <Button onClick={openPay}>{ta('recordPayment')}</Button> : undefined}
         actions={
           <>
-            <StatusBadge status={invoice.status} />
-            <Button
-              variant="ghost"
-              onClick={() => {
-                window.open(`${API_URL}/api/v1/invoices/${params.id}/pdf`, '_blank');
-              }}
-            >
-              {ta('downloadPdf')}
-            </Button>
+            {showApplyCredit ? (
+              <Button variant="secondary" onClick={() => (setCreditAmount(String(Math.min(outstanding, availableCredit))), setCreditPreview(null), setCreditOpen(true))}>
+                {ta('applyCredit')}
+              </Button>
+            ) : null}
+            <DocumentActions size="sm" actions={[{ id: 'pdf', kind: 'pdf', label: ta('downloadPdf'), onClick: () => openPdf({ path: `/api/v1/invoices/${params.id}/pdf`, documentName: invoice.number, filename: `${invoice.number}.pdf` }) }]} />
           </>
         }
-      />
+      >
+        <Meter value={Math.min(paid, total)} max={Math.max(1, total)} label={ta('paidAmount')} valueLabel={`${money(paid)} / ${money(total)}`} tone={tone} />
+      </DetailHero>
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {formError ? <Alert variant="error">{formError}</Alert> : null}
 
-      <div className="maher-stagger space-y-6">
-      <div className="maher-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{ta('customer')}</p>
-          <p className="mt-1 font-semibold">
-            {invoice.customer ? (
-              <Link
-                href={`/admin/customers/${invoice.customer.id}`}
-                className="text-brand hover:underline"
-              >
-                {invoice.customer.name}
-              </Link>
-            ) : (
-              '—'
-            )}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('systemOrderNumber')}</p>
-          <p className="mt-1 font-semibold">
-            {invoice.salesOrder ? (
-              <Link
-                href={`/admin/sales-orders/${invoice.salesOrder.id}`}
-                className="text-brand hover:underline"
-                dir="ltr"
-              >
-                {invoice.salesOrder.number}
-              </Link>
-            ) : (
-              '—'
-            )}
-          </p>
-          {invoice.salesOrder?.externalOrderNumber ? (
-            <p className="mt-1 text-xs text-text-secondary" dir="ltr">
-              {tSales('dealerOrderNumber')}: {invoice.salesOrder.externalOrderNumber}
-            </p>
-          ) : null}
-          {invoice.returnRequest ? (
-            <p className="mt-1 text-xs text-text-secondary">
-              <Link
-                href={`/admin/returns`}
-                className="text-brand hover:underline"
-                dir="ltr"
-              >
-                {invoice.returnRequest.number}
-              </Link>
-            </p>
-          ) : null}
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{ta('invoiceDate')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {invoice.invoiceDate?.slice(0, 10) ?? '—'}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{ta('dueDate')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {invoice.dueDate?.slice(0, 10) ?? '—'}
-          </p>
-        </Card>
+      <div className="grid gap-5 xl:grid-cols-12">
+        <Board tone={tone} wash="top" className="xl:col-span-4">
+          <Board.Header title={ta('total')} />
+          <Board.Body className="space-y-4">
+            <Figure value={money(outstanding)} label={ta('balance')} tone={outstanding > 0 ? tone : 'success'} locale={locale} />
+            <Ledger>
+              <LedgerRow label={ta('subtotal')} value={money(invoice.subtotal)} />
+              <LedgerRow label={ta('tax')} value={money(invoice.taxTotal)} />
+              <LedgerRow label={ta('total')} value={<Ltr className="font-semibold">{money(total)}</Ltr>} />
+              <LedgerRow label={ta('paidAmount')} value={money(paid)} tone="success" stamp={paid > 0} />
+              {availableCredit > 0 ? <LedgerRow label={ta('accountCredit')} value={money(availableCredit)} tone="info" stamp /> : null}
+            </Ledger>
+          </Board.Body>
+        </Board>
+
+        <Board tone="neutral" className="xl:col-span-8">
+          <Board.Header title={ta('detail')} />
+          <Board.Body>
+            <KeyFacts
+              columns={3}
+              facts={[
+                { label: ta('customer'), value: invoice.customer ? <Link href={`/admin/customers/${invoice.customer.id}`} className="font-semibold text-[var(--maher-text-primary)] hover:text-[var(--maher-brand)]">{invoice.customer.name}</Link> : '—' },
+                { label: tSales('systemOrderNumber'), value: invoice.salesOrder ? <Link href={`/admin/sales-orders/${invoice.salesOrder.id}`} className="hover:text-[var(--maher-brand)]"><Ltr>{invoice.salesOrder.number}</Ltr></Link> : '—', ltr: true },
+                { label: tSales('dealerOrderNumber'), value: invoice.salesOrder?.externalOrderNumber ?? '—', ltr: true },
+                { label: ta('invoiceDate'), value: date(invoice.invoiceDate), ltr: true },
+                { label: ta('dueDate'), value: date(invoice.dueDate), ltr: true },
+                ...(invoice.returnRequest ? [{ label: ta('returnInvoice'), value: <Link href="/admin/returns" className="hover:text-[var(--maher-brand)]"><Ltr>{invoice.returnRequest.number}</Ltr></Link>, ltr: true }] : []),
+              ]}
+            />
+          </Board.Body>
+        </Board>
       </div>
 
-      <MotionSection className="maher-form-section" as="div">
-      <Card title={ta('total')} className="space-y-0">
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <dt className="text-xs text-text-secondary">{ta('subtotal')}</dt>
-            <dd className="mt-1 font-semibold" dir="ltr">
-              {money(invoice.subtotal)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-secondary">{ta('tax')}</dt>
-            <dd className="mt-1 font-semibold" dir="ltr">
-              {money(invoice.taxTotal)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-secondary">{ta('total')}</dt>
-            <dd className="mt-1 font-semibold" dir="ltr">
-              {money(invoice.total)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-secondary">{ta('paidAmount')}</dt>
-            <dd className="mt-1 font-semibold" dir="ltr">
-              {money(invoice.paidAmount)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-secondary">{ta('balance')}</dt>
-            <dd className="mt-1 font-semibold" dir="ltr">
-              {money(invoice.outstandingAmount)}
-            </dd>
-          </div>
-        </dl>
-      </Card>
-      </MotionSection>
-
-      <MotionSection className="maher-form-section" as="div">
-      <Card title={ta('lines')}>
+      <Board tone="neutral">
+        <Board.Header title={ta('lines')} meta={<Stamp tone="neutral" size="sm">{lines.length}</Stamp>} />
         {lines.length === 0 ? (
-          <EmptyState title={ta('noLines')} />
+          <Board.Empty title={ta('noLines')} />
         ) : (
-          <Table>
+          <Table wrapperClassName="rounded-none border-0">
             <TableHead>
               <TableRow>
                 <TableHeaderCell>{ta('description')}</TableHeaderCell>
-                <TableHeaderCell>{ta('qty')}</TableHeaderCell>
-                <TableHeaderCell>{ta('unitPrice')}</TableHeaderCell>
-                <TableHeaderCell>{ta('lineTotal')}</TableHeaderCell>
+                <TableHeaderCell data-numeric="true">{ta('qty')}</TableHeaderCell>
+                <TableHeaderCell data-numeric="true">{ta('unitPrice')}</TableHeaderCell>
+                <TableHeaderCell data-numeric="true">{ta('lineTotal')}</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {lines.map((line) => (
                 <TableRow key={line.id}>
                   <TableCell>{line.description}</TableCell>
-                  <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
-                  <TableNumericCell>{money(line.unitPrice)}</TableNumericCell>
-                  <TableNumericCell>{money(line.lineTotal)}</TableNumericCell>
+                  <TableNumericCell data-numeric="true">{Number(line.quantity)}</TableNumericCell>
+                  <TableNumericCell data-numeric="true">{money(line.unitPrice)}</TableNumericCell>
+                  <TableNumericCell data-numeric="true">{money(line.lineTotal)}</TableNumericCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
-      </Card>
-      </MotionSection>
+      </Board>
 
-      <MotionSection className="maher-form-section" as="div">
-      <Card title={ta('paymentHistory')}>
+      <Board tone={payments.length ? 'success' : 'neutral'}>
+        <Board.Header title={ta('paymentHistory')} meta={payments.length ? <Stamp tone="success" size="sm">{payments.length}</Stamp> : null} actions={outstanding > 0 ? <Button size="sm" onClick={openPay}>{ta('recordPayment')}</Button> : null} />
         {payments.length === 0 ? (
-          <EmptyState title={ta('noPayments')} />
+          <Board.Empty title={ta('noPayments')} />
         ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{ta('paymentNumber')}</TableHeaderCell>
-                <TableHeaderCell>{ta('paymentDate')}</TableHeaderCell>
-                <TableHeaderCell>{ta('paymentMethod')}</TableHeaderCell>
-                <TableHeaderCell>{ta('reference')}</TableHeaderCell>
-                <TableHeaderCell>{ta('amount')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {payments.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{p.number}</TableCell>
-                  <TableNumericCell>{p.paymentDate?.slice(0, 10) ?? '—'}</TableNumericCell>
-                  <TableCell>
+          <Timeline
+            dense
+            className="px-5 py-4"
+            items={payments.map((p) => ({
+              id: p.id,
+              time: date(p.paymentDate),
+              title: (
+                <span className="flex flex-wrap items-center gap-2">
+                  <Ltr className="font-semibold">{money(p.amount)}</Ltr>
+                  <Stamp tone="success" size="sm">
                     {ta(`method${p.method}` as 'methodCASH')}
-                  </TableCell>
-                  <TableNumericCell>{p.referenceNumber ?? '—'}</TableNumericCell>
-                  <TableNumericCell>{money(p.amount)}</TableNumericCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        window.open(`${API_URL}/api/v1/payments/${p.id}/pdf`, '_blank');
-                      }}
-                    >
-                      {ta('downloadPdf')}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </Stamp>
+                  <Ltr className="text-[12px] text-[var(--maher-text-tertiary)]">{p.number}</Ltr>
+                </span>
+              ),
+              description: p.referenceNumber ? `${ta('reference')}: ${p.referenceNumber}` : undefined,
+              tone: 'success' as BoardTone,
+              children: (
+                <Button size="sm" variant="ghost" onClick={() => openPdf({ path: `/api/v1/payments/${p.id}/pdf`, documentName: p.number, filename: `${p.number}.pdf` })}>
+                  {ta('downloadPdf')}
+                </Button>
+              ),
+            }))}
+          />
         )}
-      </Card>
-      </MotionSection>
+      </Board>
 
       {outstanding > 0 ? (
-        <MotionSection className="maher-form-section" as="div">
-        <Card title={ta('recordPayment')}>
-          <div className="grid max-w-xl gap-3">
-            <Input
-              label={ta('amountJod')}
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={String(outstanding)}
-            />
-            <Select
-              label={ta('paymentMethod')}
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-              options={methodOptions}
-            />
-            <Input
-              label={ta('referenceOptional')}
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
-            {payN > 0 ? (
-              <div className="rounded-xl border border-border bg-surface-secondary px-4 py-3 text-sm space-y-1">
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('paymentAmount')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(payN)}
-                  </span>
-                </p>
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('allocatedToInvoices')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(Math.min(payN, outstanding))}
-                  </span>
-                </p>
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('addedToAccountCredit')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(Math.max(0, payN - outstanding))}
-                  </span>
-                </p>
-                {payN > outstanding ? (
-                  <p className="text-xs text-text-tertiary pt-1">{ta('overpayCreditHint')}</p>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="maher-detail-sticky-actions">
-              <Button loading={payMutation.isPending} onClick={() => payMutation.mutate()}>
-                {ta('recordPayment')}
-              </Button>
-            </div>
-          </div>
-        </Card>
-        </MotionSection>
+        <ActionDock note={`${ta('balance')} · ${money(outstanding)}`}>
+          {showApplyCredit ? (
+            <Button variant="secondary" onClick={() => (setCreditAmount(String(Math.min(outstanding, availableCredit))), setCreditPreview(null), setCreditOpen(true))}>
+              {ta('applyCredit')}
+            </Button>
+          ) : null}
+          <Button onClick={openPay}>{ta('recordPayment')}</Button>
+        </ActionDock>
       ) : null}
 
-      {showApplyCredit ? (
-        <MotionSection className="maher-form-section" as="div">
-        <Card title={ta('applyCredit')}>
-          <div className="grid max-w-xl gap-3">
-            <p className="text-sm text-text-secondary">{ta('applyCreditHint')}</p>
-            <p className="text-sm flex justify-between gap-3">
-              <span className="text-text-secondary">{ta('accountCredit')}</span>
-              <span className="tabular-nums font-semibold" dir="ltr">
-                {money(availableCredit)}
-              </span>
-            </p>
-            <Input
-              label={ta('applyCreditAmount')}
-              type="number"
-              value={creditAmount}
-              onChange={(e) => {
-                setCreditAmount(e.target.value);
-                setCreditPreview(null);
-              }}
-              placeholder={String(Math.min(outstanding, availableCredit))}
-            />
-            {creditPreview ? (
-              <div className="rounded-xl border border-border bg-surface-secondary px-4 py-3 text-sm space-y-1">
-                <p className="text-xs font-semibold text-brand">{ta('applyCreditPreview')}</p>
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('applyCreditWillApply')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(creditPreview.applyAmount)}
-                  </span>
-                </p>
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('invoiceRemainingAfter')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(creditPreview.invoiceRemainingAfter)}
-                  </span>
-                </p>
-                <p className="flex justify-between gap-3">
-                  <span className="text-text-secondary">{ta('creditRemainingAfter')}</span>
-                  <span className="tabular-nums font-medium" dir="ltr">
-                    {money(creditPreview.creditRemainingAfter)}
-                  </span>
-                </p>
-              </div>
-            ) : null}
-            <div className="maher-detail-sticky-actions flex flex-wrap gap-2">
-              <Button variant="secondary" loading={creditBusy} onClick={() => void previewCredit()}>
-                {ta('applyCreditPreview')}
-              </Button>
-              <Button
-                loading={creditBusy}
-                disabled={!creditPreview || !(creditPreview.applyAmount > 0)}
-                onClick={() => void confirmCredit()}
-              >
-                {ta('confirmApplyCredit')}
-              </Button>
-            </div>
+      <Sheet
+        open={payOpen}
+        onClose={() => !payMutation.isPending && setPayOpen(false)}
+        title={ta('recordPayment')}
+        description={`${invoice.number} · ${invoice.customer?.name ?? ''}`}
+        tone="success"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPayOpen(false)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button loading={payMutation.isPending} disabled={!(payN > 0)} onClick={() => payMutation.mutate(undefined, { onSuccess: () => setPayOpen(false) })}>
+              {ta('recordPayment')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {formError ? <Alert variant="error">{formError}</Alert> : null}
+          <MoneyField label={ta('amountJod')} currency={tCommon('currency')} size="lg" value={amount === '' ? null : Number(amount)} onChange={(v) => setAmount(v == null ? '' : String(v))} min={0} />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setAmount(String(outstanding))}>
+              {ta('balance')} · {money(outstanding)}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setAmount(String(Math.round(outstanding / 2)))}>
+              50%
+            </Button>
           </div>
-        </Card>
-        </MotionSection>
-      ) : null}
-      </div>
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{ta('paymentMethod')}</span>
+            <SegmentedControl aria-label={ta('paymentMethod')} value={method} onChange={setMethod} options={methodOptions} />
+          </div>
+          <DateField label={ta('paymentDate')} value={paymentDate} onChange={setPaymentDate} copy={kit.date} locale={locale} maxDate={todayYmd()} todayShortcut presentation="popover" />
+          <Input label={ta('referenceOptional')} value={reference} onChange={(e) => setReference(e.target.value)} dir="ltr" />
+          {payN > 0 ? (
+            <Ledger>
+              <LedgerRow label={ta('paymentAmount')} value={money(payN)} />
+              <LedgerRow label={ta('allocatedToInvoices')} value={money(Math.min(payN, outstanding))} tone="success" stamp />
+              <LedgerRow label={ta('addedToAccountCredit')} value={money(Math.max(0, payN - outstanding))} tone={payN > outstanding ? 'info' : undefined} stamp={payN > outstanding} hint={payN > outstanding ? ta('overpayCreditHint') : undefined} />
+            </Ledger>
+          ) : null}
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={creditOpen}
+        onClose={() => !creditBusy && setCreditOpen(false)}
+        title={ta('applyCredit')}
+        description={ta('applyCreditHint')}
+        tone="info"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreditOpen(false)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button variant="secondary" loading={creditBusy} onClick={() => void previewCredit()}>
+              {ta('applyCreditPreview')}
+            </Button>
+            <Button loading={creditBusy} disabled={!creditPreview || !(creditPreview.applyAmount > 0)} onClick={() => void confirmCredit().then(() => setCreditOpen(false))}>
+              {ta('confirmApplyCredit')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {formError ? <Alert variant="error">{formError}</Alert> : null}
+          <Figure value={money(availableCredit)} label={ta('accountCredit')} tone="info" size="sm" locale={locale} />
+          <MoneyField label={ta('applyCreditAmount')} currency={tCommon('currency')} value={creditAmount === '' ? null : Number(creditAmount)} onChange={(v) => (setCreditAmount(v == null ? '' : String(v)), setCreditPreview(null))} min={0} max={Math.min(outstanding, availableCredit)} />
+          {creditPreview ? (
+            <Ledger>
+              <LedgerRow label={ta('applyCreditWillApply')} value={money(creditPreview.applyAmount)} tone="info" stamp />
+              <LedgerRow label={ta('invoiceRemainingAfter')} value={money(creditPreview.invoiceRemainingAfter)} />
+              <LedgerRow label={ta('creditRemainingAfter')} value={money(creditPreview.creditRemainingAfter)} />
+            </Ledger>
+          ) : null}
+        </div>
+      </Sheet>
+      {pdfDialog}
     </div>
   );
 }

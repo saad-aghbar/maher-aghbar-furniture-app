@@ -127,5 +127,7 @@
   "staffTypeDeleted": "تم حذف نوع الموظف.",
   "confirmDeactivateStaffType": "إلغاء تفعيل هذا النوع؟ لن يظهر للمستخدمين الجدد. يبقى المعيّنون الحاليون حتى تعيد تعيينهم.",
   "confirmDeleteStaffType": "حذف نوع الموظف؟ لا يمكن التراجع عن هذا.",
-  "emptyStaffTypes": "لا توجد أنواع موظفين بعد"
+  "emptyStaffTypes": "لا توجد أنواع موظفين بعد",
+  "usersAssigned": "الأشخاص",
+  "activeThisWeek": "دخلوا هذا الأسبوع"
 }

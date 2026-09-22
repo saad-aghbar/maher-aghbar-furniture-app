@@ -1,38 +1,49 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { PageHeader } from '@/components/admin/page-header';
+import { daysUntil, dueTone, isClosedSalesOrder, salesOrderTone, useOrdersCopy, type JourneyBucket } from '@/components/orders/orders-shared';
 import { CancelImpactSheet } from '@/components/sales-orders/cancel-impact-sheet';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
-import { Link } from '@/i18n/navigation';
-import {
-  apiFetch,
-  fetchOrderProductionSetup,
-  type OrderProductionSetup,
-} from '@/lib/api-client';
+import { Link, useRouter } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import {
-  Alert,
-  Button,
-  Card,
-  ErrorState,
-  Input,
-  Skeleton,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableNumericCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  MotionSection,
-} from '@maher/ui';
+import { apiFetch, fetchOrderProductionSetup, type OrderProductionSetup } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
 import { localizedName } from '@maher/i18n';
+import {
+  ActionDock,
+  Attachments,
+  Board,
+  BoardSkeleton,
+  Button,
+  ConfirmDialog,
+  DateField,
+  DetailHero,
+  ErrorBoard,
+  Figure,
+  InkPill,
+  KeyFacts,
+  Ledger,
+  LedgerRow,
+  ListRow,
+  ListRows,
+  Ltr,
+  Menu,
+  Meter,
+  MoneyField,
+  RowThumb,
+  Sheet,
+  StageStrip,
+  Stamp,
+  TextArea,
+  Ticket,
+  anyToYmd,
+  useToast,
+  type BoardTone,
+  type StageStripStage,
+} from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
-import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
 
 interface CustomerRequestItem {
   id: string;
@@ -70,12 +81,7 @@ interface CustomerRequest {
   endCustomerFax?: string | null;
   priority?: string | null;
   items?: CustomerRequestItem[];
-  documents?: Array<{
-    id: string;
-    fileName: string;
-    mimeType: string;
-    storageKey: string;
-  }>;
+  documents?: Array<{ id: string; fileName: string; mimeType: string; storageKey: string }>;
   originalText?: string | null;
   translatedText?: string | null;
   detectedLanguage?: string | null;
@@ -86,6 +92,7 @@ interface SalesOrderDetail {
   id: string;
   number: string;
   status: string;
+  currency?: string | null;
   total?: string | number;
   manufacturingCost?: string | number | null;
   sellerPrice?: string | number | null;
@@ -105,52 +112,22 @@ interface SalesOrderDetail {
   projectName?: string | null;
   requiredDeliveryDate?: string | null;
   requestedDeliveryDate?: string | null;
+  committedDeliveryDate?: string | null;
   deliveryAddress?: string | null;
   externalOrderNumber?: string | null;
   notes?: string | null;
+  createdAt?: string;
+  orderDate?: string | null;
   productionSetupRequired?: boolean;
-  customer?: {
-    id: string;
-    name: string;
-    code?: string;
-    phone?: string;
-    fax?: string | null;
-    nameAr?: string | null;
-    nameEn?: string | null;
-    nameHe?: string | null;
-  };
+  journeyBucket?: JourneyBucket | null;
+  customer?: { id: string; name: string; code?: string; phone?: string; fax?: string | null; nameAr?: string | null; nameEn?: string | null; nameHe?: string | null };
   quotation?: { id: string; number: string; status: string } | null;
   customerRequest?: CustomerRequest | null;
   orderedItems?: CustomerRequestItem[];
-  productionOrders?: Array<{
-    id: string;
-    number: string;
-    status: string;
-    progressPercent?: number | null;
-    currentStageCode?: string | null;
-    salesOrderLineId?: string | null;
-  }>;
-  invoices?: Array<{
-    id: string;
-    number: string;
-    status: string;
-    total?: string | number;
-    outstandingAmount?: string | number;
-  }>;
-  deliveries?: Array<{
-    id: string;
-    number: string;
-    status: string;
-    deliveryDate?: string | null;
-  }>;
-  returns?: Array<{
-    id: string;
-    number: string;
-    approvalStatus: string;
-    reason: string;
-    productDesc: string;
-    quantity?: string | number;
-  }>;
+  productionOrders?: Array<{ id: string; number: string; status: string; progressPercent?: number | null; currentStageCode?: string | null; salesOrderLineId?: string | null }>;
+  invoices?: Array<{ id: string; number: string; status: string; total?: string | number; outstandingAmount?: string | number }>;
+  deliveries?: Array<{ id: string; number: string; status: string; deliveryDate?: string | null }>;
+  returns?: Array<{ id: string; number: string; approvalStatus: string; reason: string; productDesc: string; quantity?: string | number }>;
   commercialSummary?: {
     salesOrderId: string;
     number: string;
@@ -170,850 +147,669 @@ interface SalesOrderDetail {
       commercialPriceNote?: string | null;
     }>;
   } | null;
-  commercialGrossDifference?: {
-    available: boolean;
-    reason?: string | null;
-    saleTotal: number;
-    manufacturingCost: number | null;
-    grossDifference: number | null;
-  } | null;
+  commercialGrossDifference?: { available: boolean; reason?: string | null; saleTotal: number; manufacturingCost: number | null; grossDifference: number | null } | null;
 }
 
-const HOLDABLE = [
-  'CONFIRMED',
-  'READY_FOR_PRODUCTION',
-  'IN_PRODUCTION',
-  'WAITING_FOR_MATERIALS',
-  'WAITING_FOR_PAYMENT',
-];
-/** Cancel impact sheet opens for any non-cancelled order (Phase 5 shows use-Returns). */
-function canOpenCancel(status: string) {
-  return status !== 'CANCELLED';
+const HOLDABLE = new Set(['CONFIRMED', 'READY_FOR_PRODUCTION', 'IN_PRODUCTION', 'WAITING_FOR_MATERIALS', 'WAITING_FOR_PAYMENT']);
+const DELIVERY_EDITABLE = new Set(['DRAFT', 'CONFIRMED', 'WAITING_FOR_PAYMENT', 'WAITING_FOR_MATERIALS', 'READY_FOR_PRODUCTION', 'IN_PRODUCTION', 'ON_HOLD']);
+
+function dim(item: { width?: string | number | null; height?: string | number | null; depth?: string | number | null }) {
+  const parts = [item.width, item.height, item.depth].map((v) => (v != null && String(v) !== '' ? String(v) : null)).filter(Boolean);
+  return parts.length ? `${parts.join(' × ')} cm` : null;
 }
 
-function dim(item: CustomerRequestItem) {
-  const parts = [item.width, item.height, item.depth]
-    .map((v) => (v != null && String(v) !== '' ? String(v) : null))
-    .filter(Boolean);
-  return parts.length ? parts.join(' × ') : null;
+/** Journey from the order status + production orders + deliveries (mirrors the API lane classifier). */
+function journeyStages(order: SalesOrderDetail, labels: (b: JourneyBucket) => string): StageStripStage[] {
+  const buckets: JourneyBucket[] = ['preparing', 'ready_to_start', 'in_production', 'ready_to_ship', 'shipped', 'delivered'];
+  const status = order.status;
+  const delivered = status === 'DELIVERED' || status === 'COMPLETED';
+  const shipped = (order.deliveries ?? []).some((d) => d.status === 'OUT_FOR_DELIVERY') || delivered;
+  const readyToShip = status === 'READY_FOR_DELIVERY' || shipped;
+  const inProduction = status === 'IN_PRODUCTION' || (order.productionOrders ?? []).some((po) => ['IN_PROGRESS', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'ON_HOLD', 'COMPLETED'].includes(po.status)) || readyToShip;
+  const readyToStart = status === 'READY_FOR_PRODUCTION' || (order.productionOrders?.length ?? 0) > 0 || inProduction;
+  const reached: Record<JourneyBucket, boolean> = { preparing: true, ready_to_start: readyToStart, in_production: inProduction, ready_to_ship: readyToShip, shipped, delivered };
+  const currentIdx = buckets.reduce((acc, b, i) => (reached[b] ? i : acc), 0);
+  const blocked = status === 'ON_HOLD' || status === 'WAITING_FOR_MATERIALS' || status === 'WAITING_FOR_PAYMENT';
+  return buckets.map((b, i) => ({
+    key: b,
+    label: labels(b),
+    state: status === 'CANCELLED' ? (i <= currentIdx ? 'skipped' : 'todo') : i < currentIdx || (i === currentIdx && delivered) ? 'done' : i === currentIdx ? (blocked ? 'blocked' : 'current') : 'todo',
+  }));
 }
 
 export default function SalesOrderDetailPage({ params }: { params: { id: string } }) {
-  const locale = useLocale();
+  const copy = useOrdersCopy();
+  const kit = useKitCopy();
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('navigation');
   const tCustomers = useTranslations('customers');
   const ta = useTranslations('accounting');
   const tc = useTranslations('catalog');
+  const toast = useToast();
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const [banner, setBanner] = useState<string | null>(null);
-  const [financeAttention, setFinanceAttention] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
   const [holdOpen, setHoldOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
-  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [dateOpen, setDateOpen] = useState(false);
+  const [dateDraft, setDateDraft] = useState('');
+  const [dateReason, setDateReason] = useState('');
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, number | null>>({});
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!moreOpen) return undefined;
-    const onDoc = (e: MouseEvent) => {
-      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [moreOpen]);
+  const detail = useQuery({ queryKey: ['sales-order', params.id], queryFn: () => apiFetch<SalesOrderDetail>(`/api/v1/sales-orders/${params.id}`) });
+  const order = detail.data;
 
-  const detailQuery = useQuery({
-    queryKey: ['sales-order', params.id],
-    queryFn: () => apiFetch<SalesOrderDetail>(`/api/v1/sales-orders/${params.id}`),
-  });
-
-  const productionSetupQuery = useQuery({
+  const setup = useQuery({
     queryKey: ['order-production-setup', params.id],
     queryFn: () => fetchOrderProductionSetup(params.id),
     enabled:
-      Boolean(detailQuery.data) &&
-      (detailQuery.data!.productionSetupRequired === true ||
-        detailQuery.data!.status === 'DRAFT' ||
-        (detailQuery.data!.productionOrders?.length ?? 0) > 0 ||
-        ['READY_FOR_PRODUCTION', 'WAITING_FOR_MATERIALS', 'IN_PRODUCTION', 'CONFIRMED'].includes(
-          detailQuery.data!.status,
-        )),
+      Boolean(order) &&
+      (order!.productionSetupRequired === true ||
+        order!.status === 'DRAFT' ||
+        (order!.productionOrders?.length ?? 0) > 0 ||
+        ['READY_FOR_PRODUCTION', 'WAITING_FOR_MATERIALS', 'IN_PRODUCTION', 'CONFIRMED'].includes(order!.status)),
     retry: false,
   });
 
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
+    await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    await queryClient.invalidateQueries({ queryKey: ['orders-desk'] });
+  };
+
   const holdMutation = useMutation({
-    mutationFn: (reason?: string) =>
-      apiFetch(`/api/v1/sales-orders/${params.id}/hold`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      }),
+    mutationFn: (reason?: string) => apiFetch(`/api/v1/sales-orders/${params.id}/hold`, { method: 'POST', body: JSON.stringify({ reason }) }),
     onSuccess: async () => {
       setError(null);
       setHoldOpen(false);
-      setBanner(tSales('heldBanner'));
-      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      toast.success(tSales('heldBanner'));
+      await invalidate();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
-
   const resumeMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/v1/sales-orders/${params.id}/resume`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      }),
+    mutationFn: () => apiFetch(`/api/v1/sales-orders/${params.id}/resume`, { method: 'POST', body: JSON.stringify({}) }),
     onSuccess: async () => {
-      setError(null);
-      setBanner(tSales('resumedBanner'));
-      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      toast.success(tSales('resumedBanner'));
+      await invalidate();
     },
-    onError: (err) => setError(mutationErrorMessage(err)),
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
-
+  const confirmMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/sales-orders/${params.id}/confirm`, { method: 'POST' }),
+    onSuccess: async () => {
+      toast.success(tSales('confirmedBanner'));
+      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
+  const dateMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/sales-orders/${params.id}/committed-delivery`, { method: 'POST', body: JSON.stringify({ date: dateDraft, reason: dateReason.trim() || undefined }) }),
+    onSuccess: async () => {
+      setDateOpen(false);
+      setDateReason('');
+      toast.success(tSales('desk.deliveryDateUpdated'));
+      await invalidate();
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
   const promoteMutation = useMutation({
     mutationFn: (args: { lineId: string; productId?: string | null }) =>
       args.productId
-        ? apiFetch(
-            `/api/v1/products/${args.productId}/variants/from-order-line/${args.lineId}`,
-            { method: 'POST', body: JSON.stringify({}) },
-          )
-        : apiFetch(`/api/v1/products/from-order-line/${args.lineId}`, {
-            method: 'POST',
-            body: JSON.stringify({}),
-          }),
+        ? apiFetch(`/api/v1/products/${args.productId}/variants/from-order-line/${args.lineId}`, { method: 'POST', body: JSON.stringify({}) })
+        : apiFetch(`/api/v1/products/from-order-line/${args.lineId}`, { method: 'POST', body: JSON.stringify({}) }),
     onSuccess: async () => {
-      setError(null);
-      setBanner(tc('promotedFromOrder'));
-      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
+      toast.success(tc('promotedFromOrder'));
+      await invalidate();
     },
-    onError: (err) => setError(mutationErrorMessage(err)),
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
-
   const confirmPricesMutation = useMutation({
     mutationFn: (lines: Array<{ lineId: string; unitPrice: number; note?: string }>) =>
-      apiFetch(`/api/v1/sales-orders/${params.id}/confirm-commercial-prices`, {
-        method: 'POST',
-        body: JSON.stringify({ lines }),
-      }),
+      apiFetch(`/api/v1/sales-orders/${params.id}/confirm-commercial-prices`, { method: 'POST', body: JSON.stringify({ lines }) }),
     onSuccess: async () => {
-      setError(null);
-      setBanner(ta('commercialPricesConfirmed'));
+      toast.success(ta('commercialPricesConfirmed'));
       setPriceDrafts({});
-      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
+      await invalidate();
     },
-    onError: (err) => setError(mutationErrorMessage(err)),
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
 
-  if (detailQuery.isLoading) {
+  const items = useMemo(() => {
+    if (!order) return [];
+    const req = order.customerRequest;
+    return (req?.items?.length ? req.items : order.orderedItems ?? []).map((item, index) => ({ ...item, itemNumber: item.itemNumber ?? order.orderedItems?.[index]?.itemNumber ?? null }));
+  }, [order]);
+
+  if (detail.isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-48 w-full" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} header={false} className="h-56" />
+        <div className="grid gap-5 xl:grid-cols-12">
+          <div className="space-y-5 xl:col-span-7">
+            <BoardSkeleton rows={5} />
+            <BoardSkeleton rows={3} />
+          </div>
+          <div className="space-y-5 xl:col-span-5">
+            <BoardSkeleton rows={4} />
+            <BoardSkeleton rows={3} />
+          </div>
+        </div>
       </div>
     );
   }
-
-  if (detailQuery.isError || !detailQuery.data) {
-    return (
-      <ErrorState
-        title={tSales('detail')}
-        onRetry={() => detailQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
+  if (detail.isError || !order) {
+    return <ErrorBoard title={tSales('detail')} onRetry={() => detail.refetch()} />;
   }
 
-  const order = detailQuery.data;
-  const customerName = order.customer
-    ? localizedName(locale, order.customer, order.customer.name)
-    : undefined;
+  const currency = order.currency ?? 'ILS';
+  const customerName = order.customer ? localizedName(copy.locale, order.customer, order.customer.name) : undefined;
   const req = order.customerRequest;
-  const items = (req?.items?.length ? req.items : order.orderedItems ?? []).map((item, index) => ({
-    ...item,
-    itemNumber: item.itemNumber ?? order.orderedItems?.[index]?.itemNumber ?? null,
-  }));
   const cb = order.costBreakdown ?? {};
   const seller = Number(order.sellerPrice ?? order.total ?? 0);
   const production = Number(order.productionPrice ?? order.manufacturingCost ?? 0);
   const profit = Number(order.profit ?? seller - production);
-  const deliveryDate =
-    order.requiredDeliveryDate?.slice(0, 10) ??
-    order.requestedDeliveryDate?.slice(0, 10) ??
-    req?.requiredDeliveryDate?.slice(0, 10) ??
-    '—';
-  const dealerOrderNo =
-    order.externalOrderNumber?.trim() || req?.externalOrderNumber?.trim() || '—';
-  const needsProductionSetup =
-    order.productionSetupRequired === true ||
-    (order.status === 'DRAFT' && (order.productionOrders?.length ?? 0) === 0);
-  const setupData = productionSetupQuery.data as OrderProductionSetup | undefined;
+  const committed = order.committedDeliveryDate ?? order.requiredDeliveryDate ?? order.requestedDeliveryDate ?? req?.requiredDeliveryDate ?? null;
+  const requested = order.requestedDeliveryDate ?? req?.requiredDeliveryDate ?? null;
+  const days = daysUntil(committed);
+  const closed = isClosedSalesOrder(order.status);
+  const tone: BoardTone = salesOrderTone(order.status);
+  const dealerOrderNo = order.externalOrderNumber?.trim() || req?.externalOrderNumber?.trim() || null;
+  const needsProductionSetup = order.productionSetupRequired === true || (order.status === 'DRAFT' && (order.productionOrders?.length ?? 0) === 0);
+  const setupData = setup.data as OrderProductionSetup | undefined;
   const setupReleased = setupData?.status === 'RELEASED';
-  const showWorkerAssignment = setupReleased;
   const commercial = order.commercialSummary;
-  const requiredPriceLines = (commercial?.lines ?? []).filter(
-    (l) => String(l.commercialPriceStatus).toUpperCase() === 'REQUIRED',
+  const requiredPriceLines = (commercial?.lines ?? []).filter((l) => String(l.commercialPriceStatus).toUpperCase() === 'REQUIRED');
+  const customLines = (commercial?.lines ?? []).filter((l) => String(l.manufacturingComplexity).toUpperCase() === 'CUSTOM');
+  const stages = journeyStages(order, copy.journey);
+
+  const attention: Array<{ id: string; tone: BoardTone; title: string; why: string; href?: string; action?: string; onClick?: () => void }> = [];
+  if (needsProductionSetup) attention.push({ id: 'setup', tone: 'warning', title: tSales('orderAcceptedSetup'), why: tSales('productionSetupRequired'), href: `/admin/sales-orders/${params.id}/production-plan`, action: tSales('prepareProduction') });
+  if (setupReleased && (setupData?.progress.needsReviewLines ?? 0) === 0 && (order.productionOrders?.length ?? 0) > 0 && order.status === 'READY_FOR_PRODUCTION')
+    attention.push({ id: 'assign', tone: 'info', title: tSales('orderSetup.workerAssignmentRequired'), why: tSales('orderSetup.workerAssignmentHint'), href: '/admin/production', action: tSales('orderSetup.openProduction') });
+  if (requiredPriceLines.length) attention.push({ id: 'prices', tone: 'warning', title: ta('commercialSummary'), why: ta('requiredPriceLines', { count: requiredPriceLines.length }), href: '#commercial', action: ta('confirmCommercialPrices') });
+  if (order.status === 'ON_HOLD') attention.push({ id: 'hold', tone: 'warning', title: copy.status('ON_HOLD'), why: tSales('desk.onHoldWhy'), action: tSales('resume'), onClick: () => resumeMutation.mutate() });
+  if (!closed && days != null && days < 0) attention.push({ id: 'late', tone: 'error', title: tSales('desk.lateTitle'), why: copy.dueLabel(days), action: tSales('desk.changeDeliveryDate'), onClick: () => openDate() });
+
+  function openDate() {
+    setDateDraft(anyToYmd(committed));
+    setDateOpen(true);
+  }
+
+  const menuItems = [
+    ...(HOLDABLE.has(order.status) ? [{ id: 'hold', label: tSales('hold'), onSelect: () => setHoldOpen(true) }] : []),
+    ...(order.status === 'ON_HOLD' ? [{ id: 'resume', label: tSales('resume'), onSelect: () => resumeMutation.mutate() }] : []),
+    ...(DELIVERY_EDITABLE.has(order.status) ? [{ id: 'date', label: tSales('desk.changeDeliveryDate'), onSelect: openDate }] : []),
+    ...(setupReleased ? [{ id: 'setup', label: tSales('orderSetup.viewSetup'), href: `/admin/sales-orders/${params.id}/production-plan` }] : []),
+    { id: 'flow', label: tSales('desk.viewFlow'), href: `/admin/sales-orders/${params.id}/flow` },
+    ...(order.quotation ? [{ id: 'quote', label: `${tSales('quotation')} ${order.quotation.number}`, href: `/admin/quotations/${order.quotation.id}` }] : []),
+    ...(order.status !== 'CANCELLED' && !closed ? [{ id: 'cancel', label: tSales('cancelOrder'), tone: 'error' as const, separator: true, onSelect: () => setCancelOpen(true) }] : []),
+  ];
+
+  const primary =
+    order.status === 'DRAFT' && !needsProductionSetup ? (
+      <InkPill onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
+        {tSales('confirmToProduction')}
+      </InkPill>
+    ) : needsProductionSetup ? (
+      <Link href={`/admin/sales-orders/${params.id}/production-plan`} className="maher-press inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--maher-text-primary)] px-4 text-[13px] font-semibold text-[var(--maher-background)] hover:opacity-90">
+        {tSales('prepareProduction')}
+      </Link>
+    ) : order.status === 'ON_HOLD' ? (
+      <InkPill onClick={() => resumeMutation.mutate()} disabled={resumeMutation.isPending}>
+        {tSales('resume')}
+      </InkPill>
+    ) : (order.productionOrders?.length ?? 0) > 0 ? (
+      <Link href={`/admin/production/${order.productionOrders![0]!.id}`} className="maher-press inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--maher-text-primary)] px-4 text-[13px] font-semibold text-[var(--maher-background)] hover:opacity-90">
+        {tSales('desk.openProduction')}
+      </Link>
+    ) : null;
+
+  const overflow = (
+    <Menu
+      LinkComponent={Link}
+      items={menuItems}
+      aria-label={tSales('moreActions')}
+      trigger={
+        <Button variant="secondary" size="icon" aria-label={tSales('moreActions')}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      }
+    />
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        backHref="/admin/orders"
-        title={order.number}
-        description={customerName}
-        actions={
-          <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
-            <StatusBadge status={order.status} />
-            {needsProductionSetup ? (
-              <Link href={`/admin/sales-orders/${params.id}/production-plan`}>
-                <Button>{tSales('prepareProduction')}</Button>
-              </Link>
-            ) : null}
-            {setupReleased ? (
-              <Link href={`/admin/sales-orders/${params.id}/production-plan`}>
-                <Button variant="secondary" size="sm">
-                  {tSales('orderSetup.viewSetup')}
-                </Button>
-              </Link>
-            ) : null}
-            {HOLDABLE.includes(order.status) ? (
-              <Button variant="secondary" onClick={() => setHoldOpen(true)}>
-                {tSales('hold')}
-              </Button>
-            ) : null}
-            {order.status === 'ON_HOLD' ? (
-              <Button
-                variant="secondary"
-                onClick={() => resumeMutation.mutate()}
-                disabled={resumeMutation.isPending}
-              >
-                {tSales('resume')}
-              </Button>
-            ) : null}
-            {canOpenCancel(order.status) ? (
-              <div className="relative" ref={moreRef}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setMoreOpen((v) => !v)}
-                  aria-expanded={moreOpen}
-                  aria-haspopup="menu"
-                  trailingIcon={<ChevronDown className="h-3.5 w-3.5 opacity-70" />}
-                >
-                  {tSales('moreActions')}
-                </Button>
-                {moreOpen ? (
-                  <div
-                    role="menu"
-                    className="absolute end-0 z-20 mt-1 min-w-[12rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="block w-full px-3 py-2 text-start text-sm text-[var(--maher-danger)] hover:bg-[var(--maher-surface-muted)]"
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setCancelOpen(true);
-                      }}
-                    >
-                      {tSales('cancelOrder')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        }
-      />
+    <div className="maher-stagger space-y-5 pb-24 md:pb-0">
+      <DetailHero
+        LinkComponent={Link}
+        back={{ label: tNav('salesOrders'), href: '/admin/sales-orders' }}
+        code={order.number}
+        title={customerName ?? order.number}
+        subtitle={[order.projectName ?? req?.projectName, dealerOrderNo ? `${tSales('dealerOrderNumber')} ${dealerOrderNo}` : null].filter(Boolean).join(' · ') || undefined}
+        status={{ label: copy.status(order.status), tone }}
+        tone={!closed && days != null && days < 0 ? 'error' : tone}
+        facts={[
+          { label: tSales('deliveryDate'), value: committed ? copy.date(committed, { day: 'numeric', month: 'short', year: 'numeric' }) : '—', ltr: true, tone: dueTone(days, closed) },
+          ...(days != null && !closed ? [{ label: tSales('desk.timeLeft'), value: copy.dueLabel(days), tone: dueTone(days, closed) }] : []),
+          { label: tSales('sellerPrice'), value: copy.money(seller, currency), ltr: true },
+          { label: tSales('productionPrice'), value: copy.money(production, currency), ltr: true },
+          { label: tSales('profit'), value: copy.money(profit, currency), ltr: true, tone: profit < 0 ? 'error' : profit > 0 ? 'success' : 'neutral' },
+          { label: tSales('lines'), value: String(items.length), ltr: true },
+          ...(order.orderDate || order.createdAt ? [{ label: tSales('orderDate'), value: copy.date(order.orderDate ?? order.createdAt, { day: 'numeric', month: 'short', year: 'numeric' }), ltr: true }] : []),
+        ]}
+        primary={primary}
+        actions={overflow}
+      >
+        <StageStrip stages={stages} />
+      </DetailHero>
 
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {financeAttention ? (
-        <Alert variant="warning">
-          <p className="font-medium">{tSales('cancelImpact.financialAttentionBannerTitle')}</p>
-          <p className="mt-1 text-sm">{tSales('cancelImpact.financialAttentionBannerBody')}</p>
-        </Alert>
-      ) : null}
-      {error ? <Alert variant="error">{error}</Alert> : null}
-
-      {needsProductionSetup ? (
-        <Alert variant="info">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="font-medium">{tSales('orderAcceptedSetup')}</p>
-            <Link href={`/admin/sales-orders/${params.id}/production-plan`}>
-              <Button size="sm">{tSales('prepareProduction')}</Button>
-            </Link>
-          </div>
-        </Alert>
+      {attention.length ? (
+        <Board tone={attention.some((a) => a.tone === 'error') ? 'error' : 'warning'} wash="top">
+          <Board.Header title={tSales('desk.needsAttention')} meta={<Stamp tone={attention.some((a) => a.tone === 'error') ? 'error' : 'warning'} size="sm">{attention.length}</Stamp>} />
+          <ul className="m-0 list-none divide-y divide-[var(--maher-border)] p-0">
+            {attention.map((a) => (
+              <li key={a.id}>
+                <Ticket tone={a.tone} title={a.title} why={a.why} action={a.action} href={a.href} LinkComponent={Link} onClick={a.onClick} wash={a.tone === 'error'} />
+              </li>
+            ))}
+          </ul>
+        </Board>
       ) : null}
 
-      {showWorkerAssignment ? (
-        <Alert variant="info">
-          <p className="font-medium">{tSales('orderSetup.workerAssignmentRequired')}</p>
-          <p className="mt-1 text-sm text-text-secondary">
-            {tSales('orderSetup.workerAssignmentHint')}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link href={`/admin/sales-orders/${params.id}/production-plan`}>
-              <Button size="sm" variant="secondary">
-                {tSales('orderSetup.viewSetup')}
-              </Button>
-            </Link>
-            <Link href="/admin/production">
-              <Button size="sm" variant="ghost">
-                {tSales('orderSetup.openProduction')}
-              </Button>
-            </Link>
-          </div>
-        </Alert>
-      ) : null}
-
-      <div className="maher-stagger space-y-6">
-      <div className="maher-stagger grid gap-3 sm:grid-cols-2">
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('systemOrderNumber')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {order.number}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('dealerOrderNumber')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {dealerOrderNo}
-          </p>
-        </Card>
-      </div>
-
-      <div className="maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('customer')}</p>
-          <p className="mt-1 font-semibold">
-            {order.customer ? (
-              <Link href={`/admin/customers/${order.customer.id}`} className="text-brand hover:underline">
-                {customerName}
-              </Link>
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="flex flex-col gap-5 xl:col-span-7">
+          {/* Lines */}
+          <Board tone="brand">
+            <Board.Header
+              title={tSales('whatTheyOrdered')}
+              description={tSales('desk.linesHint')}
+              meta={req?.source ? <Stamp tone="neutral" size="sm">{copy.source(req.source)}</Stamp> : null}
+            />
+            {items.length === 0 ? (
+              <Board.Empty title={tSales('noCustomerItems')} />
             ) : (
-              '—'
-            )}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('sellerPrice')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {seller.toFixed(2)} {tCommon('currency')}
-          </p>
-          <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('autoCalculated')}</p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('productionPrice')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {production.toFixed(2)} {tCommon('currency')}
-          </p>
-          <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('fromInventoryCosts')}</p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tSales('profit')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {profit.toFixed(2)} {tCommon('currency')}
-          </p>
-        </Card>
-      </div>
-
-      <MotionSection className="maher-form-section" as="div">
-      <Card className="space-y-4 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">{tSales('customerOrder')}</h2>
-          {req?.source ? <StatusBadge status={req.source} /> : null}
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-          <div>
-            <p className="text-xs text-text-tertiary">{tSales('endCustomer')}</p>
-            <p className="font-medium">{req?.endCustomerName ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-text-tertiary">{tSales('phone')}</p>
-            <p className="font-medium" dir="ltr">
-              {req?.endCustomerPhone ?? order.customer?.phone ?? '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-text-tertiary">{tCustomers('fax')}</p>
-            <p className="font-medium" dir="ltr">
-              {req?.endCustomerFax ?? order.customer?.fax ?? '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-text-tertiary">{tSales('deliveryDate')}</p>
-            <p className="font-medium" dir="ltr">
-              {deliveryDate}
-            </p>
-          </div>
-          <div className="sm:col-span-2 lg:col-span-3">
-            <p className="text-xs text-text-tertiary">{tSales('deliveryAddress')}</p>
-            <p className="font-medium">
-              {req?.deliveryAddress ?? order.deliveryAddress ?? '—'}
-            </p>
-          </div>
-          {req?.projectName || order.projectName ? (
-            <div>
-              <p className="text-xs text-text-tertiary">{tSales('project')}</p>
-              <p className="font-medium">{req?.projectName ?? order.projectName}</p>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-3 border-t border-border pt-4">
-          <h3 className="text-sm font-medium">{tSales('whatTheyOrdered')}</h3>
-          {items.length === 0 ? (
-            <p className="text-sm text-text-secondary">{tSales('noCustomerItems')}</p>
-          ) : (
-            <ul className="space-y-3">
-              {items.map((item) => {
-                const setupLine = setupData?.lines.find(
-                  (line) =>
-                    line.id === item.id ||
-                    line.salesOrderLineId === item.id ||
-                    line.description === item.productName,
-                );
-                const complexity = setupLine?.manufacturingComplexity;
-                const kind =
-                  complexity === 'CUSTOM'
-                    ? tc('lineKindCustom')
-                    : complexity === 'MODIFIED'
-                      ? tc('lineKindCustomized')
-                      : tc('lineKindStandard');
-                return (
-                <li
-                  key={item.id}
-                  className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-3">
-                      {setupLine?.product?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={setupLine.product.imageUrl}
-                          alt=""
-                          className="h-14 w-14 rounded-lg object-cover"
-                        />
-                      ) : null}
-                      <div>
-                        {item.itemNumber ? (
-                          <p className="text-[11px] text-text-tertiary" dir="ltr">
-                            {item.itemNumber}
+              <ul className="m-0 list-none divide-y divide-[var(--maher-border)] p-0">
+                {items.map((item) => {
+                  const setupLine = setupData?.lines.find((line) => line.id === item.id || line.salesOrderLineId === item.id || line.description === item.productName);
+                  const complexity = setupLine?.manufacturingComplexity;
+                  const kind = complexity === 'CUSTOM' ? tc('lineKindCustom') : complexity === 'MODIFIED' ? tc('lineKindCustomized') : tc('lineKindStandard');
+                  const po = (order.productionOrders ?? []).find((p) => p.salesOrderLineId === (setupLine?.salesOrderLineId ?? item.id));
+                  const specs = [dim(item), item.fabricType ? `${tSales('fabric')}: ${item.fabricType}${item.fabricColor ? ` / ${item.fabricColor}` : ''}` : null, item.material ? `${tSales('material')}: ${item.material}` : null, item.woodType, item.foamDensity, item.finish, item.accessories].filter(Boolean) as string[];
+                  return (
+                    <li key={item.id} className="flex gap-4 px-5 py-4">
+                      <RowThumb src={setupLine?.product?.imageUrl} className="h-14 w-14 rounded-[12px]" icon={<Stamp tone={complexity === 'CUSTOM' ? 'warning' : complexity === 'MODIFIED' ? 'info' : 'neutral'} />} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[14px] font-semibold leading-5 text-[var(--maher-text-primary)]">
+                              {item.itemNumber ? <Ltr className="me-2 text-[12px] font-medium text-[var(--maher-text-tertiary)]">{item.itemNumber}</Ltr> : null}
+                              {item.productName}
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] leading-4 text-[var(--maher-text-secondary)]">
+                              <span className="text-[var(--maher-brand)]">{kind}</span>
+                              {setupLine ? (
+                                <Stamp tone={setupLine.status === 'READY' || setupLine.status === 'RELEASED' ? 'success' : 'neutral'} size="sm">
+                                  {copy.status(setupLine.status)}
+                                </Stamp>
+                              ) : null}
+                              {po ? (
+                                <Link href={`/admin/production/${po.id}`} className="hover:underline">
+                                  <Ltr>{po.number}</Ltr>
+                                </Link>
+                              ) : null}
+                            </p>
+                          </div>
+                          <Ltr className="text-[14px] font-semibold text-[var(--maher-text-primary)]">× {Number(item.quantity)}</Ltr>
+                        </div>
+                        {item.description ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--maher-text-secondary)]">{item.description}</p> : null}
+                        {specs.length ? (
+                          <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] leading-4 text-[var(--maher-text-tertiary)]">
+                            {specs.map((s, i) => (
+                              <span key={i} dir="auto">
+                                {s}
+                              </span>
+                            ))}
                           </p>
                         ) : null}
-                        <p className="font-medium text-text-primary">{item.productName}</p>
-                        <p className="text-[11px] text-[var(--maher-brand)]">{kind}</p>
-                        {setupLine ? <StatusBadge status={setupLine.status} /> : null}
+                        {item.notes ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--maher-text-secondary)]">{item.notes}</p> : null}
+                        {po?.progressPercent != null ? (
+                          <div className="mt-2 max-w-[260px]">
+                            <Meter value={po.progressPercent} max={100} size="sm" tone="info" valueLabel={`${Math.round(po.progressPercent)}%`} label={copy.status(po.status)} />
+                          </div>
+                        ) : null}
                       </div>
-                    </div>
-                    <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
-                      × {Number(item.quantity)}
-                    </p>
-                  </div>
-                  {item.description ? (
-                    <p className="mt-1 text-sm text-text-secondary">{item.description}</p>
-                  ) : null}
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-tertiary">
-                    {dim(item) ? <span dir="ltr">{dim(item)}</span> : null}
-                    {item.fabricType ? (
-                      <span>
-                        {tSales('fabric')}: {item.fabricType}
-                        {item.fabricColor ? ` / ${item.fabricColor}` : ''}
-                      </span>
-                    ) : null}
-                    {item.material ? (
-                      <span>
-                        {tSales('material')}: {item.material}
-                      </span>
-                    ) : null}
-                    {item.woodType ? <span>{item.woodType}</span> : null}
-                    {item.foamDensity ? <span>{item.foamDensity}</span> : null}
-                    {item.finish ? <span>{item.finish}</span> : null}
-                    {item.accessories ? <span>{item.accessories}</span> : null}
-                  </div>
-                  {item.notes ? <p className="mt-2 text-sm text-text-secondary">{item.notes}</p> : null}
-                </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Board>
 
-        {(req?.translatedText || req?.originalText || req?.notes) && (
-          <div className="space-y-2 border-t border-border pt-4">
-            <h3 className="text-sm font-semibold">{tSales('customerNotes')}</h3>
-            {req?.detectedLanguage ? (
-              <p className="text-xs text-text-tertiary">
-                {tSales('detectedLanguage')}: {req.detectedLanguage}
-                {req.targetLanguage ? ` → ${req.targetLanguage}` : ''}
-              </p>
-            ) : null}
-            {req?.translatedText ? (
-              <p className="whitespace-pre-wrap rounded-xl border border-border bg-surface p-3 text-sm">
-                {req.translatedText}
-              </p>
-            ) : req?.notes ? (
-              <p className="whitespace-pre-wrap rounded-xl border border-border bg-surface p-3 text-sm">
-                {req.notes}
-              </p>
-            ) : null}
-            {req?.originalText && req.originalText !== req.translatedText ? (
-              <details className="text-sm">
-                <summary className="cursor-pointer text-text-secondary">
-                  {tSales('originalHandwriting')}
-                </summary>
-                <p className="mt-2 whitespace-pre-wrap rounded-xl border border-dashed border-border p-3 text-text-secondary">
-                  {req.originalText}
-                </p>
-              </details>
-            ) : null}
-          </div>
-        )}
+          {/* Customer + delivery facts */}
+          <Board tone="neutral">
+            <Board.Header title={tSales('customerOrder')} description={tSales('desk.customerFactsHint')} />
+            <Board.Body>
+              <KeyFacts
+                columns={3}
+                facts={[
+                  {
+                    label: tSales('customer'),
+                    value: order.customer ? (
+                      <Link href={`/admin/customers/${order.customer.id}`} className="text-[var(--maher-brand)] hover:underline">
+                        {customerName}
+                      </Link>
+                    ) : (
+                      '—'
+                    ),
+                  },
+                  { label: tSales('endCustomer'), value: req?.endCustomerName ?? '—' },
+                  { label: tSales('phone'), value: req?.endCustomerPhone ?? order.customer?.phone ?? '—', ltr: true },
+                  { label: tCustomers('fax'), value: req?.endCustomerFax ?? order.customer?.fax ?? '—', ltr: true },
+                  { label: tSales('dealerOrderNumber'), value: dealerOrderNo ?? '—', ltr: true },
+                  { label: tSales('project'), value: req?.projectName ?? order.projectName ?? '—' },
+                  { label: tSales('deliveryAddress'), value: req?.deliveryAddress ?? order.deliveryAddress ?? '—', wide: true },
+                ]}
+              />
+            </Board.Body>
+          </Board>
 
-        {(req?.documents?.length ?? 0) > 0 ? (
-          <div className="border-t border-border pt-4">
-            <h3 className="mb-2 text-sm font-semibold">{tSales('attachments')}</h3>
-            <ul className="space-y-1 text-sm">
-              {req!.documents!.map((doc) => (
-                <li key={doc.id} className="text-text-secondary">
-                  {doc.fileName}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </Card>
-      </MotionSection>
+          {/* Notes */}
+          {req?.translatedText || req?.originalText || req?.notes || order.notes ? (
+            <Board tone="neutral">
+              <Board.Header
+                title={tSales('customerNotes')}
+                meta={req?.detectedLanguage ? <span>{`${tSales('detectedLanguage')}: ${req.detectedLanguage}${req.targetLanguage ? ` → ${req.targetLanguage}` : ''}`}</span> : null}
+              />
+              <Board.Body className="space-y-3">
+                {req?.translatedText || req?.notes ? <p className="whitespace-pre-wrap text-[14px] leading-6 text-[var(--maher-text-primary)]">{req?.translatedText ?? req?.notes}</p> : null}
+                {order.notes && order.notes !== req?.notes ? <p className="whitespace-pre-wrap text-[13px] leading-5 text-[var(--maher-text-secondary)]">{order.notes}</p> : null}
+                {req?.originalText && req.originalText !== req.translatedText ? (
+                  <details className="text-[13px]">
+                    <summary className="cursor-pointer text-[var(--maher-text-secondary)]">{tSales('originalHandwriting')}</summary>
+                    <p className="mt-2 whitespace-pre-wrap rounded-[12px] border border-dashed border-[var(--maher-border)] p-3 text-[var(--maher-text-secondary)]">{req.originalText}</p>
+                  </details>
+                ) : null}
+              </Board.Body>
+            </Board>
+          ) : null}
 
-      <MotionSection className="maher-form-section space-y-3" as="div">
-      {order.manufacturingCosting ? (
-        <Card className="space-y-3 p-4">
-          <div>
-            <h2 className="text-base font-semibold">{tSales('mfgCostTitle')}</h2>
-            <p className="text-xs text-text-tertiary">{tSales('mfgCostSubtitle')}</p>
-          </div>
-          <p className="text-xs font-medium text-text-secondary">
-            {(() => {
-              const st = String(order.manufacturingCosting.status ?? '').toUpperCase();
-              if (st === 'FINAL') return tSales('mfgCostStatusFinal');
-              if (st === 'IN_PROGRESS') return tSales('mfgCostStatusInProgress');
-              if (st === 'INCOMPLETE') return tSales('mfgCostStatusIncomplete');
-              return tSales('mfgCostStatusEstimatedOnly');
-            })()}
-            {order.manufacturingCosting.incomplete ? ` · ${tSales('mfgCostIncomplete')}` : ''}
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-text-secondary">{tSales('mfgCostEstimated')}</p>
-              <p className="text-lg font-semibold tabular-nums" dir="ltr">
-                {order.manufacturingCosting.estimatedTotal != null
-                  ? Number(order.manufacturingCosting.estimatedTotal).toFixed(2)
-                  : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-text-secondary">{tSales('mfgCostActual')}</p>
-              <p className="text-lg font-semibold tabular-nums" dir="ltr">
-                {order.manufacturingCosting.actualTotal != null
-                  ? Number(order.manufacturingCosting.actualTotal).toFixed(2)
-                  : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-text-secondary">{tSales('mfgCostVariance')}</p>
-              <p className="text-lg font-semibold tabular-nums" dir="ltr">
-                {order.manufacturingCosting.varianceCost != null
-                  ? Number(order.manufacturingCosting.varianceCost).toFixed(2)
-                  : '—'}
-              </p>
-            </div>
-          </div>
-        </Card>
-      ) : null}
-      <Card className="space-y-3 p-4">
-        <div>
-          <h2 className="text-base font-semibold">{tSales('manufacturingCost')}</h2>
-          <p className="text-xs text-text-tertiary">{tSales('fromInventoryCosts')}</p>
-        </div>
-        <p className="text-2xl font-bold tracking-tight" dir="ltr">
-          {production.toFixed(2)} <span className="text-base font-medium text-text-secondary">{tCommon('currency')}</span>
-        </p>
-        <div className="maher-stagger grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {(
-            [
-              ['fabric', tSales('fabricCost'), cb.fabricQty, cb.fabricCost],
-              ['wood', tSales('woodCost'), cb.woodQty, cb.woodCost],
-              ['foam', tSales('foamCost'), cb.foamQty, cb.foamCost],
-              ['accessories', tSales('accessoriesCost'), cb.accessoriesQty, cb.accessoriesCost],
-            ] as const
-          ).map(([key, label, qty, cost]) => (
-            <div key={key} className="maher-list-card rounded-xl border border-border p-3">
-              <p className="text-xs text-text-tertiary">{label}</p>
-              <p className="mt-1 font-semibold" dir="ltr">
-                {cost != null ? Number(cost).toFixed(2) : '0.00'} {tCommon('currency')}
-              </p>
-              {qty != null && Number(qty) > 0 ? (
-                <p className="text-[11px] text-text-tertiary" dir="ltr">
-                  qty {Number(qty)}
-                </p>
-              ) : null}
-            </div>
+          {/* Attachments */}
+          {(req?.documents?.length ?? 0) > 0 ? (
+            <Board tone="neutral">
+              <Board.Header title={tSales('attachments')} meta={<span className="tabular-nums">{req!.documents!.length}</span>} />
+              <Board.Body>
+                <Attachments
+                  copy={kit.attachments}
+                  items={req!.documents!.map((doc) => ({ id: doc.id, name: doc.fileName, mime: doc.mimeType, url: `/api/v1/uploads/documents/${doc.id}/link` }))}
+                />
+              </Board.Body>
+            </Board>
+          ) : null}
+
+          {/* Released spec */}
+          {setupData && setupReleased ? (
+            <Board tone="success">
+              <Board.Header
+                title={tSales('orderSetup.releasedSpec')}
+                description={tSales('orderSetup.releasedSpecHint')}
+                actions={
+                  <Link href={`/admin/sales-orders/${params.id}/production-plan`} className="text-[13px] font-medium text-[var(--maher-brand)] hover:underline">
+                    {tSales('orderSetup.viewSetup')}
+                  </Link>
+                }
+              />
+              <ListRows>
+                {setupData.lines.map((line) => {
+                  const child = (order.productionOrders ?? []).find((po) => po.salesOrderLineId === line.salesOrderLineId);
+                  const d = dim(line.orderDimensions ?? {});
+                  return (
+                    <ListRow
+                      key={line.id}
+                      href={child ? `/admin/production/${child.id}` : undefined}
+                      LinkComponent={Link}
+                      tone={line.materials?.length ? 'success' : 'neutral'}
+                      title={line.manufacturingName ?? line.description ?? '—'}
+                      meta={[child?.number, line.workflow ? localizedName(copy.locale, line.workflow, line.workflow.code) : null, d].filter(Boolean).join(' · ')}
+                      trailing={
+                        <span className="flex flex-col items-end text-[12px] text-[var(--maher-text-secondary)]">
+                          <Ltr>× {line.quantity}</Ltr>
+                          <span>{tSales('orderSetup.materialCount', { count: String(line.materials?.length ?? 0) })}</span>
+                        </span>
+                      }
+                    />
+                  );
+                })}
+              </ListRows>
+            </Board>
+          ) : null}
+
+          {/* Workflow per production order */}
+          {(order.productionOrders ?? []).map((po) => (
+            <OrderWorkflowSection key={po.id} productionOrderId={po.id} title={po.number} />
           ))}
         </div>
-      </Card>
-      </MotionSection>
 
-      {(order.productionOrders ?? []).map((po) => (
-        <MotionSection key={po.id} className="maher-form-section" as="div">
-          <OrderWorkflowSection productionOrderId={po.id} title={po.number} />
-        </MotionSection>
-      ))}
-
-      {setupData && setupReleased ? (
-        <MotionSection className="maher-form-section" as="div">
-          <Card className="space-y-4 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold">{tSales('orderSetup.releasedSpec')}</h2>
-                <p className="text-sm text-text-secondary">{tSales('orderSetup.releasedSpecHint')}</p>
+        <div className="flex flex-col gap-5 xl:col-span-5">
+          {/* Money */}
+          <Board tone={profit < 0 ? 'error' : 'brand'} id="commercial">
+            <Board.Header title={tSales('manufacturingCost')} description={tSales('fromInventoryCosts')} />
+            <Board.Body className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <Figure size="sm" value={copy.money(seller, currency)} label={tSales('sellerPrice')} locale={copy.locale} />
+                <Figure size="sm" value={copy.money(production, currency)} label={tSales('productionPrice')} locale={copy.locale} />
+                <Figure size="sm" value={copy.money(profit, currency)} label={tSales('profit')} tone={profit < 0 ? 'error' : profit > 0 ? 'success' : 'neutral'} locale={copy.locale} />
               </div>
-              <Link href={`/admin/sales-orders/${params.id}/production-plan`}>
-                <Button size="sm" variant="ghost">
-                  {tSales('orderSetup.viewSetup')}
-                </Button>
-              </Link>
-            </div>
-            <ul className="space-y-3">
-              {setupData.lines.map((line) => (
-                <li
-                  key={line.id}
-                  className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
+              {seller > 0 ? <Meter value={Math.min(production, seller)} max={seller} size="sm" tone={production > seller ? 'error' : 'brand'} label={tSales('desk.costShare')} valueLabel={`${Math.round((production / seller) * 100)}%`} /> : null}
+              <Ledger>
+                {(
+                  [
+                    ['fabric', tSales('fabricCost'), cb.fabricQty, cb.fabricCost],
+                    ['wood', tSales('woodCost'), cb.woodQty, cb.woodCost],
+                    ['foam', tSales('foamCost'), cb.foamQty, cb.foamCost],
+                    ['accessories', tSales('accessoriesCost'), cb.accessoriesQty, cb.accessoriesCost],
+                  ] as const
+                ).map(([key, label, qty, cost]) => (
+                  <LedgerRow key={key} label={label} hint={qty != null && Number(qty) > 0 ? `× ${Number(qty)}` : undefined} value={copy.money(cost ?? 0, currency)} />
+                ))}
+              </Ledger>
+              {order.manufacturingCosting ? (
+                <div className="border-t border-[var(--maher-border)] pt-3">
+                  <p className="mb-2 text-[13px] font-medium text-[var(--maher-text-primary)]">
+                    {tSales('mfgCostTitle')}
+                    <span className="ms-2 text-[12px] font-normal text-[var(--maher-text-tertiary)]">
                       {(() => {
-                        const child = (order.productionOrders ?? []).find(
-                          (po) => po.salesOrderLineId === line.salesOrderLineId,
-                        );
-                        return child?.number ? (
-                          <p className="text-[11px] text-text-tertiary" dir="ltr">
-                            {child.number}
-                          </p>
-                        ) : null;
+                        const st = String(order.manufacturingCosting.status ?? '').toUpperCase();
+                        if (st === 'FINAL') return tSales('mfgCostStatusFinal');
+                        if (st === 'IN_PROGRESS') return tSales('mfgCostStatusInProgress');
+                        if (st === 'INCOMPLETE') return tSales('mfgCostStatusIncomplete');
+                        return tSales('mfgCostStatusEstimatedOnly');
                       })()}
-                      <p className="font-semibold text-text-primary">
-                        {line.manufacturingName ?? line.description ?? '—'}
-                      </p>
-                    </div>
-                    <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
-                      × {line.quantity}
-                    </p>
-                  </div>
-                  {line.workflow ? (
-                    <p className="mt-1 text-sm text-text-secondary">
-                      {localizedName(locale, line.workflow, line.workflow.code)}
-                    </p>
-                  ) : null}
-                  <p className="mt-1 text-xs text-text-tertiary" dir="ltr">
-                    {[
-                      line.orderDimensions?.width,
-                      line.orderDimensions?.height,
-                      line.orderDimensions?.depth,
-                    ]
-                      .map((v) => (v != null ? String(v) : null))
-                      .filter(Boolean)
-                      .join(' × ') || '—'}
+                    </span>
                   </p>
-                  <p className="mt-2 text-xs text-text-tertiary">
-                    {tSales('orderSetup.materialCount', {
-                      count: String(line.materials?.length ?? 0),
-                    })}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </MotionSection>
-      ) : null}
-
-      <LinkedSection
-        title={tSales('linkedProduction')}
-        empty={tSales('noProductionYet')}
-        rows={(order.productionOrders ?? []).map((po) => ({
-          id: po.id,
-          href: `/production/${po.id}`,
-          number: po.number,
-          status: po.status,
-          meta: po.progressPercent != null ? `${Number(po.progressPercent)}%` : undefined,
-        }))}
-      />
-
-      {commercial ? (
-        <MotionSection className="maher-form-section" as="div">
-          <Card title={ta('commercialSummary')}>
-            <div className="space-y-4">
-              <p className="text-sm text-text-secondary">
-                {commercial.commercialComplete
-                  ? ta('commercialComplete')
-                  : ta('commercialIncomplete')}
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs text-text-tertiary">{ta('orderTotal')}</p>
-                  <p className="mt-1 font-semibold tabular-nums" dir="ltr">
-                    {Number(commercial.orderTotal).toFixed(2)}
-                  </p>
-                </div>
-                {order.commercialGrossDifference?.available &&
-                order.commercialGrossDifference.grossDifference != null ? (
-                  <div>
-                    <p className="text-xs text-text-tertiary">{ta('grossDifference')}</p>
-                    <p className="mt-1 font-semibold tabular-nums text-brand" dir="ltr">
-                      {Number(order.commercialGrossDifference.grossDifference).toFixed(2)}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-
-              {requiredPriceLines.length > 0 ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-text-secondary">
-                    {ta('requiredPriceLines', { count: requiredPriceLines.length })}
-                  </p>
-                  {requiredPriceLines.map((line) => (
-                    <div
-                      key={line.id}
-                      className="rounded-xl border border-border bg-surface-secondary px-4 py-3 space-y-2"
-                    >
-                      <p className="text-sm font-medium">{line.description}</p>
-                      <Input
-                        label={ta('unitPrice')}
-                        type="number"
-                        value={
-                          priceDrafts[line.id] ??
-                          (line.unitPrice > 0 ? String(line.unitPrice) : '')
-                        }
-                        onChange={(e) =>
-                          setPriceDrafts((prev) => ({
-                            ...prev,
-                            [line.id]: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  ))}
-                  <Button
-                    loading={confirmPricesMutation.isPending}
-                    onClick={() => {
-                      const lines = requiredPriceLines.map((line) => ({
-                        lineId: line.id,
-                        unitPrice: Number(
-                          priceDrafts[line.id] ??
-                            (line.unitPrice > 0 ? line.unitPrice : 0),
-                        ),
-                      }));
-                      if (lines.some((l) => !(l.unitPrice > 0))) {
-                        setError(ta('commercialPriceInvalid'));
-                        return;
-                      }
-                      confirmPricesMutation.mutate(lines);
-                    }}
-                  >
-                    {ta('confirmCommercialPrices')}
-                  </Button>
+                  <Ledger>
+                    <LedgerRow label={tSales('mfgCostEstimated')} value={order.manufacturingCosting.estimatedTotal != null ? copy.money(order.manufacturingCosting.estimatedTotal, currency) : '—'} />
+                    <LedgerRow label={tSales('mfgCostActual')} value={order.manufacturingCosting.actualTotal != null ? copy.money(order.manufacturingCosting.actualTotal, currency) : '—'} />
+                    <LedgerRow
+                      label={tSales('mfgCostVariance')}
+                      value={order.manufacturingCosting.varianceCost != null ? copy.money(order.manufacturingCosting.varianceCost, currency) : '—'}
+                      stamp={order.manufacturingCosting.varianceCost != null}
+                      tone={order.manufacturingCosting.varianceCost != null ? (order.manufacturingCosting.varianceCost > 0 ? 'error' : 'success') : undefined}
+                    />
+                  </Ledger>
                 </div>
               ) : null}
-            </div>
-          </Card>
-        </MotionSection>
-      ) : null}
+            </Board.Body>
+            {commercial ? (
+              <Board.Footer>
+                <span>{commercial.commercialComplete ? ta('commercialComplete') : ta('commercialIncomplete')}</span>
+                <Ltr className="font-medium text-[var(--maher-text-primary)]">{copy.money(commercial.orderTotal, currency)}</Ltr>
+              </Board.Footer>
+            ) : null}
+          </Board>
 
-      {(commercial?.lines ?? []).some(
-        (line) => String(line.manufacturingComplexity).toUpperCase() === 'CUSTOM',
-      ) ? (
-        <MotionSection className="maher-form-section" as="div">
-          <Card title={tc('promoteFromOrder')}>
-            <div className="space-y-3">
-              {(commercial?.lines ?? [])
-                .filter((line) => String(line.manufacturingComplexity).toUpperCase() === 'CUSTOM')
-                .map((line) => (
-                  <div key={line.id} className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm">{line.description}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="secondary"
-                        loading={promoteMutation.isPending}
-                        onClick={() => promoteMutation.mutate({ lineId: line.id })}
-                      >
-                        {tc('promoteFromOrder')}
-                      </Button>
-                      {line.productId ? (
-                        <Button
-                          variant="ghost"
-                          loading={promoteMutation.isPending}
-                          onClick={() =>
-                            promoteMutation.mutate({ lineId: line.id, productId: line.productId })
-                          }
-                        >
-                          {tc('promoteVariantFromOrder')}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
+          {/* Required prices */}
+          {requiredPriceLines.length ? (
+            <Board tone="warning" wash="top">
+              <Board.Header title={ta('commercialSummary')} description={ta('requiredPriceLines', { count: requiredPriceLines.length })} />
+              <Board.Body className="space-y-3">
+                {requiredPriceLines.map((line) => (
+                  <MoneyField
+                    key={line.id}
+                    label={line.description}
+                    currency={currency}
+                    value={priceDrafts[line.id] ?? (line.unitPrice > 0 ? line.unitPrice : null)}
+                    onChange={(v) => setPriceDrafts((prev) => ({ ...prev, [line.id]: v }))}
+                    min={0}
+                  />
                 ))}
-            </div>
-          </Card>
-        </MotionSection>
-      ) : null}
+              </Board.Body>
+              <Board.Footer>
+                <span />
+                <Button
+                  size="sm"
+                  loading={confirmPricesMutation.isPending}
+                  onClick={() => {
+                    const lines = requiredPriceLines.map((line) => ({ lineId: line.id, unitPrice: Number(priceDrafts[line.id] ?? (line.unitPrice > 0 ? line.unitPrice : 0)) }));
+                    if (lines.some((l) => !(l.unitPrice > 0))) {
+                      toast.error(ta('commercialPriceInvalid'));
+                      return;
+                    }
+                    confirmPricesMutation.mutate(lines);
+                  }}
+                >
+                  {ta('confirmCommercialPrices')}
+                </Button>
+              </Board.Footer>
+            </Board>
+          ) : null}
 
-      <LinkedSection
-        title={tSales('linkedInvoices')}
-        empty={tNav('invoices')}
-        rows={(order.invoices ?? []).map((inv) => ({
-          id: inv.id,
-          href: `/invoices/${inv.id}`,
-          number: inv.number,
-          status: inv.status,
-          meta: inv.total != null ? Number(inv.total).toFixed(2) : undefined,
-        }))}
-      />
+          {/* Schedule */}
+          <Board tone={dueTone(days, closed)}>
+            <Board.Header
+              title={tSales('desk.scheduleTitle')}
+              actions={
+                DELIVERY_EDITABLE.has(order.status) ? (
+                  <button type="button" onClick={openDate} className="text-[13px] font-medium text-[var(--maher-brand)] hover:underline">
+                    {tSales('desk.changeDeliveryDate')}
+                  </button>
+                ) : null
+              }
+            />
+            <Board.Body>
+              <Ledger>
+                <LedgerRow label={tSales('dealerDeliveryDate')} value={requested ? copy.date(requested, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                <LedgerRow
+                  label={tSales('desk.committedDate')}
+                  value={committed ? copy.date(committed, { day: 'numeric', month: 'short', year: 'numeric' }) : tSales('noDeliveryDateYet')}
+                  hint={days != null && !closed ? copy.dueLabel(days) : undefined}
+                  stamp={dueTone(days, closed) !== 'neutral'}
+                  tone={dueTone(days, closed) === 'neutral' ? undefined : dueTone(days, closed)}
+                />
+                {(order.deliveries ?? []).map((d) => (
+                  <LedgerRow key={d.id} label={d.number} hint={copy.status(d.status)} value={d.deliveryDate ? copy.date(d.deliveryDate) : '—'} href={`/admin/deliveries/${d.id}`} LinkComponent={Link} />
+                ))}
+              </Ledger>
+            </Board.Body>
+          </Board>
 
-      <LinkedSection
-        title={tSales('linkedDeliveries')}
-        empty={tNav('deliveries')}
-        rows={(order.deliveries ?? []).map((d) => ({
-          id: d.id,
-          href: `/deliveries/${d.id}`,
-          number: d.number,
-          status: d.status,
-          meta: d.deliveryDate?.slice(0, 10),
-        }))}
-      />
+          {/* Production orders */}
+          <Board tone={(order.productionOrders ?? []).some((po) => po.status === 'ON_HOLD' || po.status === 'BLOCKED') ? 'warning' : 'info'}>
+            <Board.Header title={tSales('linkedProduction')} meta={<span className="tabular-nums">{order.productionOrders?.length ?? 0}</span>} />
+            {(order.productionOrders ?? []).length ? (
+              <ListRows>
+                {order.productionOrders!.map((po) => (
+                  <ListRow
+                    key={po.id}
+                    href={`/admin/production/${po.id}`}
+                    LinkComponent={Link}
+                    tone={po.status === 'COMPLETED' ? 'success' : po.status === 'ON_HOLD' || po.status === 'BLOCKED' ? 'warning' : 'info'}
+                    title={<Ltr>{po.number}</Ltr>}
+                    meta={copy.status(po.status)}
+                    trailing={po.progressPercent != null ? <span className="w-24"><Meter value={po.progressPercent} max={100} size="sm" showValue={false} tone="info" /></span> : null}
+                  />
+                ))}
+              </ListRows>
+            ) : (
+              <Board.Empty title={tSales('noProductionYet')} />
+            )}
+          </Board>
 
-      <LinkedSection
-        title={tSales('linkedReturns')}
-        empty={tSales('noLinkedReturns')}
-        rows={(order.returns ?? []).map((r) => ({
-          id: r.id,
-          href: '/admin/returns',
-          number: r.number,
-          status: r.approvalStatus,
-          meta: r.productDesc,
-        }))}
-      />
+          {/* Invoices + returns */}
+          <Board tone={(order.returns ?? []).length ? 'warning' : 'neutral'} className="xl:flex-1">
+            <Board.Header title={tSales('desk.paperwork')} description={tSales('desk.paperworkHint')} />
+            <Board.Body padding="none" grow>
+              {(order.invoices ?? []).length || (order.returns ?? []).length || order.quotation ? (
+                <ListRows>
+                  {order.quotation ? (
+                    <ListRow href={`/admin/quotations/${order.quotation.id}`} LinkComponent={Link} tone="neutral" title={<Ltr>{order.quotation.number}</Ltr>} meta={`${tSales('quotation')} · ${copy.status(order.quotation.status)}`} />
+                  ) : null}
+                  {(order.invoices ?? []).map((inv) => (
+                    <ListRow
+                      key={inv.id}
+                      href={`/admin/invoices/${inv.id}`}
+                      LinkComponent={Link}
+                      tone={inv.status === 'PAID' ? 'success' : inv.status === 'OVERDUE' ? 'error' : 'info'}
+                      title={<Ltr>{inv.number}</Ltr>}
+                      meta={`${tNav('invoices')} · ${copy.status(inv.status)}`}
+                      trailing={<span>{inv.total != null ? copy.money(inv.total, currency) : ''}</span>}
+                    />
+                  ))}
+                  {(order.returns ?? []).map((r) => (
+                    <ListRow key={r.id} href={`/admin/returns/${r.id}`} LinkComponent={Link} tone="warning" title={<Ltr>{r.number}</Ltr>} meta={`${r.productDesc} · ${copy.status(r.approvalStatus)}`} />
+                  ))}
+                </ListRows>
+              ) : (
+                <Board.Empty title={tSales('desk.paperworkEmpty')} description={tSales('desk.paperworkEmptyBody')} />
+              )}
+            </Board.Body>
+          </Board>
+
+          {/* Promote custom lines */}
+          {customLines.length ? (
+            <Board tone="brand">
+              <Board.Header title={tc('promoteFromOrder')} description={tSales('desk.promoteHint')} />
+              <ListRows>
+                {customLines.map((line) => (
+                  <ListRow
+                    key={line.id}
+                    tone="warning"
+                    title={line.description}
+                    meta={tc('lineKindCustom')}
+                    chevron={false}
+                    trailing={
+                      <span className="flex gap-1.5">
+                        <Button size="sm" variant="secondary" loading={promoteMutation.isPending} onClick={() => promoteMutation.mutate({ lineId: line.id })}>
+                          {tc('promoteFromOrder')}
+                        </Button>
+                        {line.productId ? (
+                          <Button size="sm" variant="ghost" loading={promoteMutation.isPending} onClick={() => promoteMutation.mutate({ lineId: line.id, productId: line.productId })}>
+                            {tc('promoteVariantFromOrder')}
+                          </Button>
+                        ) : null}
+                      </span>
+                    }
+                  />
+                ))}
+              </ListRows>
+            </Board>
+          ) : null}
+        </div>
       </div>
+
+      <ActionDock className="md:hidden" note={<Ltr>{order.number}</Ltr>}>
+        {overflow}
+        {primary}
+      </ActionDock>
 
       <ConfirmDialog
         open={holdOpen}
         title={tSales('hold')}
         description={tSales('holdDescription')}
         confirmLabel={tSales('hold')}
+        cancelLabel={tCommon('cancel')}
         withReason
         reasonLabel={tCommon('reason')}
         loading={holdMutation.isPending}
@@ -1021,62 +817,38 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         onConfirm={(reason) => holdMutation.mutate(reason)}
         onClose={() => setHoldOpen(false)}
       />
+      <Sheet
+        open={dateOpen}
+        onClose={() => setDateOpen(false)}
+        title={tSales('desk.changeDeliveryDate')}
+        description={tSales('desk.changeDeliveryDateHint')}
+        tone="brand"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDateOpen(false)}>
+              {tCommon('cancel')}
+            </Button>
+            <Button loading={dateMutation.isPending} disabled={!dateDraft} onClick={() => dateMutation.mutate()}>
+              {tCommon('save')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <DateField label={tSales('desk.committedDate')} value={dateDraft} onChange={setDateDraft} locale={copy.locale} copy={kit.date} minDate={anyToYmd(new Date())} presentation="popover" />
+          <TextArea label={tCommon('reason')} value={dateReason} onChange={(e) => setDateReason(e.target.value)} rows={3} />
+        </div>
+      </Sheet>
       <CancelImpactSheet
         open={cancelOpen}
         salesOrderId={params.id}
         onClose={() => setCancelOpen(false)}
         onCancelled={({ financialAttention }) => {
-          setBanner(tSales('cancelledBanner'));
-          setFinanceAttention(financialAttention);
+          void invalidate();
+          toast.success(tSales('cancelledBanner'), financialAttention ? tSales('cancelImpact.financialAttentionBannerBody') : undefined);
+          router.refresh();
         }}
       />
     </div>
-  );
-}
-
-function LinkedSection({
-  title,
-  empty,
-  rows,
-}: {
-  title: string;
-  empty: string;
-  rows: Array<{ id: string; href: string; number: string; status: string; meta?: string }>;
-}) {
-  const tCommon = useTranslations('common');
-  return (
-    <MotionSection className="maher-form-section" as="div">
-    <Card className="space-y-3 p-4">
-      <h2 className="text-base font-semibold">{title}</h2>
-      {rows.length === 0 ? (
-        <p className="text-sm text-text-secondary">{empty}</p>
-      ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('details')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <Link href={row.href} className="font-medium text-brand hover:underline">
-                    {row.number}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={row.status} />
-                </TableCell>
-                <TableNumericCell>{row.meta ?? '—'}</TableNumericCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </Card>
-    </MotionSection>
   );
 }

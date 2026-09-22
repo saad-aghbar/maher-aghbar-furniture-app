@@ -3,7 +3,7 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import { apiFetch } from '@/lib/api-client';
-import { Card, ErrorState, Skeleton, StatusBadge } from '@maher/ui';
+import { Board, ErrorState, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -29,10 +29,10 @@ export default function FinishedOrderPage({ params }: { params: { salesOrderId: 
     <div className="space-y-6">
       <PageHeader backHref="/admin/inventory" title={query.data.number} />
       <InventoryScanBar />
-      <Card className="space-y-2 p-4">
+      <Board className="space-y-2 p-4"><Board.Body>
         <StatusBadge status={query.data.status} />
         <p className="text-sm text-text-secondary">{ti('finishedGoods')}</p>
-      </Card>
+      </Board.Body></Board>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import {
   executionKindForNode,
   type TerminalStageCode,
 } from '@/lib/workflow-terminal';
-import { Badge, cn } from '@maher/ui';
+import { Stamp, cn } from '@maher/ui';
 import { ArrowRight, Lock } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
@@ -87,9 +87,9 @@ export function WorkflowTerminalBlock({ nodes, edges, selectedId, onStageClick, 
                     {t('terminalLocked')}
                   </span>
                   {kind === 'QUALITY' ? (
-                    <Badge variant="default">{t('terminalQualityBadge')}</Badge>
+                    <Stamp tone="info" size="sm">{t('terminalQualityBadge')}</Stamp>
                   ) : kind === 'LOGISTICS' ? (
-                    <Badge variant="warning">{t('terminalLogisticsBadge')}</Badge>
+                    <Stamp tone="warning" size="sm">{t('terminalLogisticsBadge')}</Stamp>
                   ) : null}
                 </div>
                 <p className="font-semibold text-text-primary">{name}</p>

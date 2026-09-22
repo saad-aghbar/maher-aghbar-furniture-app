@@ -1,23 +1,11 @@
 'use client';
 
-import { BackButton } from '@/components/back-button';
-import { Link } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
-import {
-  Alert,
-  Button,
-  Card,
-  MotionSection,
-  PageHero,
-  Skeleton,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-} from '@maher/ui';
+import { useDealerMoney } from '@/components/dealer/catalog-shared';
+import { Link, useRouter } from '@/i18n/navigation';
+import { apiFetch } from '@/lib/api-client';
+import { usePdfDownload } from '@/hooks/use-pdf-download';
+import { ActionDock, Alert, Board, BoardSkeleton, Button, ConfirmDialog, DataBoard, DetailHero, Figure, KeyFacts, Ledger, LedgerRow, Ltr, Stamp, TextArea, type BoardTone, type DataColumn } from '@maher/ui';
+import { FileText, PenLine } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { presentQuotationStatus } from '@maher/i18n';
 import { useLocale, useTranslations } from 'next-intl';
@@ -67,6 +55,10 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const qc = useQueryClient();
+  const router = useRouter();
+  const money = useDealerMoney();
+  const { openPdf, pdfDialog } = usePdfDownload();
+  const [confirm, setConfirm] = useState<'accept' | 'reject' | 'request-revision' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [drawing, setDrawing] = useState(false);
@@ -129,6 +121,8 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
       await apiFetch(`/api/v1/quotations/${params.id}/${path}`, { method: 'POST', body });
       await qc.invalidateQueries({ queryKey: ['quotation', params.id] });
       await qc.invalidateQueries({ queryKey: ['customer-orders'] });
+      await qc.invalidateQueries({ queryKey: ['customer-quotations-list'] });
+      setConfirm(null);
     } catch {
       setError(tc('actionFailed'));
     } finally {
@@ -138,9 +132,9 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
 
   if (isLoading || !data) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
-        <Skeleton className="h-48 w-full rounded-xl" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={3} />
+        <BoardSkeleton rows={5} />
       </div>
     );
   }
@@ -149,214 +143,170 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
   const statusLabel = presentQuotationStatus(locale, data.status, data.commerciallyExpired);
   const so = data.salesOrders?.[0];
 
+  const tone: BoardTone = data.commerciallyExpired ? 'neutral' : data.status === 'ACCEPTED' ? 'success' : data.status === 'REJECTED' ? 'error' : canDecide ? 'warning' : 'info';
+  const currency = data.currency ?? 'ILS';
+  const fmt = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : money(Number(v), currency));
+  const columns: DataColumn<QuoteLine>[] = [
+    { key: 'description', header: tc('description'), cell: (line) => <span className="font-medium text-[var(--maher-text-primary)]">{line.description}</span> },
+    {
+      key: 'specs',
+      header: t('specs'),
+      hideBelow: 'md',
+      cell: (line) => {
+        const spec = [line.material, line.fabric, line.color].filter(Boolean).join(' / ');
+        const dims = [line.width, line.height, line.depth].filter((v) => v != null && v !== '').map(String).join('×');
+        return <span className="text-[var(--maher-text-secondary)]">{[spec, dims].filter(Boolean).join(' · ') || '—'}</span>;
+      },
+    },
+    { key: 'qty', header: tc('qty'), numeric: true, width: '72px', cell: (line) => <Ltr>{String(line.quantity)}</Ltr> },
+    { key: 'unit', header: tc('price'), numeric: true, hideBelow: 'lg', cell: (line) => <Ltr>{fmt(line.unitPrice)}</Ltr> },
+    { key: 'total', header: tCommon('total'), numeric: true, cell: (line) => <Ltr className="font-semibold">{fmt(Number(line.unitPrice) * Number(line.quantity) || 0)}</Ltr> },
+  ];
+  const confirmCopy = confirm === 'accept'
+    ? { title: t('accept'), description: t('signToAccept'), label: t('accept'), danger: false }
+    : confirm === 'reject'
+      ? { title: t('reject'), description: rejectComment.trim() || t('rejectReasonOptional'), label: t('reject'), danger: true }
+      : { title: t('requestRevision'), description: revisionComment.trim() || t('revisionComment'), label: t('requestRevision'), danger: false };
+
   return (
-    <div className="space-y-6">
-      <BackButton fallbackHref="/dealer/orders" />
-      <PageHero
-        tone="soft"
-        title={data.number}
-        meta={
-          <StatusBadge
-            status={data.commerciallyExpired ? 'EXPIRED' : data.status}
-            label={statusLabel}
-          />
-        }
+    <div className="maher-stagger space-y-5 pb-24 md:pb-0">
+      <DetailHero
+        tone={tone}
+        back={{ label: t('title'), onClick: () => router.push('/dealer/quotations') }}
+        code={data.number}
+        title={`${t('title')} · v${data.version ?? 1}`}
+        subtitle={data.expirationDate ? `${t('validUntil')}: ${String(data.expirationDate).slice(0, 10)}` : undefined}
+        status={{ label: statusLabel, tone }}
+        facts={[
+          { label: t('total'), value: fmt(data.total), ltr: true, tone },
+          { label: t('lines'), value: `${data.lines?.length ?? 0}`, ltr: true },
+          ...(data.paymentTerms ? [{ label: t('paymentTerms'), value: data.paymentTerms }] : []),
+          ...(data.deliveryTerms ? [{ label: t('deliveryTerms'), value: data.deliveryTerms }] : []),
+        ]}
+        primary={canDecide ? <Button leadingIcon={<PenLine className="h-4 w-4" />} onClick={() => setConfirm('accept')}>{t('accept')}</Button> : undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-lg font-semibold">
-              {t('total')}: {String(data.total)} {tCommon('currency')}
-            </p>
-            <Button
-              variant="secondary"
-              onClick={() => window.open(`${API_URL}/api/v1/quotations/${data.id}/pdf`, '_blank')}
-            >
-              {t('downloadPdf')}
-            </Button>
-          </div>
+          <Button variant="secondary" leadingIcon={<FileText className="h-4 w-4" />} onClick={() => openPdf({ path: `/api/v1/quotations/${data.id}/pdf`, documentName: data.number, filename: `${data.number}.pdf` })}>
+            {t('downloadPdf')}
+          </Button>
         }
       />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {data.status === 'ACCEPTED' ? <Alert variant="success">{t('accepted')}</Alert> : null}
-      {data.status === 'REJECTED' ? (
-        <Alert variant="error">
-          {t('reject')}
-          {data.rejectionReason ? ` — ${data.rejectionReason}` : ''}
-        </Alert>
-      ) : null}
+      {data.status === 'REJECTED' ? <Alert variant="error">{`${t('reject')}${data.rejectionReason ? ` — ${data.rejectionReason}` : ''}`}</Alert> : null}
       {data.commerciallyExpired ? <Alert variant="warning">{t('expiredCannotAccept')}</Alert> : null}
       {(data.version ?? 1) > 1 ? <Alert variant="info">{t('revised')}</Alert> : null}
-      {data.status === 'REVISION_REQUESTED' ? (
-        <Alert variant="info">{t('revisionRequested')}</Alert>
-      ) : null}
+      {data.status === 'REVISION_REQUESTED' ? <Alert variant="info">{t('revisionRequested')}</Alert> : null}
 
-      <MotionSection delayMs={40}>
-        <Card title={tCommon('details')} className="maher-form-section">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            {data.expirationDate ? (
-              <div>
-                <dt className="text-text-secondary">{t('validUntil')}</dt>
-                <dd>{String(data.expirationDate).slice(0, 10)}</dd>
-              </div>
-            ) : null}
-            {data.paymentTerms ? (
-              <div>
-                <dt className="text-text-secondary">{t('paymentTerms')}</dt>
-                <dd>{data.paymentTerms}</dd>
-              </div>
-            ) : null}
-            {data.deliveryTerms ? (
-              <div>
-                <dt className="text-text-secondary">{t('deliveryTerms')}</dt>
-                <dd>{data.deliveryTerms}</dd>
-              </div>
-            ) : null}
-            {data.customerNotes ? (
-              <div className="sm:col-span-2">
-                <dt className="text-text-secondary">{t('notes')}</dt>
-                <dd>{data.customerNotes}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-text-secondary">{t('subtotal')}</dt>
-              <dd>
-                {String(data.subtotal ?? '—')} {tCommon('currency')}
-              </dd>
-            </div>
-            {Number(data.discountTotal ?? 0) > 0 ? (
-              <div>
-                <dt className="text-text-secondary">{t('discount')}</dt>
-                <dd>
-                  {String(data.discountTotal)} {tCommon('currency')}
-                </dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-text-secondary">{t('tax')}</dt>
-              <dd>
-                {String(data.taxAmount ?? data.taxTotal ?? '—')} {tCommon('currency')}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-text-secondary">{t('total')}</dt>
-              <dd className="font-semibold">
-                {String(data.total)} {tCommon('currency')}
-              </dd>
-            </div>
-          </dl>
-        </Card>
-      </MotionSection>
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-8">
+          <DataBoard<QuoteLine> aria-label={t('lines')} title={t('lines')} meta={<Stamp tone="neutral" size="sm">{data.lines?.length ?? 0}</Stamp>} columns={columns} rows={data.lines ?? []} rowKey={(l) => l.id} mobileRow={(l) => ({ title: l.description, meta: `× ${String(l.quantity)}`, trailing: <Ltr className="font-semibold">{fmt(Number(l.unitPrice) * Number(l.quantity) || 0)}</Ltr> })} empty={<Board.Empty title={tCommon('none')} />} />
 
-      <MotionSection delayMs={60}>
-        <Card title={t('lines')} padded={false} className="maher-form-section">
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tc('description')}</TableHeaderCell>
-                <TableHeaderCell>{t('specs')}</TableHeaderCell>
-                <TableHeaderCell>{tc('qty')}</TableHeaderCell>
-                <TableHeaderCell>{tc('price')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(data.lines ?? []).map((line) => {
-                const spec = [line.material, line.fabric, line.color]
-                  .filter(Boolean)
-                  .join(' / ');
-                const dims = [line.width, line.height, line.depth]
-                  .filter((v) => v != null && v !== '')
-                  .map(String)
-                  .join('×');
-                return (
-                  <TableRow key={line.id}>
-                    <TableCell>{line.description}</TableCell>
-                    <TableCell>{[spec, dims].filter(Boolean).join(' · ') || '—'}</TableCell>
-                    <TableCell>{String(line.quantity)}</TableCell>
-                    <TableCell>{String(line.unitPrice)}</TableCell>
-                    <TableCell>
-                      {(Number(line.unitPrice) * Number(line.quantity) || 0).toFixed(2)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      </MotionSection>
+          {canDecide ? (
+            <Board tone="warning" wash="top">
+              <Board.Header title={t('signToAccept')} description={t('rejectReasonOptional')} />
+              <Board.Body className="space-y-4">
+                <canvas
+                  ref={canvasRef}
+                  width={560}
+                  height={160}
+                  className="w-full touch-none rounded-[12px] border border-dashed border-[var(--maher-border-strong,var(--maher-border))] bg-[var(--maher-surface-muted)]"
+                  onMouseDown={() => {
+                    setDrawing(true);
+                    canvasRef.current?.getContext('2d')?.beginPath();
+                  }}
+                  onMouseUp={() => setDrawing(false)}
+                  onMouseLeave={() => setDrawing(false)}
+                  onMouseMove={draw}
+                  onTouchStart={() => {
+                    setDrawing(true);
+                    canvasRef.current?.getContext('2d')?.beginPath();
+                  }}
+                  onTouchEnd={() => setDrawing(false)}
+                  onTouchMove={draw}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={clearSignature}>
+                    {t('clearSignature')}
+                  </Button>
+                  <Button onClick={() => setConfirm('accept')} loading={loading && confirm === 'accept'}>
+                    {t('accept')}
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <TextArea label={t('rejectReasonOptional')} rows={2} value={rejectComment} onChange={(e) => setRejectComment(e.target.value)} placeholder={t('rejectReasonPlaceholder')} />
+                    <Button variant="danger" size="sm" onClick={() => setConfirm('reject')} loading={loading && confirm === 'reject'}>
+                      {t('reject')}
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <TextArea label={t('revisionComment')} rows={2} value={revisionComment} onChange={(e) => setRevisionComment(e.target.value)} />
+                    <Button variant="secondary" size="sm" onClick={() => setConfirm('request-revision')} loading={loading && confirm === 'request-revision'}>
+                      {t('requestRevision')}
+                    </Button>
+                  </div>
+                </div>
+              </Board.Body>
+            </Board>
+          ) : null}
+        </div>
+
+        <div className="space-y-5 xl:col-span-4">
+          <Board tone={tone} className="xl:sticky xl:top-28">
+            <Board.Header title={t('total')} />
+            <Board.Body className="space-y-4">
+              <Figure size="lg" value={fmt(data.total)} label={t('total')} tone={tone} locale={locale} />
+              <Ledger>
+                <LedgerRow label={t('subtotal')} value={<Ltr>{fmt(data.subtotal)}</Ltr>} />
+                {Number(data.discountTotal ?? 0) > 0 ? <LedgerRow label={t('discount')} value={<Ltr>−{fmt(data.discountTotal)}</Ltr>} tone="success" stamp /> : null}
+                <LedgerRow label={t('tax')} value={<Ltr>{fmt(data.taxAmount ?? data.taxTotal)}</Ltr>} />
+                <LedgerRow label={t('total')} value={<Ltr className="font-semibold">{fmt(data.total)}</Ltr>} tone={tone} stamp />
+              </Ledger>
+              {so ? (
+                <Ledger>
+                  <LedgerRow label={tCommon('details')} value={<Ltr>{so.number}</Ltr>} tone="brand" stamp href={`/dealer/orders/${so.id}`} LinkComponent={Link} />
+                </Ledger>
+              ) : null}
+            </Board.Body>
+          </Board>
+          {data.customerNotes || data.paymentTerms || data.deliveryTerms ? (
+            <Board tone="neutral">
+              <Board.Header title={tCommon('details')} />
+              <KeyFacts
+                className="px-5 pb-5"
+                columns={2}
+                facts={[
+                  ...(data.paymentTerms ? [{ label: t('paymentTerms'), value: data.paymentTerms }] : []),
+                  ...(data.deliveryTerms ? [{ label: t('deliveryTerms'), value: data.deliveryTerms }] : []),
+                  ...(data.customerNotes ? [{ label: t('notes'), value: data.customerNotes, wide: true }] : []),
+                ]}
+              />
+            </Board>
+          ) : null}
+        </div>
+      </div>
 
       {canDecide ? (
-        <MotionSection delayMs={100}>
-          <Card title={t('signToAccept')} className="maher-form-section">
-            <canvas
-              ref={canvasRef}
-              width={560}
-              height={160}
-              className="w-full touch-none rounded-[var(--maher-radius-md)] border border-border bg-surface-muted"
-              onMouseDown={() => {
-                setDrawing(true);
-                canvasRef.current?.getContext('2d')?.beginPath();
-              }}
-              onMouseUp={() => setDrawing(false)}
-              onMouseLeave={() => setDrawing(false)}
-              onMouseMove={draw}
-              onTouchStart={() => {
-                setDrawing(true);
-                canvasRef.current?.getContext('2d')?.beginPath();
-              }}
-              onTouchEnd={() => setDrawing(false)}
-              onTouchMove={draw}
-            />
-            <div className="maher-detail-sticky-actions mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="ghost" onClick={clearSignature}>
-                {t('clearSignature')}
-              </Button>
-              <Button onClick={() => act('accept')} loading={loading}>
-                {t('accept')}
-              </Button>
-              <div className="w-full space-y-2">
-                <label className="block text-sm text-text-secondary">{t('rejectReasonOptional')}</label>
-                <textarea
-                  className="w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 py-2 text-sm"
-                  rows={2}
-                  value={rejectComment}
-                  onChange={(e) => setRejectComment(e.target.value)}
-                  placeholder={t('rejectReasonPlaceholder')}
-                />
-              </div>
-              <Button variant="danger" onClick={() => act('reject')} loading={loading}>
-                {t('reject')}
-              </Button>
-            </div>
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <label className="block text-sm text-text-secondary">{t('revisionComment')}</label>
-              <textarea
-                className="w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 py-2 text-sm"
-                rows={2}
-                value={revisionComment}
-                onChange={(e) => setRevisionComment(e.target.value)}
-              />
-              <Button
-                variant="secondary"
-                onClick={() => act('request-revision')}
-                loading={loading}
-              >
-                {t('requestRevision')}
-              </Button>
-            </div>
-          </Card>
-        </MotionSection>
+        <ActionDock className="md:hidden" note={<Ltr className="font-semibold">{fmt(data.total)}</Ltr>}>
+          <Button variant="secondary" onClick={() => setConfirm('reject')}>{t('reject')}</Button>
+          <Button className="flex-1" onClick={() => setConfirm('accept')}>{t('accept')}</Button>
+        </ActionDock>
       ) : null}
 
-      {so ? (
-        <MotionSection delayMs={140}>
-          <Card title={tCommon('details')} className="maher-form-section">
-            <Link href={`/dealer/orders/${so.id}`} className="font-medium text-brand hover:underline">
-              {so.number} →
-            </Link>
-          </Card>
-        </MotionSection>
-      ) : null}
+      <ConfirmDialog
+        open={Boolean(confirm)}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.label}
+        cancelLabel={tCommon('cancel')}
+        danger={confirmCopy.danger}
+        loading={loading}
+        error={error}
+        onClose={() => !loading && setConfirm(null)}
+        onConfirm={() => confirm && void act(confirm)}
+      />
+      {pdfDialog}
     </div>
   );
 }

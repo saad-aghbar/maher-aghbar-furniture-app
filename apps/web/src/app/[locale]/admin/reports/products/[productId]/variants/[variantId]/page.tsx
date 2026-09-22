@@ -3,7 +3,7 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { apiFetch } from '@/lib/api-client';
 import { useReportsFilterQs } from '@/components/cost-performance/reports-chrome';
-import { Card, ErrorState, Skeleton } from '@maher/ui';
+import { Board, ErrorState, Skeleton } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -40,14 +40,14 @@ export default function ReportsVariantProfilePage({
         backHref={`/reports/products/${params.productId}${qs}`}
         title={query.data.variant?.sku ?? params.variantId}
       />
-      <Card className="space-y-2 p-4">
+      <Board className="space-y-2 p-4"><Board.Body>
         <p className="text-sm">
           {ta('orderCount')}: {query.data.orderCount ?? 0}
         </p>
         <p className="text-sm" dir="ltr">
           {ta('actualCost')}: {String(query.data.averageActualCost ?? '—')}
         </p>
-      </Card>
+      </Board.Body></Board>
     </div>
   );
 }

@@ -48,6 +48,14 @@ import {
   type MgmtWorkers,
 } from './management-summary';
 import { workerFloorOpenTasksWhere } from '../production/worker-task-visibility';
+import {
+  addDays,
+  averageStageDurations,
+  bucketAmounts,
+  bucketCounts,
+  bucketQuality,
+  type MgmtSeries,
+} from './management-series';
 
 const OPEN_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.NOT_STARTED,
@@ -3723,7 +3731,112 @@ export class ReportsService {
       finance,
       manufacturing,
       activity: activity.slice(0, 8),
+      series: await this.managementSeries({
+        now,
+        dayStart,
+        dayEnd,
+        openPoStatuses,
+        canFinancial,
+        canWorkers,
+      }),
       generatedAt: now.toISOString(),
+    };
+  }
+
+  /**
+   * Bounded day-bucketed series for the web desk (7–30 day windows).
+   * Rows are fetched with minimal selects and bucketed in memory; counts stay exact.
+   */
+  private async managementSeries(args: {
+    now: Date;
+    dayStart: Date;
+    dayEnd: Date;
+    openPoStatuses: ProductionOrderStatus[];
+    canFinancial: boolean;
+    canWorkers: boolean;
+  }): Promise<MgmtSeries> {
+    const { dayStart, dayEnd, openPoStatuses, canFinancial, canWorkers } = args;
+    const last7Start = addDays(dayStart, -6);
+    const last14Start = addDays(dayStart, -13);
+    const last30Start = addDays(dayStart, -29);
+    const next7End = addDays(dayEnd, 6);
+
+    const [completedRows, dueRows, deliveryRows, qualityRows, paymentRows, stageRows] =
+      await Promise.all([
+        this.prisma.productionTask.findMany({
+          where: { actualCompletion: { gte: last7Start, lte: dayEnd } },
+          select: { actualCompletion: true },
+        }),
+        this.prisma.productionOrder.findMany({
+          where: {
+            archivedAt: null,
+            status: { in: openPoStatuses },
+            requiredDeliveryDate: { gte: dayStart, lte: next7End },
+          },
+          select: { requiredDeliveryDate: true },
+        }),
+        this.prisma.delivery.findMany({
+          where: {
+            status: { in: ['PLANNED', 'READY'] },
+            deliveryDate: { gte: dayStart, lte: next7End },
+          },
+          select: { deliveryDate: true },
+        }),
+        this.prisma.qualityInspection.findMany({
+          where: { inspectedAt: { gte: last14Start, lte: dayEnd }, result: { not: null } },
+          select: { inspectedAt: true, result: true },
+        }),
+        canFinancial
+          ? this.prisma.payment.findMany({
+              where: { paymentDate: { gte: last30Start, lte: dayEnd } },
+              select: { paymentDate: true, amount: true },
+            })
+          : Promise.resolve(null),
+        canWorkers
+          ? this.prisma.productionTask.findMany({
+              where: {
+                actualCompletion: { gte: last30Start, lte: dayEnd },
+                actualMinutes: { gt: 0 },
+                stageDefinitionId: { not: null },
+              },
+              select: {
+                actualMinutes: true,
+                stageDefinition: { select: { code: true, nameEn: true } },
+              },
+            })
+          : Promise.resolve(null),
+      ]);
+
+    return {
+      completedLast7: bucketCounts(completedRows, (r) => r.actualCompletion, last7Start, 7),
+      dueNext7: bucketCounts(dueRows, (r) => r.requiredDeliveryDate, dayStart, 7),
+      deliveriesNext7: bucketCounts(deliveryRows, (r) => r.deliveryDate, dayStart, 7),
+      qualityLast14: bucketQuality(
+        qualityRows,
+        (r) => r.inspectedAt,
+        (r) => r.result,
+        last14Start,
+        14,
+      ),
+      paymentsLast30: paymentRows
+        ? bucketAmounts(
+            paymentRows,
+            (r) => r.paymentDate,
+            (r) => Number(r.amount),
+            last30Start,
+            30,
+          )
+        : null,
+      stageDurations: stageRows
+        ? averageStageDurations(
+            stageRows,
+            (r) =>
+              r.stageDefinition
+                ? { code: r.stageDefinition.code, name: r.stageDefinition.nameEn }
+                : null,
+            (r) => r.actualMinutes,
+          )
+        : null,
     };
   }
 

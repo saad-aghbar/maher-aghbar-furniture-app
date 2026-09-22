@@ -9,7 +9,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GlobalSearch } from './global-search';
 import { LanguageSwitcher } from './language-switcher';
-import { allNavItems, navFooterItems, navGroups } from './nav-items';
+import { ScanButton } from './scan-button';
+import { allNavItems, navFooterItems, navGroups, nestedNavGroups } from './nav-items';
 import { AppThemeToggle } from './theme-toggle';
 import { useAuthMe } from '@/hooks/use-auth-me';
 import { can } from '@maher/permissions';
@@ -38,11 +39,20 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
   const overDark = false;
 
   const allHrefs = useMemo(() => allNavItems.map((item) => item.href), []);
-  const current =
-    [
+  const flatItems = useMemo(
+    () => [
       ...navGroups.flatMap((g) => g.items.map((item) => ({ ...item, group: g.key }))),
       ...navFooterItems.map((item) => ({ ...item, group: 'groupMain' as const })),
-    ].find((item) => isNavItemActive(pathname, item.href, allHrefs));
+    ],
+    [],
+  );
+  const current =
+    flatItems.find((item) => isNavItemActive(pathname, item.href, allHrefs)) ??
+    // Nested section pages (e.g. /admin/sales-orders) title as their parent section.
+    (() => {
+      const group = nestedNavGroups.find((g) => g.matchPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`)));
+      return group ? flatItems.find((item) => item.href === group.parentHref) : undefined;
+    })();
 
   const me = useAuthMe();
   const canNotify = can(me.data, 'notification.read');
@@ -88,7 +98,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
       ref={headerRef}
       data-header-tone={overDark ? 'on-dark' : 'on-light'}
       className={cn(
-        'sticky top-0 z-30 flex h-16 items-center gap-3 border-b px-4 lg:px-8',
+        'sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-[var(--maher-surface)]/92 px-4 backdrop-blur-sm lg:px-8',
         overDark ? 'border-white/10' : 'border-border',
       )}
     >
@@ -132,6 +142,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
 
       <div className="ms-auto flex shrink-0 items-center gap-2 sm:gap-3">
         <GlobalSearch inverted={overDark} />
+        {can(me.data, 'inventory.read') ? <ScanButton surface="admin" inverted={overDark} /> : null}
         <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
         <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 

@@ -4,6 +4,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Grid and flex columns must never widen the page: a long LTR code or a
+     nowrap figure inside a board shrinks the board, not the viewport. */
+  main .grid > *,
+  main .flex > .flex-1,
+  main .flex > .grow {
+    min-width: 0;
+  }
+}
+
 :root {
   --font-primary: var(--font-latin-sans), var(--font-arabic-sans), system-ui, sans-serif;
 }

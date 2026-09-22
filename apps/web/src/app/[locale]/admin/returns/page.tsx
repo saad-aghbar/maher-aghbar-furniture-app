@@ -1,185 +1,48 @@
 'use client';
 
-import { ReturnDetailSheet } from '@/components/returns/return-detail-sheet';
+import { DealerCombobox } from '@/components/orders/dealer-combobox';
+import { approvalTone, attentionKey, chargeTone, lifecycleTone, mediaSrc, useReturnCopy } from '@/components/returns/return-shared';
 import type { ReturnRow } from '@/components/returns/return-types';
-import { Link } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
+import { useRouter } from '@/i18n/navigation';
+import { apiFetch } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
+import { useListParams } from '@/lib/use-list-params';
 import {
+  Board,
   Button,
-  EmptyState,
-  ErrorState,
-  Input,
+  DataBoard,
+  ErrorBoard,
+  Figure,
+  FilterDrawer,
+  ListToolbar,
   Ltr,
-  PageHero,
-  Select,
-  Skeleton,
-  StatusBadge,
+  Meter,
+  Ribbon,
+  RowThumb,
+  Stamp,
+  StatusChips,
+  type DataColumn,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Armchair, Camera, Store, X } from 'lucide-react';
+import { Armchair } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 
-interface DealerOption {
-  id: string;
-  code: string;
-  name: string;
-  nameAr?: string | null;
-  nameEn?: string | null;
-  nameHe?: string | null;
-}
+type Chip = 'attention' | 'all' | 'review' | 'waiting' | 'factory' | 'charges' | 'closed';
 
-function mediaSrc(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${API_URL}${url}`;
-}
+const DEFAULTS = { q: '', customerId: '', chip: '' as Chip | '' };
 
-function OptionalLink({
-  href,
-  className,
-  children,
-}: {
-  href: string | null;
-  className?: string;
-  children: ReactNode;
-}) {
-  if (!href) return <div className={className}>{children}</div>;
-  return (
-    <Link href={href} className={className}>
-      {children}
-    </Link>
-  );
-}
-
-function attentionKey(row: ReturnRow): string | null {
+function chipOf(row: ReturnRow): Exclude<Chip, 'all' | 'attention'> {
   const approval = (row.approvalStatus ?? 'PENDING').toUpperCase();
+  const lifecycle = (row.lifecycleState ?? '').toUpperCase();
   const physical = (row.physicalStatus ?? 'NONE').toUpperCase();
-  if (approval === 'PENDING') return 'pendingReview';
-  if (approval === 'NEED_INFO') return 'needInfo';
-  if (approval === 'APPROVED' && physical === 'WAITING_RETURN') return 'waitingReturn';
-  if (
-    (physical === 'RETURNED' || physical === 'INSPECTING') &&
-    (!row.inventoryFate || row.inventoryFate === 'PENDING')
-  ) {
-    return 'awaitingInspection';
-  }
-  return null;
-}
-
-function ReturnBoardCard({
-  row,
-  customerLabel,
-  reasonLabel,
-  physicalLabel,
-  attentionLabel,
-  dealerOrderLabel,
-  openLabel,
-  onOpen,
-}: {
-  row: ReturnRow;
-  customerLabel: string;
-  reasonLabel: string;
-  physicalLabel: string;
-  attentionLabel: string | null;
-  dealerOrderLabel: string;
-  openLabel: string;
-  onOpen: () => void;
-}) {
-  const productSrc = mediaSrc(row.productImageUrl);
-  const orderHref = row.salesOrder?.id ? `/sales-orders/${row.salesOrder.id}` : null;
-  const dealerNo = row.salesOrder?.externalOrderNumber?.trim() || null;
-  const resolution =
-    row.inventoryFate && row.inventoryFate !== 'PENDING'
-      ? row.inventoryFate
-      : row.resolution ?? row.approvalStatus ?? 'PENDING';
-
-  return (
-    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-[color-mix(in_srgb,var(--maher-surface)_92%,var(--maher-brand)_3%)] shadow-card transition hover:border-brand/40 hover:shadow-elevated">
-      <OptionalLink
-        href={orderHref}
-        className="relative block aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]"
-      >
-        {productSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={productSrc}
-            alt={row.productDesc}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
-            <Armchair className="h-8 w-8 opacity-40" />
-            <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
-          </div>
-        )}
-        <div className="absolute start-1.5 top-1.5 origin-top-start scale-90">
-          <StatusBadge status={row.approvalStatus ?? 'PENDING'} />
-        </div>
-      </OptionalLink>
-
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <div className="space-y-0.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            <Ltr>{row.number}</Ltr>
-            {row.salesOrder?.number ? (
-              <>
-                <span className="mx-1 text-border">·</span>
-                {orderHref ? (
-                  <Link
-                    href={orderHref}
-                    className="text-text-secondary underline-offset-2 hover:text-brand hover:underline"
-                  >
-                    <Ltr>{row.salesOrder.number}</Ltr>
-                  </Link>
-                ) : (
-                  <Ltr>{row.salesOrder.number}</Ltr>
-                )}
-              </>
-            ) : null}
-          </p>
-          {dealerNo ? (
-            <p className="truncate text-[11px] text-text-secondary">
-              <span className="text-text-tertiary">{dealerOrderLabel}: </span>
-              <Ltr>{dealerNo}</Ltr>
-            </p>
-          ) : null}
-          <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
-            {row.productDesc}
-          </h2>
-          <p className="truncate text-xs text-text-secondary">{customerLabel}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5 text-[11px]">
-          <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 font-medium text-text-secondary">
-            {reasonLabel}
-          </span>
-          <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 text-text-tertiary">
-            {physicalLabel}
-          </span>
-          <StatusBadge status={resolution} />
-          {row.pieceSummary?.total ? (
-            <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 text-text-tertiary">
-              {row.pieceSummary.readyToReturn}/{row.pieceSummary.total}
-            </span>
-          ) : null}
-        </div>
-
-        {attentionLabel ? (
-          <p className="rounded-md border border-[var(--maher-warning)]/30 bg-[var(--maher-warning-soft)] px-2 py-1 text-[11px] font-medium text-[var(--maher-warning)]">
-            {attentionLabel}
-          </p>
-        ) : null}
-
-        <div className="mt-auto maher-card-rule-t pt-2">
-          <Button className="h-10 w-full rounded-full" variant="secondary" onClick={onOpen}>
-            {openLabel}
-          </Button>
-        </div>
-      </div>
-    </article>
-  );
+  const charge = (row.chargeStatus ?? 'NOT_REQUIRED').toUpperCase();
+  if (approval === 'PENDING' || approval === 'NEED_INFO') return 'review';
+  if (['COMPLETED', 'REJECTED', 'SCRAPPED', 'RETURNED_TO_STOCK'].includes(lifecycle) || approval === 'REJECTED') return 'closed';
+  if (charge === 'DRAFT' || charge === 'AWAITING_DEALER' || charge === 'CONFIRMED') return 'charges';
+  if (approval === 'APPROVED' && (physical === 'WAITING_RETURN' || lifecycle === 'IN_TRANSIT' || lifecycle === 'APPROVED')) return 'waiting';
+  return 'factory';
 }
 
 export default function ReturnsPage() {
@@ -187,179 +50,211 @@ export default function ReturnsPage() {
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tLife = useTranslations('lifecycle');
-  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
-  const [q, setQ] = useState('');
-  const [dealerId, setDealerId] = useState('');
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [detailRow, setDetailRow] = useState<ReturnRow | null>(null);
+  const copy = useReturnCopy();
+  const kit = useKitCopy();
+  const router = useRouter();
+  const { params, set, reset } = useListParams({ defaults: DEFAULTS });
+  const setParams = (patch: Partial<typeof DEFAULTS>) => set(patch, { replace: true });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftCustomer, setDraftCustomer] = useState<string>('');
 
   const listParams = useMemo(() => {
-    const params = new URLSearchParams({ page: '1', pageSize: '100' });
-    if (q.trim()) params.set('q', q.trim());
-    if (dealerId) params.set('customerId', dealerId);
-    return params.toString();
-  }, [q, dealerId]);
-
-  const dealersQuery = useQuery({
-    queryKey: ['customers', 'returns-filter'],
-    queryFn: () =>
-      apiFetch<{ data: DealerOption[] }>('/api/v1/customers?page=1&pageSize=100'),
-    staleTime: 60_000,
-  });
+    const p = new URLSearchParams({ page: '1', pageSize: '100' });
+    if (params.q.trim()) p.set('q', params.q.trim());
+    if (params.customerId) p.set('customerId', params.customerId);
+    return p.toString();
+  }, [params.q, params.customerId]);
 
   const listQuery = useQuery({
     queryKey: ['returns', listParams],
-    queryFn: () =>
-      apiFetch<{ data: ReturnRow[] }>(`/api/v1/returns?${listParams}`).then((r) => r.data),
+    queryFn: () => apiFetch<{ data: ReturnRow[] }>(`/api/v1/returns?${listParams}`).then((r) => r.data),
     placeholderData: keepPreviousData,
   });
 
-  const dealerOptions = useMemo(() => {
-    const rows = dealersQuery.data?.data ?? [];
-    return rows
-      .map((d) => ({
-        value: d.id,
-        label: localizedName(locale, d, d.name) || d.name || d.code,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, locale));
-  }, [dealersQuery.data?.data, locale]);
-
-  const selectedDealer = useMemo(
-    () => dealerOptions.find((d) => d.value === dealerId) ?? null,
-    [dealerOptions, dealerId],
-  );
-
-  function reasonLabel(reason: string) {
-    try {
-      return tc(`returnReason.${reason}` as 'returnReason.OTHER');
-    } catch {
-      return reason;
+  const all = useMemo(() => listQuery.data ?? [], [listQuery.data]);
+  const counts = useMemo(() => {
+    const c: Record<Chip, number> = { attention: 0, all: all.length, review: 0, waiting: 0, factory: 0, charges: 0, closed: 0 };
+    for (const row of all) {
+      c[chipOf(row)] += 1;
+      if (attentionKey(row)) c.attention += 1;
     }
-  }
+    return c;
+  }, [all]);
+  // Land on the attention lane when something needs a hand; otherwise show everything.
+  const chip: Chip = params.chip || (counts.attention ? 'attention' : 'all');
+  const rows = useMemo(() => {
+    if (chip === 'all') return all;
+    if (chip === 'attention') return all.filter((row) => Boolean(attentionKey(row)));
+    return all.filter((row) => chipOf(row) === chip);
+  }, [all, chip]);
+  const openCount = all.length - counts.closed;
+  const chargesPending = all.filter((r) => ['DRAFT', 'AWAITING_DEALER'].includes((r.chargeStatus ?? '').toUpperCase())).length;
 
-  function physicalLabel(status: string | null | undefined) {
-    const key = (status ?? 'NONE').toUpperCase();
-    try {
-      return tLife(`returnPhysical.${key}` as 'returnPhysical.NONE');
-    } catch {
-      return key;
-    }
-  }
+  const columns: DataColumn<ReturnRow>[] = [
+    {
+      key: 'product',
+      header: t('returns'),
+      cell: (row) => (
+        <span className="flex items-center gap-3">
+          <RowThumb src={mediaSrc(row.productImageUrl)} icon={<Armchair className="h-4 w-4" />} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-[var(--maher-text-primary)]">{row.productDesc}</span>
+            <span className="flex items-center gap-1.5 text-[12px] text-[var(--maher-text-tertiary)]">
+              <Ltr>{row.number}</Ltr>
+              {row.salesOrder?.number ? (
+                <>
+                  <span>·</span>
+                  <Ltr>{row.salesOrder.number}</Ltr>
+                </>
+              ) : null}
+            </span>
+          </span>
+        </span>
+      ),
+    },
+    { key: 'customer', header: tc('filterDealer'), hideBelow: 'md', cell: (row) => (row.customer ? localizedName(locale, row.customer, row.customer.name) : '—') },
+    { key: 'reason', header: tc('reason'), hideBelow: 'lg', cell: (row) => <span className="text-[var(--maher-text-secondary)]">{copy.reason(row.reason)}</span> },
+    {
+      key: 'state',
+      header: tCommon('status'),
+      cell: (row) => {
+        const attention = copy.attention(row);
+        return (
+          <span className="flex flex-wrap items-center gap-1">
+            <Stamp tone={lifecycleTone(row.lifecycleState) === 'neutral' ? approvalTone(row.approvalStatus) : lifecycleTone(row.lifecycleState)} size="sm">
+              {row.lifecycleState ? copy.status(row.lifecycleState) : copy.status(row.approvalStatus ?? 'PENDING')}
+            </Stamp>
+            {attention ? <Stamp tone="warning" size="sm">{tLife('returnDesk.attentionChip')}</Stamp> : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'pieces',
+      header: tLife('returnDetail.pieces'),
+      hideBelow: 'xl',
+      width: '160px',
+      cell: (row) =>
+        row.pieceSummary?.total ? (
+          <Meter value={row.pieceSummary.returned + row.pieceSummary.recovered + row.pieceSummary.readyToReturn} max={row.pieceSummary.total} tone="success" valueLabel={`${row.pieceSummary.returned + row.pieceSummary.recovered}/${row.pieceSummary.total}`} />
+        ) : (
+          <span className="text-[var(--maher-text-tertiary)]">—</span>
+        ),
+    },
+    {
+      key: 'charge',
+      header: tLife('returnDetail.chargeStatus'),
+      hideBelow: 'lg',
+      numeric: true,
+      cell: (row) => {
+        const status = (row.chargeStatus ?? 'NOT_REQUIRED').toUpperCase();
+        if (status === 'NOT_REQUIRED') return <span className="text-[var(--maher-text-tertiary)]">—</span>;
+        return (
+          <span className="flex flex-col items-end gap-0.5">
+            <Ltr className="font-medium">{copy.money(row.chargeAmount)}</Ltr>
+            <Stamp tone={chargeTone(status)} size="sm">{copy.chargeStatus(status)}</Stamp>
+          </span>
+        );
+      },
+    },
+  ];
 
-  function attentionLabel(row: ReturnRow) {
-    const key = attentionKey(row);
-    if (!key) return null;
-    return tLife(`returnAttention.${key}` as 'returnAttention.pendingReview');
-  }
+  const chips: Array<{ id: Chip; label: string; tone?: 'warning' }> = [
+    { id: 'attention', label: tLife('returnDesk.attentionChip'), tone: 'warning' },
+    { id: 'all', label: tLife('returnDesk.allChip') },
+    { id: 'review', label: tLife('returnDesk.reviewChip') },
+    { id: 'waiting', label: tLife('returnDesk.waitingChip') },
+    { id: 'factory', label: tLife('returnDesk.inFactoryChip') },
+    { id: 'charges', label: tLife('returnDesk.chargesChip') },
+    { id: 'closed', label: tLife('returnDesk.closedChip') },
+  ];
 
-  const rows = listQuery.data ?? [];
-  const detail =
-    (detailId ? rows.find((r) => r.id === detailId) : null) ?? detailRow;
-  const initialLoading = listQuery.isLoading && !listQuery.data;
+  if (listQuery.isError && !listQuery.data) {
+    return <ErrorBoard title={t('returns')} description={tCommon('loadFailed')} onRetry={() => listQuery.refetch()} retryLabel={tCommon('retry')} />;
+  }
 
   return (
-    <div className="space-y-6">
-      <PageHero title={t('returns')} description={tc('returnsDescription')} tone="soft" />
-
-      <div className="maher-animate-rise flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="block min-w-0 flex-1 sm:max-w-md">
-          <span className="sr-only">{tc('returnsSearchPlaceholder')}</span>
-          <Input
-            withSearchIcon
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={tc('returnsSearchPlaceholder')}
-          />
-        </label>
-
-        <div className="relative w-full sm:w-64">
-          <div className="pointer-events-none absolute start-3 top-1/2 z-[1] -translate-y-1/2 text-text-tertiary">
-            <Store className="h-4 w-4" />
+    <div className="maher-stagger space-y-5">
+      <Board tone={counts.attention ? 'warning' : 'success'} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
+          <div className="min-w-0">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('returns')}</h1>
+            <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('returnsDescription')}</p>
           </div>
-          <Select
-            aria-label={tc('filterDealer')}
-            value={dealerId}
-            onChange={(e) => setDealerId(e.target.value)}
-            placeholder={tc('allDealers')}
-            options={dealerOptions}
-            className="ps-9 transition-shadow duration-300 focus:shadow-[0_0_0_4px_var(--maher-brand-soft)]"
-            disabled={dealersQuery.isLoading}
-          />
-        </div>
-      </div>
-
-      {selectedDealer ? (
-        <div className="maher-animate-bounce-in inline-flex max-w-full items-center gap-2 rounded-full border border-brand/25 bg-[var(--maher-brand-soft)] px-3 py-1.5 text-sm text-brand">
-          <Store className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
-            {tc('dealerFilterActive', { dealer: selectedDealer.label })}
-          </span>
-          <button
-            type="button"
-            onClick={() => setDealerId('')}
-            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface/70 text-brand transition hover:scale-105 hover:bg-surface active:scale-95"
-            aria-label={tc('clearDealerFilter')}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : null}
-
-      {listQuery.isError && !listQuery.data ? (
-        <ErrorState
-          title={t('returns')}
-          onRetry={() => listQuery.refetch()}
-          retryLabel={tCommon('retry')}
-        />
-      ) : initialLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-80 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          title={dealerId ? tc('emptyReturnsForDealer') : tc('noReturns')}
-          description={tc('returnsEmptyHint')}
-          icon={<Camera className="h-6 w-6" />}
-        />
-      ) : (
-        <div
-          key={`${dealerId}-${q.trim()}`}
-          className={`maher-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${
-            listQuery.isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'
-          }`}
-        >
-          {rows.map((row) => (
-            <ReturnBoardCard
-              key={row.id}
-              row={row}
-              customerLabel={
-                row.customer ? localizedName(locale, row.customer, row.customer.name) : '—'
-              }
-              reasonLabel={reasonLabel(row.reason)}
-              physicalLabel={physicalLabel(row.physicalStatus)}
-              attentionLabel={attentionLabel(row)}
-              dealerOrderLabel={tSales('dealerOrderNumber')}
-              openLabel={tLife('returnDetail.open')}
-              onOpen={() => {
-                setDetailId(row.id);
-                setDetailRow(row);
-              }}
+          <div className="min-w-0">
+            <Ribbon
+              size="sm"
+              segments={[
+                { key: 'review', label: tLife('returnDesk.reviewChip'), value: counts.review, tone: 'warning' },
+                { key: 'waiting', label: tLife('returnDesk.waitingChip'), value: counts.waiting, tone: 'info' },
+                { key: 'factory', label: tLife('returnDesk.inFactoryChip'), value: counts.factory, tone: 'brand' },
+                { key: 'charges', label: tLife('returnDesk.chargesChip'), value: counts.charges, tone: 'error' },
+                { key: 'closed', label: tLife('returnDesk.closedChip'), value: counts.closed, tone: 'success' },
+              ]}
             />
-          ))}
+            <div className="mt-3 grid grid-cols-3 gap-4">
+              <Figure size="sm" value={openCount} label={tLife('returnDesk.openCount')} />
+              <Figure size="sm" value={counts.attention} label={tLife('returnDesk.attentionChip')} tone={counts.attention ? 'warning' : 'neutral'} />
+              <Figure size="sm" value={chargesPending} label={tLife('returnDesk.chargesPending')} tone={chargesPending ? 'error' : 'neutral'} />
+            </div>
+          </div>
         </div>
-      )}
+      </Board>
 
-      <ReturnDetailSheet
-        open={Boolean(detailId)}
-        row={detail}
-        onClose={() => {
-          setDetailId(null);
-          setDetailRow(null);
+      <ListToolbar
+        copy={kit.toolbar}
+        search={{ value: params.q, onChange: (q) => setParams({ q }), placeholder: tc('returnsSearchPlaceholder') }}
+        filterCount={params.customerId ? 1 : 0}
+        onOpenFilters={() => {
+          setDraftCustomer(params.customerId);
+          setFiltersOpen(true);
         }}
       />
+
+      <StatusChips aria-label={tCommon('status')} value={chip} onChange={(id) => setParams({ chip: id as Chip })} items={chips.map((c) => ({ id: c.id, label: c.label, count: counts[c.id], tone: c.tone }))} />
+
+      <DataBoard<ReturnRow>
+        aria-label={t('returns')}
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.id}
+        onRowClick={(r) => router.push(`/admin/returns/${r.id}`)}
+        loading={listQuery.isLoading && !listQuery.data}
+        mobileRow={(row) => ({
+          title: row.productDesc,
+          meta: `${row.number} · ${row.customer ? localizedName(locale, row.customer, row.customer.name) : ''}`,
+          trailing: <Stamp tone={lifecycleTone(row.lifecycleState)} size="sm">{copy.status(row.lifecycleState ?? row.approvalStatus ?? 'PENDING')}</Stamp>,
+        })}
+        empty={
+          <Board.Empty
+            title={params.customerId ? tc('emptyReturnsForDealer') : tc('noReturns')}
+            description={tc('returnsEmptyHint')}
+            action={chip !== 'all' ? <Button size="sm" variant="secondary" onClick={() => setParams({ chip: 'all' })}>{tLife('returnDesk.allChip')}</Button> : undefined}
+          />
+        }
+      />
+
+      <FilterDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title={kit.filters.title}
+        applyLabel={kit.filters.apply}
+        clearLabel={kit.filters.clear}
+        closeLabel={kit.filters.close}
+        count={params.customerId ? 1 : 0}
+        onApply={() => {
+          setParams({ customerId: draftCustomer });
+          setFiltersOpen(false);
+        }}
+        onClear={() => {
+          setDraftCustomer('');
+          reset();
+          setFiltersOpen(false);
+        }}
+      >
+        <DealerCombobox label={tc('filterDealer')} value={draftCustomer || null} onChange={(id) => setDraftCustomer(id ?? '')} />
+      </FilterDrawer>
     </div>
   );
 }

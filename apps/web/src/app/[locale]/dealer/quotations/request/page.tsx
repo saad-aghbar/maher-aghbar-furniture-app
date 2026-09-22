@@ -1,19 +1,11 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
-import { AvailabilityCard, localDealerMinimumRequestYmd } from '@/components/availability-card';
+import { localDealerMinimumRequestYmd } from '@/components/availability-card';
+import { DeliveryAvailabilityBoard } from '@/components/orders/delivery-availability-board';
+import { useKitCopy } from '@/lib/kit-copy';
 import { useRouter } from '@/i18n/navigation';
-import {
-  Alert,
-  Button,
-  Card,
-  ImageSourceField,
-  Input,
-  MotionSection,
-  PageHero,
-  Select,
-  TextArea,
-} from '@maher/ui';
+import { Alert, Board, Button, DateField, FormFooter, ImageSourceField, Input, Select, StageStrip, Stamp, TextArea, type StageStripStage } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -52,6 +44,7 @@ export default function RequestQuotePage() {
   const tCommon = useTranslations('common');
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const kit = useKitCopy();
   const [productId, setProductId] = useState('');
   const [productName, setProductName] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -150,32 +143,25 @@ export default function RequestQuotePage() {
     }
   }
 
+  const stages: StageStripStage[] = stepLabels.map((label, i) => ({ key: STEP_KEYS[i] ?? String(i), label, state: step === i + 1 ? 'current' : step > i + 1 ? 'done' : 'todo' }));
+
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <PageHero tone="soft" title={t('requestQuote')} />
-      <MotionSection delayMs={40}>
-        <ol className="maher-stagger flex flex-wrap gap-2 text-xs text-text-secondary">
-          {stepLabels.map((label, i) => (
-            <li
-              key={STEP_KEYS[i]}
-              className={
-                step === i + 1 ? 'font-semibold text-brand' : step > i + 1 ? 'text-text-primary' : ''
-              }
-            >
-              {i + 1}. {label}
-            </li>
-          ))}
-        </ol>
-      </MotionSection>
-      <Card
-        className="maher-form-section"
-        title={tQ('stepTitle', {
-          step: String(step),
-          total: '6',
-          label: stepLabels[step - 1] ?? '',
-        })}
-      >
-        <div className="space-y-4">
+    <div className="maher-stagger mx-auto max-w-3xl space-y-5">
+      <Board tone="brand" wash="top" as="section">
+        <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 sm:px-6">
+          <div className="min-w-0">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('requestQuote')}</h1>
+            <p className="mt-1 text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tQ('stepTitle', { step: String(step), total: '6', label: stepLabels[step - 1] ?? '' })}</p>
+          </div>
+          <Stamp tone="brand" size="sm">{`${step}/6`}</Stamp>
+        </div>
+        <Board.Body>
+          <StageStrip stages={stages} compact />
+        </Board.Body>
+      </Board>
+      <Board tone="neutral" key={step} className="maher-panel-swap">
+        <Board.Header title={stepLabels[step - 1] ?? ''} />
+        <Board.Body className="space-y-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
           {success ? <Alert variant="success">{success}</Alert> : null}
           {step === 1 ? (
@@ -235,23 +221,31 @@ export default function RequestQuotePage() {
                 value={deliveryCity}
                 onChange={(e) => setDeliveryCity(e.target.value)}
               />
-              <Input
+              <DateField
                 label={tQ('preferredDeliveryDate')}
                 hint={tc('deliveryLeadTimeNotice')}
-                type="date"
-                min={localDealerMinimumRequestYmd()}
                 value={preferredDate}
-                onChange={(e) => {
-                  const next = e.target.value;
+                onChange={(next) => {
                   const min = localDealerMinimumRequestYmd();
                   if (next && next < min) return;
                   setPreferredDate(next);
                 }}
+                minDate={localDealerMinimumRequestYmd()}
+                variant="dealer"
+                copy={kit.date}
+                locale={locale}
+                clearable
               />
               {productId ? (
-                <AvailabilityCard
-                  items={[{ productId, quantity: Number(quantity) || 0 }]}
-                  requestedDeliveryDate={preferredDate || undefined}
+                <DeliveryAvailabilityBoard
+                  title={tc('availabilityTitle')}
+                  description={tc('deliveryLeadTimeNotice')}
+                  items={[{ productId, quantity: Number(quantity) || 1 }]}
+                  requestedDate={preferredDate || undefined}
+                  selected={preferredDate || undefined}
+                  onSelect={(ymd) => {
+                    if (ymd >= localDealerMinimumRequestYmd()) setPreferredDate(ymd);
+                  }}
                 />
               ) : null}
             </>
@@ -327,27 +321,23 @@ export default function RequestQuotePage() {
               </div>
             </dl>
           ) : null}
-          <div className="maher-detail-sticky-actions flex gap-3">
-            {step > 1 ? (
-              <Button variant="secondary" onClick={() => setStep((s) => s - 1)}>
-                {tCommon('previous')}
-              </Button>
-            ) : null}
-            {step < 6 ? (
-              <Button
-                onClick={() => setStep((s) => s + 1)}
-                disabled={step === 1 && !productName.trim()}
-              >
+        </Board.Body>
+        <FormFooter
+          className="rounded-b-[18px] border-x-0 border-b-0"
+          secondary={step > 1 ? <Button variant="secondary" onClick={() => setStep((s) => s - 1)}>{tCommon('previous')}</Button> : undefined}
+          primary={
+            step < 6 ? (
+              <Button onClick={() => setStep((s) => s + 1)} disabled={step === 1 && !productName.trim()}>
                 {tCommon('next')}
               </Button>
             ) : (
               <Button onClick={submit} loading={loading}>
                 {tCommon('submit')}
               </Button>
-            )}
-          </div>
-        </div>
-      </Card>
+            )
+          }
+        />
+      </Board>
     </div>
   );
 }

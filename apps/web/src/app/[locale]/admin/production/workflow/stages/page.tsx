@@ -1,12 +1,11 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import {
   CreateStageForm,
   emptyCreateStageValues,
   type CreateStageValues,
 } from '@/components/workflow/create-stage-form';
-import { StageGalleryTile } from '@/components/workflow/stage-gallery-tile';
+import { StageLibraryRows } from '@/components/workflow/stage-library-rows';
 import { WorkflowDrawer } from '@/components/workflow/workflow-drawer';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { Link } from '@/i18n/navigation';
@@ -20,15 +19,8 @@ import {
   OPENING_STAGE_CODE,
   TERMINAL_STAGE_CODES,
 } from '@maher/types';
-import {
-  Alert,
-  Button,
-  EmptyState,
-  ErrorState,
-  Input,
-  PageHero,
-  Skeleton,
-} from '@maher/ui';
+import { useKitCopy } from '@/lib/kit-copy';
+import { Alert, Board, BoardSkeleton, Button, ConfirmDialog, ErrorBoard, Figure, ListToolbar, Ribbon, StatusChips } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, Plus } from 'lucide-react';
@@ -72,6 +64,7 @@ export default function WorkflowStageLibraryPage() {
   const t = useTranslations('production');
   const tCommon = useTranslations('common');
   const locale = useLocale();
+  const kit = useKitCopy();
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -173,152 +166,83 @@ export default function WorkflowStageLibraryPage() {
     setEdit(valuesFromRow(row));
   }
 
+  const inspectionCount = rows.filter((r) => r.requiresInspection).length;
+  const photosCount = rows.filter((r) => r.requiresPhotos).length;
+  const resourceCount = rows.filter((r) => r.schedulingResourceMode === 'RESOURCE_CONSTRAINED').length;
+  const totalHours = rows.reduce((sum, r) => sum + Number(r.estimatedHours ?? 0), 0);
+
   return (
-    <div className="space-y-6">
-      <PageHero
-        title={t('workflow.manageStages')}
-        description={t('workflow.manageStagesSubtitle')}
-        tone="soft"
-        actions={
-          <div className="flex w-full flex-col gap-2 sm:w-56">
-            <Button
-              className="w-full"
-              leadingIcon={<Plus className="h-4 w-4" />}
-              onClick={() => {
-                setCreate(emptyCreateStageValues());
-                setCreateOpen(true);
-              }}
-            >
-              {t('workflow.createStage')}
-            </Button>
-            <Link href="/admin/production/workflow" className="w-full">
-              <Button className="w-full" variant="secondary" leadingIcon={<Layers className="h-4 w-4" />}>
-                {t('workflow.title')}
+    <div className="maher-stagger space-y-5">
+      <Board tone="info" wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('workflow.manageStages')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{t('workflow.manageStagesSubtitle')}</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Link href="/admin/production/workflow">
+                <Button variant="secondary" leadingIcon={<Layers className="h-4 w-4" />}>
+                  {t('workflow.title')}
+                </Button>
+              </Link>
+              <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => (setCreate(emptyCreateStageValues()), setCreateOpen(true))}>
+                {t('workflow.createStage')}
               </Button>
-            </Link>
+            </div>
           </div>
-        }
-      />
+          <div className="min-w-0">
+            <Ribbon
+              size="sm"
+              segments={[
+                { key: 'production', label: t('workflow.productionSection'), value: production.length, tone: 'brand' },
+                { key: 'anchors', label: t('workflow.finishingSection'), value: finishing.filter(Boolean).length + (opening ? 1 : 0), tone: 'neutral' },
+                { key: 'recovery', label: t('workflow.recoverySection'), value: recovery ? 1 : 0, tone: 'warning' },
+              ]}
+            />
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <Figure size="sm" value={rows.length} label={t('workflow.stages')} />
+              <Figure size="sm" value={inspectionCount} label={t('workflow.filterInspection')} tone="info" />
+              <Figure size="sm" value={photosCount} label={t('workflow.filterPhotos')} tone="neutral" />
+              <Figure size="sm" value={`${Math.round(totalHours)}h`} label={t('workflow.estimatedHours')} tone="brand" locale={locale} delta={resourceCount ? t('workflow.resourceConstrainedCount', { count: resourceCount }) : undefined} />
+            </div>
+          </div>
+        </div>
+      </Board>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-[12rem] flex-1">
-          <Input
-            withSearchIcon
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('workflow.searchStages')}
-            aria-label={t('workflow.searchStages')}
-          />
-        </div>
-        <div className="flex flex-wrap gap-1 rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface)] p-1">
-          {filters.map((f) => (
-            <Button
-              key={f}
-              size="sm"
-              variant={filter === f ? 'subtle' : 'ghost'}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all'
-                ? t('workflow.filterAll')
-                : f === 'inspection'
-                  ? t('workflow.filterInspection')
-                  : t('workflow.filterPhotos')}
-            </Button>
-          ))}
-        </div>
-      </div>
+      <ListToolbar copy={kit.toolbar} search={{ value: query, onChange: setQuery, placeholder: t('workflow.searchStages') }}>
+        <StatusChips
+          aria-label={t('workflow.filterAll')}
+          value={filter}
+          onChange={(id) => setFilter(id as Filter)}
+          items={[
+            { id: 'all', label: t('workflow.filterAll'), count: rows.length },
+            { id: 'inspection', label: t('workflow.filterInspection'), count: inspectionCount, tone: 'info' },
+            { id: 'photos', label: t('workflow.filterPhotos'), count: photosCount, tone: 'neutral' },
+          ]}
+        />
+      </ListToolbar>
 
       {listQuery.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-2xl" />
-          ))}
-        </div>
+        <BoardSkeleton rows={6} />
       ) : listQuery.isError ? (
-        <ErrorState
-          title={t('workflow.loadError')}
-          retryLabel={t('workflow.retry')}
-          onRetry={() => void listQuery.refetch()}
-        />
+        <ErrorBoard title={t('workflow.loadError')} description={mutationErrorMessage(listQuery.error)} onRetry={() => void listQuery.refetch()} />
       ) : filtered.length === 0 ? (
-        <EmptyState title={t('workflow.noStagesMatch')} />
+        <Board tone="neutral">
+          <Board.Empty title={t('workflow.noStagesMatch')} action={<Button size="sm" variant="secondary" onClick={() => (setQuery(''), setFilter('all'))}>{tCommon('clearFilters')}</Button>} />
+        </Board>
       ) : (
-        <div className="space-y-8">
-          {opening ? (
-            <section className="space-y-3">
-              <div>
-                <h2 className="text-sm font-semibold text-text-primary">{t('workflow.openingSection')}</h2>
-                <p className="text-xs text-text-secondary">{t('workflow.openingHint')}</p>
-              </div>
-              <div className="max-w-xl">
-                <StageGalleryTile
-                  row={opening}
-                  locked
-                  featured
-                  caption={t('workflow.alwaysFirst')}
-                  onClick={() => openRow(opening)}
-                />
-              </div>
-            </section>
-          ) : null}
-
-          {recovery ? (
-            <section className="space-y-3">
-              <div>
-                <h2 className="text-sm font-semibold text-text-primary">{t('workflow.recoverySection')}</h2>
-                <p className="text-xs text-text-secondary">{t('workflow.recoveryHint')}</p>
-              </div>
-              <div className="max-w-xl">
-                <StageGalleryTile
-                  row={recovery}
-                  locked
-                  caption={t('workflow.alwaysAvailable')}
-                  onClick={() => openRow(recovery)}
-                />
-              </div>
-            </section>
-          ) : null}
-
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-text-primary">{t('workflow.productionSection')}</h2>
-              <p className="text-xs text-text-secondary">{t('workflow.stagesHint')}</p>
-            </div>
-            {production.length === 0 ? (
-              <p className="text-sm text-text-tertiary">{t('workflow.noStagesMatch')}</p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {production.map((row, index) => (
-                  <StageGalleryTile key={row.id} row={row} index={index} onClick={() => openRow(row)} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {finishing.some(Boolean) ? (
-            <section className="space-y-3">
-              <div>
-                <h2 className="text-sm font-semibold text-text-primary">{t('workflow.finishingSection')}</h2>
-                <p className="text-xs text-text-secondary">{t('workflow.terminalHint')}</p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {finishing.map((row, index) =>
-                  row ? (
-                    <StageGalleryTile
-                      key={row.id}
-                      row={row}
-                      locked
-                      index={index}
-                      caption={t(`workflow.terminalStage.${row.code}` as 'workflow.terminalStage.INSPECTION')}
-                      onClick={() => openRow(row)}
-                    />
-                  ) : null,
-                )}
-              </div>
-            </section>
-          ) : null}
+        <div className="grid gap-5 xl:grid-cols-12">
+          <div className="space-y-5 xl:col-span-8">
+            <StageLibraryRows title={t('workflow.productionSection')} description={t('workflow.stagesHint')} rows={production} numbered onOpen={openRow} tone="brand" />
+          </div>
+          <div className="space-y-5 xl:col-span-4">
+            {opening ? <StageLibraryRows title={t('workflow.openingSection')} description={t('workflow.openingHint')} rows={[opening]} locked caption={t('workflow.alwaysFirst')} onOpen={openRow} tone="neutral" /> : null}
+            {finishing.some(Boolean) ? <StageLibraryRows title={t('workflow.finishingSection')} description={t('workflow.terminalHint')} rows={finishing.filter((r): r is StageRow => Boolean(r))} locked captionFor={(row) => t(`workflow.terminalStage.${row.code}` as 'workflow.terminalStage.INSPECTION')} onOpen={openRow} tone="success" /> : null}
+            {recovery ? <StageLibraryRows title={t('workflow.recoverySection')} description={t('workflow.recoveryHint')} rows={[recovery]} locked caption={t('workflow.alwaysAvailable')} onOpen={openRow} tone="warning" /> : null}
+          </div>
         </div>
       )}
 
@@ -441,6 +365,7 @@ export default function WorkflowStageLibraryPage() {
           name: deleting ? stageLabel(locale, deleting) : '',
         })}
         confirmLabel={t('workflow.deleteStage')}
+        cancelLabel={tCommon('cancel')}
         danger
         loading={deleteMutation.isPending}
         onClose={() => setDeleting(null)}

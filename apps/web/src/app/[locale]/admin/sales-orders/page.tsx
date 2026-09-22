@@ -1,345 +1,456 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import { DealerCombobox } from '@/components/orders/dealer-combobox';
+import { OrdersListHero } from '@/components/orders/orders-list-hero';
+import {
+  JOURNEY_BUCKETS,
+  daysUntil,
+  dueTone,
+  isClosedSalesOrder,
+  journeyTone,
+  salesOrderTone,
+  useOrdersCopy,
+  type JourneyBucket,
+  type SalesOrderRow,
+} from '@/components/orders/orders-shared';
 import { CancelImpactSheet } from '@/components/sales-orders/cancel-impact-sheet';
 import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
-import { SALES_ORDER_STATUSES, statusOptions } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import {
-  Alert,
-  Button,
-  EmptyState,
-  ErrorState,
-  FilterChip,
-  FilterPanel,
-  Input,
-  PageHero,
-  Select,
-  Skeleton,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableNumericCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  Ltr,
-} from '@maher/ui';
+import { apiFetch } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
+import type { Paginated } from '@/lib/paginated';
+import { toApiQuery, useListParams } from '@/lib/use-list-params';
 import { localizedName } from '@maher/i18n';
+import {
+  Board,
+  Button,
+  ConfirmDialog,
+  DataBoard,
+  DateRangeField,
+  ErrorBoard,
+  FilterChip,
+  FilterDrawer,
+  FilterGroup,
+  ListToolbar,
+  Ltr,
+  Menu,
+  Meter,
+  Pagination,
+  RowThumb,
+  Stamp,
+  StatusChips,
+  useToast,
+  type DataColumn,
+} from '@maher/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { MoreHorizontal, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { Suspense, useMemo, useState } from 'react';
 
-interface Row {
-  id: string;
-  number: string;
-  status: string;
-  total?: string | number;
-  projectName?: string | null;
-  requestedDeliveryDate?: string | null;
-  externalOrderNumber?: string | null;
-  customer?: {
-    id: string;
-    name: string;
-    code?: string;
-    nameAr?: string | null;
-    nameEn?: string | null;
-    nameHe?: string | null;
-  };
-  quotation?: { id: string; number: string } | null;
-}
+type SortKey = 'createdAt' | 'requiredDeliveryDate' | 'number' | 'total';
+type DeliveryPreset = '' | 'overdue' | 'week' | 'month' | 'custom';
 
-const HOLDABLE = [
-  'CONFIRMED',
-  'READY_FOR_PRODUCTION',
-  'IN_PRODUCTION',
-  'WAITING_FOR_MATERIALS',
-  'WAITING_FOR_PAYMENT',
-];
+const HOLDABLE = new Set(['CONFIRMED', 'READY_FOR_PRODUCTION', 'IN_PRODUCTION', 'WAITING_FOR_MATERIALS', 'WAITING_FOR_PAYMENT']);
 
-function canOpenCancel(status: string) {
-  return status !== 'CANCELLED';
+const DEFAULTS = {
+  q: '',
+  bucket: '' as JourneyBucket | '',
+  customerId: '',
+  orderType: '',
+  returned: false,
+  delivery: '' as DeliveryPreset,
+  deliveryFrom: '',
+  deliveryTo: '',
+  sortBy: 'createdAt' as SortKey,
+  sortDir: 'desc' as 'asc' | 'desc',
+  page: 1,
+  pageSize: 20,
+};
+
+type ListMeta = Paginated<SalesOrderRow>['meta'] & {
+  journeyCounts?: Partial<Record<JourneyBucket, number>>;
+  returned?: number;
+};
+
+function presetRange(preset: DeliveryPreset, from: string, to: string): { deliveryFrom?: string; deliveryTo?: string } {
+  const today = new Date();
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  switch (preset) {
+    case 'overdue':
+      return { deliveryTo: ymd(new Date(today.getTime() - 86_400_000)) };
+    case 'week': {
+      const end = new Date(today);
+      end.setDate(today.getDate() + 7);
+      return { deliveryFrom: ymd(today), deliveryTo: ymd(end) };
+    }
+    case 'month': {
+      const end = new Date(today);
+      end.setDate(today.getDate() + 30);
+      return { deliveryFrom: ymd(today), deliveryTo: ymd(end) };
+    }
+    case 'custom':
+      return { deliveryFrom: from || undefined, deliveryTo: to || undefined };
+    default:
+      return {};
+  }
 }
 
 function SalesOrdersPageInner() {
-  const locale = useLocale();
+  const copy = useOrdersCopy();
+  const kit = useKitCopy();
   const t = useTranslations('navigation');
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
-  const tStatus = useTranslations('statuses');
+  const toast = useToast();
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
+  const { params, set, reset, activeCount } = useListParams({ defaults: DEFAULTS });
 
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
-  const [page, setPage] = useState(1);
-  const [banner, setBanner] = useState<string | null>(null);
-  const [financeAttention, setFinanceAttention] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draft, setDraft] = useState(params);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [holdId, setHoldId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fromUrl = searchParams.get('status') ?? '';
-    setStatus(fromUrl);
-    setPage(1);
-  }, [searchParams]);
+  const apiQuery = useMemo(() => {
+    const range = presetRange(params.delivery, params.deliveryFrom, params.deliveryTo);
+    return toApiQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      q: params.q.trim(),
+      journeyBucket: params.bucket || undefined,
+      customerId: params.customerId || undefined,
+      orderType: params.orderType || undefined,
+      returned: params.returned ? 'true' : undefined,
+      sortBy: params.sortBy,
+      sortDir: params.sortDir,
+      ...range,
+    });
+  }, [params]);
 
-  const listParams = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
-    if (q.trim()) params.set('q', q.trim());
-    if (status) params.set('status', status);
-    return params.toString();
-  }, [q, status, page]);
-
-  const listQuery = useQuery({
-    queryKey: ['sales-orders', listParams],
-    queryFn: () =>
-      apiFetch<{ data: Row[]; meta: { page: number; totalPages: number } }>(
-        `/api/v1/sales-orders?${listParams}`,
-      ),
+  const list = useQuery({
+    queryKey: ['sales-orders', apiQuery],
+    queryFn: () => apiFetch<{ data: SalesOrderRow[]; meta: ListMeta }>(`/api/v1/sales-orders${apiQuery}`),
     placeholderData: keepPreviousData,
   });
 
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    await queryClient.invalidateQueries({ queryKey: ['section-counts'] });
+  };
+
   const confirmMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/v1/sales-orders/${id}/confirm`, { method: 'POST' }),
+    mutationFn: (id: string) => apiFetch(`/api/v1/sales-orders/${id}/confirm`, { method: 'POST' }),
     onSuccess: async () => {
       setError(null);
       setConfirmId(null);
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      await invalidate();
       await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
-      setBanner(tSales('confirmedBanner'));
+      toast.success(tSales('confirmedBanner'));
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
   const holdMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      apiFetch(`/api/v1/sales-orders/${id}/hold`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      }),
+      apiFetch(`/api/v1/sales-orders/${id}/hold`, { method: 'POST', body: JSON.stringify({ reason }) }),
     onSuccess: async () => {
       setError(null);
       setHoldId(null);
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-      setBanner(tSales('heldBanner'));
+      await invalidate();
+      toast.success(tSales('heldBanner'));
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  const statusFilterOptions = statusOptions(tStatus, SALES_ORDER_STATUSES, {
-    label: tCommon('all'),
+  const resumeMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/v1/sales-orders/${id}/resume`, { method: 'POST' }),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success(tSales('resumedBanner'));
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
 
-  if (listQuery.isLoading && !listQuery.data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-  if (listQuery.isError && !listQuery.data) {
-    return (
-      <ErrorState
-        title={t('salesOrders')}
-        onRetry={() => listQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
-  }
+  const rows = list.data?.data ?? [];
+  const meta = list.data?.meta;
+  const counts = (meta?.journeyCounts ?? {}) as Partial<Record<JourneyBucket | 'all', number>>;
+  const allCount = counts.all ?? JOURNEY_BUCKETS.reduce((a, b) => a + (counts[b] ?? 0), 0) ?? meta?.totalItems;
 
-  const rows = listQuery.data?.data ?? [];
-  const meta = listQuery.data?.meta;
+  const columns: DataColumn<SalesOrderRow>[] = [
+    {
+      key: 'number',
+      header: tSales('systemOrderNumber'),
+      sortKey: 'number',
+      cell: (row) => (
+        <span className="flex items-center gap-3">
+          <RowThumb src={row.imageUrl} icon={<Stamp tone={salesOrderTone(row.status)} />} />
+          <span className="min-w-0">
+            <Ltr block className="font-semibold text-[var(--maher-text-primary)]">{row.number}</Ltr>
+            <span className="block truncate text-[12px] text-[var(--maher-text-secondary)]">
+              {row.title || row.projectName || (row.lineCount ? tSales('desk.lineCount', { count: row.lineCount }) : '')}
+            </span>
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: 'customer',
+      header: tSales('customer'),
+      hideBelow: 'md',
+      cell: (row) => (
+        <span className="block">
+          <span className="block truncate">{row.customer ? localizedName(copy.locale, row.customer, row.customer.name ?? '') : '—'}</span>
+          {row.externalOrderNumber ? <Ltr block className="text-[12px] text-[var(--maher-text-tertiary)]">{row.externalOrderNumber}</Ltr> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'journey',
+      header: tSales('desk.stage'),
+      hideBelow: 'lg',
+      cell: (row) => (
+        <span className="flex min-w-[140px] flex-col gap-1.5">
+          <span className="flex items-center gap-1.5 text-[12px]">
+            <Stamp tone={journeyTone(row.journeyBucket)} />
+            {row.journeyBucket ? copy.journey(row.journeyBucket) : copy.status(row.status)}
+            {row.hasPendingReturn ? (
+              <Stamp size="sm" tone="warning">
+                {tSales('desk.returnOpen')}
+              </Stamp>
+            ) : null}
+          </span>
+          {row.progressPercent != null && row.journeyBucket === 'in_production' ? (
+            <Meter value={row.progressPercent} max={100} size="sm" showValue={false} tone="info" />
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: tCommon('status'),
+      hideBelow: 'xl',
+      cell: (row) => (
+        <Stamp tone={salesOrderTone(row.status)} size="sm">
+          {copy.status(row.status)}
+        </Stamp>
+      ),
+    },
+    {
+      key: 'delivery',
+      header: tSales('deliveryDate'),
+      sortKey: 'requiredDeliveryDate',
+      numeric: true,
+      cell: (row) => {
+        const date = row.journeyLogistics?.committedDeliveryDate ?? row.requiredDeliveryDate ?? row.requestedDeliveryDate;
+        const days = daysUntil(date);
+        const tone = dueTone(days, isClosedSalesOrder(row.status));
+        return (
+          <span className="flex flex-col items-end">
+            <span>{copy.date(date)}</span>
+            {days != null && !isClosedSalesOrder(row.status) ? (
+              <span className="text-[11px]" style={{ color: tone === 'neutral' ? 'var(--maher-text-tertiary)' : `var(--maher-${tone})` }}>
+                {copy.dueLabel(days)}
+              </span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'total',
+      header: tSales('total'),
+      sortKey: 'total',
+      numeric: true,
+      hideBelow: 'md',
+      cell: (row) => (row.total != null ? copy.money(row.total, row.currency ?? 'ILS') : '—'),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '48px',
+      cell: (row) => (
+        <Menu
+          LinkComponent={Link}
+          aria-label={tSales('moreActions')}
+          trigger={
+            <Button variant="ghost" size="icon" aria-label={tSales('moreActions')} className="h-8 w-8">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          }
+          items={[
+            { id: 'open', label: tCommon('details'), href: `/admin/sales-orders/${row.id}` },
+            ...(row.status === 'DRAFT' ? [{ id: 'confirm', label: tSales('confirmToProduction'), onSelect: () => setConfirmId(row.id) }] : []),
+            ...(HOLDABLE.has(row.status) ? [{ id: 'hold', label: tSales('hold'), onSelect: () => setHoldId(row.id) }] : []),
+            ...(row.status === 'ON_HOLD' ? [{ id: 'resume', label: tSales('resume'), onSelect: () => resumeMutation.mutate(row.id) }] : []),
+            ...(row.status !== 'CANCELLED' && !isClosedSalesOrder(row.status)
+              ? [{ id: 'cancel', label: tSales('cancelOrder'), tone: 'error' as const, separator: true, onSelect: () => setCancelId(row.id) }]
+              : []),
+          ]}
+        />
+      ),
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      <PageHero title={t('salesOrders')} description={tSales('emptyHint')} tone="soft" />
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {financeAttention ? (
-        <Alert variant="warning">
-          <p className="font-medium">{tSales('cancelImpact.financialAttentionBannerTitle')}</p>
-          <p className="mt-1 text-sm">{tSales('cancelImpact.financialAttentionBannerBody')}</p>
-        </Alert>
-      ) : null}
-      {error ? <Alert variant="error">{error}</Alert> : null}
+    <div className="maher-stagger space-y-5">
+      <OrdersListHero
+        title={t('salesOrders')}
+        description={tSales('desk.salesOrdersHint')}
+        counts={JOURNEY_BUCKETS.map((b) => ({ key: b, label: copy.journey(b), count: counts[b] ?? 0, tone: journeyTone(b) }))}
+        actions={
+          <Link
+            href="/admin/requests"
+            className="maher-press inline-flex h-10 items-center gap-1.5 rounded-[10px] border border-[var(--maher-border)] bg-[var(--maher-surface)] px-4 text-sm font-medium text-[var(--maher-text-primary)] hover:border-[var(--maher-border-strong)]"
+          >
+            <Plus className="h-4 w-4" />
+            {tSales('desk.newFromRequest')}
+          </Link>
+        }
+      />
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="relative min-w-[220px] flex-1">
-          <Input
-            withSearchIcon
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-            placeholder={tSales('searchPlaceholder')}
-          />
-        </label>
-        <button type="button" className="text-sm text-brand hover:underline" onClick={() => setFilterOpen(true)}>
-          {tCommon('filter')}
-        </button>
-        <FilterPanel
-          open={filterOpen}
-          onClose={() => setFilterOpen(false)}
-          title={tCommon('filter')}
-          onApply={() => setFilterOpen(false)}
-          onClear={() => {
-            setStatus('');
-            setPage(1);
+      <ListToolbar
+        copy={kit.toolbar}
+        search={{ value: params.q, onChange: (q) => set({ q }, { replace: true }), placeholder: tSales('searchPlaceholder') }}
+        filterCount={activeCount - (params.bucket ? 1 : 0)}
+        onOpenFilters={() => {
+          setDraft(params);
+          setFilterOpen(true);
+        }}
+        sort={{
+          value: params.sortBy,
+          dir: params.sortDir,
+          onChange: (sortBy) => set({ sortBy }),
+          onDirChange: (sortDir) => set({ sortDir }),
+          options: (['createdAt', 'requiredDeliveryDate', 'number', 'total'] as SortKey[]).map((k) => ({ value: k, label: copy.tm(`sort.${k}`) })),
+        }}
+      >
+        <StatusChips
+          aria-label={tSales('desk.stage')}
+          value={params.bucket || 'all'}
+          onChange={(id) => set({ bucket: id === 'all' ? '' : (id as JourneyBucket) })}
+          items={[
+            { id: 'all', label: copy.journey('all'), count: allCount ?? null },
+            ...JOURNEY_BUCKETS.map((b) => ({ id: b, label: copy.journey(b), count: counts[b] ?? 0, tone: journeyTone(b) })),
+          ]}
+        />
+      </ListToolbar>
+
+      {list.isError && !list.data ? (
+        <ErrorBoard title={tCommon('loadFailed')} onRetry={() => list.refetch()} />
+      ) : (
+        <DataBoard<SalesOrderRow>
+          aria-label={t('salesOrders')}
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          rowHref={(r) => `/admin/sales-orders/${r.id}`}
+          LinkComponent={Link}
+          loading={list.isLoading && !list.data}
+          sort={{ key: params.sortBy, dir: params.sortDir }}
+          onSort={(key) => set(params.sortBy === key ? { sortDir: params.sortDir === 'asc' ? 'desc' : 'asc' } : { sortBy: key as SortKey, sortDir: 'desc' })}
+          rowClassName={(r) => (r.hasPendingReturn ? 'bg-[color:color-mix(in_oklab,var(--maher-warning)_6%,transparent)]' : undefined)}
+          mobileRow={(row) => {
+            const date = row.journeyLogistics?.committedDeliveryDate ?? row.requiredDeliveryDate ?? row.requestedDeliveryDate;
+            return {
+              leading: <RowThumb src={row.imageUrl} icon={<Stamp tone={salesOrderTone(row.status)} />} />,
+              title: <Ltr>{row.number}</Ltr>,
+              meta: `${row.customer ? localizedName(copy.locale, row.customer, row.customer.name ?? '') : '—'} · ${row.journeyBucket ? copy.journey(row.journeyBucket) : copy.status(row.status)}`,
+              trailing: <span className="text-[12px] text-[var(--maher-text-secondary)]">{copy.date(date)}</span>,
+            };
           }}
-        >
+          empty={
+            <Board.Empty
+              title={params.q || activeCount ? tSales('desk.emptyFilteredTitle') : tSales('empty')}
+              description={params.q || activeCount ? tSales('desk.emptyFilteredBody') : tSales('emptyHint')}
+              action={
+                params.q || activeCount ? (
+                  <Button size="sm" variant="secondary" onClick={reset}>
+                    {tCommon('clearFilters')}
+                  </Button>
+                ) : null
+              }
+            />
+          }
+          footer={
+            meta && meta.totalPages > 1 ? (
+              <Pagination
+                className="w-full"
+                page={params.page}
+                pageSize={params.pageSize}
+                total={meta.totalItems}
+                onPageChange={(page) => set({ page })}
+                onPageSizeChange={(pageSize) => set({ pageSize, page: 1 })}
+                copy={kit.pagination}
+              />
+            ) : null
+          }
+        />
+      )}
+
+      <FilterDrawer
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title={kit.filters.title}
+        applyLabel={kit.filters.apply}
+        clearLabel={kit.filters.clear}
+        closeLabel={kit.filters.close}
+        onApply={() => set({ ...draft, page: 1 })}
+        onClear={() => {
+          setDraft(DEFAULTS);
+          reset();
+          setFilterOpen(false);
+        }}
+        count={[draft.customerId, draft.orderType, draft.returned, draft.delivery].filter(Boolean).length}
+      >
+        <FilterGroup title={copy.tm('filterDealerTitle')} layout="stack">
+          <DealerCombobox value={draft.customerId || null} onChange={(customerId) => setDraft((d) => ({ ...d, customerId: customerId ?? '' }))} />
+        </FilterGroup>
+        <FilterGroup title={tSales('desk.orderType')}>
+          {(['', 'STANDARD', 'MODIFIED', 'CUSTOM'] as const).map((type) => (
+            <FilterChip key={type || 'all'} selected={draft.orderType === type} onClick={() => setDraft((d) => ({ ...d, orderType: type }))}>
+              {type ? tSales(`desk.orderType${type}` as never) : tCommon('all')}
+            </FilterChip>
+          ))}
+        </FilterGroup>
+        <FilterGroup title={copy.tm('filterDelivery')} layout="stack">
           <div className="flex flex-wrap gap-2">
-            {statusFilterOptions.map((opt) => (
-              <FilterChip
-                key={opt.value || 'all'}
-                selected={status === opt.value}
-                onClick={() => {
-                  setPage(1);
-                  setStatus(opt.value);
-                }}
-              >
-                {opt.label}
+            {(['', 'overdue', 'week', 'month', 'custom'] as DeliveryPreset[]).map((preset) => (
+              <FilterChip key={preset || 'any'} selected={draft.delivery === preset} onClick={() => setDraft((d) => ({ ...d, delivery: preset }))}>
+                {copy.tm(`filterDeliveryPresets.${preset || 'any'}` as never)}
               </FilterChip>
             ))}
           </div>
-        </FilterPanel>
-        <Select
-          value={status}
-          onChange={(e) => {
-            setPage(1);
-            setStatus(e.target.value);
-          }}
-          options={statusFilterOptions}
-          className="w-48"
-        />
-      </div>
-
-      {rows.length === 0 ? (
-        <EmptyState title={tSales('empty')} description={tSales('emptyHint')} />
-      ) : (
-        <>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('customer')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('total')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('deliveryDate')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableNumericCell>
-                    <Link
-                      href={`/admin/sales-orders/${row.id}`}
-                      className="font-medium text-brand hover:underline"
-                    >
-                      <Ltr>{row.number}</Ltr>
-                    </Link>
-                  </TableNumericCell>
-                  <TableNumericCell>{row.externalOrderNumber?.trim() || '—'}</TableNumericCell>
-                  <TableCell>
-                    {row.customer ? localizedName(locale, row.customer, row.customer.name) : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={row.status} />
-                  </TableCell>
-                  <TableNumericCell>{Number(row.total ?? 0).toFixed(2)}</TableNumericCell>
-                  <TableNumericCell>
-                    {row.requestedDeliveryDate
-                      ? row.requestedDeliveryDate.slice(0, 10)
-                      : '—'}
-                  </TableNumericCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      {row.status === 'DRAFT' ? (
-                        <Button
-                          size="sm"
-                          variant="subtle"
-                          onClick={() => setConfirmId(row.id)}
-                        >
-                          {tSales('confirmToProduction')}
-                        </Button>
-                      ) : null}
-                      {HOLDABLE.includes(row.status) ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setHoldId(row.id)}
-                        >
-                          {tSales('hold')}
-                        </Button>
-                      ) : null}
-                      {canOpenCancel(row.status) ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setCancelId(row.id)}
-                        >
-                          {tSales('cancelOrder')}
-                        </Button>
-                      ) : null}
-                      <Link
-                        href={`/admin/sales-orders/${row.id}`}
-                        className="text-sm text-brand hover:underline"
-                      >
-                        {tCommon('details')}
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {meta && meta.totalPages > 1 ? (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                {tCommon('previous')}
-              </Button>
-              <span className="text-sm text-text-secondary" dir="ltr">
-                {page} / {meta.totalPages}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={page >= meta.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                {tCommon('next')}
-              </Button>
-            </div>
+          {draft.delivery === 'custom' ? (
+            <DateRangeField
+              from={draft.deliveryFrom}
+              to={draft.deliveryTo}
+              onChange={(r) => setDraft((d) => ({ ...d, deliveryFrom: r.from, deliveryTo: r.to }))}
+              locale={copy.locale}
+              copy={kit.range}
+              presets={[]}
+            />
           ) : null}
-        </>
-      )}
+        </FilterGroup>
+        <FilterGroup title={tSales('linkedReturns')}>
+          <FilterChip selected={!draft.returned} onClick={() => setDraft((d) => ({ ...d, returned: false }))}>
+            {tCommon('all')}
+          </FilterChip>
+          <FilterChip selected={draft.returned} onClick={() => setDraft((d) => ({ ...d, returned: true }))} count={meta?.returned ?? null}>
+            {tSales('desk.withReturns')}
+          </FilterChip>
+        </FilterGroup>
+      </FilterDrawer>
 
       <ConfirmDialog
         open={Boolean(confirmId)}
         title={tSales('confirm')}
         description={tSales('confirmDescription')}
         confirmLabel={tSales('confirm')}
+        cancelLabel={tCommon('cancel')}
         loading={confirmMutation.isPending}
         error={error}
-        onConfirm={() => {
-          if (confirmId) confirmMutation.mutate(confirmId);
-        }}
+        onConfirm={() => confirmId && confirmMutation.mutate(confirmId)}
         onClose={() => setConfirmId(null)}
       />
       <ConfirmDialog
@@ -347,13 +458,12 @@ function SalesOrdersPageInner() {
         title={tSales('hold')}
         description={tSales('holdDescription')}
         confirmLabel={tSales('hold')}
+        cancelLabel={tCommon('cancel')}
         withReason
         reasonLabel={tCommon('reason')}
         loading={holdMutation.isPending}
         error={error}
-        onConfirm={(reason) => {
-          if (holdId) holdMutation.mutate({ id: holdId, reason });
-        }}
+        onConfirm={(reason) => holdId && holdMutation.mutate({ id: holdId, reason })}
         onClose={() => setHoldId(null)}
       />
       <CancelImpactSheet
@@ -361,8 +471,8 @@ function SalesOrdersPageInner() {
         salesOrderId={cancelId}
         onClose={() => setCancelId(null)}
         onCancelled={({ financialAttention }) => {
-          setBanner(tSales('cancelledBanner'));
-          setFinanceAttention(financialAttention);
+          void invalidate();
+          toast.success(tSales('cancelledBanner'), financialAttention ? tSales('cancelImpact.financialAttentionBannerBody') : undefined);
         }}
       />
     </div>
@@ -371,7 +481,7 @@ function SalesOrdersPageInner() {
 
 export default function SalesOrdersPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+    <Suspense fallback={<div className="maher-board h-64 animate-pulse rounded-[18px] bg-[var(--maher-surface)]" />}>
       <SalesOrdersPageInner />
     </Suspense>
   );

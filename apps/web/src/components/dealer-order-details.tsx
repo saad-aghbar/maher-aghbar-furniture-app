@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
-import { Card, Ltr } from '@maher/ui';
-import { useTranslations } from 'next-intl';
-import type { ReactNode } from 'react';
+import { DeliveryLocationMapLazy } from "@/components/delivery-location-map-lazy";
+import { Board, Ltr } from "@maher/ui";
+import { useTranslations } from "next-intl";
+import type { ReactNode } from "react";
 
 export interface DealerOrderItemFields {
   id?: string;
@@ -49,12 +49,16 @@ function Field({
 }
 
 function display(value: string | number | null | undefined) {
-  if (value == null) return '—';
+  if (value == null) return "—";
   const text = String(value).trim();
-  if (!text) return '—';
+  if (!text) return "—";
   // Never show internal UUIDs that were wrongly saved as names
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) {
-    return '—';
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      text,
+    )
+  ) {
+    return "—";
   }
   return text;
 }
@@ -70,12 +74,12 @@ export function DealerOrderDetails({
   deliveryLng,
   items = [],
 }: DealerOrderDetailsProps) {
-  const tc = useTranslations('catalog');
+  const tc = useTranslations("catalog");
   const lines = items.length > 0 ? items : [{}];
   const hasPin =
-    typeof deliveryLat === 'number' &&
+    typeof deliveryLat === "number" &&
     Number.isFinite(deliveryLat) &&
-    typeof deliveryLng === 'number' &&
+    typeof deliveryLng === "number" &&
     Number.isFinite(deliveryLng);
 
   return (
@@ -83,91 +87,120 @@ export function DealerOrderDetails({
       {lines.map((item, index) => {
         const customs =
           item.customMeasurements && Array.isArray(item.customMeasurements)
-            ? item.customMeasurements.filter((m) => m?.label?.trim() || m?.value?.trim())
+            ? item.customMeasurements.filter(
+                (m) => m?.label?.trim() || m?.value?.trim(),
+              )
             : [];
         const key = item.id ?? `item-${index}`;
-        const sectionSuffix = lines.length > 1 ? ` (${index + 1})` : '';
+        const sectionSuffix = lines.length > 1 ? ` (${index + 1})` : "";
 
         return (
           <div key={key} className="space-y-6">
-            <Card title={`${tc('orderSection')}${sectionSuffix}`} className="maher-form-section">
-              <dl className="grid gap-4 text-sm sm:grid-cols-2">
-                <Field label={tc('dealerCustomerOrderNumber')}>
-                  <Ltr>{display(externalOrderNumber)}</Ltr>
-                </Field>
-                <Field label={tc('modelName')}>{display(item.productName)}</Field>
-                <Field label={tc('quantity')}>
-                  <span dir="ltr">{display(item.quantity)}</span>
-                </Field>
-                <Field label={tc('width')}>
-                  <span dir="ltr">{display(item.width)}</span>
-                </Field>
-                <Field label={tc('height')}>
-                  <span dir="ltr">{display(item.height)}</span>
-                </Field>
-                <Field label={tc('depth')}>
-                  <span dir="ltr">{display(item.depth)}</span>
-                </Field>
-                {customs.length > 0 ? (
-                  <div className="sm:col-span-2">
-                    <dt className="text-text-tertiary">{tc('addDimension')}</dt>
-                    <dd className="mt-1 space-y-1">
-                      {customs.map((m, i) => (
-                        <div key={`${m.label}-${i}`} className="font-medium">
-                          {m.label || '—'}: <span dir="ltr">{display(m.value)}</span>
-                        </div>
-                      ))}
-                    </dd>
-                  </div>
-                ) : null}
-                <Field label={tc('orderNotes')} className="sm:col-span-2">
-                  <span className="whitespace-pre-wrap">
-                    {display(item.notes || (lines.length === 1 ? notes : null))}
-                  </span>
-                </Field>
-              </dl>
-            </Card>
+            <Board className="maher-form-section">
+              <Board.Header title={`${tc("orderSection")}${sectionSuffix}`} />
+              <Board.Body>
+                <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                  <Field label={tc("dealerCustomerOrderNumber")}>
+                    <Ltr>{display(externalOrderNumber)}</Ltr>
+                  </Field>
+                  <Field label={tc("modelName")}>
+                    {display(item.productName)}
+                  </Field>
+                  <Field label={tc("quantity")}>
+                    <span dir="ltr">{display(item.quantity)}</span>
+                  </Field>
+                  <Field label={tc("width")}>
+                    <span dir="ltr">{display(item.width)}</span>
+                  </Field>
+                  <Field label={tc("height")}>
+                    <span dir="ltr">{display(item.height)}</span>
+                  </Field>
+                  <Field label={tc("depth")}>
+                    <span dir="ltr">{display(item.depth)}</span>
+                  </Field>
+                  {customs.length > 0 ? (
+                    <div className="sm:col-span-2">
+                      <dt className="text-text-tertiary">
+                        {tc("addDimension")}
+                      </dt>
+                      <dd className="mt-1 space-y-1">
+                        {customs.map((m, i) => (
+                          <div key={`${m.label}-${i}`} className="font-medium">
+                            {m.label || "—"}:{" "}
+                            <span dir="ltr">{display(m.value)}</span>
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <Field label={tc("orderNotes")} className="sm:col-span-2">
+                    <span className="whitespace-pre-wrap">
+                      {display(
+                        item.notes || (lines.length === 1 ? notes : null),
+                      )}
+                    </span>
+                  </Field>
+                </dl>
+              </Board.Body>
+            </Board>
 
-            <Card title={`${tc('fabricSection')}${sectionSuffix}`} className="maher-form-section">
-              <dl className="grid gap-4 text-sm sm:grid-cols-2">
-                <Field label={tc('fabricName')} className="sm:col-span-2">
-                  {item.fabricType || item.fabricColor
-                    ? [item.fabricType, item.fabricColor].filter(Boolean).join(' · ')
-                    : '—'}
-                </Field>
-                <Field label={tc('fabricDescription')} className="sm:col-span-2">
-                  <span className="whitespace-pre-wrap">{display(item.description)}</span>
-                </Field>
-              </dl>
-            </Card>
+            <Board className="maher-form-section">
+              <Board.Header title={`${tc("fabricSection")}${sectionSuffix}`} />
+              <Board.Body>
+                <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                  <Field label={tc("fabricName")} className="sm:col-span-2">
+                    {item.fabricType || item.fabricColor
+                      ? [item.fabricType, item.fabricColor]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : "—"}
+                  </Field>
+                  <Field
+                    label={tc("fabricDescription")}
+                    className="sm:col-span-2"
+                  >
+                    <span className="whitespace-pre-wrap">
+                      {display(item.description)}
+                    </span>
+                  </Field>
+                </dl>
+              </Board.Body>
+            </Board>
           </div>
         );
       })}
 
-      <Card title={tc('customerSection')} className="maher-form-section">
-        <dl className="grid gap-4 text-sm sm:grid-cols-2">
-          <Field label={tc('endCustomerName')}>{display(endCustomerName)}</Field>
-          <Field label={tc('endCustomerPhone')}>
-            <span dir="ltr">{display(endCustomerPhone)}</span>
-          </Field>
-          <Field label={tc('endCustomerFax')}>
-            <span dir="ltr">{display(endCustomerFax)}</span>
-          </Field>
-          <Field label={tc('deliveryAddress')} className="sm:col-span-2">
-            <span className="whitespace-pre-wrap">{display(deliveryAddress)}</span>
-          </Field>
-        </dl>
-        {hasPin ? (
-          <div className="mt-4 overflow-hidden rounded-xl border border-border">
-            <DeliveryLocationMapLazy
-              lat={deliveryLat!}
-              lng={deliveryLng!}
-              disabled
-              onChange={() => undefined}
-            />
-          </div>
-        ) : null}
-      </Card>
+      <Board className="maher-form-section">
+        <Board.Header title={tc("customerSection")} />
+        <Board.Body>
+          <dl className="grid gap-4 text-sm sm:grid-cols-2">
+            <Field label={tc("endCustomerName")}>
+              {display(endCustomerName)}
+            </Field>
+            <Field label={tc("endCustomerPhone")}>
+              <span dir="ltr">{display(endCustomerPhone)}</span>
+            </Field>
+            <Field label={tc("endCustomerFax")}>
+              <span dir="ltr">{display(endCustomerFax)}</span>
+            </Field>
+            <Field label={tc("deliveryAddress")} className="sm:col-span-2">
+              <span className="whitespace-pre-wrap">
+                {display(deliveryAddress)}
+              </span>
+            </Field>
+          </dl>
+          {hasPin ? (
+            <div className="mt-4 overflow-hidden rounded-xl border border-border">
+              <DeliveryLocationMapLazy
+                lat={deliveryLat!}
+                lng={deliveryLng!}
+                disabled
+                onChange={() => undefined}
+              />
+            </div>
+          ) : null}
+        </Board.Body>
+      </Board>
     </div>
   );
 }

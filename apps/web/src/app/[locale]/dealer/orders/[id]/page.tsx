@@ -10,17 +10,10 @@ import {
   isConfirmReceiptVisible,
   mapConfirmReceiptErrorCode,
 } from '@/lib/dealer-order-ui';
-import {
-  Button,
-  Card,
-  Ltr,
-  Modal,
-  MotionSection,
-  Skeleton,
-  StatusBadge,
-} from '@maher/ui';
+import { Board, BoardSkeleton, Button, ConfirmDialog, Ltr, Meter, MotionSection, Stamp, type BoardTone } from '@maher/ui';
+import { useRouter } from '@/i18n/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Armchair, Truck } from 'lucide-react';
+import { Armchair, Truck, Undo2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -114,6 +107,15 @@ interface OrderDetail {
   imageUrl?: string | null;
 }
 
+function statusTone(status: string | null | undefined): BoardTone {
+  const key = (status ?? '').toUpperCase();
+  if (/(DELIVERED|COMPLETED|ACCEPTED|APPROVED|PASSED)/.test(key)) return 'success';
+  if (/(REJECTED|CANCEL|OVERDUE|FAILED)/.test(key)) return 'error';
+  if (/(NEED|PENDING|WAITING|DRAFT|SUBMITTED|OUT_FOR_DELIVERY)/.test(key)) return 'warning';
+  if (/(PRODUCTION|PROGRESS|CONFIRMED|SHIPPED|READY|IN_TRANSIT|PLANNED)/.test(key)) return 'brand';
+  return 'neutral';
+}
+
 function mediaSrc(url: string | null | undefined): string | null {
   if (!url?.trim()) return null;
   if (/^https?:\/\//i.test(url) || url.startsWith('blob:')) return url;
@@ -125,6 +127,17 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
   const tl = useTranslations('lifecycle');
+  const tNav = useTranslations('navigation');
+  const tStatus = useTranslations('statuses');
+  const router = useRouter();
+  const statusLabel = (code: string | null | undefined) => {
+    if (!code) return '—';
+    try {
+      return tStatus(code as 'PENDING');
+    } catch {
+      return code.replaceAll('_', ' ').toLowerCase();
+    }
+  };
   const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
@@ -218,10 +231,9 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
 
   if (isLoading || !data) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
-        <Skeleton className="h-40 w-full rounded-xl" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} />
+        <BoardSkeleton rows={6} />
       </div>
     );
   }
@@ -240,7 +252,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
     null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="maher-stagger space-y-5">
       <BackButton fallbackHref="/dealer/orders" />
 
       <OrderLifecycleStepper
@@ -253,7 +265,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
         }))}
       />
 
-      <MotionSection className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+      <Board tone={statusTone(data.status)} wash="top" className="overflow-hidden">
         <div className="relative bg-[var(--maher-surface-muted)]">
           <div className="relative mx-auto aspect-[4/3] w-full max-h-[22rem] sm:aspect-[16/10] sm:max-h-[26rem]">
             {heroImage ? (
@@ -269,66 +281,53 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 <Ltr className="text-xs font-medium uppercase tracking-wide">{data.number}</Ltr>
               </div>
             )}
-            {progress != null ? (
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 via-black/25 to-transparent px-4 pb-3 pt-12">
-                <div className="mb-1 flex items-center justify-between text-xs font-medium text-white">
-                  <span>{t('progress')}</span>
-                  <Ltr>{data.progressLabel ?? `${progress}%`}</Ltr>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-white/30">
-                  <div
-                    className="h-full rounded-full bg-[var(--maher-brand)] transition-all"
-                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/30 to-transparent" />
-            )}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/30 to-transparent" />
           </div>
         </div>
 
-        <div className="space-y-3 border-t border-border p-4 sm:p-5">
+        <div className="space-y-3 border-t border-[var(--maher-border)] px-5 py-4 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">{data.title || data.number}</h1>
-              <p className="mt-1 text-sm text-text-secondary">
-                <span className="text-text-tertiary">{t('systemOrderNumber')}: </span>
-                <Ltr>{data.number}</Ltr>
-                {(data.externalOrderNumber || req?.externalOrderNumber) && (
-                  <>
-                    {' · '}
-                    <span className="text-text-tertiary">{t('dealerOrderNumber')}: </span>
-                    <Ltr>
-                      {data.externalOrderNumber?.trim() || req?.externalOrderNumber}
-                    </Ltr>
-                  </>
-                )}
+            <div className="min-w-0">
+              <Ltr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{data.number}</Ltr>
+              <h1 className="mt-1 text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{data.title || data.number}</h1>
+              <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-[var(--maher-text-secondary)]">
+                {data.externalOrderNumber || req?.externalOrderNumber ? (
+                  <span>
+                    {t('dealerOrderNumber')}: <Ltr className="font-medium">{data.externalOrderNumber?.trim() || req?.externalOrderNumber}</Ltr>
+                  </span>
+                ) : null}
+                {data.requiredDeliveryDate || req?.requiredDeliveryDate ? (
+                  <span>
+                    {tl('timelineReady')}: <Ltr className="font-medium">{(data.requiredDeliveryDate ?? req?.requiredDeliveryDate)?.slice(0, 10)}</Ltr>
+                  </span>
+                ) : null}
               </p>
             </div>
-            <StatusBadge status={data.status} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Stamp tone={statusTone(data.status)}>{statusLabel(data.status)}</Stamp>
+              {data.status === 'DELIVERED' || deliveries.some((d) => d.status === 'DELIVERED') ? (
+                <Button size="sm" variant="secondary" leadingIcon={<Undo2 className="h-4 w-4" />} onClick={() => router.push(`/dealer/returns?orderId=${params.id}`)}>
+                  {tNav('returns')}
+                </Button>
+              ) : null}
+            </div>
           </div>
-          {(data.requiredDeliveryDate || req?.requiredDeliveryDate) && (
-            <p className="text-sm text-text-secondary">
-              {tl('timelineReady')}:{' '}
-              <Ltr>{(data.requiredDeliveryDate ?? req?.requiredDeliveryDate)?.slice(0, 10)}</Ltr>
-            </p>
-          )}
+          {progress != null ? <Meter value={progress} max={100} tone={statusTone(data.status)} label={t('progress')} valueLabel={data.progressLabel ?? `${progress}%`} /> : null}
         </div>
-      </MotionSection>
+      </Board>
 
       {outForDelivery.length > 0 ? (
         <MotionSection delayMs={50}>
-          <div className="overflow-hidden rounded-2xl border border-[var(--maher-warning)]/35 bg-[var(--maher-warning-soft)] shadow-sm">
-            <div className="flex flex-wrap items-start gap-4 p-4 sm:p-5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--maher-warning)]/15 text-[var(--maher-warning)]">
+          <Board tone="warning" wash="full">
+            <div className="flex flex-wrap items-start gap-4 px-5 py-4 sm:px-6">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]">
                 <Truck className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1 space-y-2">
                 <div>
-                  <h2 className="text-lg font-semibold text-text-primary">{tl('shipped')}</h2>
-                  <p className="mt-1 text-sm text-text-secondary">{tl('shippedHero')}</p>
-                  <p className="text-xs text-text-tertiary">{tl('shippedAwaitingConfirm')}</p>
+                  <h2 className="text-[16px] font-semibold text-[var(--maher-text-primary)]">{tl('shipped')}</h2>
+                  <p className="mt-1 text-[13px] text-[var(--maher-text-secondary)]">{tl('shippedHero')}</p>
+                  <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tl('shippedAwaitingConfirm')}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {outForDelivery.map((d) => (
@@ -347,7 +346,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 </div>
               </div>
             </div>
-          </div>
+          </Board>
         </MotionSection>
       ) : null}
 
@@ -367,8 +366,9 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
 
       {docs.length > 0 ? (
         <MotionSection delayMs={100}>
-        <Card title={tc('attachmentsSection')} className="maher-form-section">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Board tone="neutral">
+          <Board.Header title={tc('attachmentsSection')} meta={<Stamp tone="neutral" size="sm">{docs.length}</Stamp>} />
+          <Board.Body className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {docs.map((doc) => {
               const preview = docLinksQuery.data?.[doc.id];
               const isImage =
@@ -409,13 +409,14 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 </button>
               );
             })}
-          </div>
-        </Card>
+          </Board.Body>
+        </Board>
         </MotionSection>
       ) : galleryUrls.length > 1 ? (
         <MotionSection delayMs={100}>
-        <Card title={tc('attachmentsSection')} className="maher-form-section">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Board tone="neutral">
+          <Board.Header title={tc('attachmentsSection')} />
+          <Board.Body className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {galleryUrls.map((url, index) => (
               <button
                 key={`${url}-${index}`}
@@ -431,33 +432,28 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 />
               </button>
             ))}
-          </div>
-        </Card>
+          </Board.Body>
+        </Board>
         </MotionSection>
       ) : null}
 
       <MotionSection delayMs={140}>
-      <Card title={t('tracking')} className="maher-form-section">
+      <Board tone="brand">
+        <Board.Header title={t('tracking')} meta={pos.length ? <Stamp tone="brand" size="sm">{pos.length}</Stamp> : undefined} />
         {pos.length === 0 ? (
-          <p className="text-sm text-text-secondary">{t('noProductionYet')}</p>
+          <Board.Empty title={t('noProductionYet')} />
         ) : (
-          <div className="space-y-6">
+          <Board.Body className="space-y-6">
             {pos.map((po) => (
               <div key={po.id}>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold">
                     <Ltr>{po.number}</Ltr>
                   </p>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={po.status} />
-                    <Ltr className="text-xs text-text-secondary">{po.progressPercent}%</Ltr>
-                  </div>
+                  <Stamp tone={statusTone(po.status)} size="sm">{statusLabel(po.status)}</Stamp>
                 </div>
-                <div className="mb-4 h-2 overflow-hidden rounded-full bg-[var(--maher-surface-muted)]">
-                  <div
-                    className="h-full rounded-full bg-brand transition-all"
-                    style={{ width: `${Math.min(100, Math.max(0, po.progressPercent))}%` }}
-                  />
+                <div className="mb-4">
+                  <Meter value={po.progressPercent} max={100} tone={statusTone(po.status)} valueLabel={`${Math.round(po.progressPercent)}%`} />
                 </div>
                 <DealerOrderWorkflowGraph
                   productionOrderId={po.id}
@@ -506,9 +502,9 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 ) : null}
               </div>
             ))}
-          </div>
+          </Board.Body>
         )}
-      </Card>
+      </Board>
       </MotionSection>
 
       {pos.map((po, index) => (
@@ -518,18 +514,19 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
       ))}
 
       <MotionSection delayMs={180}>
-      <Card title={t('deliveryStatus')} className="maher-form-section">
+      <Board tone={primaryDeliveryStatus ? statusTone(primaryDeliveryStatus) : 'neutral'}>
+        <Board.Header title={t('deliveryStatus')} />
         {deliveries.length === 0 ? (
-          <p className="text-sm text-text-secondary">{tCommon('none')}</p>
+          <Board.Empty title={tCommon('none')} />
         ) : (
-          <ul className="maher-stagger space-y-3">
+          <ul className="divide-y divide-[var(--maher-border)]">
             {deliveries.map((d) => (
-              <li key={d.id} className="maher-list-card rounded-lg border border-border p-3">
+              <li key={d.id} className="px-5 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">
                     <Ltr>{d.number}</Ltr>
                   </p>
-                  <StatusBadge status={d.status} />
+                  <Stamp tone={statusTone(d.status)} size="sm">{statusLabel(d.status)}</Stamp>
                 </div>
                 {d.deliveryDate ? (
                   <p className="mt-1 text-xs text-text-secondary">
@@ -543,10 +540,10 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
             ))}
           </ul>
         )}
-      </Card>
+      </Board>
       </MotionSection>
 
-      <Modal
+      <ConfirmDialog
         open={Boolean(confirmDeliveryId)}
         onClose={() => {
           if (confirmReceiptMutation.isPending) return;
@@ -555,60 +552,32 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
         }}
         title={tl('confirmReceiptTitle')}
         description={tl('confirmReceiptBody')}
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setConfirmDeliveryId(null);
-                setConfirmError(null);
-              }}
-              disabled={confirmReceiptMutation.isPending}
-            >
-              {tCommon('cancel')}
-            </Button>
-            <Button
-              onClick={() => {
-                if (confirmDeliveryId) confirmReceiptMutation.mutate(confirmDeliveryId);
-              }}
-              disabled={confirmReceiptMutation.isPending}
-            >
-              {tl('confirmReceived')}
-            </Button>
-          </>
-        }
+        confirmLabel={tl('confirmReceived')}
+        cancelLabel={tCommon('cancel')}
+        loading={confirmReceiptMutation.isPending}
+        error={confirmError}
+        onConfirm={() => {
+          if (confirmDeliveryId) confirmReceiptMutation.mutate(confirmDeliveryId);
+        }}
       >
-        <div className="space-y-3">
-          <div className="flex gap-3 rounded-xl border border-border bg-[var(--maher-surface-muted)] p-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface">
-              {heroImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={heroImage} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <Armchair className="h-6 w-6 text-text-tertiary" aria-hidden />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-text-tertiary">
-                <Ltr>{data.number}</Ltr>
-              </p>
-              <p className="font-semibold text-text-primary">{data.title || data.number}</p>
-              {items[0]?.quantity != null ? (
-                <p className="mt-1 text-xs text-text-secondary">×{String(items[0].quantity)}</p>
-              ) : null}
-              {confirmDelivery ? (
-                <p className="mt-1 text-xs text-text-secondary">
-                  <Ltr>{confirmDelivery.number}</Ltr>
-                </p>
-              ) : null}
-            </div>
+        <div className="flex gap-3 rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface-muted)] p-3">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-[var(--maher-surface)]">
+            {heroImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={heroImage} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Armchair className="h-6 w-6 text-[var(--maher-text-tertiary)]" aria-hidden />
+            )}
           </div>
-          {confirmError ? <p className="text-sm text-danger">{confirmError}</p> : null}
-          {confirmReceiptMutation.isSuccess ? (
-            <p className="text-sm text-success">{tl('confirmReceiptSuccess')}</p>
-          ) : null}
+          <div className="min-w-0 flex-1">
+            <Ltr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{data.number}</Ltr>
+            <p className="font-semibold text-[var(--maher-text-primary)]">{data.title || data.number}</p>
+            {items[0]?.quantity != null ? <p className="mt-1 text-[12px] text-[var(--maher-text-secondary)]">×{String(items[0].quantity)}</p> : null}
+            {confirmDelivery ? <Ltr className="mt-1 block text-[12px] text-[var(--maher-text-secondary)]">{confirmDelivery.number}</Ltr> : null}
+          </div>
         </div>
-      </Modal>
+        {confirmReceiptMutation.isSuccess ? <p className="mt-3 text-[13px] text-[var(--maher-success)]">{tl('confirmReceiptSuccess')}</p> : null}
+      </ConfirmDialog>
     </div>
   );
 }

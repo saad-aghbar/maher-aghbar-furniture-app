@@ -803,7 +803,21 @@
       "mfgFinalOrders": "{count} طلبات بتكلفة نهائية · {total}",
       "mfgIncomplete": "{count} طلبات بتكلفة غير مكتملة (لا تُحسب صفراً)",
       "mfgGrossDiff": "فرق التصنيع الإجمالي",
-      "activity": "نشاط اليوم",
+      "activity": {
+        "taskCompleted": "اكتملت مرحلة {stage} على {number}",
+        "taskStarted": "بدأت مرحلة {stage} على {number}",
+        "truckDeparted": "غادرت الشاحنة {number}",
+        "deliveryUpdated": "تحديث التسليم {number}",
+        "qc": "فحص الجودة {number}: {result}",
+        "grn": "استلام {number} لأمر {po}",
+        "payment": "دفعة {number} من {name}",
+        "finishedGoods": "ترحيل بضاعة جاهزة ({number})",
+        "finishedGoodsPlain": "ترحيل بضاعة جاهزة",
+        "returnStatus": "مرتجع {number} ← {status}",
+        "statusUpdated": "تحديث حالة {number}",
+        "materialsReceived": "استلام مواد {number}",
+        "invoiceIssued": "إصدار فاتورة {number}"
+      },
       "activityEmpty": "لا نشاط مسجّل بعد اليوم.",
       "sectionHealthy": "كل شيء على ما يرام في هذا القسم.",
       "reportsLink": "التقارير",
@@ -875,21 +889,6 @@
       },
       "title": {
         "rawShortages": "نواقص خام"
-      },
-      "activity": {
-        "taskCompleted": "اكتملت مرحلة {stage} على {number}",
-        "taskStarted": "بدأت مرحلة {stage} على {number}",
-        "truckDeparted": "غادرت الشاحنة {number}",
-        "deliveryUpdated": "تحديث التسليم {number}",
-        "qc": "فحص الجودة {number}: {result}",
-        "grn": "استلام {number} لأمر {po}",
-        "payment": "دفعة {number} من {name}",
-        "finishedGoods": "ترحيل بضاعة جاهزة ({number})",
-        "finishedGoodsPlain": "ترحيل بضاعة جاهزة",
-        "returnStatus": "مرتجع {number} ← {status}",
-        "statusUpdated": "تحديث حالة {number}",
-        "materialsReceived": "استلام مواد {number}",
-        "invoiceIssued": "إصدار فاتورة {number}"
       },
       "blocked": {
         "orderOnHold": "الطلبية موقوفة",
@@ -6064,7 +6063,10 @@
       "normalShift": "الدوام العادي {range}",
       "workingDay": "يوم عمل",
       "shiftStart": "البداية",
-      "shiftEnd": "النهاية"
+      "shiftEnd": "النهاية",
+      "impactTasks": "التعيينات",
+      "impactOrders": "الطلبات",
+      "impactCommitted": "{count, plural, one {قد يتحرك موعد تسليم ملتزم به واحد.} other {قد تتحرك # مواعيد تسليم ملتزم بها.}}"
     },
     "duration": {
       "minutes": "{minutes} دقيقة",
@@ -6554,6 +6556,11 @@
     "orderStrip": {
       "title": "الجدول",
       "viewOnBoard": "عرض في لوحة الجدولة"
+    },
+    "legend": {
+      "light": "حمل خفيف",
+      "half": "نصف الحمل",
+      "busy": "مزدحم"
     }
   },
   "pdfDownload": {

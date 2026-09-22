@@ -1,8 +1,7 @@
 'use client';
 
-import { Alert, Button, Input, Modal } from '@maher/ui';
+import { ConfirmDialog as KitConfirmDialog } from '@maher/ui';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -20,78 +19,19 @@ interface ConfirmDialogProps {
   reasonPlaceholder?: string;
   onConfirm: (reason?: string) => void;
   onClose: () => void;
-  /** Optional shared pill class for confirm + cancel. */
+  /** Kept for source compatibility; the kit dialog owns its button shapes. */
   ctaClassName?: string;
 }
 
-export function ConfirmDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  danger,
-  loading,
-  error,
-  withReason,
-  reasonRequired,
-  reasonLabel,
-  reasonPlaceholder,
-  onConfirm,
-  onClose,
-  ctaClassName,
-}: ConfirmDialogProps) {
+/** Pre-translated wrapper over the kit `ConfirmDialog` (one question, one primary answer). */
+export function ConfirmDialog({ ctaClassName: _ctaClassName, confirmLabel, reasonLabel, ...props }: ConfirmDialogProps) {
   const t = useTranslations('common');
-  const [reason, setReason] = useState('');
-  const trimmedReason = reason.trim();
-  const reasonMissing = Boolean(withReason && reasonRequired && !trimmedReason);
-
-  useEffect(() => {
-    if (!open) setReason('');
-  }, [open]);
-
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={title}
-      size="sm"
-      footer={
-        <>
-          <Button
-            variant={ctaClassName ? 'secondary' : 'ghost'}
-            className={ctaClassName}
-            onClick={onClose}
-            disabled={loading}
-          >
-            {t('cancel')}
-          </Button>
-          <Button
-            className={ctaClassName}
-            variant={danger ? 'danger' : 'primary'}
-            loading={loading}
-            disabled={reasonMissing}
-            onClick={() => onConfirm(withReason ? trimmedReason || undefined : undefined)}
-          >
-            {confirmLabel ?? t('confirm')}
-          </Button>
-        </>
-      }
-    >
-      <p className="text-sm leading-relaxed text-[var(--maher-text-secondary)]">{description}</p>
-      {withReason ? (
-        <Input
-          className="mt-3"
-          label={reasonLabel ?? t('reason')}
-          placeholder={reasonPlaceholder}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-      ) : null}
-      {error ? (
-        <Alert variant="error" className="mt-3">
-          {error}
-        </Alert>
-      ) : null}
-    </Modal>
+    <KitConfirmDialog
+      {...props}
+      confirmLabel={confirmLabel ?? t('confirm')}
+      cancelLabel={t('cancel')}
+      reasonLabel={reasonLabel ?? t('reason')}
+    />
   );
 }

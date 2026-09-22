@@ -3,7 +3,7 @@
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
-import { BrandMark, cn, isNavItemActive } from '@maher/ui';
+import { BrandMark, SectionTabs, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
@@ -28,26 +28,80 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useOrderBasketCount } from '@/components/order-basket-provider';
+import { ShellAtmosphere } from '@/components/shell-atmosphere';
 import { AppThemeToggle } from '@/components/theme-toggle';
 
-const items = [
-  { href: '/dealer/dashboard', key: 'dashboard', icon: LayoutDashboard },
-  { href: '/dealer/catalog', key: 'catalog', icon: ShoppingBag },
-  { href: '/dealer/basket', key: 'basket', icon: ShoppingCart },
-  { href: '/dealer/orders/new', key: 'createOrder', icon: SquarePen },
-  { href: '/dealer/orders', key: 'myOrders', icon: Package },
-  { href: '/dealer/requests', key: 'ordersDrafts', icon: FileText },
-  { href: '/dealer/quotations', key: 'quotations', icon: FileText },
-  { href: '/dealer/deliveries', key: 'schedule', icon: CalendarDays },
-  { href: '/dealer/ai-chat', key: 'aiChat', icon: MessageSquare },
-  { href: '/dealer/invoices', key: 'invoices', icon: Receipt },
-  { href: '/dealer/payments', key: 'payments', icon: Banknote },
-  { href: '/dealer/statement', key: 'statement', icon: Scroll },
-  { href: '/dealer/contracts', key: 'contracts', icon: FileText },
-  { href: '/dealer/documents', key: 'documents', icon: FolderOpen },
-  { href: '/dealer/returns', key: 'returns', icon: Undo2 },
-  { href: '/dealer/profile', key: 'profile', icon: User },
-] as const;
+type NavKey =
+  | 'dashboard'
+  | 'catalog'
+  | 'basket'
+  | 'createOrder'
+  | 'myOrders'
+  | 'ordersDrafts'
+  | 'quotations'
+  | 'schedule'
+  | 'returns'
+  | 'aiChat'
+  | 'invoices'
+  | 'payments'
+  | 'statement'
+  | 'contracts'
+  | 'documents'
+  | 'profile'
+  | 'notifications';
+
+type NavItem = { href: string; key: NavKey; icon: typeof LayoutDashboard };
+type NavGroup = { id: 'home' | 'shop' | 'orders' | 'money' | 'account'; key: 'home' | 'shop' | 'orders' | 'money' | 'account'; icon: typeof LayoutDashboard; items: NavItem[] };
+
+/** Shop · Orders · Money · Account — the same four shelves as the mobile app's tabs. */
+const groups: NavGroup[] = [
+  { id: 'home', key: 'home', icon: LayoutDashboard, items: [{ href: '/dealer/dashboard', key: 'dashboard', icon: LayoutDashboard }] },
+  {
+    id: 'shop',
+    key: 'shop',
+    icon: ShoppingBag,
+    items: [
+      { href: '/dealer/catalog', key: 'catalog', icon: ShoppingBag },
+      { href: '/dealer/basket', key: 'basket', icon: ShoppingCart },
+      { href: '/dealer/orders/new', key: 'createOrder', icon: SquarePen },
+    ],
+  },
+  {
+    id: 'orders',
+    key: 'orders',
+    icon: Package,
+    items: [
+      { href: '/dealer/orders', key: 'myOrders', icon: Package },
+      { href: '/dealer/requests', key: 'ordersDrafts', icon: FileText },
+      { href: '/dealer/quotations', key: 'quotations', icon: FileText },
+      { href: '/dealer/deliveries', key: 'schedule', icon: CalendarDays },
+      { href: '/dealer/returns', key: 'returns', icon: Undo2 },
+    ],
+  },
+  {
+    id: 'money',
+    key: 'money',
+    icon: Receipt,
+    items: [
+      { href: '/dealer/invoices', key: 'invoices', icon: Receipt },
+      { href: '/dealer/payments', key: 'payments', icon: Banknote },
+      { href: '/dealer/statement', key: 'statement', icon: Scroll },
+      { href: '/dealer/contracts', key: 'contracts', icon: FileText },
+      { href: '/dealer/documents', key: 'documents', icon: FolderOpen },
+    ],
+  },
+  {
+    id: 'account',
+    key: 'account',
+    icon: User,
+    items: [
+      { href: '/dealer/profile', key: 'profile', icon: User },
+      { href: '/dealer/notifications', key: 'notifications', icon: Bell },
+      { href: '/dealer/ai-chat', key: 'aiChat', icon: MessageSquare },
+    ],
+  },
+];
+const items: NavItem[] = groups.flatMap((g) => g.items);
 
 interface NotificationItem {
   id: string;
@@ -102,6 +156,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
   }
 
   const navHrefs = useMemo(() => items.map((item) => item.href), []);
+  const activeItem = items.find((item) => isNavItemActive(pathname, item.href, navHrefs)) ?? null;
+  const activeGroup = groups.find((g) => g.items.some((item) => item.href === activeItem?.href)) ?? groups[0]!;
 
   const initials = (me.data?.name ?? '')
     .split(' ')
@@ -111,12 +167,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
     .join('');
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background">
+      <ShellAtmosphere />
       <header
         ref={headerRef}
         data-header-tone={overDark ? 'on-dark' : 'on-light'}
         className={cn(
-          'sticky top-0 z-[1100] border-b',
+          'sticky top-0 z-[1100] border-b bg-[var(--maher-surface)]/85 backdrop-blur-xl',
           overDark ? 'border-white/10' : 'border-border',
         )}
       >
@@ -246,37 +303,55 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="maher-stagger mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pb-2">
-          {items.map((item) => {
-            const active = isNavItemActive(pathname, item.href, navHrefs);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'maher-nav-item maher-press group flex items-center gap-2 whitespace-nowrap rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
-                  active
-                    ? 'bg-brand-soft text-brand'
-                    : overDark
-                      ? 'text-white hover:bg-white/10 hover:text-white'
-                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
-                )}
-              >
-                <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />
-                {t(item.key)}
-                {item.href === '/dealer/basket' && basketCount > 0 ? (
-                  <span className="rounded-full bg-brand px-1.5 text-[10px] font-medium text-white">
-                    {basketCount}
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
+        <nav aria-label={tCommon('portalCustomer')} className="mx-auto flex max-w-6xl flex-col gap-2 px-3 pb-2.5 sm:flex-row sm:items-center sm:gap-3">
+          <SectionTabs
+            aria-label={tCommon('portalCustomer')}
+            size="sm"
+            LinkComponent={Link}
+            value={activeGroup.id}
+            items={groups.map((g) => ({
+              id: g.id,
+              label: t(g.key),
+              href: g.items[0]!.href,
+              icon: <g.icon className="h-4 w-4" />,
+              count: g.id === 'shop' && basketCount > 0 ? basketCount : g.id === 'account' && unread > 0 ? unread : undefined,
+              tone: g.id === 'shop' ? 'brand' : g.id === 'account' ? 'warning' : undefined,
+            }))}
+          />
+          {activeGroup.items.length > 1 ? (
+            <div className="maher-stagger flex gap-1 overflow-x-auto sm:ms-auto" role="list">
+              {activeGroup.items.map((item) => {
+                const active = activeItem?.href === item.href;
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    role="listitem"
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'maher-press group flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] font-medium transition',
+                      active
+                        ? 'border-[var(--maher-text-primary)] bg-[var(--maher-text-primary)] text-[var(--maher-surface)]'
+                        : 'border-transparent text-text-secondary hover:border-[var(--maher-border)] hover:bg-surface-muted hover:text-text-primary',
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 transition-transform duration-300 ease-out group-hover:scale-110" />
+                    {t(item.key)}
+                    {item.href === '/dealer/basket' && basketCount > 0 ? (
+                      <span className={cn('rounded-full px-1.5 text-[10px] font-semibold', active ? 'bg-[var(--maher-surface)]/20 text-[var(--maher-surface)]' : 'bg-brand text-white')}>{basketCount}</span>
+                    ) : null}
+                    {item.href === '/dealer/notifications' && unread > 0 ? (
+                      <span className={cn('rounded-full px-1.5 text-[10px] font-semibold', active ? 'bg-[var(--maher-surface)]/20 text-[var(--maher-surface)]' : 'bg-brand text-white')}>{unread > 9 ? '9+' : unread}</span>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
         </nav>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8">
         <div key={pathname} className="maher-page-enter">
           {children}
         </div>

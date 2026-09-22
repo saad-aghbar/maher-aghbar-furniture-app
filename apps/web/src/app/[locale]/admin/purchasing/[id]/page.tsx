@@ -1,37 +1,41 @@
-'use client';
+"use client";
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
-import { PageHeader } from '@/components/admin/page-header';
-import { Link, useRouter } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
-import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import { buildReceivePayload, isFabricCategory } from '@/lib/purchase-order-payload';
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { InventoryItemThumb } from "@/components/admin/inventory-item-thumb";
+import { PageHeader } from "@/components/admin/page-header";
+import { Link, useRouter } from "@/i18n/navigation";
+import { apiFetch, API_URL } from "@/lib/api-client";
+import { mutationErrorMessage } from "@/hooks/use-api-mutation";
+import { usePdfDownload } from "@/hooks/use-pdf-download";
+import {
+  buildReceivePayload,
+  isFabricCategory,
+} from "@/lib/purchase-order-payload";
 import {
   Alert,
+  Board,
   Button,
-  Card,
   EmptyState,
   ErrorState,
   Modal,
+  MotionSection,
   NumberStepper,
   Select,
   Skeleton,
   StatusBadge,
-  TextArea,
   Table,
   TableBody,
   TableCell,
-  TableNumericCell,
   TableHead,
   TableHeaderCell,
+  TableNumericCell,
   TableRow,
-  MotionSection,
-} from '@maher/ui';
-import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+  TextArea,
+} from "@maher/ui";
+import { localizedName } from "@maher/i18n";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
+import { useMemo, useState } from "react";
 
 interface PoDetail {
   id: string;
@@ -43,8 +47,19 @@ interface PoDetail {
   taxAmount?: string | number;
   notes?: string | null;
   warehouseId?: string | null;
-  warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
-  supplier?: { id: string; name: string; nameAr?: string; nameEn?: string; code?: string };
+  warehouse?: {
+    id: string;
+    code: string;
+    nameEn?: string;
+    nameAr?: string;
+  } | null;
+  supplier?: {
+    id: string;
+    name: string;
+    nameAr?: string;
+    nameEn?: string;
+    code?: string;
+  };
   presentation?: {
     phase: string;
     labelKey: string;
@@ -70,7 +85,12 @@ interface PoDetail {
     remainingQty?: number | string;
     warehouseId?: string | null;
     locationId?: string | null;
-    warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
+    warehouse?: {
+      id: string;
+      code: string;
+      nameEn?: string;
+      nameAr?: string;
+    } | null;
     location?: { id: string; code: string; name?: string | null } | null;
     inventoryItem?: {
       id: string;
@@ -87,7 +107,12 @@ interface PoDetail {
     number: string;
     createdAt?: string;
     notes?: string | null;
-    warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string } | null;
+    warehouse?: {
+      id: string;
+      code: string;
+      nameEn?: string;
+      nameAr?: string;
+    } | null;
     lines?: Array<{
       id?: string;
       receivedQty?: number | string;
@@ -137,30 +162,41 @@ function locationsForWarehouse(warehouses: Warehouse[], warehouseId?: string) {
   );
 }
 
-function defaultLocationId(warehouses: Warehouse[], warehouseId?: string, current?: string) {
+function defaultLocationId(
+  warehouses: Warehouse[],
+  warehouseId?: string,
+  current?: string,
+) {
   const locs = locationsForWarehouse(warehouses, warehouseId);
   if (current && locs.some((loc) => loc.id === current)) return current;
-  return locs.find((loc) => loc.isDefault)?.id ?? locs[0]?.id ?? '';
+  return locs.find((loc) => loc.isDefault)?.id ?? locs[0]?.id ?? "";
 }
 
-function phaseFallback(labelKey: string | undefined, phase: string | undefined): string {
-  if (!labelKey && !phase) return '';
+function phaseFallback(
+  labelKey: string | undefined,
+  phase: string | undefined,
+): string {
+  if (!labelKey && !phase) return "";
   const map: Record<string, string> = {
-    'purchasing.phaseDraft': 'Draft',
-    'purchasing.phaseOrdered': 'Ordered',
-    'purchasing.phasePartial': 'Partially received',
-    'purchasing.phaseReceived': 'Received',
-    'purchasing.phaseClosed': 'Closed',
-    'purchasing.phaseCancelled': 'Cancelled',
+    "purchasing.phaseDraft": "Draft",
+    "purchasing.phaseOrdered": "Ordered",
+    "purchasing.phasePartial": "Partially received",
+    "purchasing.phaseReceived": "Received",
+    "purchasing.phaseClosed": "Closed",
+    "purchasing.phaseCancelled": "Cancelled",
   };
-  return (labelKey && map[labelKey]) || phase || labelKey || '';
+  return (labelKey && map[labelKey]) || phase || labelKey || "";
 }
 
-export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
-  const tc = useTranslations('catalog');
-  const tPurchasing = useTranslations('purchasing');
-  const tCommon = useTranslations('common');
-  const tNav = useTranslations('navigation');
+export default function PurchaseOrderDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const tc = useTranslations("catalog");
+  const tPurchasing = useTranslations("purchasing");
+  const tCommon = useTranslations("common");
+  const tNav = useTranslations("navigation");
   const locale = useLocale();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -171,35 +207,63 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const [sendOpen, setSendOpen] = useState(false);
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
   const [whatsappDraftTo, setWhatsappDraftTo] = useState<string | null>(null);
-  const [whatsappDraftBody, setWhatsappDraftBody] = useState('');
-  const [whatsappTemplateBody, setWhatsappTemplateBody] = useState('');
+  const [whatsappDraftBody, setWhatsappDraftBody] = useState("");
+  const [whatsappTemplateBody, setWhatsappTemplateBody] = useState("");
   const [whatsappBody, setWhatsappBody] = useState<string | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
-  const [lineWarehouses, setLineWarehouses] = useState<Record<string, string>>({});
-  const [lineLocations, setLineLocations] = useState<Record<string, string>>({});
+  const [lineWarehouses, setLineWarehouses] = useState<Record<string, string>>(
+    {},
+  );
+  const [lineLocations, setLineLocations] = useState<Record<string, string>>(
+    {},
+  );
   const [receivedQtys, setReceivedQtys] = useState<Record<string, string>>({});
   const [rejectedQtys, setRejectedQtys] = useState<Record<string, string>>({});
 
   const detailQuery = useQuery({
-    queryKey: ['purchase-order', params.id],
+    queryKey: ["purchase-order", params.id],
     queryFn: () => apiFetch<PoDetail>(`/api/v1/purchase-orders/${params.id}`),
   });
 
   const warehousesQuery = useQuery({
-    queryKey: ['warehouses-pick'],
+    queryKey: ["warehouses-pick"],
     queryFn: () =>
-      apiFetch<{ data: Warehouse[] }>('/api/v1/warehouses?pageSize=50').then((r) => r.data),
+      apiFetch<{ data: Warehouse[] }>("/api/v1/warehouses?pageSize=50").then(
+        (r) => r.data,
+      ),
+  });
+
+  const { openPdf, pdfDialog } = usePdfDownload();
+  const markSentMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/purchase-orders/${params.id}/mark-sent`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tc("markedSent"));
+      await queryClient.invalidateQueries({
+        queryKey: ["purchase-order", params.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
   });
 
   const approveMutation = useMutation({
     mutationFn: () =>
-      apiFetch(`/api/v1/purchase-orders/${params.id}/approve`, { method: 'POST' }),
+      apiFetch(`/api/v1/purchase-orders/${params.id}/approve`, {
+        method: "POST",
+      }),
     onSuccess: async () => {
       setApproveOpen(false);
-      setBanner(tc('purchaseOrderApproved'));
-      await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setBanner(tc("purchaseOrderApproved"));
+      await queryClient.invalidateQueries({
+        queryKey: ["purchase-order", params.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -210,7 +274,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         purchaseOrder: { id: string };
         whatsapp: { ok: boolean; to: string | null; body: string };
       }>(`/api/v1/purchase-orders/${params.id}/send`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ body: whatsappDraftBody || undefined }),
       }),
     onSuccess: async (result) => {
@@ -218,14 +282,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       setSendConfirmOpen(false);
       setWhatsappBody(result.whatsapp.body);
       if (result.whatsapp.ok && result.whatsapp.to) {
-        setBanner(tc('whatsappSentOk', { to: result.whatsapp.to }));
+        setBanner(tc("whatsappSentOk", { to: result.whatsapp.to }));
       } else if (!result.whatsapp.to) {
-        setBanner(tc('whatsappNoPhone'));
+        setBanner(tc("whatsappNoPhone"));
       } else {
-        setBanner(tc('whatsappSentFailed'));
+        setBanner(tc("whatsappSentFailed"));
       }
-      await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      await queryClient.invalidateQueries({
+        queryKey: ["purchase-order", params.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -233,29 +299,32 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const receiveMutation = useMutation({
     mutationFn: async () => {
       const po = detailQuery.data;
-      if (!po) throw new Error('missing');
+      if (!po) throw new Error("missing");
       const payload = buildReceivePayload(
         (po.lines ?? [])
           .filter((line) => line.inventoryItemId)
           .map((line) => ({
             inventoryItemId: line.inventoryItemId!,
             orderedQty: Number(line.quantity),
-            receiveNow: receivedQtys[line.id] ?? '0',
-            rejectedQty: rejectedQtys[line.id] ?? '0',
+            receiveNow: receivedQtys[line.id] ?? "0",
+            rejectedQty: rejectedQtys[line.id] ?? "0",
             warehouseId: lineWarehouses[line.id] || po.warehouseId || undefined,
             locationId: lineLocations[line.id] || undefined,
           })),
       );
-      if (payload.lines.length === 0) throw new Error(tc('selectInventoryItemRequired'));
+      if (payload.lines.length === 0)
+        throw new Error(tc("selectInventoryItemRequired"));
       const fallbackWarehouse =
-        payload.lines[0]?.warehouseId || po.warehouseId || warehousesQuery.data?.[0]?.id;
-      if (!fallbackWarehouse) throw new Error(tc('selectWarehouseRequired'));
+        payload.lines[0]?.warehouseId ||
+        po.warehouseId ||
+        warehousesQuery.data?.[0]?.id;
+      if (!fallbackWarehouse) throw new Error(tc("selectWarehouseRequired"));
       return apiFetch(`/api/v1/purchase-orders/${params.id}/goods-receipts`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({
           warehouseId: fallbackWarehouse,
           idempotencyKey:
-            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            typeof crypto !== "undefined" && "randomUUID" in crypto
               ? crypto.randomUUID()
               : `grn-${params.id}-${Date.now()}`,
           ...payload,
@@ -265,12 +334,14 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
     onSuccess: async () => {
       setReceiveOpen(false);
       setReceiveConfirmOpen(false);
-      setBanner(tc('goodsReceiptPosted'));
-      await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-      await queryClient.invalidateQueries({ queryKey: ['material-demand'] });
-      await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
-      await queryClient.invalidateQueries({ queryKey: ['production-order'] });
+      setBanner(tc("goodsReceiptPosted"));
+      await queryClient.invalidateQueries({
+        queryKey: ["purchase-order", params.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["material-demand"] });
+      await queryClient.invalidateQueries({ queryKey: ["production-orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["production-order"] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -280,7 +351,11 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       const link = await apiFetch<{ downloadPath: string }>(
         `/api/v1/uploads/documents/${id}/link`,
       );
-      window.open(`${API_URL}${link.downloadPath}`, '_blank', 'noopener,noreferrer');
+      window.open(
+        `${API_URL}${link.downloadPath}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
     } catch (err) {
       setError(mutationErrorMessage(err));
     }
@@ -288,15 +363,18 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
 
   const createInvoiceMutation = useMutation({
     mutationFn: () =>
-      apiFetch<{ id: string }>('/api/v1/supplier-invoices', {
-        method: 'POST',
+      apiFetch<{ id: string }>("/api/v1/supplier-invoices", {
+        method: "POST",
         body: JSON.stringify({ purchaseOrderId: params.id }),
       }),
     onSuccess: async (created) => {
-      setBanner(tc('supplierInvoiceCreated'));
-      await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['supplier-invoices'] });
-      if (created?.id) router.push(`/admin/purchasing/supplier-invoices/${created.id}`);
+      setBanner(tc("supplierInvoiceCreated"));
+      await queryClient.invalidateQueries({
+        queryKey: ["purchase-order", params.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["supplier-invoices"] });
+      if (created?.id)
+        router.push(`/admin/purchasing/supplier-invoices/${created.id}`);
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -304,7 +382,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const warehouseOptions = useMemo(
     () =>
       (warehousesQuery.data ?? [])
-        .filter((w) => !w.type || w.type === 'RAW_MATERIALS')
+        .filter((w) => !w.type || w.type === "RAW_MATERIALS")
         .map((w) => ({
           value: w.id,
           label: `${w.code} — ${localizedName(locale, w)}`,
@@ -324,35 +402,41 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   if (detailQuery.isError || !detailQuery.data) {
     return (
       <ErrorState
-        title={tc('purchaseOrderDetail')}
+        title={tc("purchaseOrderDetail")}
         onRetry={() => detailQuery.refetch()}
-        retryLabel={tCommon('retry')}
+        retryLabel={tCommon("retry")}
       />
     );
   }
 
   const po = detailQuery.data;
   const lines = po.lines ?? [];
-  const canApprove = po.status === 'DRAFT' || po.status === 'PENDING_APPROVAL';
-  const canSend = po.status === 'APPROVED' || po.status === 'SENT';
-  const canReceive = ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED'].includes(po.status);
+  const canApprove = po.status === "DRAFT" || po.status === "PENDING_APPROVAL";
+  const canSend = po.status === "APPROVED" || po.status === "SENT";
+  const canReceive = ["APPROVED", "SENT", "PARTIALLY_RECEIVED"].includes(
+    po.status,
+  );
   const existingInvoice = (po.supplierInvoices ?? [])[0];
   const canCreateInvoice =
     !existingInvoice &&
-    ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED'].includes(po.status);
+    ["APPROVED", "SENT", "PARTIALLY_RECEIVED", "RECEIVED", "CLOSED"].includes(
+      po.status,
+    );
   const costing = po.purchasingCosting;
-  const phaseKey = po.presentation?.labelKey?.replace(/^purchasing\./, '') as
-    | 'phaseDraft'
-    | 'phaseOrdered'
-    | 'phasePartial'
-    | 'phaseReceived'
-    | 'phaseClosed'
-    | 'phaseCancelled'
+  const phaseKey = po.presentation?.labelKey?.replace(/^purchasing\./, "") as
+    | "phaseDraft"
+    | "phaseOrdered"
+    | "phasePartial"
+    | "phaseReceived"
+    | "phaseClosed"
+    | "phaseCancelled"
     | undefined;
   const phaseLabel = phaseKey
     ? tPurchasing(phaseKey)
     : phaseFallback(po.presentation?.labelKey, po.presentation?.phase);
-  const progressPct = Math.round((Number(po.presentation?.progress) || 0) * 100);
+  const progressPct = Math.round(
+    (Number(po.presentation?.progress) || 0) * 100,
+  );
 
   return (
     <div className="space-y-6">
@@ -362,48 +446,60 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         description={
           po.supplier
             ? localizedName(locale, po.supplier, po.supplier.name)
-            : tNav('purchasing')
+            : tNav("purchasing")
         }
         actions={
           <>
             {phaseLabel ? (
               <StatusBadge
                 status={po.presentation?.phase ?? po.status}
-                label={`${phaseLabel}${progressPct > 0 ? ` · ${progressPct}%` : ''}`}
+                label={`${phaseLabel}${progressPct > 0 ? ` · ${progressPct}%` : ""}`}
               />
             ) : (
               <StatusBadge status={po.status} />
             )}
-            {po.origin && po.origin !== 'MANUAL' ? <StatusBadge status={po.origin} /> : null}
+            {po.origin && po.origin !== "MANUAL" ? (
+              <StatusBadge status={po.origin} />
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
               onClick={() =>
-                window.open(
-                  `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/v1/purchasing/orders/${po.id}/pdf`,
-                  '_blank',
-                )
+                openPdf({
+                  path: `/api/v1/purchasing/orders/${po.id}/pdf`,
+                  documentName: po.number,
+                  filename: `${po.number}.pdf`,
+                })
               }
             >
               PDF
             </Button>
-            <Link href="/admin/purchasing">
-              <Button variant="ghost" size="sm">
-                {tCommon('back')}
+            {po.status === "APPROVED" ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={markSentMutation.isPending}
+                onClick={() => markSentMutation.mutate()}
+              >
+                {tc("markSent")}
               </Button>
-            </Link>
+            ) : null}
             {canApprove ? (
-              <Button onClick={() => setApproveOpen(true)}>{tc('approve')}</Button>
+              <Button onClick={() => setApproveOpen(true)}>
+                {tc("approve")}
+              </Button>
             ) : null}
             {canSend ? (
               <Button
                 variant="secondary"
                 onClick={async () => {
                   try {
-                    const draft = await apiFetch<{ to: string | null; body: string }>(
-                      `/api/v1/purchase-orders/${params.id}/whatsapp-draft`,
-                      { method: 'POST' },
-                    );
+                    const draft = await apiFetch<{
+                      to: string | null;
+                      body: string;
+                    }>(`/api/v1/purchase-orders/${params.id}/whatsapp-draft`, {
+                      method: "POST",
+                    });
                     setWhatsappDraftTo(draft.to);
                     setWhatsappDraftBody(draft.body);
                     setWhatsappTemplateBody(draft.body);
@@ -413,7 +509,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   }
                 }}
               >
-                {po.status === 'SENT' ? tc('resendWhatsapp') : tc('sendPurchaseOrder')}
+                {po.status === "SENT"
+                  ? tc("resendWhatsapp")
+                  : tc("sendPurchaseOrder")}
               </Button>
             ) : null}
             {canReceive ? (
@@ -424,7 +522,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                     Object.fromEntries(
                       lines.map((line) => [
                         line.id,
-                        line.warehouseId ?? po.warehouseId ?? warehousesQuery.data?.[0]?.id ?? '',
+                        line.warehouseId ??
+                          po.warehouseId ??
+                          warehousesQuery.data?.[0]?.id ??
+                          "",
                       ]),
                     ),
                   );
@@ -432,13 +533,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                     Object.fromEntries(
                       lines.map((line) => {
                         const warehouseId =
-                          line.warehouseId ?? po.warehouseId ?? warehousesQuery.data?.[0]?.id ?? '';
+                          line.warehouseId ??
+                          po.warehouseId ??
+                          warehousesQuery.data?.[0]?.id ??
+                          "";
                         return [
                           line.id,
                           defaultLocationId(
                             warehousesQuery.data ?? [],
                             warehouseId,
-                            line.locationId ?? '',
+                            line.locationId ?? "",
                           ),
                         ];
                       }),
@@ -452,19 +556,20 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                             ? Number(line.remainingQty)
                             : Math.max(
                                 0,
-                                Number(line.quantity) - Number(line.receivedQty ?? 0),
+                                Number(line.quantity) -
+                                  Number(line.receivedQty ?? 0),
                               );
                         return [line.id, String(remaining)];
                       }),
                     ),
                   );
                   setRejectedQtys(
-                    Object.fromEntries(lines.map((line) => [line.id, ''])),
+                    Object.fromEntries(lines.map((line) => [line.id, ""])),
                   );
                   setReceiveOpen(true);
                 }}
               >
-                {tc('goodsReceipts')}
+                {tc("goodsReceipts")}
               </Button>
             ) : null}
             {canCreateInvoice ? (
@@ -473,11 +578,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 loading={createInvoiceMutation.isPending}
                 onClick={() => createInvoiceMutation.mutate()}
               >
-                {tc('createSupplierInvoice')}
+                {tc("createSupplierInvoice")}
               </Button>
             ) : null}
             {existingInvoice ? (
-              <Link href={`/admin/purchasing/supplier-invoices/${existingInvoice.id}`}>
+              <Link
+                href={`/admin/purchasing/supplier-invoices/${existingInvoice.id}`}
+              >
                 <Button variant="ghost" size="sm">
                   {existingInvoice.number}
                 </Button>
@@ -490,7 +597,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {whatsappBody || po.whatsappLastBody ? (
         <Alert variant="info">
-          <p className="font-medium">{tc('whatsappMessage')}</p>
+          <p className="font-medium">{tc("whatsappMessage")}</p>
           {(po.whatsappLastTo || null) && (
             <p className="text-sm text-text-secondary" dir="ltr">
               {po.whatsappLastTo}
@@ -504,11 +611,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               size="sm"
               variant="secondary"
               onClick={() => {
-                void navigator.clipboard.writeText(whatsappBody || po.whatsappLastBody || '');
-                setBanner(tc('copyWhatsapp'));
+                void navigator.clipboard.writeText(
+                  whatsappBody || po.whatsappLastBody || "",
+                );
+                setBanner(tc("copyWhatsapp"));
               }}
             >
-              {tc('copyWhatsapp')}
+              {tc("copyWhatsapp")}
             </Button>
             {canSend ? (
               <Button
@@ -516,10 +625,12 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 variant="ghost"
                 onClick={async () => {
                   try {
-                    const draft = await apiFetch<{ to: string | null; body: string }>(
-                      `/api/v1/purchase-orders/${params.id}/whatsapp-draft`,
-                      { method: 'POST' },
-                    );
+                    const draft = await apiFetch<{
+                      to: string | null;
+                      body: string;
+                    }>(`/api/v1/purchase-orders/${params.id}/whatsapp-draft`, {
+                      method: "POST",
+                    });
                     setWhatsappDraftTo(draft.to);
                     setWhatsappDraftBody(po.whatsappLastBody || draft.body);
                     setWhatsappTemplateBody(draft.body);
@@ -529,7 +640,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   }
                 }}
               >
-                {tc('resendWhatsapp')}
+                {tc("resendWhatsapp")}
               </Button>
             ) : null}
           </div>
@@ -538,223 +649,267 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="maher-stagger space-y-6">
-      <div className="maher-stagger grid gap-4 md:grid-cols-3">
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tc('supplier')}</p>
-          <p className="mt-1 font-semibold">
-            {po.supplier ? localizedName(locale, po.supplier, po.supplier.name) : '—'}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tCommon('total')}</p>
-          <p className="mt-1 font-semibold" dir="ltr">
-            {Number(po.total ?? 0).toFixed(2)}
-          </p>
-        </Card>
-        <Card className="maher-list-card p-4">
-          <p className="text-xs text-text-secondary">{tc('notes')}</p>
-          <p className="mt-1 font-medium">{po.notes ?? '—'}</p>
-        </Card>
-      </div>
-
-      {costing ? (
-        <MotionSection className="maher-form-section" as="div">
-          <Card className="maher-list-card grid gap-4 p-4 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-text-secondary">{tc('expectedTotal')}</p>
+        <div className="maher-stagger grid gap-4 md:grid-cols-3">
+          <Board className="p-4">
+            <Board.Body>
+              <p className="text-xs text-text-secondary">{tc("supplier")}</p>
+              <p className="mt-1 font-semibold">
+                {po.supplier
+                  ? localizedName(locale, po.supplier, po.supplier.name)
+                  : "—"}
+              </p>
+            </Board.Body>
+          </Board>
+          <Board className="p-4">
+            <Board.Body>
+              <p className="text-xs text-text-secondary">{tCommon("total")}</p>
               <p className="mt-1 font-semibold" dir="ltr">
-                {Number(costing.expectedTotal).toFixed(2)}
+                {Number(po.total ?? 0).toFixed(2)}
               </p>
-            </div>
-            <div>
-              <p className="text-xs text-text-secondary">{tc('actualReceivedValue')}</p>
-              <p className="mt-1 font-semibold" dir="ltr">
-                {Number(costing.actualReceivedValue).toFixed(2)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-text-secondary">{tc('purchaseVariance')}</p>
-              <p
-                className={`mt-1 font-semibold ${
-                  Number(costing.purchaseVariance) > 0
-                    ? 'text-amber-700'
-                    : Number(costing.purchaseVariance) < 0
-                      ? 'text-emerald-700'
-                      : ''
-                }`}
-                dir="ltr"
-              >
-                {Number(costing.purchaseVariance).toFixed(2)}
-              </p>
-            </div>
-          </Card>
-        </MotionSection>
-      ) : null}
+            </Board.Body>
+          </Board>
+          <Board className="p-4">
+            <Board.Body>
+              <p className="text-xs text-text-secondary">{tc("notes")}</p>
+              <p className="mt-1 font-medium">{po.notes ?? "—"}</p>
+            </Board.Body>
+          </Board>
+        </div>
 
-      <MotionSection className="maher-form-section" as="div">
-      <Card className="space-y-3 p-4">
-        <h2 className="text-base font-semibold">{tc('materialsList')}</h2>
-        {lines.length === 0 ? (
-          <EmptyState title={tc('selectMaterialRequired')} />
-        ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tc('material')}</TableHeaderCell>
-                <TableHeaderCell>{tPurchasing('destination')}</TableHeaderCell>
-                <TableHeaderCell>{tc('qty')}</TableHeaderCell>
-                <TableHeaderCell>{tc('receivedQty')}</TableHeaderCell>
-                <TableHeaderCell>{tc('remainingQty')}</TableHeaderCell>
-                <TableHeaderCell>{tc('unit')}</TableHeaderCell>
-                <TableHeaderCell>{tc('unitPrice')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {lines.map((line) => {
-                const unit = line.unit || line.inventoryItem?.unit || 'pcs';
-                const name = line.inventoryItem
-                  ? localizedName(locale, line.inventoryItem, line.description)
-                  : line.description;
-                const received = Number(line.receivedQty ?? 0);
-                const remaining =
-                  line.remainingQty != null
-                    ? Number(line.remainingQty)
-                    : Math.max(0, Number(line.quantity) - received);
-                return (
-                  <TableRow key={line.id}>
-                    <TableCell>
-                      <span className="flex items-center gap-2">
-                        <InventoryItemThumb
-                          src={line.inventoryItem?.imageUrl}
-                          alt={name}
-                          size={36}
-                        />
-                        <span>{name}</span>
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const warehouse = line.warehouse ?? po.warehouse;
-                        if (!warehouse) return '—';
-                        return `${warehouse.code}${line.location ? ` · ${line.location.code}` : ''}`;
-                      })()}
-                    </TableCell>
-                    <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
-                    <TableNumericCell>{received}</TableNumericCell>
-                    <TableNumericCell>{remaining}</TableNumericCell>
-                    <TableCell className="capitalize">{unit}</TableCell>
-                    <TableNumericCell>{Number(line.unitPrice).toFixed(2)}</TableNumericCell>
-                    <TableNumericCell>
-                      {Number(
-                        line.lineTotal ?? Number(line.quantity) * Number(line.unitPrice),
-                      ).toFixed(2)}
-                    </TableNumericCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
-      </MotionSection>
-
-      <MotionSection className="maher-form-section" as="div">
-      <Card className="space-y-3 p-4">
-        <h2 className="text-base font-semibold">{tc('goodsReceipts')}</h2>
-        {(po.goodsReceipts ?? []).length === 0 ? (
-          <p className="text-sm text-text-secondary">—</p>
-        ) : (
-          <ul className="space-y-3 text-sm">
-            {(po.goodsReceipts ?? []).map((grn) => (
-              <li key={grn.id} className="rounded-xl border border-border p-3">
-                <div className="flex justify-between gap-3">
-                  <span className="font-medium" dir="ltr">
-                    {grn.number}
-                    {grn.warehouse ? ` · ${grn.warehouse.code}` : ''}
-                  </span>
-                  <span className="text-text-secondary" dir="ltr">
-                    {grn.createdAt?.slice(0, 10) ?? '—'}
-                  </span>
-                </div>
-                {(grn.lines ?? []).length > 0 ? (
-                  <ul className="mt-2 space-y-1 text-text-secondary">
-                    {grn.lines!.map((gl, idx) => (
-                      <li key={gl.id ?? `${grn.id}-${idx}`} dir="ltr">
-                        {(gl.inventoryItem
-                          ? localizedName(locale, gl.inventoryItem)
-                          : '') || '—'}{' '}
-                        × {Number(gl.receivedQty ?? 0)}
-                        {gl.location?.code ? ` · ${gl.location.code}` : ''}
-                        {Number(gl.rejectedQty ?? 0) > 0
-                          ? ` (−${Number(gl.rejectedQty)} ${tc('rejectedQty')})`
-                          : ''}
-                        {gl.unitCost != null
-                          ? ` @ ${Number(gl.unitCost).toFixed(2)}`
-                          : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      </MotionSection>
-
-      <MotionSection className="maher-form-section" as="div">
-      <Card className="space-y-3 p-4">
-        <h2 className="text-base font-semibold">{tc('attachments')}</h2>
-        {(po.attachments ?? []).length === 0 ? (
-          <p className="text-sm text-text-secondary">{tc('noAttachments')}</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {(po.attachments ?? []).map((doc) => (
-              <li
-                key={doc.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    className="truncate text-sm font-medium text-brand hover:underline"
-                    onClick={() => void openAttachment(doc.id)}
-                  >
-                    {doc.fileName}
-                  </button>
-                  <p className="mt-0.5 text-xs text-text-tertiary" dir="ltr">
-                    {[
-                      doc.category?.split(':')[0],
-                      doc.createdAt?.slice(0, 10),
-                      doc.sizeBytes != null
-                        ? `${Math.max(1, Math.round(Number(doc.sizeBytes) / 1024))} KB`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+        {costing ? (
+          <MotionSection className="maher-form-section" as="div">
+            <Board className="grid gap-4 p-4 sm:grid-cols-3">
+              <Board.Body>
+                <div>
+                  <p className="text-xs text-text-secondary">
+                    {tc("expectedTotal")}
+                  </p>
+                  <p className="mt-1 font-semibold" dir="ltr">
+                    {Number(costing.expectedTotal).toFixed(2)}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void openAttachment(doc.id)}
-                >
-                  {tCommon('details')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      </MotionSection>
+                <div>
+                  <p className="text-xs text-text-secondary">
+                    {tc("actualReceivedValue")}
+                  </p>
+                  <p className="mt-1 font-semibold" dir="ltr">
+                    {Number(costing.actualReceivedValue).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-secondary">
+                    {tc("purchaseVariance")}
+                  </p>
+                  <p
+                    className={`mt-1 font-semibold ${
+                      Number(costing.purchaseVariance) > 0
+                        ? "text-amber-700"
+                        : Number(costing.purchaseVariance) < 0
+                          ? "text-emerald-700"
+                          : ""
+                    }`}
+                    dir="ltr"
+                  >
+                    {Number(costing.purchaseVariance).toFixed(2)}
+                  </p>
+                </div>
+              </Board.Body>
+            </Board>
+          </MotionSection>
+        ) : null}
+
+        <MotionSection className="maher-form-section" as="div">
+          <Board className="space-y-3 p-4">
+            <Board.Body>
+              <h2 className="text-base font-semibold">{tc("materialsList")}</h2>
+              {lines.length === 0 ? (
+                <EmptyState title={tc("selectMaterialRequired")} />
+              ) : (
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeaderCell>{tc("material")}</TableHeaderCell>
+                      <TableHeaderCell>
+                        {tPurchasing("destination")}
+                      </TableHeaderCell>
+                      <TableHeaderCell>{tc("qty")}</TableHeaderCell>
+                      <TableHeaderCell>{tc("receivedQty")}</TableHeaderCell>
+                      <TableHeaderCell>{tc("remainingQty")}</TableHeaderCell>
+                      <TableHeaderCell>{tc("unit")}</TableHeaderCell>
+                      <TableHeaderCell>{tc("unitPrice")}</TableHeaderCell>
+                      <TableHeaderCell>{tCommon("total")}</TableHeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {lines.map((line) => {
+                      const unit =
+                        line.unit || line.inventoryItem?.unit || "pcs";
+                      const name = line.inventoryItem
+                        ? localizedName(
+                            locale,
+                            line.inventoryItem,
+                            line.description,
+                          )
+                        : line.description;
+                      const received = Number(line.receivedQty ?? 0);
+                      const remaining =
+                        line.remainingQty != null
+                          ? Number(line.remainingQty)
+                          : Math.max(0, Number(line.quantity) - received);
+                      return (
+                        <TableRow key={line.id}>
+                          <TableCell>
+                            <span className="flex items-center gap-2">
+                              <InventoryItemThumb
+                                src={line.inventoryItem?.imageUrl}
+                                alt={name}
+                                size={36}
+                              />
+                              <span>{name}</span>
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const warehouse = line.warehouse ?? po.warehouse;
+                              if (!warehouse) return "—";
+                              return `${warehouse.code}${line.location ? ` · ${line.location.code}` : ""}`;
+                            })()}
+                          </TableCell>
+                          <TableNumericCell>
+                            {Number(line.quantity)}
+                          </TableNumericCell>
+                          <TableNumericCell>{received}</TableNumericCell>
+                          <TableNumericCell>{remaining}</TableNumericCell>
+                          <TableCell className="capitalize">{unit}</TableCell>
+                          <TableNumericCell>
+                            {Number(line.unitPrice).toFixed(2)}
+                          </TableNumericCell>
+                          <TableNumericCell>
+                            {Number(
+                              line.lineTotal ??
+                                Number(line.quantity) * Number(line.unitPrice),
+                            ).toFixed(2)}
+                          </TableNumericCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </Board.Body>
+          </Board>
+        </MotionSection>
+
+        <MotionSection className="maher-form-section" as="div">
+          <Board className="space-y-3 p-4">
+            <Board.Body>
+              <h2 className="text-base font-semibold">{tc("goodsReceipts")}</h2>
+              {(po.goodsReceipts ?? []).length === 0 ? (
+                <p className="text-sm text-text-secondary">—</p>
+              ) : (
+                <ul className="space-y-3 text-sm">
+                  {(po.goodsReceipts ?? []).map((grn) => (
+                    <li
+                      key={grn.id}
+                      className="rounded-xl border border-border p-3"
+                    >
+                      <div className="flex justify-between gap-3">
+                        <span className="font-medium" dir="ltr">
+                          {grn.number}
+                          {grn.warehouse ? ` · ${grn.warehouse.code}` : ""}
+                        </span>
+                        <span className="text-text-secondary" dir="ltr">
+                          {grn.createdAt?.slice(0, 10) ?? "—"}
+                        </span>
+                      </div>
+                      {(grn.lines ?? []).length > 0 ? (
+                        <ul className="mt-2 space-y-1 text-text-secondary">
+                          {grn.lines!.map((gl, idx) => (
+                            <li key={gl.id ?? `${grn.id}-${idx}`} dir="ltr">
+                              {(gl.inventoryItem
+                                ? localizedName(locale, gl.inventoryItem)
+                                : "") || "—"}{" "}
+                              × {Number(gl.receivedQty ?? 0)}
+                              {gl.location?.code
+                                ? ` · ${gl.location.code}`
+                                : ""}
+                              {Number(gl.rejectedQty ?? 0) > 0
+                                ? ` (−${Number(gl.rejectedQty)} ${tc("rejectedQty")})`
+                                : ""}
+                              {gl.unitCost != null
+                                ? ` @ ${Number(gl.unitCost).toFixed(2)}`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Board.Body>
+          </Board>
+        </MotionSection>
+
+        <MotionSection className="maher-form-section" as="div">
+          <Board className="space-y-3 p-4">
+            <Board.Body>
+              <h2 className="text-base font-semibold">{tc("attachments")}</h2>
+              {(po.attachments ?? []).length === 0 ? (
+                <p className="text-sm text-text-secondary">
+                  {tc("noAttachments")}
+                </p>
+              ) : (
+                <ul className="divide-y divide-border rounded-xl border border-border">
+                  {(po.attachments ?? []).map((doc) => (
+                    <li
+                      key={doc.id}
+                      className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          className="truncate text-sm font-medium text-brand hover:underline"
+                          onClick={() => void openAttachment(doc.id)}
+                        >
+                          {doc.fileName}
+                        </button>
+                        <p
+                          className="mt-0.5 text-xs text-text-tertiary"
+                          dir="ltr"
+                        >
+                          {[
+                            doc.category?.split(":")[0],
+                            doc.createdAt?.slice(0, 10),
+                            doc.sizeBytes != null
+                              ? `${Math.max(1, Math.round(Number(doc.sizeBytes) / 1024))} KB`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void openAttachment(doc.id)}
+                      >
+                        {tCommon("details")}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Board.Body>
+          </Board>
+        </MotionSection>
       </div>
 
       <ConfirmDialog
         open={approveOpen}
-        title={tc('approvePurchaseOrder')}
-        description={tc('approvePurchaseOrderConfirm')}
-        confirmLabel={tc('approve')}
+        title={tc("approvePurchaseOrder")}
+        description={tc("approvePurchaseOrderConfirm")}
+        confirmLabel={tc("approve")}
         loading={approveMutation.isPending}
         error={error}
         onConfirm={() => approveMutation.mutate()}
@@ -764,16 +919,21 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       <Modal
         open={sendOpen}
         onClose={() => setSendOpen(false)}
-        title={tPurchasing('whatsappPreview')}
+        title={tPurchasing("whatsappPreview")}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setWhatsappDraftBody(whatsappTemplateBody)}>
-              {tPurchasing('resetTemplate')}
+            <Button
+              variant="ghost"
+              onClick={() => setWhatsappDraftBody(whatsappTemplateBody)}
+            >
+              {tPurchasing("resetTemplate")}
             </Button>
             <Button variant="secondary" onClick={() => setSendOpen(false)}>
-              {tCommon('cancel')}
+              {tCommon("cancel")}
             </Button>
-            <Button onClick={() => setSendConfirmOpen(true)}>{tc('sendWhatsApp')}</Button>
+            <Button onClick={() => setSendConfirmOpen(true)}>
+              {tc("sendWhatsApp")}
+            </Button>
           </>
         }
       >
@@ -783,10 +943,12 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               {whatsappDraftTo}
             </p>
           ) : (
-            <p className="text-sm text-text-secondary">{tc('whatsappNoPhone')}</p>
+            <p className="text-sm text-text-secondary">
+              {tc("whatsappNoPhone")}
+            </p>
           )}
           <TextArea
-            label={tc('whatsappMessage')}
+            label={tc("whatsappMessage")}
             value={whatsappDraftBody}
             onChange={(e) => setWhatsappDraftBody(e.target.value)}
           />
@@ -795,9 +957,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
 
       <ConfirmDialog
         open={sendConfirmOpen}
-        title={tc('sendPurchaseOrder')}
-        description={tc('sendPurchaseOrderConfirm')}
-        confirmLabel={tc('sendPurchaseOrder')}
+        title={tc("sendPurchaseOrder")}
+        description={tc("sendPurchaseOrderConfirm")}
+        confirmLabel={tc("sendPurchaseOrder")}
         loading={sendMutation.isPending}
         error={error}
         onConfirm={() => sendMutation.mutate()}
@@ -807,14 +969,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       <Modal
         open={receiveOpen}
         onClose={() => setReceiveOpen(false)}
-        title={tc('goodsReceipts')}
+        title={tc("goodsReceipts")}
         className="max-w-3xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
-              {tCommon('cancel')}
+              {tCommon("cancel")}
             </Button>
-            <Button onClick={() => setReceiveConfirmOpen(true)}>{tCommon('save')}</Button>
+            <Button onClick={() => setReceiveConfirmOpen(true)}>
+              {tCommon("save")}
+            </Button>
           </>
         }
       >
@@ -825,12 +989,21 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               const remaining =
                 line.remainingQty != null
                   ? Number(line.remainingQty)
-                  : Math.max(0, Number(line.quantity) - Number(line.receivedQty ?? 0));
+                  : Math.max(
+                      0,
+                      Number(line.quantity) - Number(line.receivedQty ?? 0),
+                    );
               const fabric = isFabricCategory(line.inventoryItem?.category);
-              const warehouseId = lineWarehouses[line.id] ?? '';
-              const locations = locationsForWarehouse(warehousesQuery.data ?? [], warehouseId);
+              const warehouseId = lineWarehouses[line.id] ?? "";
+              const locations = locationsForWarehouse(
+                warehousesQuery.data ?? [],
+                warehouseId,
+              );
               return (
-                <div key={line.id} className="space-y-3 rounded-xl border border-border p-3">
+                <div
+                  key={line.id}
+                  className="space-y-3 rounded-xl border border-border p-3"
+                >
                   <div className="flex items-start gap-3">
                     <InventoryItemThumb
                       src={line.inventoryItem?.imageUrl}
@@ -840,59 +1013,80 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{line.description}</p>
                       <p className="text-xs text-text-secondary" dir="ltr">
-                        {tc('receivedQty')}: {Number(line.receivedQty ?? 0)} · {tc('remainingQty')}:{' '}
-                        {remaining}
+                        {tc("receivedQty")}: {Number(line.receivedQty ?? 0)} ·{" "}
+                        {tc("remainingQty")}: {remaining}
                       </p>
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <NumberStepper
-                      label={tc('qty')}
-                      value={receivedQtys[line.id] ?? ''}
+                      label={tc("qty")}
+                      value={receivedQtys[line.id] ?? ""}
                       min={0}
                       max={remaining}
                       onChange={(value) =>
-                        setReceivedQtys((prev) => ({ ...prev, [line.id]: value }))
+                        setReceivedQtys((prev) => ({
+                          ...prev,
+                          [line.id]: value,
+                        }))
                       }
                     />
                     <div className="space-y-1">
-                      <p className="text-xs text-text-secondary">{tc('unitCost')}</p>
+                      <p className="text-xs text-text-secondary">
+                        {tc("unitCost")}
+                      </p>
                       <p className="text-sm" dir="ltr">
                         {Number(line.unitPrice).toFixed(2)}
                       </p>
                     </div>
                     <NumberStepper
-                      label={tc('rejectedQty')}
-                      value={rejectedQtys[line.id] ?? ''}
+                      label={tc("rejectedQty")}
+                      value={rejectedQtys[line.id] ?? ""}
                       min={0}
                       onChange={(value) =>
-                        setRejectedQtys((prev) => ({ ...prev, [line.id]: value }))
+                        setRejectedQtys((prev) => ({
+                          ...prev,
+                          [line.id]: value,
+                        }))
                       }
                     />
                     <Select
-                      label={tPurchasing('destination')}
+                      label={tPurchasing("destination")}
                       value={warehouseId}
                       onChange={(e) => {
                         const next = e.target.value;
-                        setLineWarehouses((prev) => ({ ...prev, [line.id]: next }));
+                        setLineWarehouses((prev) => ({
+                          ...prev,
+                          [line.id]: next,
+                        }));
                         setLineLocations((prev) => ({
                           ...prev,
-                          [line.id]: defaultLocationId(warehousesQuery.data ?? [], next),
+                          [line.id]: defaultLocationId(
+                            warehousesQuery.data ?? [],
+                            next,
+                          ),
                         }));
                       }}
                       options={warehouseOptions}
                     />
                     <Select
-                      label={fabric ? tPurchasing('holdingLocation') : tPurchasing('bin')}
-                      value={lineLocations[line.id] ?? ''}
+                      label={
+                        fabric
+                          ? tPurchasing("holdingLocation")
+                          : tPurchasing("bin")
+                      }
+                      value={lineLocations[line.id] ?? ""}
                       onChange={(e) =>
-                        setLineLocations((prev) => ({ ...prev, [line.id]: e.target.value }))
+                        setLineLocations((prev) => ({
+                          ...prev,
+                          [line.id]: e.target.value,
+                        }))
                       }
                     >
                       {locations.map((loc) => (
                         <option key={loc.id} value={loc.id}>
                           {loc.code}
-                          {loc.name ? ` — ${loc.name}` : ''}
+                          {loc.name ? ` — ${loc.name}` : ""}
                         </option>
                       ))}
                     </Select>
@@ -904,14 +1098,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       </Modal>
       <ConfirmDialog
         open={receiveConfirmOpen}
-        title={tc('goodsReceipts')}
-        description={tc('goodsReceiptPosted')}
-        confirmLabel={tCommon('save')}
+        title={tc("goodsReceipts")}
+        description={tc("goodsReceiptPosted")}
+        confirmLabel={tCommon("save")}
         loading={receiveMutation.isPending}
         error={error}
         onConfirm={() => receiveMutation.mutate()}
         onClose={() => setReceiveConfirmOpen(false)}
       />
+      {pdfDialog}
     </div>
   );
 }

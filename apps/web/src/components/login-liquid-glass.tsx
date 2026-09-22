@@ -88,6 +88,64 @@ function forgetInstance(instance: GlassInstance) {
   if (index >= 0) list.splice(index, 1)
 }
 
+type SnapshotContainer = {
+  pageSnapshot?: HTMLCanvasElement | null
+  isCapturing?: boolean
+  waitingForSnapshot?: GlassInstance[]
+  instances?: Array<
+    GlassInstance & {
+      gl_refs?: {
+        gl?: WebGLRenderingContext
+        texture?: WebGLTexture
+        textureSizeLoc?: WebGLUniformLocation | null
+      }
+    }
+  >
+}
+
+/** Debounced html2canvas recapture so glass samples the moving hero after layout changes. */
+export function recaptureGlassSnapshot(): void {
+  const Container = window.Container as unknown as SnapshotContainer | undefined
+  if (!Container || typeof html2canvas !== 'function') return
+  Container.pageSnapshot = null
+  Container.isCapturing = true
+  Container.waitingForSnapshot = Container.instances?.slice() ?? []
+  void html2canvas(document.body, {
+    scale: 1,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: null,
+    ignoreElements: (element) =>
+      element.classList.contains('glass-container') ||
+      element.classList.contains('glass-button') ||
+      element.classList.contains('glass-button-text'),
+  })
+    .then((snapshot) => {
+      Container.pageSnapshot = snapshot
+      Container.isCapturing = false
+      const img = new Image()
+      img.src = snapshot.toDataURL()
+      img.onload = () => {
+        Container.instances?.forEach((instance) => {
+          const gl = instance.gl_refs?.gl
+          const texture = instance.gl_refs?.texture
+          if (!gl || !texture) return
+          gl.bindTexture(gl.TEXTURE_2D, texture)
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img)
+          if (instance.gl_refs?.textureSizeLoc) {
+            gl.uniform2f(instance.gl_refs.textureSizeLoc, img.width, img.height)
+          }
+          instance.render?.()
+        })
+        Container.waitingForSnapshot = []
+      }
+    })
+    .catch(() => {
+      Container.isCapturing = false
+      Container.waitingForSnapshot = []
+    })
+}
+
 /** Mount a standalone glass button into `host`. */
 export function useLiquidGlassButton(options: {
   text: string

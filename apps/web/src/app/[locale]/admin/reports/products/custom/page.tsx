@@ -3,7 +3,7 @@
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { useReportsFilterQs } from '@/components/cost-performance/reports-chrome';
-import { Card, EmptyState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableNumericCell, TableRow } from '@maher/ui';
+import { Board, EmptyState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableNumericCell, TableRow } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -29,7 +29,7 @@ export default function ReportsCustomWorkPage() {
   const rows = query.data ?? [];
 
   return (
-    <Card className="space-y-3 p-4">
+    <Board className="space-y-3 p-4"><Board.Body>
       <h2 className="text-lg font-medium">{ta('sectionCustom')}</h2>
       {rows.length === 0 ? (
         <EmptyState title={ta('noData')} />
@@ -55,6 +55,6 @@ export default function ReportsCustomWorkPage() {
           </TableBody>
         </Table>
       )}
-    </Card>
+    </Board.Body></Board>
   );
 }

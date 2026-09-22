@@ -1,15 +1,18 @@
-'use client';
+"use client";
 
-import { ProductionFlowMap, type FlowMapStage } from '@/components/workflow/production-flow-map';
-import { apiFetch } from '@/lib/api-client';
-import type { ProductStageEstimateRow } from '@/lib/scheduling';
-import { workflowVersionToFlowStages } from '@/lib/workflow-labels';
-import { isQualityGateStageCode } from '@/lib/workflow-terminal';
-import { localizedName } from '@maher/i18n';
-import { Card, EmptyState, Skeleton } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import {
+  ProductionFlowMap,
+  type FlowMapStage,
+} from "@/components/workflow/production-flow-map";
+import { apiFetch } from "@/lib/api-client";
+import type { ProductStageEstimateRow } from "@/lib/scheduling";
+import { workflowVersionToFlowStages } from "@/lib/workflow-labels";
+import { isQualityGateStageCode } from "@/lib/workflow-terminal";
+import { localizedName } from "@maher/i18n";
+import { Board, EmptyState, Skeleton } from "@maher/ui";
+import { useQuery } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
+import { useMemo, useState } from "react";
 
 type WorkflowNode = {
   id: string;
@@ -37,12 +40,12 @@ type WorkflowDetail = {
 };
 
 function stageEstimateMinutes(row: ProductStageEstimateRow): number {
-  const mode = row.quantityScalingMode ?? 'SETUP_PLUS_LINEAR';
+  const mode = row.quantityScalingMode ?? "SETUP_PLUS_LINEAR";
   const setup = Number(row.setupMinutes ?? 0);
   const perUnit = Number(row.minutesPerUnit ?? 0);
   const fixed = Number(row.fixedMinutes ?? 0);
-  if (mode === 'FIXED') return fixed;
-  if (mode === 'LINEAR') return perUnit;
+  if (mode === "FIXED") return fixed;
+  if (mode === "LINEAR") return perUnit;
   if (fixed > 0 && setup === 0 && perUnit === 0) return fixed;
   return setup + perUnit;
 }
@@ -57,23 +60,24 @@ export function ProductWorkflowTimes({
   variantId?: string | null;
 }) {
   const locale = useLocale();
-  const t = useTranslations('mobile');
-  const rtl = locale === 'ar' || locale === 'he';
+  const t = useTranslations("mobile");
+  const rtl = locale === "ar" || locale === "he";
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const workflowQuery = useQuery({
-    queryKey: ['production-workflow', workflowId],
+    queryKey: ["production-workflow", workflowId],
     enabled: Boolean(workflowId),
-    queryFn: () => apiFetch<WorkflowDetail>(`/api/v1/production-workflows/${workflowId}`),
+    queryFn: () =>
+      apiFetch<WorkflowDetail>(`/api/v1/production-workflows/${workflowId}`),
   });
 
   const estimatesQuery = useQuery({
-    queryKey: ['product-stage-estimates', productId, variantId ?? null],
+    queryKey: ["product-stage-estimates", productId, variantId ?? null],
     enabled: Boolean(productId),
     queryFn: () =>
       apiFetch<ProductStageEstimateRow[]>(
         `/api/v1/scheduling/products/${productId}/stage-estimates${
-          variantId ? `?variantId=${encodeURIComponent(variantId)}` : ''
+          variantId ? `?variantId=${encodeURIComponent(variantId)}` : ""
         }`,
       ),
   });
@@ -102,9 +106,12 @@ export function ProductWorkflowTimes({
         // Keep layout code = node id so dependsOnCodes (node ids) still match.
         libraryCode: def?.code ?? null,
         name: def ? localizedName(locale, def, displayCode) : displayCode,
-        status: qualityGate || (minutes && minutes > 0) ? 'COMPLETED' : 'PENDING',
+        status:
+          qualityGate || (minutes && minutes > 0) ? "COMPLETED" : "PENDING",
         progressPercent: qualityGate || (minutes && minutes > 0) ? 100 : 0,
-        estimatedMinutes: qualityGate ? 0 : (minutes ?? node?.estimatedMinutes ?? null),
+        estimatedMinutes: qualityGate
+          ? 0
+          : (minutes ?? node?.estimatedMinutes ?? null),
       };
     });
   }, [estimateMap, locale, workflowQuery.data?.activeVersion]);
@@ -118,42 +125,48 @@ export function ProductWorkflowTimes({
   if (!workflowId) return null;
 
   return (
-    <Card
-      title={t('production.workflow.productTimesTitle')}
-      description={t('production.workflow.productTimesHint')}
-    >
-      {workflowQuery.isLoading ? (
-        <Skeleton className="h-40 rounded-lg" />
-      ) : workflowQuery.isError ? (
-        <EmptyState title={t('production.workflow.loadError')} />
-      ) : stages.length === 0 ? (
-        <EmptyState title={t('production.workflow.emptyStages')} />
-      ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-text-secondary" dir="ltr">
-            {t('production.workflow.totalProductionTime')}: {Math.round(total)} min
-            {missing > 0 ? ` · ${t('production.workflow.stagesNeedTime', { count: missing })}` : ''}
-          </p>
-          <ProductionFlowMap
-            stages={stages}
-            selectedId={selected?.id ?? null}
-            onStageClick={(stage) => {
-              if (isQualityGateStageCode(stage.libraryCode)) return;
-              setSelectedId(stage.id);
-            }}
-            rtl={rtl}
-            showDurations
-          />
-          {selected ? (
-            <p className="text-sm text-text-secondary">
-              {selected.name}
-              {selected.estimatedMinutes
-                ? ` · ${Math.round(selected.estimatedMinutes)} min`
-                : ` · ${t('production.workflow.noProductionTimeYet')}`}
+    <Board>
+      <Board.Header
+        title={t("production.workflow.productTimesTitle")}
+        description={t("production.workflow.productTimesHint")}
+      />
+      <Board.Body>
+        {workflowQuery.isLoading ? (
+          <Skeleton className="h-40 rounded-lg" />
+        ) : workflowQuery.isError ? (
+          <EmptyState title={t("production.workflow.loadError")} />
+        ) : stages.length === 0 ? (
+          <EmptyState title={t("production.workflow.emptyStages")} />
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary" dir="ltr">
+              {t("production.workflow.totalProductionTime")}:{" "}
+              {Math.round(total)} min
+              {missing > 0
+                ? ` · ${t("production.workflow.stagesNeedTime", { count: missing })}`
+                : ""}
             </p>
-          ) : null}
-        </div>
-      )}
-    </Card>
+            <ProductionFlowMap
+              stages={stages}
+              selectedId={selected?.id ?? null}
+              onStageClick={(stage) => {
+                if (isQualityGateStageCode(stage.libraryCode)) return;
+                setSelectedId(stage.id);
+              }}
+              rtl={rtl}
+              showDurations
+            />
+            {selected ? (
+              <p className="text-sm text-text-secondary">
+                {selected.name}
+                {selected.estimatedMinutes
+                  ? ` · ${Math.round(selected.estimatedMinutes)} min`
+                  : ` · ${t("production.workflow.noProductionTimeYet")}`}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </Board.Body>
+    </Board>
   );
 }

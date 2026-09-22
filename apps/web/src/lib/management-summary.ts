@@ -39,6 +39,26 @@ export type MgmtFactoryFlowStep = {
   filter: string;
 };
 
+export type MgmtDayPoint = { date: string; count: number };
+export type MgmtDayAmount = { date: string; amount: number };
+export type MgmtDayQuality = { date: string; passed: number; failed: number };
+export type MgmtStageDuration = {
+  stageCode: string;
+  stageName: string;
+  avgMinutes: number;
+  samples: number;
+};
+
+/** Bounded day-bucketed series (local calendar days, `YYYY-MM-DD`). */
+export type MgmtSeries = {
+  completedLast7: MgmtDayPoint[];
+  dueNext7: MgmtDayPoint[];
+  deliveriesNext7: MgmtDayPoint[];
+  qualityLast14: MgmtDayQuality[];
+  paymentsLast30: MgmtDayAmount[] | null;
+  stageDurations: MgmtStageDuration[] | null;
+};
+
 export type ManagementSummary = {
   attention: MgmtAttentionCard[];
   today: {
@@ -119,6 +139,8 @@ export type ManagementSummary = {
     grossMfgDifference: number | null;
   } | null;
   activity: MgmtActivityItem[];
+  /** Optional: older API builds omit it; boards fall back to snapshot-only views. */
+  series?: MgmtSeries | null;
   generatedAt: string;
 };
 
@@ -150,4 +172,9 @@ export function tileValues(section: Record<string, MgmtTile | unknown> | null | 
 
 export function sectionTileSum(tiles: MgmtTile[]): number {
   return tiles.reduce((s, t) => s + (Number.isFinite(t.count) ? t.count : 0), 0);
+}
+
+/** Drop zero-count tiles so metric walls stay short. */
+export function preferActiveTiles(tiles: MgmtTile[]): MgmtTile[] {
+  return tiles.filter((row) => row.count > 0);
 }

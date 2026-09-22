@@ -3,7 +3,7 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import { apiFetch } from '@/lib/api-client';
-import { Card, ErrorState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
+import { Board, ErrorState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -32,13 +32,13 @@ export default function FabricBundlePage({ params }: { params: { code: string } 
     <div className="space-y-6">
       <PageHeader backHref="/admin/purchasing/fabric" title={ti('fabricBundle')} description={code} />
       <InventoryScanBar />
-      <Card className="space-y-3 p-4">
+      <Board className="space-y-3 p-4"><Board.Body>
         <StatusBadge status={query.data.status ?? query.data.fabricProcurement?.state ?? 'OPEN'} />
         <p className="text-sm" dir="ltr">
           {String(query.data.remainingQty ?? '')}
         </p>
         <QrDisplay value={query.data.qrCode ?? code} />
-      </Card>
+      </Board.Body></Board>
     </div>
   );
 }

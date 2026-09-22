@@ -3,12 +3,14 @@
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
-import { BrandMark, cn, isNavItemActive } from '@maher/ui';
+import { BrandMark, SectionTabs, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Bell, ChevronDown, ClipboardList, Home, LogOut, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { ScanButton } from '@/components/scan-button';
+import { ShellAtmosphere } from '@/components/shell-atmosphere';
 import { AppThemeToggle } from '@/components/theme-toggle';
 
 const navItems = [
@@ -73,12 +75,14 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const navHrefs = useMemo(() => navItems.map((item) => item.href), []);
 
   return (
-    <div className="mx-auto min-h-screen max-w-4xl bg-background shadow-elevated sm:my-6 sm:rounded-[var(--maher-radius-xl)]">
+    <div className="relative min-h-screen">
+      <ShellAtmosphere />
+      <div className="relative z-10 mx-auto min-h-screen max-w-6xl">
       <header
         ref={headerRef}
         data-header-tone={overDark ? 'on-dark' : 'on-light'}
         className={cn(
-          'sticky top-0 z-20 border-b sm:rounded-t-[var(--maher-radius-xl)]',
+          'sticky top-0 z-20 border-b bg-[var(--maher-surface)]/85 backdrop-blur-xl sm:mt-6 sm:rounded-t-[18px] sm:border-x',
           overDark ? 'border-white/10' : 'border-border',
         )}
       >
@@ -108,6 +112,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1">
+            <ScanButton surface="worker" inverted={overDark} />
             <AppThemeToggle inverted={overDark} />
             <LanguageSwitcher inverted={overDark} />
 
@@ -196,36 +201,25 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="maher-stagger flex gap-1 px-3 pb-2">
-          {navItems.map((item) => {
-            const active = isNavItemActive(pathname, item.href, navHrefs);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'maher-nav-item maher-press group inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--maher-radius-md)] px-3 py-2.5 text-sm font-semibold',
-                  active
-                    ? 'bg-brand-soft text-brand'
-                    : overDark
-                      ? 'text-white hover:bg-white/10 hover:text-white'
-                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
-                )}
-              >
-                <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />
-                {t(item.key)}
-              </Link>
-            );
-          })}
+        <nav className="px-3 pb-2.5" aria-label={t('home')}>
+          <SectionTabs
+            aria-label={t('home')}
+            fill
+            LinkComponent={Link}
+            value={navItems.find((item) => isNavItemActive(pathname, item.href, navHrefs))?.href ?? navItems[0]!.href}
+            items={navItems.map((item) => {
+              const Icon = item.icon;
+              return { id: item.href, href: item.href, label: t(item.key), icon: <Icon className="h-4 w-4" /> };
+            })}
+          />
         </nav>
       </header>
-      <main className="p-4 pb-24">
+      <main className="mx-auto w-full max-w-6xl p-4 pb-24 sm:p-6">
         <div key={pathname} className="maher-page-enter">
           {children}
         </div>
       </main>
+      </div>
     </div>
   );
 }

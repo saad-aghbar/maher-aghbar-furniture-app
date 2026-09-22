@@ -1,6 +1,5 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { AddWorkflowStageDrawer } from '@/components/workflow/add-workflow-stage-drawer';
 import type { CreateStageValues } from '@/components/workflow/create-stage-form';
 import { WorkflowEmptyState } from '@/components/workflow/workflow-empty-state';
@@ -41,7 +40,7 @@ import {
 } from '@/lib/workflow-terminal';
 import { formatWorkflowDomainIssues } from '@/lib/workflow-issue-text';
 import { workflowGraphChainRequirements } from '@maher/types';
-import { Alert, Button, Card, EmptyState, ErrorState } from '@maher/ui';
+import { Alert, Board, Button, ConfirmDialog, ErrorBoard, Stamp } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -51,6 +50,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 export default function WorkflowBuilderPage({ params }: { params: { id: string } }) {
   const workflowId = params.id;
   const t = useTranslations('production');
+  const tCommon = useTranslations('common');
   const locale = useLocale();
   const rtl = locale === 'ar' || locale === 'he';
   const qc = useQueryClient();
@@ -572,22 +572,19 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
   if (workflowQuery.isLoading) return <WorkflowSkeleton />;
 
   if (workflowQuery.isError || !wf) {
-    return (
-      <ErrorState
-        title={t('workflow.loadError')}
-        description={t('workflow.retry')}
-        retryLabel={t('workflow.retry')}
-        onRetry={() => void workflowQuery.refetch()}
-      />
-    );
+    return <ErrorBoard title={t('workflow.loadError')} description={t('workflow.retry')} onRetry={() => void workflowQuery.refetch()} />;
   }
 
   const title = localizedName(locale, wf);
 
   return (
-    <div className="space-y-6">
+    <div className="maher-stagger space-y-5">
       <WorkflowHeader
         title={title}
+        code={wf.code}
+        scope={wf.scope}
+        stageCount={nodes.length}
+        versionCount={wf.versions.length}
         isDraft={Boolean(isDraft)}
         versionNumber={version?.versionNumber}
         onPublish={isDraft ? () => setPublishOpen(true) : undefined}
@@ -603,20 +600,17 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       <WorkflowValidationPanel issues={validationIssues} />
 
       {!versionId ? (
-        <Card>
-          <EmptyState
+        <Board tone="warning">
+          <Board.Empty
             title={t('workflow.draftVersion')}
             description={t('workflow.createDraft')}
             action={
-              <Button
-                loading={createDraftMutation.isPending}
-                onClick={() => createDraftMutation.mutate(wf.activeVersion?.id ?? wf.versions[0]?.id)}
-              >
+              <Button loading={createDraftMutation.isPending} onClick={() => createDraftMutation.mutate(wf.activeVersion?.id ?? wf.versions[0]?.id)}>
                 {t('workflow.createDraft')}
               </Button>
             }
           />
-        </Card>
+        </Board>
       ) : versionQuery.isLoading ? (
         <WorkflowSkeleton />
       ) : (
@@ -624,52 +618,49 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
           {!isDraft ? (
             <Alert variant="info">{t('workflow.publishedReadOnly')}</Alert>
           ) : null}
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-text-primary">{t('workflow.stageList')}</h2>
-              {isDraft ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={normalizeDraftMutation.isPending}
-                    onClick={() => normalizeDraftMutation.mutate()}
-                  >
-                    {t('workflow.normalizeDraft')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    leadingIcon={<Plus className="h-4 w-4" />}
-                    onClick={() => setAddOpen(true)}
-                  >
-                    {t('workflow.addStage')}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            {nodes.length === 0 ? (
-              <WorkflowEmptyState onAdd={isDraft ? () => setAddOpen(true) : undefined} />
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-                <WorkflowGraphCanvas
-                  stages={stages}
-                  selectedId={selectedId}
-                  onStageClick={(stage) => setSelectedId(stage.id)}
-                  rtl={rtl}
+          {nodes.length === 0 ? (
+            <WorkflowEmptyState onAdd={isDraft ? () => setAddOpen(true) : undefined} />
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-12">
+              <Board tone={isDraft ? 'warning' : 'success'} className="xl:col-span-8">
+                <Board.Header
+                  title={t('workflow.stageList')}
+                  description={t('workflow.stagesHint')}
+                  meta={<Stamp tone={isDraft ? 'warning' : 'success'} size="sm">{nodes.length}</Stamp>}
+                  actions={
+                    isDraft ? (
+                      <span className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="secondary" loading={normalizeDraftMutation.isPending} onClick={() => normalizeDraftMutation.mutate()}>
+                          {t('workflow.normalizeDraft')}
+                        </Button>
+                        <Button size="sm" leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setAddOpen(true)}>
+                          {t('workflow.addStage')}
+                        </Button>
+                      </span>
+                    ) : null
+                  }
                 />
-                <WorkflowStageList
-                  stages={stages}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  lockedIds={lockedIds}
-                  nodes={nodes}
-                  edges={edges}
-                  canEditBandLinks={Boolean(isDraft)}
-                  bandLinkSaving={bandLinkMutation.isPending}
-                  onBandLinkChange={(args) => bandLinkMutation.mutate(args)}
-                />              </div>
-            )}
-          </div>
+                <div className="px-3 pb-3 pt-2">
+                  <WorkflowGraphCanvas stages={stages} selectedId={selectedId} onStageClick={(stage) => setSelectedId(stage.id)} rtl={rtl} />
+                </div>
+              </Board>
+              <Board tone="neutral" className="xl:col-span-4">
+                <div className="px-3 py-3">
+                  <WorkflowStageList
+                    stages={stages}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    lockedIds={lockedIds}
+                    nodes={nodes}
+                    edges={edges}
+                    canEditBandLinks={Boolean(isDraft)}
+                    bandLinkSaving={bandLinkMutation.isPending}
+                    onBandLinkChange={(args) => bandLinkMutation.mutate(args)}
+                  />
+                </div>
+              </Board>
+            </div>
+          )}
         </>
       )}
 
@@ -727,6 +718,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
         title={t('workflow.publishConfirm')}
         description={t('workflow.futureOrdersOnly')}
         confirmLabel={t('workflow.publish')}
+        cancelLabel={tCommon('cancel')}
         loading={publishMutation.isPending}
         error={error}
         onClose={() => setPublishOpen(false)}

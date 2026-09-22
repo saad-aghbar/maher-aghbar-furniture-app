@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
+import { Link } from "@/i18n/navigation";
+import { apiFetch } from "@/lib/api-client";
 import {
+  Board,
   Button,
-  Card,
   EmptyState,
   Skeleton,
   Table,
@@ -14,22 +14,25 @@ import {
   TableHeaderCell,
   TableNumericCell,
   TableRow,
-} from '@maher/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useReportsFilterQs } from './reports-chrome';
+} from "@maher/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
+import { useReportsFilterQs } from "./reports-chrome";
 
 function money(locale: string, value: number | null | undefined) {
-  if (value == null) return '—';
-  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'ILS' }).format(value);
+  if (value == null) return "—";
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "ILS",
+  }).format(value);
 }
 
 export function ReturnsLens() {
-  const ta = useTranslations('accounting');
+  const ta = useTranslations("accounting");
   const locale = useLocale();
   const periodQs = useReportsFilterQs();
   const query = useQuery({
-    queryKey: ['cost-returns', periodQs],
+    queryKey: ["cost-returns", periodQs],
     queryFn: () =>
       apiFetch<{
         data: Array<{
@@ -48,55 +51,69 @@ export function ReturnsLens() {
   if (!query.data) return null;
   const rows = query.data.data;
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-lg font-semibold">{ta('lensReturns')}</h2>
-      {rows.length === 0 ? (
-        <EmptyState title={ta('noData')} />
-      ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{ta('lensReturns')}</TableHeaderCell>
-              <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
-              <TableHeaderCell>{ta('recoveredValue')}</TableHeaderCell>
-              <TableHeaderCell>{ta('disposedValue')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <Link href={`/admin/reports/returns/${row.id}${periodQs}`} className="font-medium underline">
-                    {row.number}
-                  </Link>
-                  {row.salesOrder ? (
-                    <>
-                      {' · '}
-                      <Link href={`/admin/orders/${row.salesOrder.id}`} className="text-xs underline">
-                        {row.salesOrder.number}
-                      </Link>
-                    </>
-                  ) : null}{' '}
-                  · {row.pieceCount}
-                </TableCell>
-                <TableNumericCell>{money(locale, row.returnGrossCost)}</TableNumericCell>
-                <TableNumericCell>{money(locale, row.recoveredValue)}</TableNumericCell>
-                <TableNumericCell>{money(locale, row.disposedValue)}</TableNumericCell>
+    <Board className="space-y-3 p-4">
+      <Board.Body>
+        <h2 className="text-lg font-semibold">{ta("lensReturns")}</h2>
+        {rows.length === 0 ? (
+          <EmptyState title={ta("noData")} />
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta("lensReturns")}</TableHeaderCell>
+                <TableHeaderCell>{ta("actualCost")}</TableHeaderCell>
+                <TableHeaderCell>{ta("recoveredValue")}</TableHeaderCell>
+                <TableHeaderCell>{ta("disposedValue")}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </Card>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/reports/returns/${row.id}${periodQs}`}
+                      className="font-medium underline"
+                    >
+                      {row.number}
+                    </Link>
+                    {row.salesOrder ? (
+                      <>
+                        {" · "}
+                        <Link
+                          href={`/admin/orders/${row.salesOrder.id}`}
+                          className="text-xs underline"
+                        >
+                          {row.salesOrder.number}
+                        </Link>
+                      </>
+                    ) : null}{" "}
+                    · {row.pieceCount}
+                  </TableCell>
+                  <TableNumericCell>
+                    {money(locale, row.returnGrossCost)}
+                  </TableNumericCell>
+                  <TableNumericCell>
+                    {money(locale, row.recoveredValue)}
+                  </TableNumericCell>
+                  <TableNumericCell>
+                    {money(locale, row.disposedValue)}
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Board.Body>
+    </Board>
   );
 }
 
 export function ProductAnalyticsLens() {
-  const ta = useTranslations('accounting');
+  const ta = useTranslations("accounting");
   const locale = useLocale();
   const periodQs = useReportsFilterQs();
   const query = useQuery({
-    queryKey: ['cost-products', periodQs],
+    queryKey: ["cost-products", periodQs],
     queryFn: () =>
       apiFetch<{
         data?: Array<{
@@ -121,7 +138,11 @@ export function ProductAnalyticsLens() {
           variantId: string;
           orderCount: number;
           averageActualCost: number | null;
-          variant?: { sku?: string | null; nameEn?: string | null; productId?: string } | null;
+          variant?: {
+            sku?: string | null;
+            nameEn?: string | null;
+            productId?: string;
+          } | null;
         }>;
         byOption?: Array<{
           optionValueId: string;
@@ -139,116 +160,130 @@ export function ProductAnalyticsLens() {
   const rows = query.data.data ?? query.data.products;
   return (
     <div className="space-y-4">
-      <Card className="space-y-3 p-4">
-        <h2 className="text-lg font-semibold">{ta('sectionProducts')}</h2>
-        <p className="text-sm text-muted-foreground">{ta('perPieceNote')}</p>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{ta('sectionProducts')}</TableHeaderCell>
-              <TableHeaderCell>{ta('orderCount')}</TableHeaderCell>
-              <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
-              <TableHeaderCell>{ta('factoryTime')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.productId}>
-                <TableCell>
-                  <Link
-                    href={`/admin/reports/products/${row.productId}${periodQs}`}
-                    className="underline"
-                  >
-                    {row.product?.sku ?? row.productId}
-                  </Link>
-                </TableCell>
-                <TableNumericCell>{row.orderCount}</TableNumericCell>
-                <TableNumericCell>
-                  {money(locale, row.averageActualCost)}
-                  {row.lowestActualCost != null || row.highestActualCost != null
-                    ? ` (${money(locale, row.lowestActualCost)} – ${money(locale, row.highestActualCost)})`
-                    : ''}
-                </TableNumericCell>
-                <TableNumericCell>
-                  {row.averageEffortMinutes == null ? '—' : `${(row.averageEffortMinutes / 60).toFixed(1)} h`}
-                </TableNumericCell>
+      <Board className="space-y-3 p-4">
+        <Board.Body>
+          <h2 className="text-lg font-semibold">{ta("sectionProducts")}</h2>
+          <p className="text-sm text-muted-foreground">{ta("perPieceNote")}</p>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta("sectionProducts")}</TableHeaderCell>
+                <TableHeaderCell>{ta("orderCount")}</TableHeaderCell>
+                <TableHeaderCell>{ta("actualCost")}</TableHeaderCell>
+                <TableHeaderCell>{ta("factoryTime")}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-      <Card className="space-y-3 p-4">
-        <h2 className="text-lg font-semibold">{ta('variantSlot')}</h2>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{ta('variantSlot')}</TableHeaderCell>
-              <TableHeaderCell>{ta('orderCount')}</TableHeaderCell>
-              <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(query.data.variants ?? []).map((row) => (
-              <TableRow key={row.variantId}>
-                <TableCell>
-                  <Link
-                    href={`/admin/reports/orders${periodQs}${periodQs ? '&' : '?'}variantId=${row.variantId}`}
-                    className="underline"
-                  >
-                    {row.variant?.sku ?? row.variantId}
-                  </Link>
-                </TableCell>
-                <TableNumericCell>{row.orderCount}</TableNumericCell>
-                <TableNumericCell>{money(locale, row.averageActualCost)}</TableNumericCell>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.productId}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/reports/products/${row.productId}${periodQs}`}
+                      className="underline"
+                    >
+                      {row.product?.sku ?? row.productId}
+                    </Link>
+                  </TableCell>
+                  <TableNumericCell>{row.orderCount}</TableNumericCell>
+                  <TableNumericCell>
+                    {money(locale, row.averageActualCost)}
+                    {row.lowestActualCost != null ||
+                    row.highestActualCost != null
+                      ? ` (${money(locale, row.lowestActualCost)} – ${money(locale, row.highestActualCost)})`
+                      : ""}
+                  </TableNumericCell>
+                  <TableNumericCell>
+                    {row.averageEffortMinutes == null
+                      ? "—"
+                      : `${(row.averageEffortMinutes / 60).toFixed(1)} h`}
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Board.Body>
+      </Board>
+      <Board className="space-y-3 p-4">
+        <Board.Body>
+          <h2 className="text-lg font-semibold">{ta("variantSlot")}</h2>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta("variantSlot")}</TableHeaderCell>
+                <TableHeaderCell>{ta("orderCount")}</TableHeaderCell>
+                <TableHeaderCell>{ta("actualCost")}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {(query.data.variants ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">{ta('noData')}</p>
-        ) : null}
-      </Card>
-      <Card className="space-y-3 p-4">
-        <h2 className="text-lg font-semibold">{ta('optionSlot')}</h2>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{ta('optionSlot')}</TableHeaderCell>
-              <TableHeaderCell>{ta('orderCount')}</TableHeaderCell>
-              <TableHeaderCell>{ta('actualCost')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(query.data.byOption ?? []).map((row) => (
-              <TableRow key={row.optionValueId}>
-                <TableCell>
-                  <Link
-                    href={`/admin/reports/orders${periodQs}${periodQs ? '&' : '?'}optionValueId=${row.optionValueId}`}
-                    className="underline"
-                  >
-                    {[row.groupName, row.optionName || row.optionCode].filter(Boolean).join(' · ') ||
-                      row.optionValueId}
-                  </Link>
-                </TableCell>
-                <TableNumericCell>{row.orderCount}</TableNumericCell>
-                <TableNumericCell>{money(locale, row.averageActualCost)}</TableNumericCell>
+            </TableHead>
+            <TableBody>
+              {(query.data.variants ?? []).map((row) => (
+                <TableRow key={row.variantId}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/reports/orders${periodQs}${periodQs ? "&" : "?"}variantId=${row.variantId}`}
+                      className="underline"
+                    >
+                      {row.variant?.sku ?? row.variantId}
+                    </Link>
+                  </TableCell>
+                  <TableNumericCell>{row.orderCount}</TableNumericCell>
+                  <TableNumericCell>
+                    {money(locale, row.averageActualCost)}
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {(query.data.variants ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">{ta("noData")}</p>
+          ) : null}
+        </Board.Body>
+      </Board>
+      <Board className="space-y-3 p-4">
+        <Board.Body>
+          <h2 className="text-lg font-semibold">{ta("optionSlot")}</h2>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta("optionSlot")}</TableHeaderCell>
+                <TableHeaderCell>{ta("orderCount")}</TableHeaderCell>
+                <TableHeaderCell>{ta("actualCost")}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {(query.data.byOption ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">{ta('noData')}</p>
-        ) : null}
-      </Card>
+            </TableHead>
+            <TableBody>
+              {(query.data.byOption ?? []).map((row) => (
+                <TableRow key={row.optionValueId}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/reports/orders${periodQs}${periodQs ? "&" : "?"}optionValueId=${row.optionValueId}`}
+                      className="underline"
+                    >
+                      {[row.groupName, row.optionName || row.optionCode]
+                        .filter(Boolean)
+                        .join(" · ") || row.optionValueId}
+                    </Link>
+                  </TableCell>
+                  <TableNumericCell>{row.orderCount}</TableNumericCell>
+                  <TableNumericCell>
+                    {money(locale, row.averageActualCost)}
+                  </TableNumericCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {(query.data.byOption ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">{ta("noData")}</p>
+          ) : null}
+        </Board.Body>
+      </Board>
     </div>
   );
 }
 
 export function MaterialsCoverageLens() {
-  const ta = useTranslations('accounting');
+  const ta = useTranslations("accounting");
   const qc = useQueryClient();
   const query = useQuery({
-    queryKey: ['cost-coverage'],
+    queryKey: ["cost-coverage"],
     queryFn: () =>
       apiFetch<{
         totalItems?: number;
@@ -258,46 +293,60 @@ export function MaterialsCoverageLens() {
         unpricedItems?: number;
         coveragePct?: number;
         unpriced: Array<{ id?: string; sku: string; nameEn?: string | null }>;
-      }>('/api/v1/reports/cost/coverage'),
+      }>("/api/v1/reports/cost/coverage"),
     retry: 0,
   });
   const backfill = useMutation({
-    mutationFn: () => apiFetch('/api/v1/reports/cost/coverage/backfill', { method: 'POST' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cost-coverage'] }),
+    mutationFn: () =>
+      apiFetch("/api/v1/reports/cost/coverage/backfill", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cost-coverage"] }),
   });
   if (query.isLoading) return <Skeleton className="h-40 w-full" />;
   if (!query.data) return null;
   const priced = query.data.pricedItems ?? query.data.pricedCount ?? 0;
-  const total = query.data.totalItems ?? priced + (query.data.unpricedItems ?? query.data.unpricedCount ?? 0);
+  const total =
+    query.data.totalItems ??
+    priced + (query.data.unpricedItems ?? query.data.unpricedCount ?? 0);
   return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-lg font-semibold">{ta('coverage')}</h2>
-      <p>
-        {priced}/{total}
-        {query.data.coveragePct != null ? ` (${query.data.coveragePct}%)` : ''}
-      </p>
-      <h3 className="text-sm font-medium">{ta('unpricedSkus')}</h3>
-      {query.data.unpriced.length === 0 ? (
-        <EmptyState title={ta('noData')} />
-      ) : (
-        <ul className="text-sm">
-          {query.data.unpriced.slice(0, 40).map((item) => (
-            <li key={item.id ?? item.sku}>
-              {item.id ? (
-                <Link href={`/admin/inventory/items/${item.id}`} className="underline">
-                  {item.sku}
-                </Link>
-              ) : (
-                item.sku
-              )}{' '}
-              · {item.nameEn}
-            </li>
-          ))}
-        </ul>
-      )}
-      <Button size="sm" onClick={() => void backfill.mutateAsync()} disabled={backfill.isPending}>
-        {ta('backfillPrices')}
-      </Button>
-    </Card>
+    <Board className="space-y-3 p-4">
+      <Board.Body>
+        <h2 className="text-lg font-semibold">{ta("coverage")}</h2>
+        <p>
+          {priced}/{total}
+          {query.data.coveragePct != null
+            ? ` (${query.data.coveragePct}%)`
+            : ""}
+        </p>
+        <h3 className="text-sm font-medium">{ta("unpricedSkus")}</h3>
+        {query.data.unpriced.length === 0 ? (
+          <EmptyState title={ta("noData")} />
+        ) : (
+          <ul className="text-sm">
+            {query.data.unpriced.slice(0, 40).map((item) => (
+              <li key={item.id ?? item.sku}>
+                {item.id ? (
+                  <Link
+                    href={`/admin/inventory/items/${item.id}`}
+                    className="underline"
+                  >
+                    {item.sku}
+                  </Link>
+                ) : (
+                  item.sku
+                )}{" "}
+                · {item.nameEn}
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button
+          size="sm"
+          onClick={() => void backfill.mutateAsync()}
+          disabled={backfill.isPending}
+        >
+          {ta("backfillPrices")}
+        </Button>
+      </Board.Body>
+    </Board>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { WorkflowDrawer } from '@/components/workflow/workflow-drawer';
-import { Button, StatusBadge } from '@maher/ui';
+import { Button, Stamp } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 
 type VersionRow = { id: string; versionNumber: number; status: string };
@@ -47,7 +47,7 @@ export function WorkflowVersionDrawer({
           >
             <div className="flex items-center gap-2">
               <span className="font-medium">v{v.versionNumber}</span>
-              <StatusBadge status={v.status} />
+              <Stamp tone={v.status === 'PUBLISHED' ? 'success' : v.status === 'DRAFT' ? 'warning' : 'neutral'} size="sm">{v.status}</Stamp>
               {currentId === v.id ? (
                 <span className="text-xs text-text-tertiary">{t('workflow.preview')}</span>
               ) : null}

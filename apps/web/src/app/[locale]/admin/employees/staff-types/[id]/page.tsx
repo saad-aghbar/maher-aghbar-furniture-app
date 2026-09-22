@@ -5,12 +5,20 @@ import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { useRouter } from '@/i18n/navigation';
 import {
   Alert,
+  Board,
+  BoardSkeleton,
   Button,
-  ErrorState,
+  DetailHero,
+  ErrorBoard,
+  Figure,
+  FormFooter,
+  FormSection,
   Input,
-  PageHero,
+  Meter,
   Select,
-  Skeleton,
+  Stamp,
+  StatusChips,
+  Switch,
   TextArea,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
@@ -194,16 +202,19 @@ export default function StaffTypeEditorPage() {
 
   if (!isNew && detailQuery.isLoading && !detailQuery.data) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-96 w-full" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} />
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+          <BoardSkeleton rows={6} />
+          <BoardSkeleton rows={8} />
+        </div>
       </div>
     );
   }
 
   if (!isNew && detailQuery.isError && !detailQuery.data) {
     return (
-      <ErrorState
+      <ErrorBoard
         title={t('editStaffType')}
         description={tCommon('loadFailed')}
         onRetry={() => detailQuery.refetch()}
@@ -221,188 +232,197 @@ export default function StaffTypeEditorPage() {
     });
   }
 
+  const totalAssignable = (catalogGroups ?? []).reduce((acc, g) => acc + g.permissions.filter((p) => p.assignableToStaff).length, 0);
+  const sensitiveCount = (catalogGroups ?? []).reduce((acc, g) => acc + g.permissions.filter((p) => p.riskLevel === 'sensitive' && form.permissionCodes.includes(p.code)).length, 0);
+  const heroTone = readOnly ? 'brand' : form.isActive ? 'info' : 'neutral';
+
   return (
-    <div className="space-y-6">
-      <PageHero
-        title={isNew ? t('newStaffType') : readOnly ? t('view') : t('editStaffType')}
-        description={
-          isNew
-            ? t('staffTypesDescription')
-            : detailQuery.data
-              ? localizedName(locale, detailQuery.data)
-              : undefined
-        }
-        tone="soft"
+    <div className="maher-stagger space-y-5">
+      <DetailHero
+        tone={heroTone}
+        back={{ label: t('staffTypesTitle'), onClick: () => router.push('/admin/employees/staff-types') }}
+        title={isNew ? t('newStaffType') : detailQuery.data ? localizedName(locale, detailQuery.data) : t('editStaffType')}
+        subtitle={isNew ? t('staffTypesDescription') : detailQuery.data?.isSystem ? t('systemPreset') : t('custom')}
+        status={isNew ? undefined : { label: form.isActive ? t('active') : t('inactive'), tone: form.isActive ? 'success' : 'neutral' }}
+        code={detailQuery.data?.code}
+        facts={[
+          { label: t('permissions'), value: `${form.permissionCodes.length}` },
+          ...(isNew ? [] : [{ label: t('usersAssigned'), value: `${assignedCount}` }]),
+          ...(sensitiveCount ? [{ label: t('sensitivePermission'), value: `${sensitiveCount}`, tone: 'warning' as const }] : []),
+        ]}
+        primary={!readOnly ? (
+          <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            {tCommon('save')}
+          </Button>
+        ) : undefined}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={() => router.push('/admin/employees/staff-types')}>
-              {readOnly ? tCommon('back') : tCommon('cancel')}
-            </Button>
-            {!readOnly ? (
-              <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-                {tCommon('save')}
-              </Button>
-            ) : null}
-          </div>
+          <Button variant="ghost" onClick={() => router.push('/admin/employees/staff-types')}>
+            {readOnly ? tCommon('back') : tCommon('cancel')}
+          </Button>
         }
-      />
+      >
+        <Meter value={form.permissionCodes.length} max={Math.max(1, totalAssignable)} tone={heroTone} label={t('permissions')} valueLabel={`${form.permissionCodes.length} / ${totalAssignable}`} />
+      </DetailHero>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {readOnly ? <Alert variant="info">{t('systemPresetReadOnly')}</Alert> : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <div className="space-y-3 rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
-          <Input
-            label={`${t('nameEn')} *`}
-            value={form.nameEn}
-            onChange={(e) => setForm((f) => ({ ...f, nameEn: e.target.value }))}
-            required
-            disabled={readOnly}
-          />
-          <Input
-            label={`${t('nameAr')} *`}
-            value={form.nameAr}
-            onChange={(e) => setForm((f) => ({ ...f, nameAr: e.target.value }))}
-            required
-            disabled={readOnly}
-          />
-          <Input
-            label={`${t('nameHe')} (${t('optional')})`}
-            value={form.nameHe}
-            onChange={(e) => setForm((f) => ({ ...f, nameHe: e.target.value }))}
-            disabled={readOnly}
-          />
-          <TextArea
-            label={`${t('descriptionEn')} (${t('optional')})`}
-            value={form.descriptionEn}
-            onChange={(e) => setForm((f) => ({ ...f, descriptionEn: e.target.value }))}
-            rows={3}
-            disabled={readOnly}
-          />
-          <TextArea
-            label={`${t('descriptionAr')} (${t('optional')})`}
-            value={form.descriptionAr}
-            onChange={(e) => setForm((f) => ({ ...f, descriptionAr: e.target.value }))}
-            rows={3}
-            disabled={readOnly}
-          />
-          <TextArea
-            label={`${t('descriptionHe')} (${t('optional')})`}
-            value={form.descriptionHe}
-            onChange={(e) => setForm((f) => ({ ...f, descriptionHe: e.target.value }))}
-            rows={3}
-            disabled={readOnly}
-          />
-          <Select
-            label={t('icon')}
-            value={form.iconKey}
-            onChange={(e) => setForm((f) => ({ ...f, iconKey: e.target.value }))}
-            disabled={readOnly}
-          >
-            {ICON_OPTIONS.map((icon) => (
-              <option key={icon} value={icon}>
-                {icon.replace('-outline', '')}
-              </option>
-            ))}
-          </Select>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.isActive}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+        <div className="space-y-5">
+          <FormSection title={readOnly ? t('view') : t('editStaffType')} columns={1} meta={<Switch checked={form.isActive} disabled={readOnly} onChange={(checked) => setForm((f) => ({ ...f, isActive: checked }))} label={t('active')} />}>
+            <Input
+              label={`${t('nameEn')} *`}
+              value={form.nameEn}
+              onChange={(e) => setForm((f) => ({ ...f, nameEn: e.target.value }))}
+              required
               disabled={readOnly}
-              onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
             />
-            {t('active')}
-          </label>
-          {detailQuery.data ? (
-            <p className="text-sm text-text-secondary">
-              {detailQuery.data.isSystem ? t('systemPreset') : t('custom')}
-              {' · '}
-              {t('usersAssignedCount', { n: assignedCount })}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="space-y-3 rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[min(100%,16rem)] flex-1">
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('searchPermissions')}
-                withSearchIcon
-              />
-            </div>
+            <Input
+              label={`${t('nameAr')} *`}
+              value={form.nameAr}
+              onChange={(e) => setForm((f) => ({ ...f, nameAr: e.target.value }))}
+              required
+              disabled={readOnly}
+            />
+            <Input
+              label={`${t('nameHe')} (${t('optional')})`}
+              value={form.nameHe}
+              onChange={(e) => setForm((f) => ({ ...f, nameHe: e.target.value }))}
+              disabled={readOnly}
+            />
             <Select
-              value={groupFilter}
-              onChange={(e) => setGroupFilter(e.target.value)}
-              aria-label={t('permissionGroupFilter')}
-              className="w-48 shrink-0"
+              label={t('icon')}
+              value={form.iconKey}
+              onChange={(e) => setForm((f) => ({ ...f, iconKey: e.target.value }))}
+              disabled={readOnly}
             >
-              <option value="">{t('permissionGroupFilter')}</option>
-              {(catalogGroups ?? []).map((g) => (
-                <option key={g.group} value={g.group}>
-                  {catalogLabel(g, locale)}
+              {ICON_OPTIONS.map((icon) => (
+                <option key={icon} value={icon}>
+                  {icon.replace('-outline', '')}
                 </option>
               ))}
             </Select>
-          </div>
-          <p className="text-sm text-text-secondary">
-            {t('permissionCount', { n: form.permissionCodes.length })}
-          </p>
-          <div className="grid max-h-[70vh] gap-5 overflow-y-auto pe-1">
-            {visibleGroups.map((group) => (
-              <fieldset key={group.group} className="grid gap-2">
-                <legend className="text-sm font-semibold text-brand">{catalogLabel(group, locale)}</legend>
-                {group.permissions.map((perm) => {
-                  const checked = form.permissionCodes.includes(perm.code);
-                  const disabled = readOnly || !perm.assignableToStaff;
-                  return (
-                    <label
-                      key={perm.code}
-                      className={[
-                        'flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm',
-                        checked ? 'border-brand bg-[var(--maher-brand-soft)]' : 'border-border hover:border-brand/40',
-                        disabled ? 'cursor-not-allowed opacity-60' : '',
-                      ].join(' ')}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={checked}
-                        disabled={disabled}
-                        onChange={() => toggleCode(perm.code, perm.assignableToStaff)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block font-medium text-text-primary">
-                          {catalogLabel(perm, locale)}
-                        </span>
-                        <span className="block text-xs text-text-tertiary">
-                          {locale === 'ar'
-                            ? perm.descriptionAr
-                            : locale === 'he'
-                              ? perm.descriptionHe
-                              : perm.descriptionEn}
-                        </span>
-                        {perm.riskLevel === 'sensitive' ? (
-                          <span className="mt-1 inline-block text-[11px] text-amber-800">
-                            {t('sensitivePermission')}
-                          </span>
-                        ) : null}
-                        {disabled ? (
-                          <span className="mt-1 inline-block text-[11px] text-text-tertiary">
-                            {t('restrictedPermission')}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
-              </fieldset>
-            ))}
-          </div>
+          </FormSection>
+          <FormSection title={t('descriptionEn')} description={t('optional')} columns={1} tone="neutral">
+            <TextArea
+              label={t('descriptionEn')}
+              value={form.descriptionEn}
+              onChange={(e) => setForm((f) => ({ ...f, descriptionEn: e.target.value }))}
+              rows={2}
+              disabled={readOnly}
+            />
+            <TextArea
+              label={t('descriptionAr')}
+              value={form.descriptionAr}
+              onChange={(e) => setForm((f) => ({ ...f, descriptionAr: e.target.value }))}
+              rows={2}
+              disabled={readOnly}
+            />
+            <TextArea
+              label={t('descriptionHe')}
+              value={form.descriptionHe}
+              onChange={(e) => setForm((f) => ({ ...f, descriptionHe: e.target.value }))}
+              rows={2}
+              disabled={readOnly}
+            />
+          </FormSection>
         </div>
+
+        <Board tone={heroTone} className="min-w-0">
+          <Board.Header
+            title={t('permissions')}
+            description={t('permissionCount', { n: form.permissionCodes.length })}
+            meta={
+              <div className="hidden gap-4 sm:flex">
+                <Figure size="sm" value={form.permissionCodes.length} label={t('permissions')} tone={heroTone} />
+                <Figure size="sm" value={sensitiveCount} label={t('sensitivePermission')} tone={sensitiveCount ? 'warning' : 'neutral'} />
+              </div>
+            }
+          />
+          <Board.Body className="space-y-4">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('searchPermissions')}
+              withSearchIcon
+            />
+            <StatusChips
+              aria-label={t('permissionGroupFilter')}
+              value={groupFilter || 'all'}
+              onChange={(id) => setGroupFilter(id === 'all' ? '' : id)}
+              items={[
+                { id: 'all', label: tCommon('all'), count: form.permissionCodes.length },
+                ...(catalogGroups ?? []).map((g) => ({
+                  id: g.group,
+                  label: catalogLabel(g, locale),
+                  count: g.permissions.filter((p) => form.permissionCodes.includes(p.code)).length,
+                })),
+              ]}
+            />
+            <div className="grid max-h-[68vh] gap-5 overflow-y-auto pe-1">
+              {visibleGroups.length === 0 ? (
+                <Board.Empty title={tCommon('noResults')} />
+              ) : null}
+              {visibleGroups.map((group) => {
+                const groupOn = group.permissions.filter((p) => form.permissionCodes.includes(p.code)).length;
+                const groupAssignable = group.permissions.filter((p) => p.assignableToStaff);
+                const allOn = groupAssignable.length > 0 && groupAssignable.every((p) => form.permissionCodes.includes(p.code));
+                return (
+                  <section key={group.group} className="grid gap-1" aria-label={catalogLabel(group, locale)}>
+                    <header className="flex items-center justify-between gap-3 px-1 py-1">
+                      <span className="flex items-center gap-2">
+                        <span className="text-[13px] font-semibold text-[var(--maher-text-primary)]">{catalogLabel(group, locale)}</span>
+                        <Stamp tone={groupOn ? heroTone : 'neutral'} size="sm">{`${groupOn}/${group.permissions.length}`}</Stamp>
+                      </span>
+                      {!readOnly && groupAssignable.length > 1 ? (
+                        <Switch
+                          checked={allOn}
+                          aria-label={catalogLabel(group, locale)}
+                          onChange={(checked) =>
+                            setForm((f) => {
+                              const codes = groupAssignable.map((p) => p.code);
+                              const next = checked ? Array.from(new Set([...f.permissionCodes, ...codes])) : f.permissionCodes.filter((c) => !codes.includes(c));
+                              return { ...f, permissionCodes: expandPermissionDependencies(next) };
+                            })
+                          }
+                        />
+                      ) : null}
+                    </header>
+                    <ul className="overflow-hidden rounded-[14px] border border-[var(--maher-border)] divide-y divide-[var(--maher-border)]">
+                      {group.permissions.map((perm) => {
+                        const checked = form.permissionCodes.includes(perm.code);
+                        const disabled = readOnly || !perm.assignableToStaff;
+                        const description = locale === 'ar' ? perm.descriptionAr : locale === 'he' ? perm.descriptionHe : perm.descriptionEn;
+                        return (
+                          <li key={perm.code} className={['flex items-center justify-between gap-3 px-3 py-2.5 transition-colors', checked ? 'bg-[var(--maher-surface-muted)]' : '', disabled ? 'opacity-60' : ''].join(' ')}>
+                            <span className="min-w-0">
+                              <span className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[13px] font-medium text-[var(--maher-text-primary)]">{catalogLabel(perm, locale)}</span>
+                                {perm.riskLevel === 'sensitive' ? <Stamp tone="warning" size="sm">{t('sensitivePermission')}</Stamp> : null}
+                                {!perm.assignableToStaff ? <Stamp tone="neutral" size="sm">{t('restrictedPermission')}</Stamp> : null}
+                              </span>
+                              {description ? <span className="mt-0.5 block text-[12px] leading-4 text-[var(--maher-text-tertiary)]">{description}</span> : null}
+                            </span>
+                            <Switch checked={checked} disabled={disabled} aria-label={catalogLabel(perm, locale)} onChange={() => toggleCode(perm.code, perm.assignableToStaff)} />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
+          </Board.Body>
+        </Board>
       </div>
+
+      {!readOnly ? (
+        <FormFooter
+          primary={<Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>{tCommon('save')}</Button>}
+          secondary={<Button variant="ghost" onClick={() => router.push('/admin/employees/staff-types')}>{tCommon('cancel')}</Button>}
+          error={error}
+        />
+      ) : null}
     </div>
   );
 }

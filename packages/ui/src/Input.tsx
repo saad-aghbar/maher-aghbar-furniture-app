@@ -25,12 +25,14 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   hint?: string;
   leadingIcon?: ReactNode;
+  /** Interactive control at the logical end (password visibility, clear, …). */
+  trailingIcon?: ReactNode;
   /** Magnifying glass at the logical start (left in LTR, right in RTL). */
   withSearchIcon?: boolean;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, label, error, hint, leadingIcon, withSearchIcon, id, ...props }, ref) => {
+  ({ className, label, error, hint, leadingIcon, trailingIcon, withSearchIcon, id, ...props }, ref) => {
     const inputId = id ?? (label ? label.replace(/\s+/g, '-').toLowerCase() : undefined);
     const icon = leadingIcon ?? (withSearchIcon ? <SearchGlyph className="h-4 w-4" /> : null);
 
@@ -62,11 +64,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               'focus:border-[var(--maher-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--maher-brand)]/20',
               'disabled:cursor-not-allowed disabled:bg-[var(--maher-surface-muted)] disabled:opacity-60',
               icon ? 'ps-9' : null,
+              trailingIcon ? 'pe-10' : null,
               error && 'border-[var(--maher-error)] focus:ring-[var(--maher-error)]/20',
               className,
             )}
             {...props}
           />
+          {trailingIcon ? (
+            <span className="absolute end-1.5 top-1/2 z-[1] -translate-y-1/2 text-[var(--maher-text-tertiary)]">
+              {trailingIcon}
+            </span>
+          ) : null}
         </div>
         {hint && !error ? (
           <p id={`${inputId}-hint`} className="text-xs text-[var(--maher-text-secondary)]">

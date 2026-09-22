@@ -803,7 +803,21 @@
       "mfgFinalOrders": "{count} final-cost orders · {total}",
       "mfgIncomplete": "{count} orders with incomplete costing (not zeroed)",
       "mfgGrossDiff": "Gross manufacturing difference",
-      "activity": "Today's activity",
+      "activity": {
+        "taskCompleted": "Completed {stage} on {number}",
+        "taskStarted": "Started {stage} on {number}",
+        "truckDeparted": "Truck departed {number}",
+        "deliveryUpdated": "Delivery {number} updated",
+        "qc": "QC {number}: {result}",
+        "grn": "GRN {number} for {po}",
+        "payment": "Payment {number} from {name}",
+        "finishedGoods": "Finished goods posted ({number})",
+        "finishedGoodsPlain": "Finished goods posted",
+        "returnStatus": "Return {number} → {status}",
+        "statusUpdated": "{number} status updated",
+        "materialsReceived": "{number} received materials",
+        "invoiceIssued": "Invoice {number} issued"
+      },
       "activityEmpty": "No activity recorded yet today.",
       "sectionHealthy": "All clear in this area.",
       "reportsLink": "Reports",
@@ -875,21 +889,6 @@
       },
       "title": {
         "rawShortages": "Raw shortages"
-      },
-      "activity": {
-        "taskCompleted": "Completed {stage} on {number}",
-        "taskStarted": "Started {stage} on {number}",
-        "truckDeparted": "Truck departed {number}",
-        "deliveryUpdated": "Delivery {number} updated",
-        "qc": "QC {number}: {result}",
-        "grn": "GRN {number} for {po}",
-        "payment": "Payment {number} from {name}",
-        "finishedGoods": "Finished goods posted ({number})",
-        "finishedGoodsPlain": "Finished goods posted",
-        "returnStatus": "Return {number} → {status}",
-        "statusUpdated": "{number} status updated",
-        "materialsReceived": "{number} received materials",
-        "invoiceIssued": "Invoice {number} issued"
       },
       "blocked": {
         "orderOnHold": "Order on hold",
@@ -6064,7 +6063,10 @@
       "normalShift": "Normal shift {range}",
       "workingDay": "Working day",
       "shiftStart": "Start",
-      "shiftEnd": "End"
+      "shiftEnd": "End",
+      "impactTasks": "Assignments",
+      "impactOrders": "Orders",
+      "impactCommitted": "{count, plural, one {# committed delivery may move.} other {# committed deliveries may move.}}"
     },
     "duration": {
       "minutes": "{minutes}m",
@@ -6554,6 +6556,11 @@
     "orderStrip": {
       "title": "Schedule",
       "viewOnBoard": "View on scheduling board"
+    },
+    "legend": {
+      "light": "Light load",
+      "half": "Half load",
+      "busy": "Busy"
     }
   },
   "pdfDownload": {

@@ -3,7 +3,7 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import { apiFetch } from '@/lib/api-client';
-import { Card, ErrorState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
+import { Board, ErrorState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -40,7 +40,7 @@ export default function InventoryWarehousePage({ params }: { params: { id: strin
         description={wh.code}
       />
       <InventoryScanBar />
-      <Card className="space-y-3 p-4">
+      <Board className="space-y-3 p-4"><Board.Body>
         {wh.type ? <StatusBadge status={wh.type} /> : null}
         <ul className="grid gap-4 sm:grid-cols-2">
           {(wh.locations ?? []).map((loc) => (
@@ -53,7 +53,7 @@ export default function InventoryWarehousePage({ params }: { params: { id: strin
             </li>
           ))}
         </ul>
-      </Card>
+      </Board.Body></Board>
     </div>
   );
 }

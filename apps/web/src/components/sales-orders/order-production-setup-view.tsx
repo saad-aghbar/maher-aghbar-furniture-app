@@ -1,8 +1,7 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { PageHeader } from '@/components/admin/page-header';
 import { OrderLineSetupPanel } from '@/components/sales-orders/order-line-setup-panel';
+import { useOrdersCopy } from '@/components/orders/orders-shared';
 import { Link } from '@/i18n/navigation';
 import {
   apiFetch,
@@ -16,16 +15,28 @@ import {
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { localizedName } from '@maher/i18n';
 import {
-  Alert,
+  ActionDock,
+  Board,
+  BoardSkeleton,
   Button,
-  Card,
-  ErrorState,
-  Skeleton,
-  StatusBadge,
-  MotionSection,
+  ConfirmDialog,
+  DetailHero,
+  ErrorBoard,
+  InkPill,
+  ListRow,
+  ListRows,
+  Ltr,
+  Meter,
+  RowThumb,
+  StageStrip,
+  Stamp,
+  Ticket,
+  useToast,
+  type BoardTone,
+  type StageStripStage,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 type WorkflowRow = {
@@ -41,73 +52,60 @@ type WorkflowRow = {
 
 const STEP_KEYS = ['setup', 'lines', 'ready', 'released'] as const;
 
-type Props = {
-  salesOrderId: string;
-  initialLineId?: string | null;
-};
+type Props = { salesOrderId: string; initialLineId?: string | null };
+
+function readinessTone(status: string): BoardTone {
+  const s = status.toUpperCase();
+  if (s === 'READY' || s === 'AVAILABLE') return 'success';
+  if (s === 'SHORTAGE' || s === 'NEEDS_SELECTION' || s === 'NEEDS_REVIEW') return 'warning';
+  return 'neutral';
+}
 
 export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props) {
-  const locale = useLocale();
+  const copy = useOrdersCopy();
   const t = useTranslations('sales');
   const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
+  const toast = useToast();
   const qc = useQueryClient();
-  const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedLineId, setExpandedLineId] = useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [preview, setPreview] = useState<OrderSetupReleasePreview | null>(null);
 
   useEffect(() => {
-    if (!initialLineId) return;
-    setExpandedLineId(initialLineId);
+    if (initialLineId) setExpandedLineId(initialLineId);
   }, [initialLineId]);
 
-  const setupQuery = useQuery({
-    queryKey: ['order-production-setup', salesOrderId],
-    queryFn: () => fetchOrderProductionSetup(salesOrderId),
-  });
-
+  const setupQuery = useQuery({ queryKey: ['order-production-setup', salesOrderId], queryFn: () => fetchOrderProductionSetup(salesOrderId) });
   const workflowsQuery = useQuery({
     queryKey: ['production-workflows'],
     queryFn: async () => {
       const rows = await apiFetch<WorkflowRow[]>('/api/v1/production-workflows');
-      return rows.map((w) => ({
-        ...w,
-        activeVersionId: w.activeVersionId ?? w.activeVersion?.id ?? null,
-      }));
+      return rows.map((w) => ({ ...w, activeVersionId: w.activeVersionId ?? w.activeVersion?.id ?? null }));
     },
   });
 
   const invalidate = async () => {
-    await qc.invalidateQueries({ queryKey: ['order-production-setup', salesOrderId] });
-    await qc.invalidateQueries({ queryKey: ['sales-order', salesOrderId] });
-    await qc.invalidateQueries({ queryKey: ['sales-orders'] });
-    await qc.invalidateQueries({ queryKey: ['production-orders'] });
-    await qc.invalidateQueries({ queryKey: ['orders-hub-sales-orders'] });
+    await Promise.all(['order-production-setup', 'sales-order', 'sales-orders', 'production-orders', 'orders-desk', 'section-counts'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
   };
 
   const markReadyMutation = useMutation({
     mutationFn: () => markOrderSetupReady(salesOrderId),
     onSuccess: async () => {
       setError(null);
-      setBanner(t('orderSetup.markedReady'));
+      toast.success(t('orderSetup.markedReady'));
       await invalidate();
     },
-    onError: (err) => setError(mutationErrorMessage(err)),
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
-
   const releaseMutation = useMutation({
     mutationFn: () => releaseOrderProductionSetup(salesOrderId),
     onSuccess: async (result) => {
       setError(null);
       setReleaseOpen(false);
-      setBanner(
-        result.workerAssignmentRequired
-          ? t('orderSetup.releasedWorkerRequired')
-          : t('orderSetup.released'),
-      );
+      toast.success(result.workerAssignmentRequired ? t('orderSetup.releasedWorkerRequired') : t('orderSetup.released'));
       await invalidate();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
@@ -116,323 +114,223 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
   const openRelease = async () => {
     setError(null);
     try {
-      const data = await fetchOrderSetupReleasePreview(salesOrderId);
-      setPreview(data);
+      setPreview(await fetchOrderSetupReleasePreview(salesOrderId));
       setReleaseOpen(true);
     } catch (err) {
-      setError(mutationErrorMessage(err));
+      toast.error(mutationErrorMessage(err));
     }
   };
 
   const setup = setupQuery.data;
   const readOnly = setup?.status === 'RELEASED';
-  const customerName = setup?.salesOrder.customer
-    ? localizedName(locale, setup.salesOrder.customer, setup.salesOrder.customer.nameEn ?? '')
-    : undefined;
+  const customerName = setup?.salesOrder.customer ? localizedName(copy.locale, setup.salesOrder.customer, setup.salesOrder.customer.nameEn ?? '') : undefined;
 
-  const stepDone = useMemo(() => {
+  const steps = useMemo<StageStripStage[]>(() => {
     const map = new Map((setup?.progress.steps ?? []).map((s) => [s.key, s.done]));
-    return STEP_KEYS.map((key) => ({ key, done: Boolean(map.get(key)) }));
-  }, [setup?.progress.steps]);
+    let currentSet = false;
+    return STEP_KEYS.map((key) => {
+      const done = Boolean(map.get(key));
+      let state: StageStripStage['state'] = 'done';
+      if (!done && !currentSet) {
+        state = 'current';
+        currentSet = true;
+      } else if (!done) state = 'todo';
+      return { key, label: t(`orderSetup.steps.${key}`), state };
+    });
+  }, [setup?.progress.steps, t]);
 
   if (setupQuery.isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-48 w-full" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} header={false} className="h-52" />
+        <BoardSkeleton rows={4} />
       </div>
     );
   }
+  if (setupQuery.isError || !setup) return <ErrorBoard title={tNav('productionPlan')} onRetry={() => setupQuery.refetch()} />;
 
-  if (setupQuery.isError || !setup) {
-    return (
-      <ErrorState
-        title={tNav('productionPlan')}
-        onRetry={() => setupQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
-  }
+  const resolvedExpanded = setup.lines.find((line) => line.id === expandedLineId || line.salesOrderLineId === expandedLineId)?.id ?? expandedLineId;
+  const readiness = setup.materialReadiness;
+  const tone: BoardTone = readOnly ? 'success' : setup.validation.ok ? 'brand' : 'warning';
+  const canMarkReady = !setup.validation.ok || setup.status === 'READY_FOR_RELEASE' ? false : true;
+  const canRelease = setup.validation.ok || setup.status === 'READY_FOR_RELEASE';
 
-  const resolvedExpanded =
-    setup.lines.find((line) => line.id === expandedLineId || line.salesOrderLineId === expandedLineId)
-      ?.id ?? expandedLineId;
+  const primary = readOnly ? (
+    <Link href="/admin/production" className="maher-press inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--maher-text-primary)] px-4 text-[13px] font-semibold text-[var(--maher-background)] hover:opacity-90">
+      {t('orderSetup.openProduction')}
+    </Link>
+  ) : (
+    <InkPill disabled={!canRelease} onClick={() => void openRelease()}>
+      {t('orderSetup.release')}
+    </InkPill>
+  );
+  const secondary = !readOnly ? (
+    <Button variant="secondary" disabled={!canMarkReady} loading={markReadyMutation.isPending} onClick={() => markReadyMutation.mutate()}>
+      {t('orderSetup.markReady')}
+    </Button>
+  ) : null;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        backHref={`/sales-orders/${salesOrderId}`}
+    <div className="maher-stagger space-y-5 pb-24 md:pb-0">
+      <DetailHero
+        LinkComponent={Link}
+        back={{ label: setup.salesOrder.number, href: `/admin/sales-orders/${salesOrderId}` }}
+        code={setup.salesOrder.number}
         title={tNav('productionPlan')}
-        description={`${setup.salesOrder.number}${customerName ? ` · ${customerName}` : ''}`}
-        actions={
-          <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
-            <StatusBadge status={setup.status} />
-            <Link href={`/admin/sales-orders/${salesOrderId}`}>
-              <Button variant="ghost" size="sm">
-                {t('detail')}
-              </Button>
-            </Link>
-          </div>
-        }
-      />
-
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {error ? <Alert variant="error">{error}</Alert> : null}
+        subtitle={[customerName, setup.salesOrder.projectName].filter(Boolean).join(' · ') || undefined}
+        status={{ label: copy.status(setup.status), tone }}
+        facts={[
+          { label: t('orderSetup.progress'), value: `${setup.progress.readyLines}/${setup.progress.totalLines}`, ltr: true },
+          { label: t('orderSetup.readiness'), value: copy.status(readiness.status), tone: readinessTone(readiness.status) },
+          { label: t('orderSetup.issuesTitle'), value: String(setup.validation.issues.length), ltr: true, tone: setup.validation.issues.length ? 'warning' : 'success' },
+          { label: tc('lineItems'), value: String(setup.lines.length), ltr: true },
+        ]}
+        primary={primary}
+        actions={secondary}
+      >
+        <div className="space-y-4">
+          <Meter value={setup.progress.percent} max={100} tone={readOnly ? 'success' : 'brand'} label={t('orderSetup.progressSummary', { ready: String(setup.progress.readyLines), total: String(setup.progress.totalLines), percent: String(setup.progress.percent) })} valueLabel={`${setup.progress.percent}%`} />
+          <StageStrip stages={steps} />
+        </div>
+      </DetailHero>
 
       {readOnly ? (
-        <Alert variant="info">
-          <p className="font-medium">{t('orderSetup.workerAssignmentRequired')}</p>
-          <p className="mt-1 text-sm text-text-secondary">
-            {t('orderSetup.workerAssignmentHint')}
-          </p>
-          <div className="mt-3">
-            <Link href="/admin/production">
-              <Button size="sm" variant="secondary">
-                {t('orderSetup.openProduction')}
-              </Button>
-            </Link>
-          </div>
-        </Alert>
+        <Board tone="info" wash="top">
+          <Ticket tone="info" title={t('orderSetup.workerAssignmentRequired')} why={t('orderSetup.workerAssignmentHint')} href="/admin/production" LinkComponent={Link} action={t('orderSetup.openProduction')} />
+        </Board>
       ) : null}
 
-      <MotionSection className="maher-form-section" as="div">
-        <Card className="space-y-4 p-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">{t('orderSetup.progress')}</h2>
-              <p className="text-sm text-text-secondary">
-                {t('orderSetup.progressSummary', {
-                  ready: String(setup.progress.readyLines),
-                  total: String(setup.progress.totalLines),
-                  percent: String(setup.progress.percent),
-                })}
-              </p>
-            </div>
-            <p className="text-2xl font-bold tabular-nums" dir="ltr">
-              {setup.progress.percent}%
-            </p>
-          </div>
-          <ol className="grid gap-2 sm:grid-cols-4">
-            {stepDone.map((step, index) => (
-              <li
-                key={step.key}
-                className={`rounded-xl border p-3 text-sm ${
-                  step.done
-                    ? 'border-emerald-500/30 bg-emerald-500/5'
-                    : 'border-border bg-[var(--maher-surface-muted)]/30'
-                }`}
-              >
-                <p className="text-[11px] text-text-tertiary">
-                  {t('orderSetup.stepN', { n: String(index + 1) })}
-                </p>
-                <p className="font-medium">{t(`orderSetup.steps.${step.key}`)}</p>
-              </li>
-            ))}
-          </ol>
-        </Card>
-      </MotionSection>
-
-      <MotionSection className="maher-form-section" as="div">
-        <Card className="space-y-3 p-4">
-          <h2 className="text-base font-semibold">{t('orderSetup.readiness')}</h2>
-          <div className="flex flex-wrap gap-2">
-            <StatusBadge status={setup.materialReadiness.status} />
-            {setup.materialReadiness.anyShortage ? (
-              <p className="text-sm text-text-secondary">{t('orderSetup.shortageNote')}</p>
-            ) : null}
-          </div>
-          {!setup.validation.ok ? (
-            <Alert variant="warning">
-              <p className="mb-1 font-medium">{t('orderSetup.issuesTitle')}</p>
-              <ul className="list-disc space-y-1 ps-4 text-sm">
-                {setup.validation.issues.slice(0, 8).map((issue) => (
-                  <li key={`${issue.code}-${issue.lineId ?? ''}-${issue.message}`}>
-                    {issue.message}
-                  </li>
-                ))}
-              </ul>
-            </Alert>
-          ) : (
-            <p className="text-sm text-text-secondary">{t('orderSetup.validationOk')}</p>
-          )}
-        </Card>
-      </MotionSection>
-
-      <div className="space-y-3">
-        <h2 className="text-base font-medium">{t('orderSetup.lines')}</h2>
-        {setup.lines.length === 0 ? (
-          <Card className="p-4">
-            <p className="text-sm text-text-secondary">{t('orderSetup.noLines')}</p>
-          </Card>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {setup.lines.map((line) => {
-              const complexity = line.manufacturingComplexity ?? 'STANDARD';
-              const kind =
-                complexity === 'CUSTOM'
-                  ? tc('lineKindCustom')
-                  : complexity === 'MODIFIED'
-                    ? tc('lineKindCustomized')
-                    : tc('lineKindStandard');
-              const image = line.product?.imageUrl;
-              const selected = resolvedExpanded === line.id;
+      {!setup.validation.ok || readiness.anyShortage ? (
+        <Board tone="warning" wash="top">
+          <Board.Header title={t('orderSetup.issuesTitle')} description={readiness.anyShortage ? t('orderSetup.shortageNote') : undefined} meta={<Stamp tone="warning" size="sm">{setup.validation.issues.length}</Stamp>} />
+          <ul className="m-0 list-none divide-y divide-[var(--maher-border)] p-0">
+            {setup.validation.issues.slice(0, 8).map((issue) => {
+              const line = issue.lineId ? setup.lines.find((l) => l.id === issue.lineId || l.salesOrderLineId === issue.lineId) : null;
               return (
-                <button
-                  key={line.id}
-                  type="button"
-                  onClick={() => setExpandedLineId(line.id === resolvedExpanded ? null : line.id)}
-                  className={`rounded-xl border p-3 text-start ${
-                    selected
-                      ? 'border-[var(--maher-brand)] bg-[var(--maher-brand-soft)]'
-                      : 'border-border bg-surface'
-                  }`}
-                >
-                  <div className="flex gap-3">
-                    <div className="h-16 w-16 overflow-hidden rounded-lg bg-[var(--maher-surface-muted)]">
-                      {image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={image} alt="" className="h-full w-full object-cover" />
-                      ) : null}
-                    </div>
-                    <div className="min-w-0">
-                      {line.itemNumber ? (
-                        <p className="truncate text-[11px] text-text-tertiary" dir="ltr">
-                          {line.itemNumber}
-                        </p>
-                      ) : null}
-                      <p className="truncate font-medium">
-                        {line.manufacturingName ?? line.description ?? line.product?.nameEn ?? '—'}
-                      </p>
-                      <p className="text-xs text-text-secondary" dir="ltr">
-                        × {line.quantity}
-                      </p>
-                      <p className="text-[11px] text-[var(--maher-brand)]">{kind}</p>
-                      <StatusBadge status={line.status} />
-                    </div>
-                  </div>
-                </button>
+                <li key={`${issue.code}-${issue.lineId ?? ''}-${issue.message}`}>
+                  <Ticket tone="warning" title={issue.message} why={line ? line.manufacturingName ?? line.description ?? undefined : issue.section ?? undefined} onClick={line ? () => setExpandedLineId(line.id) : undefined} action={line ? tCommon('details') : undefined} />
+                </li>
               );
             })}
-          </div>
-        )}
-        {setup.lines.map((line) => (
-          <OrderLineSetupPanel
-            key={line.id}
-            salesOrderId={salesOrderId}
-            line={line}
-            workflows={workflowsQuery.data ?? []}
-            readOnly={readOnly}
-            expanded={resolvedExpanded === line.id}
-            onToggle={() =>
-              setExpandedLineId((prev) => (prev === line.id ? null : line.id))
-            }
-            onUpdated={() => {
-              void invalidate();
-            }}
-          />
-        ))}
-      </div>
-
-      {!readOnly ? (
-        <MotionSection className="maher-form-section" as="div">
-          <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <div>
-              <h2 className="text-base font-semibold">{t('orderSetup.reviewRelease')}</h2>
-              <p className="text-sm text-text-secondary">{t('orderSetup.reviewReleaseHint')}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                disabled={!setup.validation.ok || setup.status === 'READY_FOR_RELEASE'}
-                loading={markReadyMutation.isPending}
-                onClick={() => markReadyMutation.mutate()}
-              >
-                {t('orderSetup.markReady')}
-              </Button>
-              <Button
-                disabled={!setup.validation.ok && setup.status !== 'READY_FOR_RELEASE'}
-                onClick={() => void openRelease()}
-              >
-                {t('orderSetup.release')}
-              </Button>
-            </div>
-          </Card>
-        </MotionSection>
+          </ul>
+        </Board>
       ) : (
-        <ReleasedSpecSummary setup={setup} />
+        <Board tone="success">
+          <Board.Header title={t('orderSetup.validationOk')} description={t('orderSetup.reviewReleaseHint')} />
+        </Board>
       )}
+
+      <Board tone="brand">
+        <Board.Header title={t('orderSetup.lines')} description={t('orderSetup.reviewReleaseHint')} meta={<span className="tabular-nums">{setup.lines.length}</span>} />
+        {setup.lines.length === 0 ? (
+          <Board.Empty title={t('orderSetup.noLines')} />
+        ) : (
+          <ListRows>
+            {setup.lines.map((line) => {
+              const complexity = line.manufacturingComplexity ?? 'STANDARD';
+              const kind = complexity === 'CUSTOM' ? tc('lineKindCustom') : complexity === 'MODIFIED' ? tc('lineKindCustomized') : tc('lineKindStandard');
+              const selected = resolvedExpanded === line.id;
+              const done = line.status === 'READY' || line.status === 'RELEASED';
+              return (
+                <ListRow
+                  key={line.id}
+                  selected={selected}
+                  onClick={() => setExpandedLineId(line.id === resolvedExpanded ? null : line.id)}
+                  leading={<RowThumb src={line.product?.imageUrl} className="h-11 w-11" icon={<Stamp tone={complexity === 'CUSTOM' ? 'warning' : complexity === 'MODIFIED' ? 'info' : 'neutral'} />} />}
+                  title={
+                    <span className="flex items-center gap-2">
+                      {line.itemNumber ? <Ltr className="text-[12px] font-medium text-[var(--maher-text-tertiary)]">{line.itemNumber}</Ltr> : null}
+                      {line.manufacturingName ?? line.description ?? line.product?.nameEn ?? '—'}
+                    </span>
+                  }
+                  meta={`${kind} · × ${line.quantity}${line.materialStatus ? ` · ${copy.status(line.materialStatus)}` : ''}`}
+                  trailing={
+                    <Stamp tone={done ? 'success' : line.status === 'NEEDS_REVIEW' ? 'warning' : 'neutral'} size="sm">
+                      {copy.status(line.status)}
+                    </Stamp>
+                  }
+                />
+              );
+            })}
+          </ListRows>
+        )}
+      </Board>
+
+      {setup.lines.map((line) => (
+        <OrderLineSetupPanel
+          key={line.id}
+          salesOrderId={salesOrderId}
+          line={line}
+          workflows={workflowsQuery.data ?? []}
+          readOnly={readOnly}
+          expanded={resolvedExpanded === line.id}
+          onToggle={() => setExpandedLineId((prev) => (prev === line.id ? null : line.id))}
+          onUpdated={() => void invalidate()}
+        />
+      ))}
+
+      {readOnly ? <ReleasedSpecSummary setup={setup} /> : null}
+
+      <ActionDock className="md:hidden" note={<Ltr>{`${setup.progress.percent}%`}</Ltr>}>
+        {secondary}
+        {primary}
+      </ActionDock>
 
       <ConfirmDialog
         open={releaseOpen}
         title={t('orderSetup.releaseConfirmTitle')}
-        description={
-          preview
-            ? [
-                t('orderSetup.releaseConfirmDescription'),
-                preview.materialReadiness.anyShortage
-                  ? t('orderSetup.releaseShortageWarning')
-                  : null,
-                preview.note ?? null,
-              ]
-                .filter(Boolean)
-                .join(' ')
-            : t('orderSetup.releaseConfirmDescription')
-        }
+        description={preview ? [t('orderSetup.releaseConfirmDescription'), preview.materialReadiness.anyShortage ? t('orderSetup.releaseShortageWarning') : null, preview.note ?? null].filter(Boolean).join(' ') : t('orderSetup.releaseConfirmDescription')}
         confirmLabel={t('orderSetup.release')}
+        cancelLabel={tCommon('cancel')}
         loading={releaseMutation.isPending}
         error={error}
         onConfirm={() => releaseMutation.mutate()}
         onClose={() => setReleaseOpen(false)}
-      />
+      >
+        {preview?.lines.length ? (
+          <ul className="mt-3 m-0 list-none divide-y divide-[var(--maher-border)] rounded-[12px] border border-[var(--maher-border)] p-0">
+            {preview.lines.map((l) => (
+              <li key={l.salesOrderLineId} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                <span className="min-w-0 truncate">{l.manufacturingName ?? '—'}</span>
+                <span className="flex items-center gap-2">
+                  {l.materialStatus ? <Stamp tone={readinessTone(l.materialStatus)} size="sm">{copy.status(l.materialStatus)}</Stamp> : null}
+                  <Ltr className="text-[var(--maher-text-secondary)]">× {l.quantity}</Ltr>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }
 
 function ReleasedSpecSummary({ setup }: { setup: OrderProductionSetup }) {
-  const locale = useLocale();
+  const copy = useOrdersCopy();
   const t = useTranslations('sales');
-
   return (
-    <MotionSection className="maher-form-section" as="div">
-      <Card className="space-y-4 p-4">
-        <div>
-          <h2 className="text-base font-semibold">{t('orderSetup.releasedSpec')}</h2>
-          <p className="text-sm text-text-secondary">{t('orderSetup.releasedSpecHint')}</p>
-        </div>
-        <ul className="space-y-3">
-          {setup.lines.map((line) => (
-            <li
+    <Board tone="success">
+      <Board.Header title={t('orderSetup.releasedSpec')} description={t('orderSetup.releasedSpecHint')} />
+      <ListRows>
+        {setup.lines.map((line) => {
+          const dims = [line.orderDimensions?.width, line.orderDimensions?.height, line.orderDimensions?.depth].map((v) => (v != null ? String(v) : null)).filter(Boolean).join(' × ');
+          return (
+            <ListRow
               key={line.id}
-              className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="font-semibold">{line.manufacturingName ?? '—'}</p>
-                <span className="text-sm tabular-nums text-text-secondary" dir="ltr">
-                  × {line.quantity}
+              tone="success"
+              title={line.manufacturingName ?? '—'}
+              meta={[line.workflow ? localizedName(copy.locale, line.workflow, line.workflow.code) : null, dims ? `${dims} cm` : null].filter(Boolean).join(' · ')}
+              chevron={false}
+              trailing={
+                <span className="flex flex-col items-end text-[12px] text-[var(--maher-text-secondary)]">
+                  <Ltr>× {line.quantity}</Ltr>
+                  <span>{t('orderSetup.materialCount', { count: String(line.materials.length) })}</span>
                 </span>
-              </div>
-              {line.workflow ? (
-                <p className="mt-1 text-sm text-text-secondary">
-                  {localizedName(locale, line.workflow, line.workflow.code)}
-                </p>
-              ) : null}
-              <p className="mt-1 text-xs text-text-tertiary" dir="ltr">
-                {[
-                  line.orderDimensions?.width,
-                  line.orderDimensions?.height,
-                  line.orderDimensions?.depth,
-                ]
-                  .map((v) => (v != null ? String(v) : null))
-                  .filter(Boolean)
-                  .join(' × ') || '—'}
-              </p>
-              <p className="mt-2 text-xs text-text-tertiary">
-                {t('orderSetup.materialCount', { count: String(line.materials.length) })}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </Card>
-    </MotionSection>
+              }
+            />
+          );
+        })}
+      </ListRows>
+    </Board>
   );
 }

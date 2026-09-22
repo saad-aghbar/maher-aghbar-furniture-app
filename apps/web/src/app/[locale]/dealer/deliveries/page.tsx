@@ -1,7 +1,7 @@
 'use client';
 
-import { DealerMonthCalendar } from '@/components/dealer-month-calendar';
-import { Link } from '@/i18n/navigation';
+import { useKitCopy } from '@/lib/kit-copy';
+import { useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import {
   formatPortalDate,
@@ -17,18 +17,32 @@ import {
   type UpcomingGroupKey,
 } from '@/lib/dealer-schedule';
 import { localizedName } from '@maher/i18n';
-import {
-  Card,
-  EmptyState,
-  ErrorState,
-  Ltr,
-  PageHeader,
-  Skeleton,
-  StatusBadge,
-} from '@maher/ui';
+import { Board, BoardSkeleton, CalendarLegend, ErrorBoard, Figure, ListRow, ListRows, Ltr, MonthCalendar, Ribbon, SegmentedControl, Stamp, type BoardTone } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
+
+function statusTone(status: string): BoardTone {
+  switch (status) {
+    case 'DELIVERED':
+      return 'success';
+    case 'CONFIRMED':
+    case 'ON_TRACK':
+    case 'SHIPPED':
+    case 'IN_TRANSIT':
+      return 'brand';
+    case 'AWAITING_CONFIRMATION':
+    case 'REQUESTED':
+      return 'info';
+    case 'MAY_BE_DELAYED':
+    case 'DELAYED':
+      return 'warning';
+    case 'CANCELLED':
+      return 'error';
+    default:
+      return 'neutral';
+  }
+}
 
 const GROUPS: Array<{ key: UpcomingGroupKey; titleKey: 'groupToday' | 'groupThisWeek' | 'groupLater' }> = [
   { key: 'today', titleKey: 'groupToday' },
@@ -67,36 +81,35 @@ function dateLine(row: DealerDeliveryDto, locale: string, td: ReturnType<typeof 
   return row.calendarDate ? fmt(row.calendarDate) : null;
 }
 
-function DeliveryCard({ row }: { row: DealerDeliveryDto }) {
+function DeliveryRow({ row }: { row: DealerDeliveryDto }) {
   const locale = useLocale();
   const td = useTranslations('production.dealerDelivery');
+  const tStatus = useTranslations('statuses');
+  const router = useRouter();
   const line = dateLine(row, locale, td);
+  const delayed = row.customerStatus === 'MAY_BE_DELAYED' || row.customerStatus === 'DELAYED';
+  const note = delayed ? (row.scheduleUpdating || !row.projectedDeliveryDate ? td('scheduleUpdating') : td('productionDelay')) : row.customerSafeReason ? td('scheduleUpdating') : null;
+  const label = (() => {
+    try {
+      return tStatus(row.customerStatus as 'PENDING');
+    } catch {
+      return row.customerStatus.replaceAll('_', ' ').toLowerCase();
+    }
+  })();
   return (
-    <Link href={`/dealer/orders/${row.salesOrderId}`} className="block">
-      <Card className="maher-list-card p-4 transition hover:border-brand/40">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-semibold text-text-primary">{productName(row, locale)}</p>
-            <p className="mt-0.5 text-xs text-text-secondary">
-              <Ltr>{row.salesOrderNumber}</Ltr>
-            </p>
-            {line ? <p className="mt-2 text-sm text-text-secondary">{line}</p> : null}
-            {row.customerStatus === 'MAY_BE_DELAYED' || row.customerStatus === 'DELAYED' ? (
-              <p className="mt-1 text-xs text-text-secondary">{td('productionDelay')}</p>
-            ) : null}
-            {(row.customerStatus === 'MAY_BE_DELAYED' || row.customerStatus === 'DELAYED') &&
-            (row.scheduleUpdating || !row.projectedDeliveryDate) ? (
-              <p className="mt-1 text-xs text-text-secondary">{td('scheduleUpdating')}</p>
-            ) : row.customerStatus !== 'MAY_BE_DELAYED' &&
-              row.customerStatus !== 'DELAYED' &&
-              row.customerSafeReason ? (
-              <p className="mt-1 text-xs text-text-secondary">{td('scheduleUpdating')}</p>
-            ) : null}
-          </div>
-          <StatusBadge status={row.customerStatus} />
-        </div>
-      </Card>
-    </Link>
+    <ListRow
+      tone={statusTone(row.customerStatus)}
+      title={productName(row, locale)}
+      meta={
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <Ltr>{row.salesOrderNumber}</Ltr>
+          {line ? <span>· {line}</span> : null}
+          {note ? <span className="text-[var(--maher-warning)]">· {note}</span> : null}
+        </span>
+      }
+      trailing={<Stamp tone={statusTone(row.customerStatus)} size="sm">{label}</Stamp>}
+      onClick={() => router.push(`/dealer/orders/${row.salesOrderId}`)}
+    />
   );
 }
 
@@ -105,6 +118,7 @@ export default function DeliveriesPage() {
   const tCommon = useTranslations('common');
   const td = useTranslations('production.dealerDelivery');
   const locale = useLocale();
+  const kit = useKitCopy();
   const [segment, setSegment] = useState<'upcoming' | 'calendar'>('upcoming');
   const initial = todayYmd();
   const [cursor, setCursor] = useState<CalendarCursor>(() => {
@@ -129,7 +143,7 @@ export default function DeliveriesPage() {
 
   const query = segment === 'calendar' ? calendarQuery : upcomingQuery;
   const today = query.data?.todayYmd ?? upcomingQuery.data?.todayYmd ?? initial;
-  const rows = query.data?.data ?? [];
+  const rows = useMemo(() => query.data?.data ?? [], [query.data?.data]);
   const groups = useMemo(
     () => groupUpcomingByCalendarDate(upcomingQuery.data?.data ?? [], today),
     [upcomingQuery.data?.data, today],
@@ -139,97 +153,122 @@ export default function DeliveriesPage() {
   const unconfirmedOnly =
     dayRows.length > 0 && dayRows.every((row) => row.customerStatus === 'AWAITING_CONFIRMATION');
 
-  return (
-    <div className="space-y-6">
-      <PageHeader title={tNav('schedule')} description={tCommon('deliveriesSubtitle')} />
+  const allRows = upcomingQuery.data?.data ?? [];
+  const live = allRows.filter((r) => r.customerStatus !== 'CANCELLED' && r.customerStatus !== 'DELIVERED');
+  const counts = {
+    confirmed: live.filter((r) => ['CONFIRMED', 'ON_TRACK', 'SHIPPED', 'IN_TRANSIT'].includes(r.customerStatus)).length,
+    awaiting: live.filter((r) => ['AWAITING_CONFIRMATION', 'REQUESTED'].includes(r.customerStatus)).length,
+    delayed: live.filter((r) => ['MAY_BE_DELAYED', 'DELAYED'].includes(r.customerStatus)).length,
+    delivered: allRows.filter((r) => r.customerStatus === 'DELIVERED').length,
+  };
+  const heroTone: BoardTone = counts.delayed ? 'warning' : counts.confirmed ? 'brand' : 'neutral';
 
-      <div className="flex gap-2">
-        {(['upcoming', 'calendar'] as const).map((key) => {
-          const selected = segment === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSegment(key)}
-              className={
-                selected
-                  ? 'rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white'
-                  : 'rounded-full border border-border px-4 py-2 text-sm text-text-secondary'
-              }
-            >
-              {td(key === 'upcoming' ? 'modeUpcoming' : 'modeCalendar')}
-            </button>
-          );
-        })}
-      </div>
+  return (
+    <div className="maher-stagger space-y-5">
+      <Board tone={heroTone} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{tNav('schedule')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tCommon('deliveriesSubtitle')}</p>
+            </div>
+            <SegmentedControl<'upcoming' | 'calendar'>
+              value={segment}
+              onChange={setSegment}
+              options={[
+                { value: 'upcoming', label: td('modeUpcoming') },
+                { value: 'calendar', label: td('modeCalendar') },
+              ]}
+            />
+          </div>
+          <div className="min-w-0">
+            <Ribbon
+              size="sm"
+              segments={[
+                { key: 'confirmed', label: td('legendConfirmed'), value: counts.confirmed, tone: 'brand' },
+                { key: 'awaiting', label: td('legendExpected'), value: counts.awaiting, tone: 'info' },
+                { key: 'delayed', label: td('legendMayBeDelayed'), value: counts.delayed, tone: 'warning' },
+                { key: 'delivered', label: td('legendDelivered'), value: counts.delivered, tone: 'success' },
+              ]}
+            />
+            <div className="mt-3 grid grid-cols-3 gap-4">
+              <Figure size="sm" value={groups.today.length} label={td('groupToday')} tone={groups.today.length ? 'brand' : 'neutral'} />
+              <Figure size="sm" value={groups.thisWeek.length} label={td('groupThisWeek')} />
+              <Figure size="sm" value={counts.delayed} label={td('legendMayBeDelayed')} tone={counts.delayed ? 'warning' : 'neutral'} />
+            </div>
+          </div>
+        </div>
+      </Board>
 
       {query.isLoading && !query.data ? (
-        <Skeleton className="h-64 w-full rounded-2xl" />
+        <BoardSkeleton rows={6} />
       ) : query.isError && !query.data ? (
-        <ErrorState
-          title={tNav('schedule')}
-          description={tCommon('loadFailed')}
-          onRetry={() => void query.refetch()}
-          retryLabel={tCommon('retry')}
-        />
+        <ErrorBoard title={tNav('schedule')} description={tCommon('loadFailed')} onRetry={() => void query.refetch()} retryLabel={tCommon('retry')} />
       ) : segment === 'upcoming' ? (
-        <div className="space-y-6">
+        <div className="maher-stagger grid gap-5 xl:grid-cols-12">
           {GROUPS.map(({ key, titleKey }) => (
-            <section key={key} className="space-y-3">
-              <h2 className="text-sm font-semibold text-text-primary">{td(titleKey)}</h2>
+            <Board key={key} tone={key === 'today' ? 'brand' : 'neutral'} className={key === 'later' ? 'xl:col-span-12' : 'xl:col-span-6'}>
+              <Board.Header title={td(titleKey)} meta={<Stamp tone={groups[key].length ? (key === 'today' ? 'brand' : 'neutral') : 'neutral'} size="sm">{groups[key].length}</Stamp>} />
               {groups[key].length === 0 ? (
-                <EmptyState title={tCommon('noDeliveries')} description={tCommon('noDeliveriesHint')} />
+                <Board.Empty title={tCommon('noDeliveries')} description={key === 'today' ? tCommon('noDeliveriesHint') : undefined} />
               ) : (
-                <div className="grid gap-3">
+                <ListRows>
                   {groups[key].map((row) => (
-                    <DeliveryCard key={row.salesOrderId} row={row} />
+                    <DeliveryRow key={row.salesOrderId} row={row} />
                   ))}
-                </div>
+                </ListRows>
               )}
-            </section>
+            </Board>
           ))}
         </div>
       ) : (
-        <div className="space-y-6">
-          <Card className="p-4">
-            <DealerMonthCalendar
-              cursor={cursor}
-              selectedDay={selectedDay}
-              todayYmd={today}
-              dayMeta={dayMeta}
-              onSelect={setSelectedDay}
-              onMonthChange={(next) => {
-                setCursor(next);
-                setSelectedDay(monthRangeYmd(next).from);
-              }}
+        <div className="grid gap-5 xl:grid-cols-12">
+          <Board tone="brand" className="xl:col-span-7">
+            <Board.Body>
+              <MonthCalendar
+                embedded
+                variant="dealer"
+                locale={locale}
+                monthCursor={cursor}
+                onMonthChange={(next) => {
+                  setCursor(next);
+                  setSelectedDay(monthRangeYmd(next).from);
+                }}
+                value={selectedDay}
+                onSelect={setSelectedDay}
+                dayMeta={dayMeta}
+                prevLabel={kit.date.prevMonth}
+                nextLabel={kit.date.nextMonth}
+                footer={
+                  <CalendarLegend
+                    className="pt-3"
+                    items={[
+                      { id: 'confirmed', label: td('legendConfirmed'), swatch: 'confirmed' },
+                      { id: 'proposed', label: td('legendExpected'), swatch: 'proposed' },
+                      { id: 'attention', label: td('legendMayBeDelayed'), swatch: 'attention' },
+                      { id: 'today', label: tCommon('today'), swatch: 'today' },
+                    ]}
+                  />
+                }
+              />
+            </Board.Body>
+          </Board>
+          <Board tone={dayRows.length ? 'brand' : 'neutral'} className="xl:col-span-5">
+            <Board.Header
+              title={<Ltr>{formatPortalDate(locale, selectedDay)}</Ltr>}
+              description={unconfirmedOnly ? td('notConfirmed') : undefined}
+              meta={<Stamp tone={dayRows.length ? 'brand' : 'neutral'} size="sm">{dayRows.length}</Stamp>}
             />
-            <div className="mt-4 flex flex-wrap gap-2 text-xs text-text-secondary">
-              <span>{td('legendConfirmed')}</span>
-              <span>{td('legendExpected')}</span>
-              <span>{td('legendMayBeDelayed')}</span>
-              <span>{td('legendDelivered')}</span>
-            </div>
-          </Card>
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-text-primary">
-              {td('dayHeading', {
-                date: formatPortalDate(locale, selectedDay),
-                count: dayRows.length,
-              })}
-            </h2>
-            {unconfirmedOnly ? (
-              <p className="text-xs text-text-secondary">{td('notConfirmed')}</p>
-            ) : null}
             {dayRows.length === 0 ? (
-              <EmptyState title={td('emptyDayTitle')} description={td('emptyDayBody')} />
+              <Board.Empty title={td('emptyDayTitle')} description={td('emptyDayBody')} />
             ) : (
-              <div className="grid gap-3">
+              <ListRows>
                 {dayRows.map((row) => (
-                  <DeliveryCard key={row.salesOrderId} row={row} />
+                  <DeliveryRow key={row.salesOrderId} row={row} />
                 ))}
-              </div>
+              </ListRows>
             )}
-          </section>
+          </Board>
         </div>
       )}
     </div>

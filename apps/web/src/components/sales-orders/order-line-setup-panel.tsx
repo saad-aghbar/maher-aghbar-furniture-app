@@ -16,10 +16,11 @@ import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { localizedName } from '@maher/i18n';
 import {
   Alert,
+  Board,
   Button,
-  Card,
   Input,
   Select,
+  Stamp,
   StatusBadge,
 } from '@maher/ui';
 import { useMutation } from '@tanstack/react-query';
@@ -227,13 +228,16 @@ export function OrderLineSetupPanel({
   const catalog = line.catalogDimensions;
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Board tone={(line.issues?.length ?? 0) > 0 ? 'warning' : line.status === 'READY' || line.status === 'RELEASED' ? 'success' : 'neutral'} id={`line-${line.id}`}>
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full flex-wrap items-start justify-between gap-3 p-4 text-start hover:bg-[var(--maher-surface-muted)]/40"
+        aria-expanded={expanded}
+        className={`maher-press flex w-full flex-wrap items-start justify-between gap-3 px-5 py-4 text-start ${expanded ? 'border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)]' : 'hover:bg-[var(--maher-surface-muted)]'}`}
       >
-        <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 items-start gap-3">
+          <Stamp tone={(line.issues?.length ?? 0) > 0 ? 'warning' : line.status === 'READY' || line.status === 'RELEASED' ? 'success' : 'neutral'} className="mt-[7px]" />
+          <div className="min-w-0 space-y-1">
           {line.itemNumber ? (
             <p className="text-[11px] text-text-tertiary" dir="ltr">
               {line.itemNumber}
@@ -250,9 +254,10 @@ export function OrderLineSetupPanel({
           <div className="flex flex-wrap gap-1.5 pt-1">
             <StatusBadge status={line.status} />
             {line.materialStatus ? <StatusBadge status={line.materialStatus} /> : null}
-            <span className="rounded-full bg-[var(--maher-surface-muted)] px-2 py-0.5 text-[11px] text-text-secondary">
+            <Stamp tone="neutral" size="sm">
               {t(`orderSetup.complexity.${complexityKey}`)}
-            </span>
+            </Stamp>
+          </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-1.5 text-[11px] text-text-tertiary">
@@ -264,22 +269,15 @@ export function OrderLineSetupPanel({
               ['packaging', section?.packaging],
             ] as const
           ).map(([key, done]) => (
-            <span
-              key={key}
-              className={
-                done
-                  ? 'rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700'
-                  : 'rounded-md bg-amber-500/10 px-1.5 py-0.5 text-amber-800'
-              }
-            >
+            <Stamp key={key} tone={done ? 'success' : 'warning'} size="sm">
               {t(`orderSetup.section.${key}`)}
-            </span>
+            </Stamp>
           ))}
         </div>
       </button>
 
       {expanded ? (
-        <div className="space-y-5 border-t border-border p-4">
+        <div className="space-y-5 px-5 py-4">
           {banner ? <Alert variant="success">{banner}</Alert> : null}
           {error ? <Alert variant="error">{error}</Alert> : null}
           {(line.issues?.length ?? 0) > 0 ? (
@@ -308,7 +306,7 @@ export function OrderLineSetupPanel({
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">{t('orderSetup.dimensions')}</h3>
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl border border-border p-3 text-sm">
+              <div className="rounded-[12px] border border-[var(--maher-border)] p-3 text-sm">
                 <p className="mb-2 text-xs font-medium text-text-tertiary">
                   {t('orderSetup.catalogDimensions')}
                 </p>
@@ -319,7 +317,7 @@ export function OrderLineSetupPanel({
                   {catalog?.seatHeight != null ? ` · SH ${catalog.seatHeight}` : ''}
                 </p>
               </div>
-              <div className="rounded-xl border border-border p-3">
+              <div className="rounded-[12px] border border-[var(--maher-border)] p-3">
                 <p className="mb-2 text-xs font-medium text-text-tertiary">
                   {t('orderSetup.orderDimensions')}
                 </p>
@@ -504,6 +502,6 @@ export function OrderLineSetupPanel({
           ) : null}
         </div>
       ) : null}
-    </Card>
+    </Board>
   );
 }

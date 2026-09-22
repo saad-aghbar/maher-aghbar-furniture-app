@@ -190,5 +190,26 @@
     "action_open_returns": "פתח החזרות",
     "action_review_finance": "בדוק כספים",
     "action_review_semi": "בדוק סמי"
+  },
+  "returnDesk": {
+    "photos": "תמונות",
+    "lifecycle": "מסלול ההחזרה",
+    "markSent": "הסוחר שלח",
+    "markSentConfirm": "לסמן שהרהיט בדרכו למפעל? המלאי לא משתנה עדיין.",
+    "linkedWork": "הזמנות עבודה מקושרות",
+    "piecesDone": "{done} מתוך {total} פריטים נסגרו",
+    "decisionRepair": "תיקון",
+    "decisionReplacement": "החלפה",
+    "decisionRecovery": "גריטה ושחזור",
+    "openReturn": "פתיחת החזרה",
+    "attentionChip": "דורש תשומת לב",
+    "allChip": "הכול",
+    "closedChip": "סגור",
+    "inFactoryChip": "במפעל",
+    "waitingChip": "ממתין להחזרה",
+    "reviewChip": "לבדיקה",
+    "chargesChip": "חיובים",
+    "openCount": "פתוח",
+    "chargesPending": "חיובים ממתינים"
   }
 }

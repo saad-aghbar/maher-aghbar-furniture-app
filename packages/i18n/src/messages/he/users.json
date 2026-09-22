@@ -127,5 +127,7 @@
   "staffTypeDeleted": "סוג המשרה נמחק.",
   "confirmDeactivateStaffType": "להשבית סוג משרה זה? הוא לא יופיע למשתמשים חדשים. המשויכים הקיימים יישארו עד שתשייכו מחדש.",
   "confirmDeleteStaffType": "למחוק סוג משרה זה? לא ניתן לבטל.",
-  "emptyStaffTypes": "אין עדיין סוגי משרות"
+  "emptyStaffTypes": "אין עדיין סוגי משרות",
+  "usersAssigned": "אנשים",
+  "activeThisWeek": "התחברו השבוע"
 }

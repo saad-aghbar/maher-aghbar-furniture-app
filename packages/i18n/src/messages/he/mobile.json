@@ -803,7 +803,21 @@
       "mfgFinalOrders": "{count} הזמנות בעלות סופית · {total}",
       "mfgIncomplete": "{count} הזמנות עם עלות לא שלמה (לא מאופסות)",
       "mfgGrossDiff": "הפרש ייצור ברוטו",
-      "activity": "פעילות היום",
+      "activity": {
+        "taskCompleted": "שלב {stage} הושלם ב-{number}",
+        "taskStarted": "שלב {stage} התחיל ב-{number}",
+        "truckDeparted": "משאית יצאה {number}",
+        "deliveryUpdated": "משלוח {number} עודכן",
+        "qc": "בקרת איכות {number}: {result}",
+        "grn": "קבלה {number} עבור {po}",
+        "payment": "תשלום {number} מ-{name}",
+        "finishedGoods": "רישום תוצרת גמורה ({number})",
+        "finishedGoodsPlain": "רישום תוצרת גמורה",
+        "returnStatus": "החזרה {number} ← {status}",
+        "statusUpdated": "סטטוס {number} עודכן",
+        "materialsReceived": "התקבלו חומרים ל-{number}",
+        "invoiceIssued": "חשבונית {number} הונפקה"
+      },
       "activityEmpty": "עדיין אין פעילות שנרשמה היום.",
       "sectionHealthy": "הכל תקין באזור זה.",
       "reportsLink": "דוחות",
@@ -875,21 +889,6 @@
       },
       "title": {
         "rawShortages": "מחסורי גלם"
-      },
-      "activity": {
-        "taskCompleted": "שלב {stage} הושלם ב-{number}",
-        "taskStarted": "שלב {stage} התחיל ב-{number}",
-        "truckDeparted": "משאית יצאה {number}",
-        "deliveryUpdated": "משלוח {number} עודכן",
-        "qc": "בקרת איכות {number}: {result}",
-        "grn": "קבלה {number} עבור {po}",
-        "payment": "תשלום {number} מ-{name}",
-        "finishedGoods": "רישום תוצרת גמורה ({number})",
-        "finishedGoodsPlain": "רישום תוצרת גמורה",
-        "returnStatus": "החזרה {number} ← {status}",
-        "statusUpdated": "סטטוס {number} עודכן",
-        "materialsReceived": "התקבלו חומרים ל-{number}",
-        "invoiceIssued": "חשבונית {number} הונפקה"
       },
       "blocked": {
         "orderOnHold": "ההזמנה מושהית",
@@ -6064,7 +6063,10 @@
       "normalShift": "משמרת רגילה {range}",
       "workingDay": "יום עבודה",
       "shiftStart": "התחלה",
-      "shiftEnd": "סיום"
+      "shiftEnd": "סיום",
+      "impactTasks": "שיוכים",
+      "impactOrders": "הזמנות",
+      "impactCommitted": "{count, plural, one {משלוח מחויב אחד עשוי לזוז.} other {# משלוחים מחויבים עשויים לזוז.}}"
     },
     "duration": {
       "minutes": "{minutes} דק׳",
@@ -6554,6 +6556,11 @@
     "orderStrip": {
       "title": "לוח זמנים",
       "viewOnBoard": "הצג בלוח התזמון"
+    },
+    "legend": {
+      "light": "עומס קל",
+      "half": "חצי עומס",
+      "busy": "עמוס"
     }
   },
   "pdfDownload": {

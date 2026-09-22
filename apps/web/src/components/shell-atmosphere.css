@@ -1,0 +1,37 @@
+@keyframes maher-shell-watermark-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-33.333333%, 0, 0);
+  }
+}
+
+.maher-shell-watermark-row {
+  position: absolute;
+  top: -1%;
+  left: 0;
+  display: flex;
+  height: 102%;
+  width: max-content;
+  animation: maher-shell-watermark-drift 52s linear infinite;
+  will-change: transform;
+}
+
+.maher-shell-watermark-row img {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  object-fit: cover;
+}
+
+.maher-shell-watermark-row--static {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maher-shell-watermark-row {
+    animation: none;
+  }
+}

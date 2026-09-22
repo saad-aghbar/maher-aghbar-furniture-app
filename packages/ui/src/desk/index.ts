@@ -18,7 +18,7 @@ export {
 export { DEFAULT_DESK_COPY, type DeskCopy } from './desk-copy';
 export { DeskToolsProvider } from './DeskToolsProvider';
 export { FilterChip, type FilterChipProps } from './FilterChip';
-export { FilterPanel, FilterSection, type FilterPanelProps } from './FilterPanel';
+export { FilterSection } from './FilterPanel';
 export { InboxCellGrid, PillTabBar, type InboxCellItem, type PillTabItem, type PillTabBarProps } from './PillTabBar';
 export { PeriodCells, type PeriodCellItem, type PeriodCellsProps } from './PeriodCells';
 export { QrDisplay, type QrDisplayProps } from './QrDisplay';

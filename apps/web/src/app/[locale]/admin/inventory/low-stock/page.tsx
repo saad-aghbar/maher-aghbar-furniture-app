@@ -3,7 +3,7 @@
 import { InventoryScanBar } from '@/components/inventory/inventory-scan-bar';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
-import { EmptyState, ErrorState, PageHero, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@maher/ui';
+import { EmptyState, ErrorState, PageHeader, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -35,7 +35,7 @@ export default function LowStockPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title={t('lowStock')} description={ti('lowStockHint')} tone="soft" />
+      <PageHeader title={t('lowStock')} description={ti('lowStockHint')} />
       <InventoryScanBar />
       {rows.length === 0 ? (
         <EmptyState title={ti('empty')} />

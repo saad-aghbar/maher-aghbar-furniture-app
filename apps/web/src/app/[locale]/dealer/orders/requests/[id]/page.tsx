@@ -3,7 +3,7 @@
 import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
 import { apiFetch, API_URL } from '@/lib/api-client';
-import { Alert, Card, ErrorState, Ltr, MotionSection, Skeleton, StatusBadge } from '@maher/ui';
+import { Alert, Board, BoardSkeleton, ErrorBoard, Ltr, MotionSection, Stamp, type BoardTone } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Armchair } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -70,6 +70,7 @@ export default function CustomerRequestDetailPage() {
   const tc = useTranslations('catalog');
   const t = useTranslations('sales');
   const tCommon = useTranslations('common');
+  const tStatus = useTranslations('statuses');
   const tNav = useTranslations('navigation');
 
   const query = useQuery({
@@ -117,16 +118,16 @@ export default function CustomerRequestDetailPage() {
 
   if (query.isLoading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 p-1">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="aspect-[4/3] w-full rounded-xl" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={4} />
+        <BoardSkeleton rows={4} />
       </div>
     );
   }
 
   if (query.isError || !query.data) {
     return (
-      <ErrorState
+      <ErrorBoard
         title={tNav('myOrders')}
         description={tCommon('loadFailed')}
         onRetry={() => void query.refetch()}
@@ -137,12 +138,21 @@ export default function CustomerRequestDetailPage() {
 
   const req = query.data;
   const item = req.items?.[0];
+  const statusKey = req.status.toUpperCase();
+  const tone: BoardTone = /NEED/.test(statusKey) ? 'error' : /(QUOTED|READY)/.test(statusKey) ? 'success' : /(CLOSED|CANCEL|REJECT)/.test(statusKey) ? 'neutral' : 'warning';
+  const statusLabel = (() => {
+    try {
+      return tStatus(req.status as 'PENDING');
+    } catch {
+      return req.status.replaceAll('_', ' ').toLowerCase();
+    }
+  })();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <BackButton fallbackHref="/dealer/orders" />
+    <div className="maher-stagger space-y-5">
+      <BackButton fallbackHref="/dealer/requests" />
 
-      <MotionSection className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+      <Board tone={tone} wash="top" className="overflow-hidden">
         <div className="relative bg-[var(--maher-surface-muted)]">
           <div className="relative mx-auto aspect-[4/3] w-full max-h-[22rem] sm:aspect-[16/10] sm:max-h-[26rem]">
             {heroImage ? (
@@ -159,28 +169,21 @@ export default function CustomerRequestDetailPage() {
               </div>
             )}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/35 to-transparent" />
-            <div className="absolute start-3 top-3">
-              <StatusBadge status={req.status} />
-            </div>
           </div>
         </div>
-        <div className="space-y-1 border-t border-border p-4 sm:p-5">
-          <h1 className="text-2xl font-bold tracking-tight">
-            {req.title ?? item?.productName ?? req.number}
-          </h1>
-          <p className="text-sm text-text-secondary">
-            <span className="text-text-tertiary">{t('systemOrderNumber')}: </span>
-            <Ltr>{req.number}</Ltr>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-t border-[var(--maher-border)] px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <Ltr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{req.number}</Ltr>
+            <h1 className="mt-1 text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{req.title ?? item?.productName ?? req.number}</h1>
             {req.externalOrderNumber ? (
-              <>
-                {' · '}
-                <span className="text-text-tertiary">{t('dealerOrderNumber')}: </span>
-                <Ltr>{req.externalOrderNumber}</Ltr>
-              </>
+              <p className="mt-1 text-[13px] text-[var(--maher-text-secondary)]">
+                {t('dealerOrderNumber')}: <Ltr className="font-medium">{req.externalOrderNumber}</Ltr>
+              </p>
             ) : null}
-          </p>
+          </div>
+          <Stamp tone={tone}>{statusLabel}</Stamp>
         </div>
-      </MotionSection>
+      </Board>
 
       {req.informationRequestReason ? (
         <MotionSection delayMs={40}>
@@ -207,7 +210,9 @@ export default function CustomerRequestDetailPage() {
 
       {docs.length > 0 ? (
         <MotionSection delayMs={100}>
-          <Card title={tc('attachmentsSection')} className="maher-form-section">
+          <Board tone="neutral">
+            <Board.Header title={tc('attachmentsSection')} />
+            <Board.Body>
             <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {docs.map((doc) => {
                 const preview = docLinksQuery.data?.[doc.id];
@@ -216,7 +221,7 @@ export default function CustomerRequestDetailPage() {
                   <button
                     key={doc.id}
                     type="button"
-                    className="maher-list-card overflow-hidden rounded-xl border border-border text-start"
+                    className="overflow-hidden rounded-xl border border-border text-start"
                     onClick={async () => {
                       try {
                         const res = await apiFetch<{ downloadPath: string }>(
@@ -245,11 +250,14 @@ export default function CustomerRequestDetailPage() {
                 );
               })}
             </div>
-          </Card>
+            </Board.Body>
+          </Board>
         </MotionSection>
       ) : galleryUrls.length > 1 ? (
         <MotionSection delayMs={100}>
-          <Card title={tc('attachmentsSection')} className="maher-form-section">
+          <Board tone="neutral">
+            <Board.Header title={tc('attachmentsSection')} />
+            <Board.Body>
             <div className="maher-stagger grid grid-cols-2 gap-3 sm:grid-cols-3">
               {galleryUrls.map((url, index) => (
                 <button
@@ -267,7 +275,8 @@ export default function CustomerRequestDetailPage() {
                 </button>
               ))}
             </div>
-          </Card>
+            </Board.Body>
+          </Board>
         </MotionSection>
       ) : null}
     </div>

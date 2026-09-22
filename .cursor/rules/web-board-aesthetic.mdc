@@ -1,0 +1,21 @@
+---
+description: Web board aesthetic — the single card template (paper board, header band, stamp, wash, authored data primitives) for every admin, dealer and worker web page.
+globs: apps/web/**/*.{ts,tsx,css},packages/ui/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Web board aesthetic
+
+When building or restyling UI in `apps/web` or `packages/ui`, follow `.cursor/skills/web-board-aesthetic/SKILL.md` and `docs/web-board-template.md`.
+
+- Every content surface is a `Board` from `@maher/ui`: `rounded-[18px]`, 1px `--maher-border`, `--maher-surface`, `.maher-board` shadow, header band with an 8px stamp. **No side rails, no eyebrows.**
+- Tone lives in the stamp, the figure ink, or a `wash` — never a stripe. Board tone = worst thing inside it. Zero = neutral.
+- Data: `Figure`, `Meter`, `Ribbon`, `Sparkline`, `DayStrip`, `Ticket`, `Ledger`/`LedgerRow`, `Stamp`. Authored SVG/CSS, no chart library.
+- Layout: hero board + `xl:grid-cols-12` (7 / 5). Last board per column is elastic (`xl:flex-1` + `Board.Body grow`). Zero rows hide, teach (`Board.Empty`), or fold — no blank tiles.
+- Motion: one stagger per load, hover gated by `(hover:hover)`, press `scale(0.985)`, reduced motion keeps fades only.
+- RTL: primitives flip time axes; money/codes/times `dir="ltr"`; arrows `rtl:-scale-x-100`; Arabic has no uppercase or tight tracking.
+- `Card`, `FloorBoard`, `MetricCard`, `PageHero`, `SurfaceCard`, `FilterPanel` are **deleted**; `apps/web/src/lib/floor-board.contract.test.ts` fails on any import of them or on `.maher-list-card`. `PageHeader`, `Table`, `Modal`, `Badge`, `StatusBadge` still exist on the recipe but are `@deprecated` — prefer `DetailHero` / hero `Board`, `DataBoard`, `Sheet` / `ConfirmDialog`, `Stamp`.
+- Every date input is a `DateField` / `DateRangeField`; every PDF goes through `usePdfDownload`; every scan through `useCodeScanner`. The worker "finish" is a `HoldButton`.
+- Popovers/menus position with `left/top` (floating-ui `transform: false`) so the scale-in animation never fights placement — do not add `transform` to `.maher-popover`.
+
+Canonical copies: `apps/web/src/components/admin/desk/*.tsx` (dashboard), `apps/web/src/components/returns/return-desk.tsx` (detail desk), `apps/web/src/components/dealer/dealer-list-desk.tsx` (dealer list), `apps/web/src/app/[locale]/worker/tasks/[id]/page.tsx` (worker task), `apps/web/src/components/auth/auth-panel-layout.tsx` (auth panel).

@@ -4,6 +4,7 @@ import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError, API_URL } from '@/lib/api-client';
 import { INVOICE_STATUSES, statusOptions } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { usePdfDownload } from '@/hooks/use-pdf-download';
 import {
   Alert,
   Button,
@@ -13,11 +14,17 @@ import {
   Ltr,
   Modal,
   MotionSection,
-  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   cn,
+  Board,
+  Figure,
+  Meter,
+  Ribbon,
+  SectionTabs,
+  Stamp,
+  StatusChips,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -150,6 +157,7 @@ function InvoicesPageInner() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const currency = tCommon('currency');
+  const { openPdf, pdfDialog } = usePdfDownload();
 
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -300,14 +308,14 @@ function InvoicesPageInner() {
 
   return (
     <div className="space-y-6">
-      <MotionSection enter="rise">
-        <PageHero
-          title={t('invoices')}
-          description={ta('emptyHint')}
-          tone="soft"
-          actions={
+      <Board tone={rows.some(isOverdue) ? 'error' : 'brand'} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('invoices')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{ta('emptyHint')}</p>
+            </div>
             <Button
-              className="maher-lift"
               onClick={() => {
                 setSalesOrderId('');
                 setSoSearch('');
@@ -317,10 +325,25 @@ function InvoicesPageInner() {
             >
               {ta('createFromSalesOrder')}
             </Button>
-          }
-        />
-      </MotionSection>
-
+          </div>
+          <div className="min-w-0">
+            <Ribbon
+              size="sm"
+              segments={[
+                { key: 'paid', label: tStatus('PAID' as never), value: rows.filter((r) => Number(r.outstandingAmount ?? 0) <= 0 && r.status !== 'DRAFT' && r.status !== 'VOID').length, tone: 'success' },
+                { key: 'open', label: tStatus('ISSUED' as never), value: rows.filter((r) => Number(r.outstandingAmount ?? 0) > 0 && !isOverdue(r)).length, tone: 'info' },
+                { key: 'overdue', label: tStatus('OVERDUE' as never), value: rows.filter(isOverdue).length, tone: 'error' },
+              ]}
+            />
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <Figure size="sm" value={rows.length} label={t('invoices')} />
+              <Figure size="sm" value={money(rows.reduce((sum, r) => sum + Number(r.outstandingAmount ?? 0), 0), currency)} label={ta('outstanding')} tone={rows.some((r) => Number(r.outstandingAmount ?? 0) > 0) ? 'warning' : 'success'} locale={locale} />
+              <Figure size="sm" value={money(rows.filter(isOverdue).reduce((sum, r) => sum + Number(r.outstandingAmount ?? 0), 0), currency)} label={tStatus('OVERDUE' as never)} tone={rows.some(isOverdue) ? 'error' : 'success'} locale={locale} />
+              <Figure size="sm" value={supplierRows.length} label={ta('sectionPurchasing')} tone="neutral" />
+            </div>
+          </div>
+        </div>
+      </Board>
       {banner ? (
         <MotionSection enter="drop" className="maher-animate-bounce-in">
           <Alert variant="success">{banner}</Alert>
@@ -328,46 +351,45 @@ function InvoicesPageInner() {
       ) : null}
 
       <MotionSection enter="rise" delayMs={40} className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {(['all', 'orders', 'returns', 'purchasing'] as InvoiceSection[]).map((key) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={section === key ? 'primary' : 'secondary'}
-              onClick={() => {
-                setSection(key);
-                setPage(1);
-              }}
-            >
-              {ta(
-                key === 'all'
-                  ? 'sectionAll'
-                  : key === 'orders'
-                    ? 'sectionOrders'
-                    : key === 'returns'
-                      ? 'sectionReturns'
-                      : 'sectionPurchasing',
-              )}
-            </Button>
-          ))}
-        </div>
+        <SectionTabs
+          size="sm"
+          aria-label={t('invoices')}
+          value={section}
+          onChange={(key) => {
+            setSection(key as InvoiceSection);
+            setPage(1);
+          }}
+          items={[
+            { id: 'all', label: ta('sectionAll') },
+            { id: 'orders', label: ta('sectionOrders') },
+            { id: 'returns', label: ta('sectionReturns') },
+            { id: 'purchasing', label: ta('sectionPurchasing'), count: supplierRows.length },
+          ]}
+        />
         {section === 'purchasing' ? (
-          <div className="flex flex-wrap gap-2">
-            {(['FABRIC', 'RAW'] as const).map((kind) => (
-              <Button
-                key={kind}
-                size="sm"
-                variant={materialKind === kind ? 'primary' : 'secondary'}
-                onClick={() => {
-                  setMaterialKind(kind);
-                  setPage(1);
-                }}
-              >
-                {ta(kind === 'FABRIC' ? 'purchasingFabric' : 'purchasingRaw')}
-              </Button>
-            ))}
-          </div>
-        ) : null}
+          <StatusChips
+            aria-label={ta('sectionPurchasing')}
+            value={materialKind}
+            onChange={(kind) => {
+              setMaterialKind(kind as 'FABRIC' | 'RAW');
+              setPage(1);
+            }}
+            items={[
+              { id: 'FABRIC', label: ta('purchasingFabric') },
+              { id: 'RAW', label: ta('purchasingRaw') },
+            ]}
+          />
+        ) : (
+          <StatusChips
+            aria-label={tCommon('status')}
+            value={status || 'all'}
+            onChange={(id) => {
+              setPage(1);
+              setStatus(id === 'all' ? '' : id);
+            }}
+            items={statusFilterOptions.map((o) => ({ id: o.value || 'all', label: o.label, tone: o.value === 'OVERDUE' ? ('error' as const) : o.value === 'PAID' ? ('success' as const) : o.value === 'PARTIALLY_PAID' ? ('warning' as const) : undefined }))}
+          />
+        )}
         <div className="maher-invoices-filters maher-stagger flex flex-wrap items-end gap-3">
           <label className="relative min-w-[220px] flex-1">
             <Input
@@ -400,16 +422,6 @@ function InvoicesPageInner() {
             ))}
           </Select>
           )}
-          <Select
-            label={tCommon('status')}
-            value={status}
-            onChange={(e) => {
-              setPage(1);
-              setStatus(e.target.value);
-            }}
-            options={statusFilterOptions}
-            className="w-48"
-          />
         </div>
 
         {(section === 'purchasing' ? supplierRows.length === 0 : rows.length === 0) ? (
@@ -427,7 +439,7 @@ function InvoicesPageInner() {
                 ? supplierRows.map((row) => (
                     <article
                       key={row.id}
-                      className="maher-invoices-card flex flex-col rounded-xl border border-border bg-surface"
+                      className="maher-board maher-invoices-card flex flex-col overflow-hidden rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)]"
                     >
                       <div className="flex items-start justify-between gap-3 px-5 pt-5">
                         <div className="min-w-0">
@@ -448,7 +460,7 @@ function InvoicesPageInner() {
                           <Ltr>{money(row.outstandingAmount ?? row.total, currency)}</Ltr>
                         </p>
                       </div>
-                      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+                      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--maher-border)] px-5 py-3">
                         <p className="min-w-0 truncate text-xs text-text-tertiary">
                           {row.purchaseOrder?.number ?? '—'}
                         </p>
@@ -472,12 +484,7 @@ function InvoicesPageInner() {
                 return (
                   <article
                     key={row.id}
-                    className={cn(
-                      'maher-invoices-card flex flex-col rounded-xl border bg-surface',
-                      overdue
-                        ? 'border-[color-mix(in_srgb,var(--maher-error)_40%,var(--maher-border))] border-s-[3px] border-s-[var(--maher-error)]'
-                        : 'border-border',
-                    )}
+                    className={cn('maher-board maher-invoices-card flex flex-col overflow-hidden rounded-[18px] border border-[var(--maher-border)] bg-[var(--maher-surface)]', overdue && 'maher-board--wash-top [--board-ink:var(--maher-error)]')}
                   >
                     <div className="flex items-start justify-between gap-3 px-5 pt-5">
                       <div className="min-w-0">
@@ -525,15 +532,10 @@ function InvoicesPageInner() {
                           ) : null}
                         </div>
                       </div>
-                      <p className="mt-2 text-xs text-text-tertiary">
-                        {ta('total')}{' '}
-                        <Ltr className="font-medium text-text-secondary">
-                          {money(row.total, currency)}
-                        </Ltr>
-                      </p>
+                      <Meter className="mt-3" value={Math.max(0, Number(row.total ?? 0) - outstanding)} max={Math.max(1, Number(row.total ?? 0))} size="sm" label={ta('total')} valueLabel={money(row.total, currency)} tone={settled ? 'success' : overdue ? 'error' : 'brand'} />
                     </div>
 
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--maher-border)] px-5 py-3">
                       <p className="min-w-0 truncate text-xs text-text-tertiary">
                         {[
                           returnNo ? `${ta('returnInvoice')} ${returnNo}` : null,
@@ -555,9 +557,7 @@ function InvoicesPageInner() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => {
-                            window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank');
-                          }}
+                          onClick={() => openPdf({ path: `/api/v1/invoices/${row.id}/pdf`, documentName: row.number, filename: `${row.number}.pdf` })}
                         >
                           {tc('pdf')}
                         </Button>
@@ -665,7 +665,7 @@ function InvoicesPageInner() {
                     aria-selected={selected}
                     onClick={() => setSalesOrderId(so.id)}
                     className={cn(
-                      'maher-list-card flex w-full gap-3 rounded-xl border p-2.5 text-start transition',
+                      'flex w-full gap-3 rounded-xl border p-2.5 text-start transition',
                       selected
                         ? 'border-brand bg-[var(--maher-brand-soft)] shadow-sm'
                         : 'border-border bg-surface hover:border-brand/40 hover:bg-surface-muted',
@@ -728,6 +728,7 @@ function InvoicesPageInner() {
           )}
         </div>
       </Modal>
+      {pdfDialog}
     </div>
   );
 }

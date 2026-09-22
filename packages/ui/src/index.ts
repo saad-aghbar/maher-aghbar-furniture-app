@@ -5,15 +5,13 @@ export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from '.
 export { Spinner, type SpinnerProps } from './Spinner';
 export { Input, type InputProps } from './Input';
 export { NumberStepper, type NumberStepperProps } from './NumberStepper';
-export { DateRangeField, type DateRangeFieldProps } from './DateRangeField';
+export { DateRangeField, type DateRangeFieldProps, type DateRangeCopy } from './DateRangeField';
 export { ImageSourceField, type ImageSourceFieldProps } from './ImageSourceField';
 export { PhotoAttachField, type PhotoAttachFieldProps } from './PhotoAttachField';
 export { Select, type SelectProps, type SelectOption } from './Select';
 export { TextArea, type TextAreaProps } from './TextArea';
 export { Badge, type BadgeProps, type BadgeVariant } from './Badge';
 export { StatusBadge, StatusLabelProvider, type StatusBadgeProps } from './StatusBadge';
-export { Card, type CardProps } from './Card';
-export { MetricCard, type MetricCardProps, type MetricTone } from './MetricCard';
 export {
   Table,
   TableHead,
@@ -68,20 +66,9 @@ export {
   AnimatedValue,
   MotionSection,
   StaggerGrid,
-  SurfaceCard,
-  PageHero,
-  AttentionChip,
-  QuickActionTile,
-  BentoMetricCard,
   type AnimatedValueProps,
   type MotionSectionProps,
   type StaggerGridProps,
-  type SurfaceCardProps,
-  type PageHeroProps,
-  type AttentionChipProps,
-  type QuickActionTileProps,
-  type BentoMetricCardProps,
-  type BentoTone,
 } from './motion';
 
 export {
@@ -97,7 +84,6 @@ export {
   DEFAULT_DESK_COPY,
   DeskToolsProvider,
   FilterChip,
-  FilterPanel,
   FilterSection,
   InboxCellGrid,
   PillTabBar,
@@ -110,7 +96,6 @@ export {
   type CodeScannerProps,
   type DeskCopy,
   type FilterChipProps,
-  type FilterPanelProps,
   type InboxCellItem,
   type PeriodCellItem,
   type PeriodCellsProps,
@@ -121,7 +106,43 @@ export {
 } from './desk';
 
 export {
-  FloorBoard,
+  Board,
+  BoardHeader,
+  BoardBody,
+  BoardFooter,
+  BoardEmpty,
+  BoardField,
+  Stamp,
+  Figure,
+  Meter,
+  Ribbon,
+  Sparkline,
+  DayStrip,
+  Ticket,
+  Ledger,
+  LedgerRow,
+  toneInk,
+  toneSoft,
+  toneFromKey,
+  type BoardProps,
+  type BoardHeaderProps,
+  type BoardBodyProps,
+  type BoardEmptyProps,
+  type BoardTone,
+  type StampProps,
+  type FigureProps,
+  type MeterProps,
+  type RibbonProps,
+  type RibbonSegment,
+  type SparklineProps,
+  type DayStripProps,
+  type DayStripColumn,
+  type TicketProps,
+  type LedgerProps,
+  type LedgerRowProps,
+} from './board';
+
+export {
   FloorSheet,
   FloorFilterTrigger,
   StageSpine,
@@ -130,3 +151,12 @@ export {
   ListItemEnter,
   PressableCard,
 } from './floor';
+
+/* ── Kit: chrome, overlays, lists, details, forms, calendar, documents ── */
+export * from './nav';
+export * from './overlay';
+export * from './list';
+export * from './detail';
+export * from './form';
+export * from './calendar';
+export * from './documents';

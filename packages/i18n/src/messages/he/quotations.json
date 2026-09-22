@@ -85,5 +85,16 @@
     "EXPIRED": "פג תוקף",
     "REVISION_REQUESTED": "נתבקש תיקון",
     "CANCELLED": "בוטל"
-  }
+  },
+  "requestsHint": "בקשות המחיר שנשלחו לסטודיו ומצב כל אחת מהן.",
+  "requestQuoteCta": "בקשת הצעת מחיר",
+  "awaitingYou": "ממתין לכם",
+  "laneOpen": "פתוח",
+  "laneQuoted": "תומחר",
+  "laneClosed": "סגור",
+  "laneSent": "לבדיקה",
+  "laneAccepted": "אושר",
+  "laneRejected": "נדחה",
+  "laneExpired": "פג תוקף",
+  "laneDraft": "טיוטות"
 }

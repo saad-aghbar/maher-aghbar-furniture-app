@@ -38,6 +38,8 @@ export interface NestedNavItem {
 }
 
 export interface NestedNavGroup {
+  /** Stable id used for live tab counts. */
+  key: string;
   parentHref: string;
   matchPrefixes: string[];
   items: NestedNavItem[];
@@ -154,6 +156,7 @@ export const allNavItems: NavItem[] = [...navItems, ...navFooterItems];
 
 export const nestedNavGroups: NestedNavGroup[] = [
   {
+    key: 'orders',
     parentHref: '/admin/orders',
     matchPrefixes: ['/admin/orders', '/admin/requests', '/admin/quotations', '/admin/sales-orders', '/admin/deliveries', '/admin/ai-intake'],
     items: [
@@ -165,11 +168,11 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'products',
     parentHref: '/admin/products',
     matchPrefixes: ['/admin/products', '/admin/categories', '/admin/materials', '/admin/fabrics', '/admin/spec-options', '/admin/spec-option-values'],
     items: [
       { href: '/admin/products', key: 'products', anyPermissions: ['catalog.read'] },
-      { href: '/admin/categories', key: 'categories', anyPermissions: ['catalog.manage'] },
       { href: '/admin/materials', key: 'materials', anyPermissions: ['catalog.manage'] },
       { href: '/admin/fabrics', key: 'fabrics', anyPermissions: ['catalog.manage'] },
       { href: '/admin/spec-options', key: 'specOptionGroups', anyPermissions: ['catalog.manage'] },
@@ -177,6 +180,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'inventory',
     parentHref: '/admin/inventory',
     matchPrefixes: ['/admin/inventory', '/admin/warehouses'],
     items: [
@@ -191,6 +195,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'purchasing',
     parentHref: '/admin/purchasing',
     matchPrefixes: ['/admin/purchasing', '/admin/suppliers'],
     items: [
@@ -200,6 +205,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'production',
     parentHref: '/admin/production',
     matchPrefixes: ['/admin/production', '/admin/production-stages', '/admin/quality'],
     items: [
@@ -231,6 +237,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'invoices',
     parentHref: '/admin/invoices',
     matchPrefixes: ['/admin/invoices', '/admin/payments'],
     items: [
@@ -239,6 +246,7 @@ export const nestedNavGroups: NestedNavGroup[] = [
     ],
   },
   {
+    key: 'users',
     parentHref: '/admin/employees',
     matchPrefixes: ['/admin/employees'],
     items: [

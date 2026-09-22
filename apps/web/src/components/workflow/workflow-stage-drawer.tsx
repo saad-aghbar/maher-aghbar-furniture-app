@@ -26,7 +26,7 @@ import {
   type TerminalStageCode,
 } from '@/lib/workflow-terminal';
 import { isReturnWorkflowScope } from '@maher/types';
-import { Badge, Button, Input, Select } from '@maher/ui';
+import { Button, Input, Select, Stamp } from '@maher/ui';
 import { Lock } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -402,19 +402,19 @@ export function WorkflowStageDrawer({
       >
         <div className="grid gap-4">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="default">
+            <Stamp tone="neutral" size="sm">
               {locked ? t('workflow.openingLocked') : t('workflow.required')}
-            </Badge>
+            </Stamp>
             {locked ? (
-              <Badge variant="default">
+              <Stamp tone="neutral" size="sm">
                 <span className="inline-flex items-center gap-1">
                   <Lock className="h-3 w-3" aria-hidden />
                   {terminal ? t('workflow.terminalTitle') : t('workflow.openingTitle')}
                 </span>
-              </Badge>
+              </Stamp>
             ) : null}
             {node.stageDefinition.responsibleDepartment ? (
-              <Badge>{node.stageDefinition.responsibleDepartment}</Badge>
+              <Stamp tone="neutral" size="sm">{node.stageDefinition.responsibleDepartment}</Stamp>
             ) : null}
           </div>
 

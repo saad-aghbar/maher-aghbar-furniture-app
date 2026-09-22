@@ -12,18 +12,8 @@ import {
   type ChatMessage,
   type SendMessageResult,
 } from '@/lib/ai-chat';
-import {
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Input,
-  MetricCard,
-  Skeleton,
-  StatusBadge,
-  cn,
-} from '@maher/ui';
-import { Send } from 'lucide-react';
+import { Board, BoardSkeleton, Button, ErrorBoard, Figure, Ledger, LedgerRow, Ltr, Meter, Stamp, cn } from '@maher/ui';
+import { Send, Sparkles } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -46,6 +36,15 @@ function renderMarkdown(text: string) {
   });
 }
 
+function statusTone(status: string): 'success' | 'warning' | 'error' | 'brand' | 'neutral' {
+  const key = status.toUpperCase();
+  if (/(DELIVERED|PAID|COMPLETED|APPROVED|READY|ACTIVE)/.test(key)) return 'success';
+  if (/(OVERDUE|REJECTED|CANCEL|FAIL|LATE)/.test(key)) return 'error';
+  if (/(PENDING|WAITING|NEED|DRAFT|PARTIAL)/.test(key)) return 'warning';
+  if (/(PRODUCTION|PROGRESS|SHIPPED|SENT)/.test(key)) return 'brand';
+  return 'neutral';
+}
+
 function BlockView({
   block,
   surface,
@@ -58,34 +57,47 @@ function BlockView({
   thinkingLabel: string;
 }) {
   if (block.type === 'thinking') {
-    return <p className="animate-pulse text-sm text-text-secondary">{thinkingLabel}</p>;
+    return (
+      <p className="flex items-center gap-2 text-[13px] text-[var(--maher-text-secondary)]">
+        <span className="maher-thinking-dots" aria-hidden>
+          <i />
+          <i />
+          <i />
+        </span>
+        {thinkingLabel}
+      </p>
+    );
   }
   if (block.type === 'text') {
     return (
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">
+      <p className="whitespace-pre-wrap text-[14px] leading-6">
         {renderMarkdown(block.markdown)}
       </p>
     );
   }
   if (block.type === 'error') {
     return (
-      <div className="rounded-lg border border-[var(--maher-error-border,var(--maher-border))] bg-[var(--maher-error-soft)] p-3">
-        <p className="text-sm font-semibold text-[var(--maher-error)]">{block.title}</p>
-        <p className="mt-1 text-sm text-text-secondary">{block.body}</p>
+      <div className="rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-error-soft)] p-3">
+        <p className="flex items-center gap-2 text-[13px] font-semibold text-[var(--maher-error)]">
+          <Stamp tone="error" size="sm">!</Stamp>
+          {block.title}
+        </p>
+        <p className="mt-1 text-[13px] text-[var(--maher-text-secondary)]">{block.body}</p>
       </div>
     );
   }
   if (block.type === 'metrics') {
     return (
       <div className="space-y-2">
-        {block.title ? <p className="text-xs font-semibold uppercase text-text-tertiary">{block.title}</p> : null}
-        <div className="grid gap-2 sm:grid-cols-3">
+        {block.title ? <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{block.title}</p> : null}
+        <div className="grid gap-3 rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-3 sm:grid-cols-3">
           {block.items.map((item) => (
-            <MetricCard
+            <Figure
               key={item.label}
+              size="sm"
               label={item.label}
               value={item.value}
-              hint={item.hint}
+              delta={item.hint}
               tone={item.tone === 'warning' ? 'warning' : item.tone === 'success' ? 'success' : item.tone === 'brand' ? 'brand' : 'neutral'}
             />
           ))}
@@ -95,11 +107,11 @@ function BlockView({
   }
   if (block.type === 'table') {
     return (
-      <div className="overflow-x-auto rounded-lg border border-border">
-        {block.title ? <p className="border-b border-border px-3 py-2 text-sm font-semibold">{block.title}</p> : null}
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)]">
+        {block.title ? <p className="border-b border-[var(--maher-border)] px-3 py-2 text-[13px] font-semibold">{block.title}</p> : null}
+        <table className="w-full text-[13px]">
           <thead>
-            <tr className="bg-surface-muted text-start text-xs text-text-tertiary">
+            <tr className="bg-[var(--maher-surface-muted)] text-start text-[11px] uppercase tracking-[0.06em] text-[var(--maher-text-tertiary)]">
               {block.columns.map((col) => (
                 <th key={col.key} className={cn('px-3 py-2 font-medium', col.align === 'end' && 'text-end')}>
                   {col.label}
@@ -109,7 +121,7 @@ function BlockView({
           </thead>
           <tbody>
             {block.rows.map((row, i) => (
-              <tr key={i} className="border-t border-border">
+              <tr key={i} className="border-t border-[var(--maher-border)]">
                 {block.columns.map((col) => (
                   <td key={col.key} className={cn('px-3 py-2', col.align === 'end' && 'text-end')} dir={col.align === 'end' ? 'ltr' : undefined}>
                     {row[col.key] ?? ''}
@@ -119,46 +131,38 @@ function BlockView({
             ))}
           </tbody>
         </table>
-        {block.caption ? <p className="px-3 py-2 text-xs text-text-tertiary">{block.caption}</p> : null}
+        {block.caption ? <p className="px-3 py-2 text-[12px] text-[var(--maher-text-tertiary)]">{block.caption}</p> : null}
       </div>
     );
   }
   if (block.type === 'entities') {
     return (
       <div className="space-y-2">
-        {block.title ? <p className="text-xs font-semibold uppercase text-text-tertiary">{block.title}</p> : null}
+        {block.title ? <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{block.title}</p> : null}
         <div className="grid gap-2 sm:grid-cols-2">
           {block.items.map((item, i) => {
             const href = remapChatHref(item.href, surface);
             const inner = (
               <>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="font-semibold text-text-primary">{item.title}</p>
-                  {item.status ? <StatusBadge status={item.status} /> : null}
+                  <p className="text-[13px] font-semibold text-[var(--maher-text-primary)]">{item.title}</p>
+                  {item.status ? <Stamp tone={statusTone(item.status)} size="sm">{item.status.replaceAll('_', ' ').toLowerCase()}</Stamp> : null}
                 </div>
-                {item.subtitle ? <p className="mt-1 text-xs text-text-secondary">{item.subtitle}</p> : null}
-                {item.meta ? <p className="mt-1 text-xs text-text-tertiary">{item.meta}</p> : null}
-                {item.amount ? (
-                  <p className="mt-1 text-sm font-medium" dir="ltr">
-                    {item.amount}
-                  </p>
-                ) : null}
+                {item.subtitle ? <p className="mt-1 text-[12px] text-[var(--maher-text-secondary)]">{item.subtitle}</p> : null}
+                {item.meta ? <p className="mt-1 text-[12px] text-[var(--maher-text-tertiary)]">{item.meta}</p> : null}
+                {item.amount ? <Ltr className="mt-1 block text-[14px] font-semibold">{item.amount}</Ltr> : null}
               </>
             );
+            const shell = 'rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-3 text-start';
             if (!href) {
               return (
-                <div key={`${item.title}-${i}`} className="rounded-xl border border-border p-3">
+                <div key={`${item.title}-${i}`} className={shell}>
                   {inner}
                 </div>
               );
             }
             return (
-              <button
-                key={`${item.title}-${i}`}
-                type="button"
-                onClick={() => onNavigate(href)}
-                className="rounded-xl border border-border p-3 text-start hover:border-brand/40"
-              >
+              <button key={`${item.title}-${i}`} type="button" onClick={() => onNavigate(href)} className={cn(shell, 'transition hover:border-[var(--maher-brand)] hover:shadow-[var(--maher-shadow-board)]')}>
                 {inner}
               </button>
             );
@@ -169,51 +173,36 @@ function BlockView({
   }
   if (block.type === 'list') {
     return (
-      <ul className="space-y-2">
-        {block.title ? <p className="text-xs font-semibold uppercase text-text-tertiary">{block.title}</p> : null}
-        {block.items.map((item, i) => (
-          <li key={`${item.title}-${i}`} className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-2">
-            <div>
-              <p className="text-sm font-medium">{item.title}</p>
-              {item.subtitle ? <p className="text-xs text-text-secondary">{item.subtitle}</p> : null}
-            </div>
-            {item.trailing ? (
-              <span className="text-xs text-text-tertiary" dir="ltr">
-                {item.trailing}
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-2">
+        {block.title ? <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{block.title}</p> : null}
+        <Ledger className="rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3">
+          {block.items.map((item, i) => (
+            <LedgerRow key={`${item.title}-${i}`} label={item.title} hint={item.subtitle} value={item.trailing ? <Ltr>{item.trailing}</Ltr> : ''} />
+          ))}
+        </Ledger>
+      </div>
     );
   }
   if (block.type === 'chart') {
     const max = Math.max(1, ...block.points.map((p) => p.value));
     return (
       <div className="space-y-2">
-        {block.title ? <p className="text-xs font-semibold uppercase text-text-tertiary">{block.title}</p> : null}
-        <div className="flex h-32 items-end gap-2">
+        {block.title ? <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{block.title}</p> : null}
+        <div className="space-y-2 rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-3">
           {block.points.map((p) => (
-            <div key={p.label} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-              <div
-                className="w-full rounded-t-md bg-brand"
-                style={{ height: `${Math.max(8, (p.value / max) * 100)}%` }}
-                title={p.display ?? String(p.value)}
-              />
-              <span className="truncate text-[10px] text-text-tertiary">{p.label}</span>
-            </div>
+            <Meter key={p.label} value={p.value} max={max} label={p.label} valueLabel={p.display ?? String(p.value)} tone="brand" />
           ))}
         </div>
-        {block.caption ? <p className="text-xs text-text-tertiary">{block.caption}</p> : null}
+        {block.caption ? <p className="text-[12px] text-[var(--maher-text-tertiary)]">{block.caption}</p> : null}
       </div>
     );
   }
   if (block.type === 'clarification') {
-    return <p className="text-sm text-text-primary">{block.question}</p>;
+    return <p className="text-[14px] leading-6">{block.question}</p>;
   }
   if (block.type === 'sources') {
     return (
-      <ul className="list-disc ps-4 text-xs text-text-tertiary">
+      <ul className="list-disc ps-4 text-[12px] text-[var(--maher-text-tertiary)]">
         {block.lines.map((line) => (
           <li key={line}>{line}</li>
         ))}
@@ -346,47 +335,42 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
   );
 
   if (booting) {
-    return (
-      <Card title={t('aiChat.title')}>
-        <Skeleton className="h-64 rounded-lg" />
-      </Card>
-    );
+    return <BoardSkeleton rows={6} />;
   }
 
   if (bootError) {
-    return (
-      <ErrorState
-        title={t('aiChat.errorTitle')}
-        description={bootError}
-        onRetry={() => window.location.reload()}
-      />
-    );
+    return <ErrorBoard title={t('aiChat.errorTitle')} description={bootError} onRetry={() => window.location.reload()} />;
   }
 
   return (
-    <Card title={t('aiChat.title')} description={t('aiChat.assistantName')} className="flex min-h-[32rem] flex-col">
-      <div ref={scrollerRef} className="flex max-h-[32rem] min-h-[20rem] flex-1 flex-col gap-4 overflow-y-auto pe-1">
+    <Board tone="brand" wash="top" className="flex min-h-[34rem] flex-col">
+      <Board.Header
+        title={
+          <span className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-[var(--maher-brand)]" />
+            {t('aiChat.title')}
+          </span>
+        }
+        description={t('aiChat.assistantName')}
+        meta={<Stamp tone={busy ? 'warning' : 'success'} size="sm">{busy ? t('aiChat.thinking') : t('aiChat.assistantName')}</Stamp>}
+      />
+      <div ref={scrollerRef} className="flex max-h-[34rem] min-h-[22rem] flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
         {messages.length === 0 ? (
-          <EmptyState title={t('aiChat.title')} />
+          <Board.Empty title={t('aiChat.title')} />
         ) : (
           messages.map((msg) => (
             <div
               key={msg.id}
               className={cn(
-                'max-w-[92%] space-y-2 rounded-2xl px-4 py-3',
+                'maher-chat-bubble max-w-[92%] space-y-2 rounded-[18px] px-4 py-3 text-[14px] leading-6',
                 msg.role === 'user'
-                  ? 'ms-auto bg-brand text-white'
-                  : 'bg-surface-muted text-text-primary',
+                  ? 'ms-auto rounded-ee-[6px] bg-[var(--maher-text-primary)] text-[var(--maher-surface)]'
+                  : 'rounded-es-[6px] bg-[var(--maher-surface-muted)] text-[var(--maher-text-primary)]',
               )}
             >
               {msg.blocks.map((block, i) => (
-                <div key={i} className={msg.role === 'user' && block.type === 'text' ? 'text-white' : undefined}>
-                  <BlockView
-                    block={block}
-                    surface={surface}
-                    onNavigate={onNavigate}
-                    thinkingLabel={t('aiChat.thinking')}
-                  />
+                <div key={i}>
+                  <BlockView block={block} surface={surface} onNavigate={onNavigate} thinkingLabel={t('aiChat.thinking')} />
                 </div>
               ))}
               {msg.suggestions?.length ? (
@@ -397,7 +381,7 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
                       type="button"
                       disabled={busy}
                       onClick={() => onSuggestion(s)}
-                      className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-secondary hover:border-brand hover:text-brand"
+                      className="rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--maher-text-secondary)] transition hover:border-[var(--maher-brand)] hover:text-[var(--maher-brand)] disabled:opacity-60"
                     >
                       {s.label}
                     </button>
@@ -409,24 +393,23 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
         )}
       </div>
       <form
-        className="mt-4 flex gap-2"
+        className="flex items-center gap-2 border-t border-[var(--maher-border)] bg-[var(--maher-surface)] px-4 py-3"
         onSubmit={(e) => {
           e.preventDefault();
           void runTurn(draft);
         }}
       >
-        <div className="min-w-0 flex-1">
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={t('aiChat.placeholder')}
-            disabled={busy || !conversationId}
-          />
-        </div>
-        <Button type="submit" disabled={busy || !draft.trim()} leadingIcon={<Send className="h-4 w-4" />}>
-          {t('aiChat.send')}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={t('aiChat.placeholder')}
+          disabled={busy || !conversationId}
+          className="h-11 min-w-0 flex-1 rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-4 text-[14px] text-[var(--maher-text-primary)] outline-none transition placeholder:text-[var(--maher-text-tertiary)] focus:border-[var(--maher-brand)] focus:bg-[var(--maher-surface)] focus:shadow-[0_0_0_4px_var(--maher-brand-soft)]"
+        />
+        <Button type="submit" className="h-11 rounded-full px-4" disabled={busy || !draft.trim()} leadingIcon={<Send className="h-4 w-4 rtl:-scale-x-100" />} aria-label={t('aiChat.send')}>
+          <span className="hidden sm:inline">{t('aiChat.send')}</span>
         </Button>
       </form>
-    </Card>
+    </Board>
   );
 }

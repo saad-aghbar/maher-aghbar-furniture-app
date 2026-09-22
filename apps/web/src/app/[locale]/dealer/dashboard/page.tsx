@@ -5,22 +5,23 @@ import { apiFetch, API_URL } from '@/lib/api-client';
 import { localizedName } from '@maher/i18n';
 import type { AuthUser } from '@maher/types';
 import {
-  AnimatedValue,
-  AttentionChip,
-  BentoMetricCard,
+  Board,
   ErrorState,
+  Figure,
+  Ledger,
+  LedgerRow,
   Ltr,
-  QuickActionTile,
+  Ribbon,
   Skeleton,
+  Stamp,
   StatusBadge,
-  useCardMotion,
+  type BoardTone,
 } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
   Armchair,
   ArrowRight,
   ArrowUpRight,
-  CheckCircle2,
   ClipboardList,
   Factory,
   Package,
@@ -35,7 +36,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo } from 'react';
 
 interface Paginated<T> {
   data: T[];
@@ -133,172 +134,6 @@ function progressOf(row: SalesOrderRow) {
     0,
   );
   return Math.min(100, fromPo);
-}
-
-function PipelineFlowHint({ labels }: { labels: string[] }) {
-  return (
-    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-text-secondary">
-      {labels.map((label, i) => (
-        <span key={`${label}-${i}`} className="inline-flex items-center gap-1.5">
-          {i > 0 ? (
-            <ArrowRight
-              className="h-3.5 w-3.5 shrink-0 text-text-tertiary rtl:rotate-180"
-              aria-hidden
-            />
-          ) : null}
-          <span>{label}</span>
-        </span>
-      ))}
-    </p>
-  );
-}
-
-function RingStat({
-  value,
-  sharePct,
-  label,
-  tone,
-}: {
-  value: number;
-  sharePct: number;
-  label: string;
-  tone: 'brand' | 'info' | 'warning' | 'success';
-}) {
-  const pct = Math.min(100, Math.max(0, sharePct));
-  const colors = {
-    brand: 'var(--maher-brand)',
-    info: 'var(--maher-info)',
-    warning: 'var(--maher-warning)',
-    success: 'var(--maher-success)',
-  }[tone];
-  const r = 18;
-  const c = 2 * Math.PI * r;
-  const offset = c - (pct / 100) * c;
-
-  return (
-    <div className="flex items-center gap-3 rounded-[var(--maher-radius-lg)] border border-border bg-[var(--maher-surface-muted)]/50 px-3 py-2.5">
-      <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden>
-        <circle cx="24" cy="24" r={r} fill="none" stroke="var(--maher-border)" strokeWidth="4" />
-        <circle
-          cx="24"
-          cy="24"
-          r={r}
-          fill="none"
-          stroke={colors}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-700"
-        />
-      </svg>
-      <div className="min-w-0">
-        <p className="text-xs text-text-secondary">{label}</p>
-        <p className="text-lg font-semibold tabular-nums text-text-primary">
-          <span dir="ltr">{value}</span>
-          <span className="ms-1 text-xs font-medium text-text-tertiary">
-            <span dir="ltr">{pct}%</span>
-          </span>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function PipelineStep({
-  href,
-  label,
-  value,
-  sharePct,
-  step,
-  tone,
-  icon: Icon,
-  delayMs,
-}: {
-  href: string;
-  label: string;
-  value: number;
-  sharePct: number;
-  step: number;
-  tone: 'brand' | 'info' | 'warning' | 'success';
-  icon: LucideIcon;
-  delayMs: number;
-}) {
-  const { ref, onMove, onLeave } = useCardMotion<HTMLAnchorElement>(8);
-  const pct = Math.min(100, Math.max(0, sharePct));
-  const circumference = 88;
-  const offset = circumference - (pct / 100) * circumference;
-
-  const toneVars: Record<typeof tone, { accent: string; soft: string; glow: string }> = {
-    brand: {
-      accent: 'var(--maher-brand)',
-      soft: 'var(--maher-brand-soft)',
-      glow: 'rgba(119, 98, 69, 0.28)',
-    },
-    info: {
-      accent: 'var(--maher-info)',
-      soft: 'var(--maher-info-soft)',
-      glow: 'rgba(28, 84, 144, 0.28)',
-    },
-    warning: {
-      accent: 'var(--maher-warning)',
-      soft: 'var(--maher-warning-soft)',
-      glow: 'rgba(154, 106, 6, 0.28)',
-    },
-    success: {
-      accent: 'var(--maher-success)',
-      soft: 'var(--maher-success-soft)',
-      glow: 'rgba(23, 112, 90, 0.28)',
-    },
-  };
-  const vars = toneVars[tone];
-
-  return (
-    <Link
-      ref={ref}
-      href={href}
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-      className="maher-pipeline-card maher-press group relative z-[1] flex min-w-[110px] flex-1 flex-col items-center gap-1.5 rounded-[var(--maher-radius-lg)] border border-border bg-surface px-2.5 py-3.5 text-center shadow-card"
-      style={
-        {
-          animationDelay: `${delayMs}ms`,
-          ['--pipe-accent']: vars.accent,
-          ['--pipe-soft']: vars.soft,
-          ['--pipe-glow']: vars.glow,
-        } as CSSProperties
-      }
-    >
-      <span className="maher-pipe-orb" aria-hidden />
-      <div className="maher-pipe-icon-wrap relative z-[3]">
-        <span className="maher-pipe-step" aria-hidden>
-          {step}
-        </span>
-        <svg className="maher-pipe-ring" viewBox="0 0 36 36" aria-hidden>
-          <circle className="maher-pipe-ring-track" cx="18" cy="18" r="14" />
-          <circle
-            className="maher-pipe-ring-value"
-            cx="18"
-            cy="18"
-            r="14"
-            style={{ strokeDashoffset: offset }}
-          />
-        </svg>
-        <span className="maher-pipe-icon">
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
-      </div>
-      <p className="maher-pipe-label relative z-[3] text-xs font-medium text-text-secondary">
-        {label}
-      </p>
-      <p className="maher-pipe-value relative z-[3] text-xl font-semibold tabular-nums text-text-primary">
-        <span dir="ltr">{value}</span>
-      </p>
-      <span className="maher-pipe-chip relative z-[3] rounded-full border border-border bg-surface/90 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-text-secondary">
-        <span dir="ltr">{pct}%</span>
-      </span>
-    </Link>
-  );
 }
 
 export default function CustomerDashboard() {
@@ -501,41 +336,51 @@ export default function CustomerDashboard() {
 
   const products = catalog.data ?? [];
 
+  const journey: Array<{
+    key: string;
+    href: string;
+    label: string;
+    value: number;
+    share: number;
+    tone: BoardTone;
+    icon: LucideIcon;
+  }> = [
+    { key: 'request', href: '/dealer/orders', label: tCommon('dealerStageRequest'), value: stats.rfqOpen, share: journeyShares.request, tone: 'brand', icon: ClipboardList },
+    { key: 'production', href: '/dealer/orders', label: tCommon('dealerStageProduction'), value: stats.inProduction, share: journeyShares.production, tone: 'info', icon: Factory },
+    { key: 'delivery', href: '/dealer/orders', label: tCommon('dealerStageDelivery'), value: stats.nearing, share: journeyShares.nearing, tone: 'warning', icon: Truck },
+    { key: 'done', href: '/dealer/orders', label: tCommon('dealerStageDone'), value: stats.done, share: journeyShares.done, tone: 'success', icon: PackageCheck },
+  ];
+  const heroTone: BoardTone =
+    stats.returnsTotal > 0 ? 'warning' : stats.nearing > 0 ? 'info' : 'brand';
+
   return (
-    <div className="space-y-8 pb-6">
+    <div className="maher-stagger space-y-5 pb-6">
       {/* Hero */}
-      <section
-        className="relative overflow-hidden rounded-[20px] border border-[var(--maher-border-strong)] bg-[var(--maher-surface)] text-[var(--maher-text-primary)] shadow-[var(--maher-shadow-sm)]"
-      >
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 start-0 w-[3px] bg-[var(--maher-brand)] opacity-55"
-        />
-        <div className="relative flex flex-col gap-6 p-6 ps-7 sm:p-8 sm:ps-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="maher-animate-rise max-w-2xl space-y-3">
-            <h1 className="text-2xl font-semibold tracking-tight">
+      <Board tone={heroTone} wash="top" as="section">
+        <div className="grid gap-6 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start">
+          <div className="min-w-0">
+            <p className="text-[13px] leading-5 text-[var(--maher-text-secondary)]">
+              {tCommon('dashboardUpdated', { time: updatedAt })}
+            </p>
+            <h1 className="mt-1 text-[26px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[30px] sm:leading-9">
               {firstName
                 ? tCommon('dealerGreetingNamed', { name: firstName })
                 : tCommon('dealerGreeting')}
             </h1>
-            <p className="max-w-xl text-sm leading-relaxed text-[var(--maher-text-secondary)]">
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--maher-text-secondary)]">
               {tCommon('dealerDashboardSubtitle')}
             </p>
-            <p className="text-xs text-[var(--maher-text-tertiary)]">
-              {tCommon('dashboardUpdated', { time: updatedAt })}
-            </p>
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/dealer/orders/new"
-                className="maher-press maher-sheen group inline-flex items-center justify-center gap-2 rounded-[var(--maher-radius-lg)] bg-[var(--maher-brand)] px-5 py-2.5 text-sm font-semibold text-white shadow-elevated transition hover:bg-[var(--maher-brand-hover)]"
+                className="maher-press inline-flex items-center justify-center gap-2 rounded-full bg-[var(--maher-text-primary)] px-4 py-2 text-sm font-semibold text-[var(--maher-background)] transition-opacity hover:opacity-90"
               >
-                <SquarePen className="h-4 w-4 transition group-hover:rotate-6" />
+                <SquarePen className="h-4 w-4" />
                 {t('createOrder')}
-                <ArrowUpRight className="h-4 w-4 opacity-80" />
               </Link>
               <Link
                 href="/dealer/catalog"
-                className="maher-press inline-flex items-center justify-center gap-2 rounded-full border border-[var(--maher-border-strong)] bg-[var(--maher-surface-muted)] px-5 py-2.5 text-sm font-semibold text-[var(--maher-text-primary)]"
+                className="maher-press inline-flex items-center justify-center gap-2 rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface)] px-4 py-2 text-sm font-semibold text-[var(--maher-text-primary)] transition-colors hover:bg-[var(--maher-surface-muted)]"
               >
                 <ShoppingBag className="h-4 w-4" />
                 {t('catalog')}
@@ -543,461 +388,258 @@ export default function CustomerDashboard() {
             </div>
           </div>
 
-          <div className="maher-stagger flex flex-wrap gap-2 lg:max-w-md lg:justify-end">
-            {attentionTotal === 0 ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--maher-border)] bg-[var(--maher-success-soft)] px-3.5 py-2 text-sm font-medium text-[var(--maher-success)]">
-                <CheckCircle2 className="h-4 w-4" />
-                {tCommon('dashboardAllClear')}
-              </div>
-            ) : (
-              <>
-                <AttentionChip
-                  href="/dealer/orders"
-                  label={tCommon('metricOrdersNearingDelivery')}
-                  value={stats.nearing}
-                  tone="warning"
-                  icon={<Truck className="h-4 w-4" />}
-                  LinkComponent={Link}
-                />
-                <AttentionChip
-                  href="/dealer/invoices"
-                  label={t('invoices')}
-                  value={stats.openInvoices}
-                  tone="info"
-                  icon={<Receipt className="h-4 w-4" />}
-                  LinkComponent={Link}
-                />
-                <AttentionChip
-                  href="/dealer/returns"
-                  label={t('returns')}
-                  value={stats.returnsTotal}
-                  tone="error"
-                  icon={<Undo2 className="h-4 w-4" />}
-                  LinkComponent={Link}
-                />
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Order journey — same polish as admin pipeline */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-text-primary">
-            {tCommon('dealerJourneyTitle')}
-          </h2>
-          <PipelineFlowHint
-            labels={[
-              tCommon('dealerStageRequest'),
-              tCommon('dealerStageProduction'),
-              tCommon('dealerStageDelivery'),
-              tCommon('dealerStageDone'),
-            ]}
-          />
-        </div>
-        <div className="maher-stagger relative flex gap-2 overflow-x-auto overflow-y-visible py-1 sm:gap-3 sm:overflow-visible">
-          <div
-            className="pointer-events-none absolute start-12 end-12 top-[2.45rem] hidden h-px bg-gradient-to-r from-[var(--maher-brand)]/50 via-[var(--maher-info)]/35 via-40% via-[var(--maher-warning)]/35 to-[var(--maher-success)]/50 sm:block rtl:bg-gradient-to-l"
-            aria-hidden
-          />
-          <PipelineStep
-            href="/dealer/orders"
-            label={tCommon('dealerStageRequest')}
-            value={stats.rfqOpen}
-            sharePct={journeyShares.request}
-            step={1}
-            tone="brand"
-            icon={ClipboardList}
-            delayMs={0}
-          />
-          <PipelineStep
-            href="/dealer/orders"
-            label={tCommon('dealerStageProduction')}
-            value={stats.inProduction}
-            sharePct={journeyShares.production}
-            step={2}
-            tone="info"
-            icon={Factory}
-            delayMs={70}
-          />
-          <PipelineStep
-            href="/dealer/orders"
-            label={tCommon('dealerStageDelivery')}
-            value={stats.nearing}
-            sharePct={journeyShares.nearing}
-            step={3}
-            tone="warning"
-            icon={Truck}
-            delayMs={140}
-          />
-          <PipelineStep
-            href="/dealer/orders"
-            label={tCommon('dealerStageDone')}
-            value={stats.done}
-            sharePct={journeyShares.done}
-            step={4}
-            tone="success"
-            icon={PackageCheck}
-            delayMs={210}
-          />
-        </div>
-      </section>
-
-      {/* Order mix — mirrors admin load section */}
-      <section className="maher-animate-rise overflow-hidden rounded-[var(--maher-radius-xl)] border border-border bg-surface p-5 shadow-card sm:p-6">
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-text-primary">{tCommon('dealerLoadTitle')}</h2>
-          <p className="mt-0.5 text-sm text-text-secondary">{tCommon('dealerLoadHint')}</p>
-        </div>
-        <div className="mb-4 flex h-3 overflow-hidden rounded-full bg-surface-muted">
-          <div
-            className="maher-bar-grow bg-[var(--maher-brand)] transition-all"
-            style={{ width: `${journeyShares.request}%` }}
-          />
-          <div
-            className="maher-bar-grow bg-[var(--maher-info)] transition-all"
-            style={{ width: `${journeyShares.production}%`, animationDelay: '80ms' }}
-          />
-          <div
-            className="maher-bar-grow bg-[var(--maher-warning)] transition-all"
-            style={{ width: `${journeyShares.nearing}%`, animationDelay: '160ms' }}
-          />
-          <div
-            className="maher-bar-grow bg-[var(--maher-success)] transition-all"
-            style={{ width: `${journeyShares.done}%`, animationDelay: '240ms' }}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <RingStat
-            value={stats.rfqOpen}
-            sharePct={journeyShares.request}
-            label={tCommon('dealerStageRequest')}
-            tone="brand"
-          />
-          <RingStat
-            value={stats.inProduction}
-            sharePct={journeyShares.production}
-            label={tCommon('dealerStageProduction')}
-            tone="info"
-          />
-          <RingStat
-            value={stats.nearing}
-            sharePct={journeyShares.nearing}
-            label={tCommon('dealerStageDelivery')}
-            tone="warning"
-          />
-          <RingStat
-            value={stats.done}
-            sharePct={journeyShares.done}
-            label={tCommon('dealerStageDone')}
-            tone="success"
-          />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-4 text-xs text-text-secondary">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[var(--maher-brand)]" />
-            {tCommon('dealerStageRequest')} · <span dir="ltr">{journeyShares.request}%</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[var(--maher-info)]" />
-            {tCommon('dealerStageProduction')} · <span dir="ltr">{journeyShares.production}%</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[var(--maher-warning)]" />
-            {tCommon('dealerStageDelivery')} · <span dir="ltr">{journeyShares.nearing}%</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[var(--maher-success)]" />
-            {tCommon('dealerStageDone')} · <span dir="ltr">{journeyShares.done}%</span>
-          </span>
-        </div>
-      </section>
-
-      {/* Metrics */}
-      <section className="maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="sm:col-span-2">
-          <BentoMetricCard
-            href="/dealer/orders"
-            label={t('myOrders')}
-            hint={tCommon('ordersSubtitle')}
-            value={<AnimatedValue value={stats.ordersTotal} enabled={ready} />}
-            icon={<Package className="h-5 w-5" />}
-            tone="brand"
-            featured
-            delayMs={0}
-            animateValue={ready}
-            trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-            LinkComponent={Link}
-          />
-        </div>
-        <BentoMetricCard
-          href="/dealer/orders"
-          label={tCommon('metricOrdersInProduction')}
-          hint={tCommon('dealerHintProduction')}
-          value={<AnimatedValue value={stats.inProduction} enabled={ready} />}
-          icon={<Factory className="h-5 w-5" />}
-          tone="info"
-          delayMs={200}
-          animateValue={ready}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-        <BentoMetricCard
-          href="/dealer/orders"
-          label={tCommon('metricOrdersNearingDelivery')}
-          value={<AnimatedValue value={stats.nearing} enabled={ready} />}
-          icon={<Truck className="h-5 w-5" />}
-          tone="warning"
-          delayMs={400}
-          animateValue={ready}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-        <BentoMetricCard
-          href="/dealer/orders"
-          label={tCommon('dealerCompletedLabel')}
-          value={<AnimatedValue value={stats.done} enabled={ready} />}
-          icon={<CheckCircle2 className="h-5 w-5" />}
-          tone="success"
-          delayMs={600}
-          animateValue={ready}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-        <BentoMetricCard
-          href="/dealer/invoices"
-          label={t('invoices')}
-          hint={money(stats.outstanding, currency)}
-          value={<AnimatedValue value={stats.openInvoices} enabled={ready} />}
-          icon={<Receipt className="h-5 w-5" />}
-          tone="accent"
-          delayMs={800}
-          animateValue={ready}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-        <BentoMetricCard
-          href="/dealer/returns"
-          label={t('returns')}
-          hint={tCommon('returnsSubtitle')}
-          value={<AnimatedValue value={stats.returnsTotal} enabled={ready} />}
-          icon={<Undo2 className="h-5 w-5" />}
-          tone={stats.returnsTotal > 0 ? 'warning' : 'accent'}
-          delayMs={1000}
-          animateValue={ready}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-        <BentoMetricCard
-          href="/dealer/catalog"
-          label={t('catalog')}
-          hint={tCommon('dealerCatalogHint')}
-          value={<AnimatedValue value={products.length} enabled={catalog.isSuccess} />}
-          icon={<ShoppingBag className="h-5 w-5" />}
-          tone="info"
-          delayMs={1200}
-          animateValue={catalog.isSuccess}
-          trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-          LinkComponent={Link}
-        />
-      </section>
-
-      {/* Quick actions */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-text-primary">
-            {tCommon('quickActions')}
-          </h2>
-          <p className="mt-1 text-sm text-text-secondary">{tCommon('dealerQuickHint')}</p>
-        </div>
-        <div className="maher-stagger flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-4 lg:grid-cols-7 sm:overflow-visible">
-          {shortcuts.map((s, i) => {
-            const Icon = s.icon;
-            return (
-              <QuickActionTile
-                key={s.href}
-                href={s.href}
-                label={s.label}
-                icon={<Icon className="h-5 w-5" />}
-                delayMs={i * 40}
-                trailingIcon={<ArrowUpRight className="h-4 w-4" />}
-                LinkComponent={Link}
-              />
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Active orders */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-text-primary">
-              {tCommon('dealerActiveOrders')}
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">{tCommon('dealerActiveHint')}</p>
-          </div>
-          <Link
-            href="/dealer/orders"
-            className="maher-nudge-icon inline-flex items-center gap-1 text-sm font-semibold text-brand"
-          >
-            {tCommon('viewAll')}
-            <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        {stats.hub.length === 0 ? (
-          <div className="rounded-[var(--maher-radius-xl)] border border-dashed border-border bg-surface-muted/50 px-6 py-12 text-center">
-            <Package className="mx-auto mb-3 h-8 w-8 text-text-tertiary opacity-45" />
-            <p className="text-sm text-text-secondary">{tCommon('dealerNoOrders')}</p>
-            <Link
-              href="/dealer/orders/new"
-              className="maher-press mt-4 inline-flex items-center gap-2 rounded-[var(--maher-radius-md)] bg-brand px-4 py-2 text-sm font-semibold text-white"
-            >
-              <SquarePen className="h-4 w-4" />
-              {t('createOrder')}
+          <div className="grid grid-cols-3 gap-x-4 gap-y-4">
+            <Link href="/dealer/orders" className="maher-press -m-1.5 rounded-[12px] p-1.5 transition-colors hover:bg-[var(--maher-surface-muted)]">
+              <Figure value={stats.nearing} size="sm" label={tCommon('metricOrdersNearingDelivery')} tone={stats.nearing > 0 ? 'info' : 'neutral'} locale={locale} />
+            </Link>
+            <Link href="/dealer/invoices" className="maher-press -m-1.5 rounded-[12px] p-1.5 transition-colors hover:bg-[var(--maher-surface-muted)]">
+              <Figure value={stats.openInvoices} size="sm" label={t('invoices')} tone={stats.openInvoices > 0 ? undefined : 'neutral'} locale={locale} />
+            </Link>
+            <Link href="/dealer/returns" className="maher-press -m-1.5 rounded-[12px] p-1.5 transition-colors hover:bg-[var(--maher-surface-muted)]">
+              <Figure value={stats.returnsTotal} size="sm" label={t('returns')} tone={stats.returnsTotal > 0 ? 'warning' : 'neutral'} locale={locale} />
             </Link>
           </div>
-        ) : (
-          <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {stats.hub.map((row, i) => {
-              const href = row.kind === 'rfq' ? `/orders/requests/${row.id}` : `/orders/${row.id}`;
-              const img = mediaSrc(row.imageUrl);
-              const pct = row.kind === 'sales_order' ? progressOf(row) : 8;
-              const title = orderTitle(row);
-              return (
-                <article
-                  key={`${row.kind}-${row.id}`}
-                  className="maher-dash-card group overflow-hidden rounded-[var(--maher-radius-xl)] border border-border bg-surface shadow-card"
-                  style={{ animationDelay: `${i * 45}ms` }}
-                >
-                  <Link href={href} className="relative block aspect-[5/4] overflow-hidden bg-surface-muted">
-                    {img ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={img}
-                        alt={title}
-                        className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.07]"
-                      />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-1 text-text-tertiary">
-                        <Armchair className="h-8 w-8 opacity-40 transition group-hover:scale-110" />
-                        <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
-                      </div>
-                    )}
-                    <div className="absolute start-2 top-2 origin-top-start scale-90">
-                      <StatusBadge status={row.status} />
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 space-y-1.5 border-t border-[var(--maher-border)] bg-[var(--maher-surface)]/95 p-2.5">
-                      <p className="line-clamp-2 text-sm font-semibold text-[var(--maher-text-primary)]">{title}</p>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--maher-surface-muted)]">
-                          <div
-                            className="h-full rounded-full bg-[var(--maher-brand)]"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <Ltr className="text-[11px] font-semibold text-[var(--maher-text-secondary)]">{pct}%</Ltr>
-                      </div>
-                    </div>
-                  </Link>
-                  <div className="space-y-1 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-                      <Ltr>{row.number}</Ltr>
-                    </p>
-                    {dealerNo(row) ? (
-                      <p className="truncate text-[11px] text-text-secondary">
-                        <span className="text-text-tertiary">{tSales('dealerOrderNumber')}: </span>
-                        <Ltr>{dealerNo(row)}</Ltr>
-                      </p>
-                    ) : null}
-                    {endCustomer(row) ? (
-                      <p className="truncate text-[11px] text-text-tertiary">{endCustomer(row)}</p>
-                    ) : null}
-                    <Link
-                      href={href}
-                      className="maher-nudge-icon inline-flex items-center gap-1 pt-1 text-xs font-semibold text-brand"
-                    >
-                      {tCommon('details')}
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Catalog spotlight */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-text-primary">
-              {tCommon('dealerCatalogSpotlight')}
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">{tCommon('dealerCatalogHint')}</p>
-          </div>
-          <Link
-            href="/dealer/catalog"
-            className="maher-nudge-icon inline-flex items-center gap-1 text-sm font-semibold text-brand"
-          >
-            {t('catalog')}
-            <ArrowUpRight className="h-4 w-4" />
-          </Link>
         </div>
-        {products.length === 0 ? (
-          <div className="rounded-[var(--maher-radius-xl)] border border-dashed border-border px-6 py-10 text-center text-sm text-text-secondary">
-            {tCommon('emptyList')}
-          </div>
-        ) : (
-          <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {products.slice(0, 4).map((p, i) => {
-              const title = localizedName(locale, p) || p.nameEn;
-              const img = mediaSrc(p.imageUrl);
-              const price = Number(p.dealerPrice ?? p.price ?? p.basePrice);
-              return (
-                <Link
-                  key={p.id}
-                  href={`/dealer/orders/new?productId=${p.id}`}
-                  className="maher-dash-card maher-sheen group overflow-hidden rounded-[var(--maher-radius-xl)] border border-border bg-surface shadow-card"
-                  style={{ animationDelay: `${i * 50}ms` }}
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden bg-surface-muted">
-                    {img ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={img}
-                        alt={title}
-                        className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-text-tertiary">
-                        <Armchair className="h-8 w-8 opacity-40" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition group-hover:opacity-100" />
-                    <span className="absolute bottom-2 end-2 flex h-8 w-8 items-center justify-center rounded-full bg-brand text-white opacity-0 shadow-md transition group-hover:opacity-100">
-                      <SquarePen className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
-                  <div className="space-y-1 p-3">
-                    <p className="line-clamp-2 text-sm font-semibold text-text-primary">{title}</p>
-                    {Number.isFinite(price) ? (
-                      <p className="text-sm font-medium text-accent">
-                        <Ltr>
-                          {price.toFixed(2)} {currency}
-                        </Ltr>
-                      </p>
-                    ) : null}
-                  </div>
+      </Board>
+
+      <div className="grid gap-5 xl:grid-cols-12 xl:items-stretch">
+        <div className="flex flex-col gap-5 xl:col-span-7">
+          {/* Order journey */}
+          <Board>
+            <Board.Header
+              title={tCommon('dealerJourneyTitle')}
+              description={tCommon('dealerLoadHint')}
+              meta={
+                <span className="tabular-nums" dir="ltr">
+                  {stats.ordersTotal.toLocaleString('en-JO')}
+                </span>
+              }
+            />
+            <Board.Body>
+              <Ribbon
+                legend={false}
+                segments={journey.map((s) => ({ key: s.key, value: s.value, label: s.label, tone: s.tone }))}
+              />
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {journey.map((s, i) => {
+                  const Icon = s.icon;
+                  return (
+                    <Link
+                      key={s.key}
+                      href={s.href}
+                      className="maher-press flex flex-col gap-1 rounded-[12px] px-2 py-2 transition-colors hover:bg-[var(--maher-surface-muted)]"
+                    >
+                      <span className="flex items-center gap-1.5 text-[var(--maher-text-tertiary)]">
+                        {i > 0 ? <ArrowRight className="h-3 w-3 rtl:-scale-x-100" aria-hidden /> : null}
+                        <Icon className="h-3.5 w-3.5" aria-hidden />
+                      </span>
+                      <span
+                        className={
+                          s.value > 0
+                            ? 'text-xl font-semibold leading-6 tabular-nums tracking-[-0.02em] text-[var(--maher-text-primary)]'
+                            : 'text-xl font-semibold leading-6 tabular-nums text-[var(--maher-text-tertiary)]'
+                        }
+                        dir="ltr"
+                      >
+                        {s.value}
+                      </span>
+                      <span className="text-[12px] leading-4 text-[var(--maher-text-secondary)]">{s.label}</span>
+                      <span className="text-[11px] leading-4 tabular-nums text-[var(--maher-text-tertiary)]" dir="ltr">
+                        {s.share}%
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </Board.Body>
+          </Board>
+
+          {/* Active orders */}
+          <Board className="xl:flex-1">
+            <Board.Header
+              title={tCommon('dealerActiveOrders')}
+              description={tCommon('dealerActiveHint')}
+              actions={
+                <Link href="/dealer/orders" className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--maher-brand)]">
+                  {tCommon('viewAll')}
+                  <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
                 </Link>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              }
+            />
+            {stats.hub.length === 0 ? (
+              <Board.Empty
+                icon={<Package className="h-4 w-4" />}
+                title={tCommon('dealerNoOrders')}
+                action={
+                  <Link
+                    href="/dealer/orders/new"
+                    className="maher-press inline-flex items-center gap-2 rounded-full bg-[var(--maher-text-primary)] px-3.5 py-1.5 text-[13px] font-semibold text-[var(--maher-background)]"
+                  >
+                    <SquarePen className="h-3.5 w-3.5" />
+                    {t('createOrder')}
+                  </Link>
+                }
+              />
+            ) : (
+              <Board.Body grow>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {stats.hub.map((row) => {
+                    const href = row.kind === 'rfq' ? `/orders/requests/${row.id}` : `/orders/${row.id}`;
+                    const img = mediaSrc(row.imageUrl);
+                    const pct = row.kind === 'sales_order' ? progressOf(row) : 8;
+                    const title = orderTitle(row);
+                    return (
+                      <Link
+                        key={`${row.kind}-${row.id}`}
+                        href={href}
+                        className="maher-press group flex flex-col overflow-hidden rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] transition-colors hover:border-[color:color-mix(in_oklab,var(--maher-brand)_28%,var(--maher-border))]"
+                      >
+                        <div className="relative aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]">
+                          {img ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={img} alt={title} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--maher-text-tertiary)]">
+                              <Armchair className="h-8 w-8 opacity-40" />
+                            </div>
+                          )}
+                          <div className="absolute start-2 top-2 origin-top-start scale-90">
+                            <StatusBadge status={row.status} />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5 p-3">
+                          <p className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--maher-text-primary)]">{title}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--maher-surface-muted)]">
+                              <div className="maher-meter-fill h-full rounded-full bg-[var(--maher-brand)]" style={{ width: `${pct}%` }} />
+                            </div>
+                            <Ltr className="text-[11px] font-semibold tabular-nums text-[var(--maher-text-secondary)]">{pct}%</Ltr>
+                          </div>
+                          <p className="truncate text-[11px] text-[var(--maher-text-tertiary)]">
+                            <Ltr>{row.number}</Ltr>
+                            {dealerNo(row) ? <> · {tSales('dealerOrderNumber')}: <Ltr>{dealerNo(row)}</Ltr></> : null}
+                          </p>
+                          {endCustomer(row) ? (
+                            <p className="truncate text-[11px] text-[var(--maher-text-tertiary)]">{endCustomer(row)}</p>
+                          ) : null}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </Board.Body>
+            )}
+          </Board>
+        </div>
+
+        <div className="flex flex-col gap-5 xl:col-span-5">
+          {/* Account ledger */}
+          <Board tone={stats.openInvoices > 0 ? 'brand' : 'success'}>
+            <Board.Header
+              title={t('invoices')}
+              description={tCommon('ordersSubtitle')}
+              meta={
+                stats.openInvoices > 0 ? (
+                  <Stamp tone="brand" size="sm">
+                    {stats.openInvoices}
+                  </Stamp>
+                ) : null
+              }
+            />
+            <Board.Body>
+              <Figure value={money(stats.outstanding, currency)} label={tCommon('metricOutstandingInvoices')} size="sm" locale={locale} />
+              <Ledger className="mt-3 border-t border-[var(--maher-border)] pt-1">
+                <LedgerRow label={t('myOrders')} value={stats.ordersTotal.toLocaleString('en-JO')} href="/dealer/orders" LinkComponent={Link} icon={<Package className="h-3.5 w-3.5" />} />
+                <LedgerRow label={tCommon('dealerCompletedLabel')} value={stats.done.toLocaleString('en-JO')} tone="success" href="/dealer/orders" LinkComponent={Link} icon={<PackageCheck className="h-3.5 w-3.5" />} />
+                <LedgerRow label={t('returns')} value={stats.returnsTotal.toLocaleString('en-JO')} tone={stats.returnsTotal > 0 ? 'warning' : 'neutral'} href="/dealer/returns" LinkComponent={Link} icon={<Undo2 className="h-3.5 w-3.5" />} />
+                <LedgerRow label={t('statement')} value={<ArrowUpRight className="h-3.5 w-3.5 text-[var(--maher-text-tertiary)] rtl:-scale-x-100" />} href="/dealer/statement" LinkComponent={Link} icon={<Scroll className="h-3.5 w-3.5" />} />
+              </Ledger>
+            </Board.Body>
+          </Board>
+
+          {/* Quick jumps */}
+          <Board tone="neutral">
+            <Board.Header stamp={false} title={tCommon('quickActions')} description={tCommon('dealerQuickHint')} />
+            <Board.Body padding="tight">
+              <ul className="m-0 grid list-none grid-cols-1 gap-x-2 p-0 sm:grid-cols-2">
+                {shortcuts.map((s) => {
+                  const Icon = s.icon;
+                  return (
+                    <li key={s.href} className="m-0">
+                      <Link
+                        href={s.href}
+                        className="maher-press group/jump flex min-h-[44px] items-center gap-3 rounded-[10px] px-2.5 py-2 text-sm text-[var(--maher-text-primary)] transition-colors hover:bg-[var(--maher-surface-muted)]"
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[var(--maher-surface-muted)] text-[var(--maher-text-secondary)] transition-colors group-hover/jump:bg-[var(--maher-brand-soft)] group-hover/jump:text-[var(--maher-brand)]">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{s.label}</span>
+                        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[var(--maher-text-tertiary)] opacity-0 transition-opacity group-hover/jump:opacity-100 rtl:-scale-x-100" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Board.Body>
+          </Board>
+
+          {/* Catalog spotlight */}
+          <Board tone="neutral" className="xl:flex-1">
+            <Board.Header
+              stamp={false}
+              title={tCommon('dealerCatalogSpotlight')}
+              description={tCommon('dealerCatalogHint')}
+              actions={
+                <Link href="/dealer/catalog" className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--maher-brand)]">
+                  {t('catalog')}
+                  <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+                </Link>
+              }
+            />
+            {products.length === 0 ? (
+              <Board.Empty title={tCommon('emptyList')} />
+            ) : (
+              <Board.Body grow>
+                <div className="grid grid-cols-2 gap-3">
+                  {products.slice(0, 4).map((p) => {
+                    const title = localizedName(locale, p) || p.nameEn;
+                    const img = mediaSrc(p.imageUrl);
+                    const price = Number(p.dealerPrice ?? p.price ?? p.basePrice);
+                    return (
+                      <Link
+                        key={p.id}
+                        href={`/dealer/orders/new?productId=${p.id}`}
+                        className="maher-press group overflow-hidden rounded-[12px] border border-[var(--maher-border)] bg-[var(--maher-surface)] transition-colors hover:border-[color:color-mix(in_oklab,var(--maher-brand)_28%,var(--maher-border))]"
+                      >
+                        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--maher-surface-muted)]">
+                          {img ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={img} alt={title} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[var(--maher-text-tertiary)]">
+                              <Armchair className="h-8 w-8 opacity-40" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-0.5 p-2.5">
+                          <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-[var(--maher-text-primary)]">{title}</p>
+                          {Number.isFinite(price) ? (
+                            <p className="text-[13px] font-medium tabular-nums text-[var(--maher-text-secondary)]">
+                              <Ltr>
+                                {price.toFixed(2)} {currency}
+                              </Ltr>
+                            </p>
+                          ) : null}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </Board.Body>
+            )}
+          </Board>
+        </div>
+      </div>
     </div>
   );
 }

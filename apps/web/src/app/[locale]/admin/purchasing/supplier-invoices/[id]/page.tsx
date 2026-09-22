@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { PageHeader } from '@/components/admin/page-header';
-import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
-import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { PageHeader } from "@/components/admin/page-header";
+import { Link } from "@/i18n/navigation";
+import { apiFetch } from "@/lib/api-client";
+import { mutationErrorMessage } from "@/hooks/use-api-mutation";
 import {
   Alert,
+  Board,
   Button,
-  Card,
   EmptyState,
   ErrorState,
   Input,
@@ -17,17 +17,23 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableNumericCell,
   TableHead,
   TableHeaderCell,
+  TableNumericCell,
   TableRow,
-} from '@maher/ui';
-import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+} from "@maher/ui";
+import { localizedName } from "@maher/i18n";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
+import { useState } from "react";
 
-const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'OTHER'] as const;
+const PAYMENT_METHODS = [
+  "CASH",
+  "BANK_TRANSFER",
+  "CHEQUE",
+  "CARD",
+  "OTHER",
+] as const;
 
 interface SupplierInvoiceDetail {
   id: string;
@@ -42,7 +48,12 @@ interface SupplierInvoiceDetail {
   paidAmount?: string | number;
   outstandingAmount?: string | number;
   supplierId: string;
-  supplier?: { id: string; name: string; nameAr?: string | null; nameEn?: string | null };
+  supplier?: {
+    id: string;
+    name: string;
+    nameAr?: string | null;
+    nameEn?: string | null;
+  };
   purchaseOrder?: { id: string; number: string; status: string } | null;
   lines?: Array<{
     id: string;
@@ -65,19 +76,23 @@ function money(value: string | number | undefined | null) {
   return Number(value ?? 0).toFixed(2);
 }
 
-export default function SupplierInvoiceDetailPage({ params }: { params: { id: string } }) {
+export default function SupplierInvoiceDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const locale = useLocale();
-  const tc = useTranslations('catalog');
-  const tCommon = useTranslations('common');
+  const tc = useTranslations("catalog");
+  const tCommon = useTranslations("common");
   const qc = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<string>('BANK_TRANSFER');
-  const [reference, setReference] = useState('');
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<string>("BANK_TRANSFER");
+  const [reference, setReference] = useState("");
 
   const detailQuery = useQuery({
-    queryKey: ['supplier-invoice', params.id],
+    queryKey: ["supplier-invoice", params.id],
     queryFn: () =>
       apiFetch<SupplierInvoiceDetail>(`/api/v1/supplier-invoices/${params.id}`),
   });
@@ -85,9 +100,9 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
   const payMutation = useMutation({
     mutationFn: () => {
       const inv = detailQuery.data;
-      if (!inv) throw new Error('missing');
-      return apiFetch('/api/v1/supplier-payments', {
-        method: 'POST',
+      if (!inv) throw new Error("missing");
+      return apiFetch("/api/v1/supplier-payments", {
+        method: "POST",
         body: JSON.stringify({
           supplierId: inv.supplierId,
           supplierInvoiceId: inv.id,
@@ -98,12 +113,12 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
       });
     },
     onSuccess: async () => {
-      setBanner(tc('supplierPaymentRecorded'));
-      setAmount('');
-      setReference('');
+      setBanner(tc("supplierPaymentRecorded"));
+      setAmount("");
+      setReference("");
       setError(null);
-      await qc.invalidateQueries({ queryKey: ['supplier-invoice', params.id] });
-      await qc.invalidateQueries({ queryKey: ['supplier-invoices'] });
+      await qc.invalidateQueries({ queryKey: ["supplier-invoice", params.id] });
+      await qc.invalidateQueries({ queryKey: ["supplier-invoices"] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -120,16 +135,17 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
   if (detailQuery.isError || !detailQuery.data) {
     return (
       <ErrorState
-        title={tc('supplierInvoiceDetail')}
+        title={tc("supplierInvoiceDetail")}
         onRetry={() => detailQuery.refetch()}
-        retryLabel={tCommon('retry')}
+        retryLabel={tCommon("retry")}
       />
     );
   }
 
   const inv = detailQuery.data;
   const outstanding = Number(inv.outstandingAmount ?? 0);
-  const canPay = outstanding > 0 && !['VOID', 'CANCELLED', 'PAID'].includes(inv.status);
+  const canPay =
+    outstanding > 0 && !["VOID", "CANCELLED", "PAID"].includes(inv.status);
 
   return (
     <div className="space-y-6">
@@ -137,7 +153,9 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
         backHref="/admin/purchasing"
         title={inv.number}
         description={
-          inv.supplier ? localizedName(locale, inv.supplier, inv.supplier.name) : undefined
+          inv.supplier
+            ? localizedName(locale, inv.supplier, inv.supplier.name)
+            : undefined
         }
         actions={<StatusBadge status={inv.status} />}
       />
@@ -145,130 +163,151 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card title={tCommon('total')}>
-          <p className="text-lg font-semibold" dir="ltr">
-            {money(inv.total)} {inv.currency ?? ''}
-          </p>
-        </Card>
-        <Card title={tc('paid')}>
-          <p className="text-lg font-semibold" dir="ltr">
-            {money(inv.paidAmount)}
-          </p>
-        </Card>
-        <Card title={tc('outstanding')}>
-          <p className="text-lg font-semibold" dir="ltr">
-            {money(inv.outstandingAmount)}
-          </p>
-        </Card>
-        <Card title={tc('purchaseOrder')}>
-          {inv.purchaseOrder ? (
-            <Link
-              href={`/admin/purchasing/${inv.purchaseOrder.id}`}
-              className="font-medium text-brand hover:underline"
-            >
-              <span dir="ltr">{inv.purchaseOrder.number}</span>
-            </Link>
-          ) : (
-            '—'
-          )}
-        </Card>
+        <Board>
+          <Board.Header title={tCommon("total")} />
+          <Board.Body>
+            <p className="text-lg font-semibold" dir="ltr">
+              {money(inv.total)} {inv.currency ?? ""}
+            </p>
+          </Board.Body>
+        </Board>
+        <Board>
+          <Board.Header title={tc("paid")} />
+          <Board.Body>
+            <p className="text-lg font-semibold" dir="ltr">
+              {money(inv.paidAmount)}
+            </p>
+          </Board.Body>
+        </Board>
+        <Board>
+          <Board.Header title={tc("outstanding")} />
+          <Board.Body>
+            <p className="text-lg font-semibold" dir="ltr">
+              {money(inv.outstandingAmount)}
+            </p>
+          </Board.Body>
+        </Board>
+        <Board>
+          <Board.Header title={tc("purchaseOrder")} />
+          <Board.Body>
+            {inv.purchaseOrder ? (
+              <Link
+                href={`/admin/purchasing/${inv.purchaseOrder.id}`}
+                className="font-medium text-brand hover:underline"
+              >
+                <span dir="ltr">{inv.purchaseOrder.number}</span>
+              </Link>
+            ) : (
+              "—"
+            )}
+          </Board.Body>
+        </Board>
       </div>
 
-      <Card title={tc('lines')}>
-        {(inv.lines ?? []).length === 0 ? (
-          <EmptyState title={tc('empty')} />
-        ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tc('description')}</TableHeaderCell>
-                <TableHeaderCell>{tc('qty')}</TableHeaderCell>
-                <TableHeaderCell>{tc('unitPrice')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(inv.lines ?? []).map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell>{line.description}</TableCell>
-                  <TableNumericCell>{String(line.quantity)}</TableNumericCell>
-                  <TableNumericCell>{money(line.unitPrice)}</TableNumericCell>
-                  <TableNumericCell>{money(line.lineTotal)}</TableNumericCell>
+      <Board>
+        <Board.Header title={tc("lines")} />
+        <Board.Body>
+          {(inv.lines ?? []).length === 0 ? (
+            <EmptyState title={tc("empty")} />
+          ) : (
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell>{tc("description")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("qty")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("unitPrice")}</TableHeaderCell>
+                  <TableHeaderCell>{tCommon("total")}</TableHeaderCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+              </TableHead>
+              <TableBody>
+                {(inv.lines ?? []).map((line) => (
+                  <TableRow key={line.id}>
+                    <TableCell>{line.description}</TableCell>
+                    <TableNumericCell>{String(line.quantity)}</TableNumericCell>
+                    <TableNumericCell>{money(line.unitPrice)}</TableNumericCell>
+                    <TableNumericCell>{money(line.lineTotal)}</TableNumericCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Board.Body>
+      </Board>
 
       {canPay ? (
-        <Card title={tc('recordSupplierPayment')}>
-          <div className="grid gap-3 md:grid-cols-4">
-            <Input
-              label={tc('amount')}
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              dir="ltr"
-            />
-            <Select
-              label={tc('paymentMethod')}
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label={tc('reference')}
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              dir="ltr"
-            />
-            <div className="flex items-end">
-              <Button
-                loading={payMutation.isPending}
-                disabled={!amount || Number(amount) <= 0}
-                onClick={() => payMutation.mutate()}
+        <Board>
+          <Board.Header title={tc("recordSupplierPayment")} />
+          <Board.Body>
+            <div className="grid gap-3 md:grid-cols-4">
+              <Input
+                label={tc("amount")}
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                dir="ltr"
+              />
+              <Select
+                label={tc("paymentMethod")}
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
               >
-                {tc('recordSupplierPayment')}
-              </Button>
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label={tc("reference")}
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                dir="ltr"
+              />
+              <div className="flex items-end">
+                <Button
+                  loading={payMutation.isPending}
+                  disabled={!amount || Number(amount) <= 0}
+                  onClick={() => payMutation.mutate()}
+                >
+                  {tc("recordSupplierPayment")}
+                </Button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Board.Body>
+        </Board>
       ) : null}
 
-      <Card title={tc('payments')}>
-        {(inv.payments ?? []).length === 0 ? (
-          <p className="text-sm text-text-secondary">—</p>
-        ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
-                <TableHeaderCell>{tc('amount')}</TableHeaderCell>
-                <TableHeaderCell>{tc('paymentMethod')}</TableHeaderCell>
-                <TableHeaderCell>{tc('reference')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(inv.payments ?? []).map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>
-                    <span dir="ltr">{p.number}</span>
-                  </TableCell>
-                  <TableNumericCell>{money(p.amount)}</TableNumericCell>
-                  <TableCell>{p.method}</TableCell>
-                  <TableCell>{p.referenceNumber ?? '—'}</TableCell>
+      <Board>
+        <Board.Header title={tc("payments")} />
+        <Board.Body>
+          {(inv.payments ?? []).length === 0 ? (
+            <p className="text-sm text-text-secondary">—</p>
+          ) : (
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell>{tCommon("number")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("amount")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("paymentMethod")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("reference")}</TableHeaderCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+              </TableHead>
+              <TableBody>
+                {(inv.payments ?? []).map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>
+                      <span dir="ltr">{p.number}</span>
+                    </TableCell>
+                    <TableNumericCell>{money(p.amount)}</TableNumericCell>
+                    <TableCell>{p.method}</TableCell>
+                    <TableCell>{p.referenceNumber ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Board.Body>
+      </Board>
     </div>
   );
 }

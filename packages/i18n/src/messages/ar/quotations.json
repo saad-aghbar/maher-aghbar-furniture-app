@@ -85,5 +85,16 @@
     "EXPIRED": "منتهي",
     "REVISION_REQUESTED": "طُلب تعديل",
     "CANCELLED": "ملغى"
-  }
+  },
+  "requestsHint": "طلبات الأسعار التي أرسلتها للمشغل وحالة كل واحد منها.",
+  "requestQuoteCta": "اطلب عرض سعر",
+  "awaitingYou": "بانتظارك",
+  "laneOpen": "مفتوح",
+  "laneQuoted": "مُسعَّر",
+  "laneClosed": "مغلق",
+  "laneSent": "للمراجعة",
+  "laneAccepted": "مقبول",
+  "laneRejected": "مرفوض",
+  "laneExpired": "منتهي",
+  "laneDraft": "مسودات"
 }

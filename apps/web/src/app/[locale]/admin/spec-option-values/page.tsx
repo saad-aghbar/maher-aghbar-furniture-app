@@ -3,6 +3,7 @@
 import { MasterCrudPage } from '@/components/admin/master-crud-page';
 import { apiFetch } from '@/lib/api-client';
 import { localizedName } from '@maher/i18n';
+import { Ltr, Stamp } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -46,7 +47,6 @@ interface InventoryItem {
 
 export default function SpecOptionValuesPage() {
   const t = useTranslations('catalog');
-  const tCommon = useTranslations('common');
   const locale = useLocale();
 
   const groupsQuery = useQuery({
@@ -71,7 +71,8 @@ export default function SpecOptionValuesPage() {
 
   const groupOptions = (groupsQuery.data ?? []).map((g) => ({
     value: g.id,
-    label: `${g.code} — ${localizedName(locale, g)}`,
+    label: localizedName(locale, g),
+    description: g.code,
   }));
 
   const colorOptions = [
@@ -96,6 +97,7 @@ export default function SpecOptionValuesPage() {
   return (
     <MasterCrudPage<SpecOptionValue>
       title={t('specOptionValues')}
+      description={t('specOptionValuesHint')}
       queryKey="spec-option-values"
       listPath="/api/v1/spec-option-values?includeInactive=true"
       createPath="/api/v1/spec-option-values"
@@ -103,46 +105,35 @@ export default function SpecOptionValuesPage() {
       activatePath={(id) => `/api/v1/spec-option-values/${id}/activate`}
       deactivatePath={(id) => `/api/v1/spec-option-values/${id}/deactivate`}
       emptyTitle={t('noSpecOptionValues')}
+      emptyDescription={t('specOptionValuesHint')}
       activeField="isActive"
+      tone="info"
+      chips={(groupsQuery.data ?? []).map((g) => ({ id: g.id, label: localizedName(locale, g), params: { groupId: g.id } }))}
       columns={[
-        { key: 'code', header: t('code'), render: (r) => <span dir="ltr">{r.code}</span> },
-        { key: 'name', header: t('name'), render: (r) => localizedName(locale, r) },
-        { key: 'group', header: t('specOptionGroups'), render: (r) => groupLabel(r.groupId) },
-        { key: 'hex', header: t('hex'), render: (r) => r.hex ?? '—' },
         {
-          key: 'active',
-          header: t('active'),
-          render: (r) => (r.isActive ? tCommon('yes') : tCommon('no')),
+          key: 'swatch',
+          header: '',
+          width: '44px',
+          render: (r) => <Swatch hex={r.hex} />,
         },
+        { key: 'code', header: t('code'), width: '140px', render: (r) => <Ltr className="text-[var(--maher-text-tertiary)]">{r.code}</Ltr> },
+        { key: 'name', header: t('name'), render: (r) => <span className="font-semibold text-[var(--maher-text-primary)]">{localizedName(locale, r)}</span> },
+        { key: 'group', header: t('specOptionGroups'), hideBelow: 'md', render: (r) => <Stamp tone="info" size="sm">{groupLabel(r.groupId)}</Stamp> },
+        { key: 'value', header: t('numericValue'), numeric: true, hideBelow: 'lg', render: (r) => (r.numericValue == null ? '—' : `${r.numericValue}${r.unit ? ` ${r.unit}` : ''}`) },
       ]}
+      mobileRow={(r) => ({ leading: <Swatch hex={r.hex} />, title: localizedName(locale, r), meta: `${r.code} · ${groupLabel(r.groupId)}` })}
       fields={[
-        {
-          name: 'groupId',
-          label: t('specOptionGroups'),
-          type: 'select',
-          required: true,
-          options: groupOptions,
-        },
-        { name: 'code', label: t('code'), required: true },
-        { name: 'nameEn', label: t('nameEn'), required: true },
-        { name: 'nameAr', label: t('nameAr'), required: true },
-        { name: 'nameHe', label: t('nameHe') },
-        { name: 'hex', label: t('hex') },
-        { name: 'numericValue', label: t('numericValue'), type: 'number' },
-        { name: 'unit', label: t('unit') },
-        {
-          name: 'colorReferenceId',
-          label: t('colorReference'),
-          type: 'select',
-          options: colorOptions,
-        },
-        {
-          name: 'inventoryItemId',
-          label: t('inventoryItem'),
-          type: 'select',
-          options: itemOptions,
-        },
-        { name: 'sortOrder', label: t('sortOrder'), type: 'number' },
+        { name: 'groupId', label: t('specOptionGroups'), type: 'select', required: true, options: groupOptions },
+        { name: 'code', label: t('code'), required: true, dir: 'ltr', half: true },
+        { name: 'hex', label: t('hex'), dir: 'ltr', half: true, hint: '#RRGGBB' },
+        { name: 'nameAr', label: t('nameAr'), required: true, dir: 'rtl', half: true },
+        { name: 'nameEn', label: t('nameEn'), required: true, dir: 'ltr', half: true },
+        { name: 'nameHe', label: t('nameHe'), dir: 'rtl' },
+        { name: 'numericValue', label: t('numericValue'), type: 'number', half: true },
+        { name: 'unit', label: t('unit'), half: true },
+        { name: 'colorReferenceId', label: t('colorReference'), type: 'select', options: colorOptions },
+        { name: 'inventoryItemId', label: t('inventoryItem'), type: 'select', options: itemOptions },
+        { name: 'sortOrder', label: t('sortOrder'), type: 'number', half: true },
         { name: 'isActive', label: t('active'), type: 'checkbox' },
       ]}
       mapRowToForm={(r) => ({
@@ -173,6 +164,17 @@ export default function SpecOptionValuesPage() {
         sortOrder: Number(form.sortOrder) || 0,
         isActive: Boolean(form.isActive),
       })}
+    />
+  );
+}
+
+function Swatch({ hex }: { hex?: string | null }) {
+  const ok = hex && /^#?[0-9a-f]{6}$/i.test(hex);
+  return (
+    <span
+      aria-hidden
+      className="block h-7 w-7 rounded-[8px] border border-[var(--maher-border)]"
+      style={ok ? { backgroundColor: hex.startsWith('#') ? hex : `#${hex}` } : { backgroundImage: 'repeating-linear-gradient(45deg, var(--maher-surface-muted) 0 4px, transparent 4px 8px)' }}
     />
   );
 }

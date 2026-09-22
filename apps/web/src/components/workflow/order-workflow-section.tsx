@@ -3,7 +3,7 @@
 import { ProductionFlowMap, type FlowMapStage } from '@/components/workflow/production-flow-map';
 import { apiFetch, API_URL } from '@/lib/api-client';
 import { localizedName } from '@maher/i18n';
-import { Badge, Card, EmptyState, Skeleton, StatusBadge } from '@maher/ui';
+import { Board, BoardSkeleton, KeyFacts, Meter, Stamp, type BoardTone } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -57,9 +57,26 @@ interface ProductionDoc {
   category?: string | null;
 }
 
-function fmtWhen(value?: string | null) {
+function fmtWhen(value: string | null | undefined, locale: string) {
   if (!value) return '—';
-  return new Date(value).toLocaleString();
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function stageTone(status: string): BoardTone {
+  switch (status) {
+    case 'COMPLETED':
+      return 'success';
+    case 'BLOCKED':
+    case 'ON_HOLD':
+      return 'error';
+    case 'IN_PROGRESS':
+      return 'info';
+    case 'READY_FOR_INSPECTION':
+    case 'QUALITY_CHECK':
+      return 'warning';
+    default:
+      return 'neutral';
+  }
 }
 
 export function OrderWorkflowSection({
@@ -71,7 +88,7 @@ export function OrderWorkflowSection({
 }) {
   const t = useTranslations('production');
   const tFlow = useTranslations('mobile');
-  const tCommon = useTranslations('common');
+  const tStatus = useTranslations('statuses');
   const locale = useLocale();
   const rtl = locale === 'ar' || locale === 'he';
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -145,126 +162,111 @@ export function OrderWorkflowSection({
     });
   }, [docsQuery.data, selected?.code]);
 
-  return (
-    <Card
-      title={title ?? t('workflow.orderSnapshot')}
-      description={tFlow('productionFlow.stageDetails')}
-    >
-      {graphQuery.isLoading ? (
-        <Skeleton className="h-48 rounded-lg" />
-      ) : graphQuery.isError || !graph ? (
-        <EmptyState title={t('workflow.loadError')} description={t('workflow.retry')} />
-      ) : graph.stages.length === 0 ? (
-        <EmptyState title={t('workflow.emptyStages')} />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <ProductionFlowMap
-            stages={flowStages}
-            selectedId={selected?.id ?? null}
-            onStageClick={(stage) => setSelectedId(stage.id)}
-            rtl={rtl}
-          />
+  const overallTone: BoardTone = graph?.stages.some((st) => st.blockers?.length) ? 'error' : graph && graph.progressPercent >= 100 ? 'success' : 'info';
 
-          <aside className="rounded-xl border border-border bg-surface-muted/50 p-4">
-            {selected ? (
-              <div className="space-y-3 text-sm">
-                <p className="font-semibold text-text-primary">
-                  {localizedName(locale, selected, selected.code)}
-                </p>
-                <dl className="space-y-2">
-                  <div>
-                    <dt className="text-xs text-text-tertiary">{t('workflow.stageName')}</dt>
-                    <dd>
-                      <StatusBadge status={selected.status} />
-                    </dd>
-                  </div>
-                  {selected.backForRework ? (
-                    <Badge variant="warning">{t('workflow.backForRework')}</Badge>
-                  ) : null}
-                  {selected.isOptional ? (
-                    <Badge variant="warning">{t('workflow.optional')}</Badge>
-                  ) : null}
-                  <div>
-                    <dt className="text-xs text-text-tertiary">{tFlow('productionFlow.workers')}</dt>
-                    <dd>{selected.assignedEmployee?.name ?? tFlow('productionFlow.unassigned')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-text-tertiary">{t('plannedStart')}</dt>
-                    <dd dir="ltr">{fmtWhen(selected.plannedStart ?? selected.actualStart)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-text-tertiary">{t('plannedCompletion')}</dt>
-                    <dd dir="ltr">{fmtWhen(selected.plannedEnd ?? selected.actualEnd)}</dd>
-                  </div>
-                  {selected.estimatedMinutes != null || selected.actualMinutes != null ? (
-                    <div>
-                      <dt className="text-xs text-text-tertiary">{t('workflow.estimatedDuration')}</dt>
-                      <dd dir="ltr">
-                        {selected.actualMinutes != null
-                          ? `${selected.actualMinutes} min`
-                          : `${selected.estimatedMinutes} min`}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {selected.blockers?.length ? (
-                    <div>
-                      <dt className="text-xs text-text-tertiary">{tFlow('productionFlow.blockers')}</dt>
-                      <dd className="space-y-1">
-                        {selected.blockers.map((b) => (
-                          <p key={b.id} className="text-xs text-[var(--maher-error)]">
-                            {b.reason}
-                          </p>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {selected.notes ? (
-                    <div>
-                      <dt className="text-xs text-text-tertiary">{tCommon('notes')}</dt>
-                      <dd className="whitespace-pre-wrap">{selected.notes}</dd>
-                    </div>
-                  ) : null}
-                  <div>
-                    <dt className="mb-2 text-xs text-text-tertiary">{tFlow('productionFlow.workPhotos')}</dt>
-                    <dd>
-                      {photos.length === 0 ? (
-                        <p className="text-xs text-text-tertiary">{tFlow('productionFlow.workPhotosEmpty')}</p>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {photos.slice(0, 6).map((photo) => (
-                            <button
-                              key={photo.id}
-                              type="button"
-                              className="truncate rounded-lg border border-border px-2 py-1.5 text-start text-xs hover:border-brand/40"
-                              onClick={async () => {
-                                try {
-                                  const link = await apiFetch<{ downloadPath: string }>(
-                                    `/api/v1/uploads/documents/${photo.id}/link`,
-                                  );
-                                  window.open(`${API_URL}${link.downloadPath}`, '_blank', 'noopener,noreferrer');
-                                } catch {
-                                  /* ignore */
-                                }
-                              }}
-                            >
-                              {photo.fileName}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">{t('workflow.preview')}</p>
-            )}
-          </aside>
+  return (
+    <Board tone={overallTone}>
+      <Board.Header
+        title={title ?? t('workflow.orderSnapshot')}
+        description={tFlow('productionFlow.stageDetails')}
+        meta={graph ? <span className="tabular-nums" dir="ltr">{Math.round(graph.progressPercent)}%</span> : null}
+      />
+      {graph && graph.stages.length ? (
+        <div className="border-b border-[var(--maher-border)] px-5 py-3">
+          <Meter value={graph.progressPercent} max={100} size="sm" showValue={false} tone={overallTone === 'error' ? 'error' : 'info'} />
         </div>
-      )}
-      {graph?.isLegacy ? (
-        <p className="mt-3 text-xs text-text-tertiary">{t('workflow.versionSuperseded')}</p>
       ) : null}
-    </Card>
+      <Board.Body>
+        {graphQuery.isLoading ? (
+          <BoardSkeleton rows={3} header={false} className="border-0 shadow-none" />
+        ) : graphQuery.isError || !graph ? (
+          <Board.Empty title={t('workflow.loadError')} description={t('workflow.retry')} className="px-0" />
+        ) : graph.stages.length === 0 ? (
+          <Board.Empty title={t('workflow.emptyStages')} className="px-0" />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <ProductionFlowMap stages={flowStages} selectedId={selected?.id ?? null} onStageClick={(stage) => setSelectedId(stage.id)} rtl={rtl} />
+
+            <aside className="rounded-[14px] border border-[var(--maher-border)] bg-[var(--maher-surface-muted)] p-4">
+              {selected ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Stamp tone={stageTone(selected.status)} />
+                    <p className="text-[14px] font-semibold text-[var(--maher-text-primary)]">{localizedName(locale, selected, selected.code)}</p>
+                    <Stamp tone={stageTone(selected.status)} size="sm">
+                      {(() => {
+                        try {
+                          return tStatus(selected.status as never);
+                        } catch {
+                          return selected.status;
+                        }
+                      })()}
+                    </Stamp>
+                    {selected.backForRework ? <Stamp tone="warning" size="sm">{t('workflow.backForRework')}</Stamp> : null}
+                    {selected.isOptional ? <Stamp tone="neutral" size="sm">{t('workflow.optional')}</Stamp> : null}
+                  </div>
+                  {selected.progressPercent > 0 && selected.progressPercent < 100 ? <Meter value={selected.progressPercent} max={100} size="sm" tone="info" valueLabel={`${Math.round(selected.progressPercent)}%`} /> : null}
+                  <KeyFacts
+                    columns={2}
+                    facts={[
+                      { label: tFlow('productionFlow.workers'), value: selected.assignedEmployee?.name ?? tFlow('productionFlow.unassigned'), muted: !selected.assignedEmployee },
+                      { label: t('plannedStart'), value: fmtWhen(selected.plannedStart ?? selected.actualStart, locale), ltr: true },
+                      { label: t('plannedCompletion'), value: fmtWhen(selected.plannedEnd ?? selected.actualEnd, locale), ltr: true },
+                      ...(selected.estimatedMinutes != null || selected.actualMinutes != null
+                        ? [{ label: t('workflow.estimatedDuration'), value: selected.actualMinutes != null ? `${selected.actualMinutes} min` : `${selected.estimatedMinutes} min`, ltr: true }]
+                        : []),
+                    ]}
+                  />
+                  {selected.blockers?.length ? (
+                    <ul className="m-0 list-none space-y-1 p-0">
+                      {selected.blockers.map((b) => (
+                        <li key={b.id} className="flex items-start gap-2 text-[12px] text-[var(--maher-error)]">
+                          <Stamp tone="error" className="mt-1" />
+                          {b.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {selected.notes ? <p className="whitespace-pre-wrap text-[13px] leading-5 text-[var(--maher-text-secondary)]">{selected.notes}</p> : null}
+                  <div>
+                    <p className="mb-1.5 text-[12px] text-[var(--maher-text-tertiary)]">{tFlow('productionFlow.workPhotos')}</p>
+                    {photos.length === 0 ? (
+                      <p className="text-[12px] text-[var(--maher-text-tertiary)]">{tFlow('productionFlow.workPhotosEmpty')}</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {photos.slice(0, 6).map((photo) => (
+                          <button
+                            key={photo.id}
+                            type="button"
+                            className="maher-press truncate rounded-[10px] border border-[var(--maher-border)] bg-[var(--maher-surface)] px-2 py-1.5 text-start text-[12px] hover:border-[var(--maher-border-strong)]"
+                            onClick={async () => {
+                              try {
+                                const link = await apiFetch<{ downloadPath: string }>(`/api/v1/uploads/documents/${photo.id}/link`);
+                                window.open(`${API_URL}${link.downloadPath}`, '_blank', 'noopener,noreferrer');
+                              } catch {
+                                /* ignore */
+                              }
+                            }}
+                          >
+                            {photo.fileName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[13px] text-[var(--maher-text-secondary)]">{t('workflow.preview')}</p>
+              )}
+            </aside>
+          </div>
+        )}
+      </Board.Body>
+      {graph?.isLegacy ? (
+        <Board.Footer>
+          <span>{t('workflow.versionSuperseded')}</span>
+        </Board.Footer>
+      ) : null}
+    </Board>
   );
 }

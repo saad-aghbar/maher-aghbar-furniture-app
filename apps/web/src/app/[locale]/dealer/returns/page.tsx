@@ -1,18 +1,11 @@
 'use client';
 
-import { ListPage } from '@/components/list-page';
-import { Link } from '@/i18n/navigation';
+import { DealerListDesk } from '@/components/dealer/dealer-list-desk';
+import { approvalTone, lifecycleTone, mediaSrc, useReturnCopy } from '@/components/returns/return-shared';
 import { apiFetch, apiUpload, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import {
-  Alert,
-  Button,
-  CameraCapture,
-  Input,
-  Modal,
-  Select,
-  TextArea,
-} from '@maher/ui';
+import { Alert, Button, CameraCapture, Combobox, Input, Ltr, NumberField, RowThumb, Sheet, Stamp, TextArea } from '@maher/ui';
+import { Armchair } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -25,6 +18,9 @@ interface ReturnRow {
   quantity: string | number;
   reason: string;
   approvalStatus?: string;
+  lifecycleState?: string | null;
+  physicalStatus?: string | null;
+  createdAt?: string;
   reasonPhotoUrl?: string | null;
   issuePhotoUrl?: string | null;
   productImageUrl?: string | null;
@@ -61,6 +57,7 @@ export default function ReturnsPage() {
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
+  const copy = useReturnCopy();
 
   const [formOpen, setFormOpen] = useState(false);
   const [salesOrderId, setSalesOrderId] = useState('');
@@ -159,68 +156,68 @@ export default function ReturnsPage() {
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
+  const isOpen = (r: ReturnRow) => !['COMPLETED', 'REJECTED', 'SCRAPPED', 'RETURNED_TO_STOCK'].includes((r.lifecycleState ?? '').toUpperCase()) && (r.approvalStatus ?? 'PENDING').toUpperCase() !== 'REJECTED';
+  const stateLabel = (r: ReturnRow) => (r.lifecycleState ? copy.status(r.lifecycleState) : copy.status(r.approvalStatus ?? 'PENDING'));
+  const stateTone = (r: ReturnRow) => (r.lifecycleState ? lifecycleTone(r.lifecycleState) : approvalTone(r.approvalStatus));
+
   return (
-    <div className="space-y-4">
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      <ListPage<ReturnRow>
+    <>
+      <DealerListDesk<ReturnRow>
         title={t('returns')}
-        emptyDescription={tc('returnsDescription')}
+        description={tc('returnsDescription')}
+        tone="warning"
         queryKey={['customer-returns']}
         fetchPath="/api/v1/returns?pageSize=50"
         emptyTitle={tc('noReturns')}
+        emptyDescription={tc('returnsDescription')}
+        rowHref={(row) => `/dealer/returns/${row.id}`}
         actions={
           <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setFormOpen(true)}>
             {tc('submitReturn')}
           </Button>
         }
+        chips={[
+          { id: 'all', label: tCommon('all'), match: () => true },
+          { id: 'review', label: copy.status('PENDING'), tone: 'warning', match: (r) => ['PENDING', 'NEED_INFO'].includes((r.approvalStatus ?? 'PENDING').toUpperCase()) },
+          { id: 'open', label: copy.status('APPROVED'), tone: 'brand', match: (r) => (r.approvalStatus ?? '').toUpperCase() === 'APPROVED' && isOpen(r) },
+          { id: 'closed', label: copy.status('COMPLETED'), tone: 'neutral', match: (r) => !isOpen(r) },
+        ]}
+        figures={(rows) => [
+          { label: t('returns'), value: rows.length },
+          { label: copy.status('PENDING'), value: rows.filter((r) => ['PENDING', 'NEED_INFO'].includes((r.approvalStatus ?? 'PENDING').toUpperCase())).length, tone: 'warning' },
+          { label: copy.status('APPROVED'), value: rows.filter((r) => (r.approvalStatus ?? '').toUpperCase() === 'APPROVED' && isOpen(r)).length, tone: 'brand' },
+        ]}
+        search={{ placeholder: tc('searchProducts'), match: (r, q) => `${r.number} ${r.productDesc} ${r.salesOrder?.number ?? ''}`.toLowerCase().includes(q) }}
         columns={[
           {
-            key: 'number',
-            header: tCommon('number'),
-            render: (row) => (
-              <Link href={`/dealer/returns/${row.id}`} className="font-medium text-brand hover:underline">
-                {row.number}
-              </Link>
+            key: 'product',
+            header: tc('product'),
+            cell: (row) => (
+              <span className="flex items-center gap-3">
+                <RowThumb src={mediaSrc(row.productImageUrl)} icon={<Armchair className="h-4 w-4" />} />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-[var(--maher-text-primary)]">{row.productDesc}</span>
+                  <Ltr className="block text-[12px] text-[var(--maher-text-tertiary)]">{row.number}{row.salesOrder?.number ? ` · ${row.salesOrder.number}` : ''}</Ltr>
+                </span>
+              </span>
             ),
           },
-          {
-            key: 'productDesc',
-            header: tc('product'),
-            render: (row) => row.productDesc,
-          },
-          {
-            key: 'quantity',
-            header: tc('quantity'),
-            render: (row) => String(row.quantity),
-          },
-          {
-            key: 'reason',
-            header: tc('reason'),
-            render: (row) => {
-              try {
-                return tc(`returnReason.${row.reason}` as 'returnReason.OTHER');
-              } catch {
-                return row.reason;
-              }
-            },
-          },
-          {
-            key: 'approvalStatus',
-            header: tCommon('status'),
-            render: (row) => row.approvalStatus ?? 'PENDING',
-          },
-          {
-            key: 'salesOrder',
-            header: tc('salesOrder'),
-            render: (row) => row.salesOrder?.number ?? '—',
-          },
+          { key: 'quantity', header: tc('quantity'), hideBelow: 'md', numeric: true, cell: (row) => <Ltr>{String(row.quantity)}</Ltr> },
+          { key: 'reason', header: tc('reason'), hideBelow: 'lg', cell: (row) => <span className="text-[var(--maher-text-secondary)]">{copy.reason(row.reason)}</span> },
+          { key: 'status', header: tCommon('status'), cell: (row) => <Stamp tone={stateTone(row)} size="sm">{stateLabel(row)}</Stamp> },
         ]}
-      />
+        mobileRow={(row) => ({ title: row.productDesc, meta: `${row.number} · ${copy.reason(row.reason)}`, trailing: <Stamp tone={stateTone(row)} size="sm">{stateLabel(row)}</Stamp> })}
+      >
+        {banner ? <Alert variant="success">{banner}</Alert> : null}
+      </DealerListDesk>
 
-      <Modal
+      <Sheet
         open={formOpen}
         onClose={() => !submitMutation.isPending && setFormOpen(false)}
         title={tc('submitReturn')}
+        description={tc('returnsDescription')}
+        tone="warning"
+        closeLabel={tCommon('close')}
         footer={
           <>
             <Button
@@ -239,66 +236,73 @@ export default function ReturnsPage() {
           </>
         }
       >
-        <div className="maher-form-section grid gap-3">
+        <div className="grid gap-4">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
 
-          <Select
+          <Combobox<string>
             label={tc('selectSalesOrder')}
-            value={salesOrderId}
-            onChange={(e) => onSelectOrder(e.target.value)}
+            value={salesOrderId || null}
+            placeholder={tc('selectSalesOrderPlaceholder')}
             disabled={submitMutation.isPending || ordersQuery.isLoading}
-          >
-            <option value="">{tc('selectSalesOrderPlaceholder')}</option>
-            {orders.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.number}
-                {o.lines?.[0]?.description ? ` — ${o.lines[0].description}` : ''}
-              </option>
-            ))}
-          </Select>
+            options={orders.map((o) => ({ value: o.id, label: o.number, description: o.lines?.[0]?.description ?? undefined }))}
+            onChange={(value) => onSelectOrder(value ?? '')}
+          />
           {selectedOrderLines.length > 1 ? (
-            <Select
-              label={tc('selectOrderLine')}
-              value={String(lineIndex)}
-              onChange={(e) => onSelectLine(Number(e.target.value))}
-              disabled={submitMutation.isPending}
-            >
-              {selectedOrderLines.map((line, i) => (
-                <option key={`${line.description}-${i}`} value={String(i)}>
-                  {line.description || line.product?.nameEn || line.product?.nameAr || `#${i + 1}`} × {String(line.quantity)}
-                </option>
-              ))}
-            </Select>
+            <div>
+              <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tc('selectOrderLine')}</span>
+              <ul className="grid gap-1.5" role="radiogroup" aria-label={tc('selectOrderLine')}>
+                {selectedOrderLines.map((line, i) => {
+                  const active = lineIndex === i;
+                  const img = mediaSrc(line.product?.imageUrl);
+                  return (
+                    <li key={`${line.description}-${i}`}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        disabled={submitMutation.isPending}
+                        onClick={() => onSelectLine(i)}
+                        className={`flex w-full items-center gap-3 rounded-[12px] border px-3 py-2 text-start transition ${active ? 'border-[var(--maher-text-primary)] bg-[var(--maher-surface-muted)]' : 'border-[var(--maher-border)] hover:border-[var(--maher-brand)]'}`}
+                      >
+                        <RowThumb src={img} icon={<Armchair className="h-4 w-4" />} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-[var(--maher-text-primary)]">{line.description || line.product?.nameEn || line.product?.nameAr || `#${i + 1}`}</span>
+                          <Ltr className="block text-[12px] text-[var(--maher-text-tertiary)]">× {String(line.quantity)}</Ltr>
+                        </span>
+                        {active ? <Stamp tone="brand" size="sm">✓</Stamp> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
 
-          <Input
-            label={tc('product')}
-            value={productDesc}
-            onChange={(e) => setProductDesc(e.target.value)}
-            disabled={submitMutation.isPending}
-          />
-          <Input
-            label={tc('quantity')}
-            type="number"
-            min="0.001"
-            step="0.001"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            dir="ltr"
-            disabled={submitMutation.isPending}
-          />
-          <Select
-            label={tc('reason')}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            disabled={submitMutation.isPending}
-          >
-            {RETURN_REASONS.map((r) => (
-              <option key={r} value={r}>
-                {tc(`returnReason.${r}` as 'returnReason.OTHER')}
-              </option>
-            ))}
-          </Select>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+            <Input label={tc('product')} value={productDesc} onChange={(e) => setProductDesc(e.target.value)} disabled={submitMutation.isPending} />
+            <NumberField label={tc('quantity')} value={quantity === '' ? null : Number(quantity)} onChange={(v) => setQuantity(v == null ? '' : String(v))} min={1} step={1} decimals={0} disabled={submitMutation.isPending} />
+          </div>
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tc('reason')}</span>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={tc('reason')}>
+              {RETURN_REASONS.map((r) => {
+                const active = reason === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    disabled={submitMutation.isPending}
+                    onClick={() => setReason(r)}
+                    className={`rounded-full border px-3 py-1.5 text-[13px] font-medium transition ${active ? 'border-[var(--maher-text-primary)] bg-[var(--maher-text-primary)] text-[var(--maher-surface)]' : 'border-[var(--maher-border)] text-[var(--maher-text-secondary)] hover:border-[var(--maher-brand)]'}`}
+                  >
+                    {tc(`returnReason.${r}` as 'returnReason.OTHER')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <TextArea
             label={tc('description')}
             value={description}
@@ -316,7 +320,7 @@ export default function ReturnsPage() {
                   setReasonPhoto(await uploadPhoto(file, 'RETURN_REASON'));
                 }}
               />
-              {reasonPhoto ? <p className="text-xs text-text-secondary">{tCommon('takePhoto')}</p> : null}
+              {reasonPhoto ? <Stamp tone="success" size="sm">{tCommon('takePhoto')}</Stamp> : null}
             </div>
             <div className="space-y-1">
               <CameraCapture
@@ -326,11 +330,11 @@ export default function ReturnsPage() {
                   setIssuePhoto(await uploadPhoto(file, 'RETURN_ISSUE'));
                 }}
               />
-              {issuePhoto ? <p className="text-xs text-text-secondary">{tCommon('takePhoto')}</p> : null}
+              {issuePhoto ? <Stamp tone="success" size="sm">{tCommon('takePhoto')}</Stamp> : null}
             </div>
           </div>
         </div>
-      </Modal>
-    </div>
+      </Sheet>
+    </>
   );
 }

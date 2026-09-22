@@ -1,719 +1,393 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
-import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import {
-  Alert,
-  Button,
-  EmptyState,
-  ErrorState,
-  Input,
-  Ltr,
-  PageHero,
-  PillTabBar,
-  Select,
-  Skeleton,
-  StatusBadge,
-} from '@maher/ui';
-import { localizedName } from '@maher/i18n';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  Armchair,
-  CheckCircle2,
-  Factory,
-  ListOrdered,
-  Store,
-  X,
-} from 'lucide-react';
-import { useLocale, useTranslations } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
-import {
-  matchesProductionLifecycleFilter,
-  productionLifecycleBoardLabel,
-  type ProductionLifecycleFilter,
-} from '@/lib/production-lifecycle';
+import { DealerCombobox } from '@/components/orders/dealer-combobox';
 import { ProductionBasketBoard, type ProductionBasket } from '@/components/production/production-basket-board';
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { bucketTone, COMPLEXITIES, PRIORITIES, PRODUCTION_BUCKETS, priorityTone, productionTone, useProductionCopy, type AssignableWorker, type Complexity, type DaySummary, type Priority, type ProductionBucket, type ProductionRow } from '@/components/production/production-shared';
+import { Link } from '@/i18n/navigation';
+import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { apiFetch } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
+import type { Paginated } from '@/lib/paginated';
+import { toApiQuery, useListParams } from '@/lib/use-list-params';
+import { localizedName } from '@maher/i18n';
+import { Board, Button, Combobox, ConfirmDialog, DataBoard, DateField, DayStrip, ErrorBoard, Figure, FilterDrawer, ListToolbar, Ltr, Meter, Pagination, Ribbon, RowThumb, SegmentedControl, Stamp, StatusChips, addDaysYmd, todayYmd, useToast, type DataColumn } from '@maher/ui';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Armchair, LayoutGrid, List, Play } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { Suspense, useMemo, useState } from 'react';
 
-interface DealerOption {
-  id: string;
-  code: string;
-  name: string;
-  nameAr?: string | null;
-  nameEn?: string | null;
-  nameHe?: string | null;
-}
+const DEFAULTS = {
+  q: '',
+  bucket: '' as '' | Exclude<ProductionBucket, 'all'>,
+  priority: '' as '' | Priority,
+  origin: '' as '' | 'normal' | 'returned',
+  complexity: '' as '' | Complexity,
+  customerId: '',
+  assignedEmployeeId: '',
+  onDate: '',
+  dateMode: 'planned' as 'planned' | 'actual',
+  dayFocus: '' as '' | 'late_missed' | 'at_risk',
+  view: 'orders' as 'orders' | 'boards',
+  page: 1,
+  pageSize: 25,
+};
 
-interface ProductionRow {
-  id: string;
-  number: string;
-  productDescription: string;
-  status: string;
-  progressPercent: number;
-  currentStageCode?: string | null;
-  requiredDeliveryDate?: string | null;
-  plannedCompletionDate?: string | null;
-  actualCompletionDate?: string | null;
-  imageUrl?: string | null;
-  customerId?: string | null;
-  customer?: DealerOption | null;
-  salesOrder?: { id: string; number: string; externalOrderNumber?: string | null } | null;
-  product?: {
-    id: string;
-    sku: string;
-    nameEn: string;
-    nameAr?: string | null;
-    nameHe?: string | null;
-    imageUrl?: string | null;
-  } | null;
-  currentStage?: {
-    code: string;
-    nameEn: string;
-    nameAr?: string | null;
-    nameHe?: string | null;
-  } | null;
-}
-
-type SectionKey = 'completedToday' | 'late' | 'inProduction' | 'inQueue';
-
-const QUEUE_STATUSES = new Set(['DRAFT', 'PLANNED', 'WAITING_FOR_MATERIALS', 'READY']);
-const IN_PRODUCTION_STATUSES = new Set([
-  'IN_PROGRESS',
-  'ON_HOLD',
-  'QUALITY_CHECK',
-  'READY_FOR_PACKAGING',
-  'READY_FOR_DELIVERY',
-]);
-
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfToday() {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-function isCompletedToday(row: ProductionRow) {
-  if (row.status !== 'COMPLETED') return false;
-  if (!row.actualCompletionDate) return false;
-  const at = new Date(row.actualCompletionDate);
-  return at >= startOfToday() && at <= endOfToday();
-}
-
-function isLate(row: ProductionRow) {
-  if (row.status === 'COMPLETED' || row.status === 'CANCELLED') return false;
-  const now = new Date();
-  const delivery = row.requiredDeliveryDate ? new Date(row.requiredDeliveryDate) : null;
-  const planned = row.plannedCompletionDate ? new Date(row.plannedCompletionDate) : null;
-  if (delivery && delivery < now) return true;
-  if (planned && planned < endOfToday()) return true;
-  return false;
-}
-
-function sectionFor(row: ProductionRow): SectionKey | null {
-  if (row.status === 'CANCELLED') return null;
-  if (row.status === 'COMPLETED') return isCompletedToday(row) ? 'completedToday' : null;
-  if (isLate(row)) return 'late';
-  if (IN_PRODUCTION_STATUSES.has(row.status)) return 'inProduction';
-  if (QUEUE_STATUSES.has(row.status)) return 'inQueue';
-  return 'inProduction';
-}
-
-function ProductionCard({
-  row,
-  productTitle,
-  stageLabel,
-  systemOrderLabel,
-  dealerOrderLabel,
-  dealerName,
-  canStart,
-  onStart,
-  startLabel,
-}: {
-  row: ProductionRow;
-  productTitle: string;
-  stageLabel: string;
-  systemOrderLabel: string;
-  dealerOrderLabel: string;
-  dealerName?: string | null;
-  canStart: boolean;
-  onStart: () => void;
-  startLabel: string;
-}) {
-  const imageUrl = row.imageUrl ?? row.product?.imageUrl ?? null;
-  const pct = Math.min(100, Math.max(0, Number(row.progressPercent ?? 0)));
-  const href = `/production/${row.id}`;
-  const systemNo = row.salesOrder?.number ?? null;
-  const dealerNo = row.salesOrder?.externalOrderNumber?.trim() || null;
-
-  return (
-    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition hover:border-brand/40 hover:shadow-sm">
-      <Link
-        href={href}
-        className="relative block aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]"
-      >
-        {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={productTitle}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
-            <Armchair className="h-7 w-7 opacity-40" />
-            <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
-          </div>
-        )}
-        <div className="absolute start-1.5 top-1.5 origin-top-start scale-90">
-          <StatusBadge status={row.status} />
-        </div>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-2 pb-1.5 pt-5">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/30">
-              <div
-                className="h-full rounded-full bg-[var(--maher-brand)] transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <Ltr className="shrink-0 text-[11px] font-semibold text-white">{pct}%</Ltr>
-          </div>
-        </div>
-      </Link>
-
-      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-        <div className="space-y-0.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            <Ltr>{row.number}</Ltr>
-          </p>
-          {systemNo ? (
-            <p className="truncate text-[11px] text-text-secondary">
-              <span className="text-text-tertiary">{systemOrderLabel}: </span>
-              <Ltr>{systemNo}</Ltr>
-            </p>
-          ) : null}
-          {dealerNo ? (
-            <p className="truncate text-[11px] text-text-secondary">
-              <span className="text-text-tertiary">{dealerOrderLabel}: </span>
-              <Ltr>{dealerNo}</Ltr>
-            </p>
-          ) : null}
-          {dealerName ? (
-            <p className="truncate text-[11px] font-medium text-text-secondary">{dealerName}</p>
-          ) : null}
-        </div>
-        <Link
-          href={href}
-          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary hover:text-brand"
-        >
-          {productTitle}
-        </Link>
-        <p className="truncate text-[11px] text-text-tertiary">{stageLabel}</p>
-
-        {canStart ? (
-          <div className="mt-auto maher-card-rule-t pt-2">
-            <Button
-              size="sm"
-              className="w-full"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onStart();
-              }}
-            >
-              {startLabel}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </article>
-  );
-}
+const START_STATUSES = new Set(['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS']);
 
 function ProductionPageInner() {
-  const locale = useLocale();
+  const copy = useProductionCopy();
   const t = useTranslations('navigation');
   const tp = useTranslations('production');
-  const tc = useTranslations('catalog');
+  const tm = useTranslations('mobile.production');
   const tSales = useTranslations('sales');
+  const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
-  const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
+  const kit = useKitCopy();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { params, set, reset, activeCount } = useListParams({ defaults: DEFAULTS });
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [startRow, setStartRow] = useState<ProductionRow | null>(null);
 
-  const [q, setQ] = useState('');
-  const [dealerId, setDealerId] = useState('');
-  const [page, setPage] = useState(1);
-  const [viewMode, setViewMode] = useState<'items' | 'boards'>('boards');
-  const [banner, setBanner] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [startId, setStartId] = useState<string | null>(null);
-  const [lifecycleFilter, setLifecycleFilter] = useState<ProductionLifecycleFilter>(() => {
-    const fromUrl = searchParams.get('lifecycle');
-    if (
-      fromUrl === 'active' ||
-      fromUrl === 'inspection' ||
-      fromUrl === 'packaging' ||
-      fromUrl === 'ready' ||
-      fromUrl === 'completed'
-    ) {
-      return fromUrl;
-    }
-    return 'all';
+  const listFilters = useMemo(
+    () => ({
+      q: params.q.trim() || undefined,
+      bucket: params.bucket || undefined,
+      priority: params.priority || undefined,
+      origin: params.origin || undefined,
+      complexity: params.complexity || undefined,
+      customerId: params.customerId || undefined,
+      assignedEmployeeId: params.assignedEmployeeId || undefined,
+      onDate: params.onDate || undefined,
+      dateMode: params.onDate ? params.dateMode : undefined,
+      dayFocus: params.onDate && params.dayFocus ? params.dayFocus : undefined,
+    }),
+    [params],
+  );
+  const apiQuery = useMemo(() => toApiQuery({ ...listFilters, page: params.page, pageSize: params.pageSize }), [listFilters, params.page, params.pageSize]);
+  const list = useQuery({ queryKey: ['production-orders', apiQuery], queryFn: () => apiFetch<Paginated<ProductionRow>>(`/api/v1/production-orders${apiQuery}`), placeholderData: keepPreviousData, enabled: params.view === 'orders' });
+  const boards = useQuery({ queryKey: ['production-orders-boards', apiQuery], queryFn: () => apiFetch<{ data: ProductionBasket[] }>(`/api/v1/production-orders${apiQuery}&group=boards`), placeholderData: keepPreviousData, enabled: params.view === 'boards' });
+
+  // Mobile-only day lens: lane counts for the focused day + next 7 days planned load.
+  const focusDate = params.onDate || todayYmd();
+  const summary = useQuery({
+    queryKey: ['production-day-summary', focusDate, params.dateMode, params.customerId, params.origin],
+    queryFn: () => apiFetch<DaySummary>(`/api/v1/production-orders/day-summary${toApiQuery({ onDate: focusDate, dateMode: params.dateMode, customerId: params.customerId || undefined, origin: params.origin || undefined })}`),
+    staleTime: 30_000,
   });
-
-  useEffect(() => {
-    const fromUrl = searchParams.get('lifecycle');
-    if (
-      fromUrl === 'active' ||
-      fromUrl === 'inspection' ||
-      fromUrl === 'packaging' ||
-      fromUrl === 'ready' ||
-      fromUrl === 'completed'
-    ) {
-      setLifecycleFilter(fromUrl);
-    }
-  }, [searchParams]);
-
-  const lifecycleTabs: Array<{ key: ProductionLifecycleFilter; label: string }> = [
-    { key: 'all', label: tp('lifecycleAll') },
-    { key: 'active', label: tp('lifecycleActive') },
-    { key: 'inspection', label: tp('lifecycleInspection') },
-    { key: 'packaging', label: tp('lifecyclePackaging') },
-    { key: 'ready', label: tp('lifecycleReady') },
-    { key: 'completed', label: tp('lifecycleCompleted') },
-  ];
-
-  const [activeSection, setActiveSection] = useState<SectionKey>(() => {
-    const fromUrl = searchParams.get('section');
-    if (
-      fromUrl === 'completedToday' ||
-      fromUrl === 'late' ||
-      fromUrl === 'inProduction' ||
-      fromUrl === 'inQueue'
-    ) {
-      return fromUrl;
-    }
-    if (searchParams.get('status') === 'IN_PROGRESS') return 'inProduction';
-    return 'inProduction';
-  });
-
-  useEffect(() => {
-    const fromUrl = searchParams.get('section');
-    if (
-      fromUrl === 'completedToday' ||
-      fromUrl === 'late' ||
-      fromUrl === 'inProduction' ||
-      fromUrl === 'inQueue'
-    ) {
-      setActiveSection(fromUrl);
-    }
-  }, [searchParams]);
-
-  const listParams = useMemo(() => {
-    const params = new URLSearchParams({ page: '1', pageSize: '100' });
-    if (q.trim()) params.set('q', q.trim());
-    if (dealerId) params.set('customerId', dealerId);
-    return params.toString();
-  }, [q, dealerId]);
-
-  const dealersQuery = useQuery({
-    queryKey: ['customers', 'production-filter'],
-    queryFn: () =>
-      apiFetch<{ data: DealerOption[] }>('/api/v1/customers?page=1&pageSize=100'),
+  const week = useQuery({
+    queryKey: ['production-week-summary', params.customerId],
+    queryFn: async () => {
+      const days = Array.from({ length: 7 }, (_, i) => addDaysYmd(todayYmd(), i));
+      const rows = await Promise.all(days.map((d) => apiFetch<DaySummary>(`/api/v1/production-orders/day-summary${toApiQuery({ onDate: d, dateMode: 'planned', customerId: params.customerId || undefined })}`).catch(() => null)));
+      return days.map((date, i) => ({ date, planned: rows[i]?.planned.orders ?? 0, late: rows[i]?.lateMissed ?? 0 }));
+    },
     staleTime: 60_000,
   });
-
-  const listQuery = useQuery({
-    queryKey: ['production-orders', listParams],
-    queryFn: () =>
-      apiFetch<{ data: ProductionRow[]; meta: { page: number; totalPages: number } }>(
-        `/api/v1/production-orders?${listParams}`,
-      ),
-    placeholderData: keepPreviousData,
+  // Lane totals across the whole floor (not day-scoped): one tiny request per lane.
+  const lanesQuery = useQuery({
+    queryKey: ['production-lane-counts', params.customerId, params.origin],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        PRODUCTION_BUCKETS.map(async (b) => {
+          const res = await apiFetch<Paginated<ProductionRow>>(`/api/v1/production-orders${toApiQuery({ bucket: b, pageSize: 1, page: 1, customerId: params.customerId || undefined, origin: params.origin || undefined })}`).catch(() => null);
+          return [b, res?.meta.totalItems ?? 0] as const;
+        }),
+      );
+      return Object.fromEntries(entries) as Record<Exclude<ProductionBucket, 'all'>, number>;
+    },
+    staleTime: 60_000,
   });
+  const workers = useQuery({ queryKey: ['assignable-workers'], queryFn: () => apiFetch<AssignableWorker[]>('/api/v1/production-orders/assignable-workers'), staleTime: 60_000, enabled: filterOpen || Boolean(params.assignedEmployeeId) });
 
-  const boardsQuery = useQuery({
-    queryKey: ['production-orders-boards', listParams],
-    queryFn: () =>
-      apiFetch<{ data: ProductionBasket[] }>(
-        `/api/v1/production-orders?${listParams}&group=boards`,
-      ),
-    placeholderData: keepPreviousData,
-    enabled: viewMode === 'boards',
-  });
-
-  const startMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/v1/production-orders/${id}/start`, { method: 'POST' }),
+  const invalidate = () => Promise.all([qc.invalidateQueries({ queryKey: ['production-orders'] }), qc.invalidateQueries({ queryKey: ['production-orders-boards'] }), qc.invalidateQueries({ queryKey: ['production-day-summary'] })]);
+  const start = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/v1/production-orders/${id}/start`, { method: 'POST' }),
     onSuccess: async () => {
-      setError(null);
-      setStartId(null);
-      await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
-      setBanner(tc('productionStarted'));
+      setStartRow(null);
+      toast.success(tc('productionStarted'));
+      await invalidate();
     },
-    onError: (err) => setError(mutationErrorMessage(err)),
+    onError: (err) => toast.error(mutationErrorMessage(err)),
   });
 
-  const dealerOptions = useMemo(() => {
-    const rows = dealersQuery.data?.data ?? [];
-    return rows
-      .map((d) => ({
-        value: d.id,
-        label: localizedName(locale, d, d.name) || d.name || d.code,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, locale));
-  }, [dealersQuery.data?.data, locale]);
+  const rows = list.data?.data ?? [];
+  const meta = list.data?.meta;
+  const s = summary.data;
+  const lanes = lanesQuery.data;
+  const laneCount = (b: Exclude<ProductionBucket, 'all'>) => lanes?.[b] ?? null;
+  const laneSegments = lanes
+    ? (['needs_setup', 'ready_to_start', 'on_floor', 'blocked', 'inspection_packaging'] as const).map((b) => ({ key: b, label: copy.bucket(b), value: lanes[b], tone: bucketTone(b) }))
+    : [];
 
-  const selectedDealer = useMemo(
-    () => dealerOptions.find((d) => d.value === dealerId) ?? null,
-    [dealerOptions, dealerId],
-  );
+  const title = (row: ProductionRow) => (row.product ? localizedName(copy.locale, { nameEn: row.product.nameEn ?? '', nameAr: row.product.nameAr, nameHe: row.product.nameHe }, row.product.nameEn ?? '') : row.productDescription || row.number);
+  const stage = (row: ProductionRow) => (row.currentStage ? localizedName(copy.locale, row.currentStage, row.currentStage.nameEn) : row.currentStageCode ?? copy.status(row.status));
 
-  const sections = useMemo(() => {
-    const buckets: Record<SectionKey, ProductionRow[]> = {
-      completedToday: [],
-      late: [],
-      inProduction: [],
-      inQueue: [],
-    };
-    for (const row of listQuery.data?.data ?? []) {
-      const key = sectionFor(row);
-      if (key) buckets[key].push(row);
-    }
-    return buckets;
-  }, [listQuery.data?.data]);
-
-  const tabs: Array<{
-    key: SectionKey;
-    label: string;
-    hint: string;
-    count: number;
-    icon: ReactNode;
-    activeClass: string;
-  }> = [
+  const columns: DataColumn<ProductionRow>[] = [
     {
-      key: 'completedToday',
-      label: tp('completedToday'),
-      hint: tp('sectionCompletedTodayHint'),
-      count: sections.completedToday.length,
-      icon: <CheckCircle2 className="h-4 w-4" />,
-      activeClass:
-        'border-[var(--maher-success)] bg-[var(--maher-success-soft)] text-[var(--maher-success)]',
+      key: 'order',
+      header: tp('orders'),
+      cell: (row) => (
+        <span className="flex items-center gap-3">
+          <RowThumb src={row.imageUrl ?? row.product?.imageUrl} icon={<Armchair className="h-4 w-4" />} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-[var(--maher-text-primary)]">{title(row)}</span>
+            <Ltr className="block truncate text-[12px] text-[var(--maher-text-tertiary)]">
+              {row.number}
+              {row.salesOrder ? ` · ${row.salesOrder.externalOrderNumber?.trim() || row.salesOrder.number}` : ''}
+            </Ltr>
+          </span>
+        </span>
+      ),
+    },
+    { key: 'dealer', header: tm('dealer'), hideBelow: 'lg', cell: (row) => (row.customer ? localizedName(copy.locale, row.customer, row.customer.name) : '—') },
+    {
+      key: 'stage',
+      header: tp('stage' as never),
+      hideBelow: 'md',
+      cell: (row) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Stamp tone={productionTone(row.status)} size="sm">
+            {stage(row)}
+          </Stamp>
+          {row.originType === 'RETURN_WORK' || row.originType === 'REPLACEMENT' ? <Stamp tone="warning" size="sm">{row.originType === 'REPLACEMENT' ? tm('origin.replacement') : tm('origin.returnWork')}</Stamp> : null}
+          {(row.openBlockersCount ?? 0) > 0 ? <Stamp tone="error" size="sm">{tm('blocked')}</Stamp> : null}
+        </span>
+      ),
     },
     {
-      key: 'late',
-      label: tp('lateOrders'),
-      hint: tp('sectionLateHint'),
-      count: sections.late.length,
-      icon: <AlertTriangle className="h-4 w-4" />,
-      activeClass: 'border-brand bg-[var(--maher-brand-soft)] text-brand',
+      key: 'progress',
+      header: tm('progress'),
+      width: '180px',
+      cell: (row) => <Meter value={Math.min(100, Math.max(0, Number(row.progressPercent ?? 0)))} max={100} size="sm" valueLabel={`${Math.round(Number(row.progressPercent ?? 0))}%`} tone={row.status === 'COMPLETED' ? 'success' : row.isLate ? 'error' : 'brand'} />,
     },
     {
-      key: 'inProduction',
-      label: tp('inProduction'),
-      hint: tp('sectionInProductionHint'),
-      count: sections.inProduction.length,
-      icon: <Factory className="h-4 w-4" />,
-      activeClass:
-        'border-[var(--maher-warning)] bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
+      key: 'due',
+      header: tm('dueDate'),
+      hideBelow: 'md',
+      cell: (row) => {
+        const d = copy.daysUntil(row.plannedCompletionDate ?? row.requiredDeliveryDate);
+        const late = row.status !== 'COMPLETED' && d != null && d < 0;
+        return (
+          <span className="flex flex-col">
+            <span className={late ? 'font-semibold text-[var(--maher-error)]' : ''}>{copy.date(row.plannedCompletionDate ?? row.requiredDeliveryDate)}</span>
+            {d != null && row.status !== 'COMPLETED' ? <span className="text-[12px] text-[var(--maher-text-tertiary)]">{late ? tSales('desk.lateBy', { count: Math.abs(d) }) : tSales('desk.dueIn', { count: d })}</span> : null}
+          </span>
+        );
+      },
     },
+    { key: 'priority', header: tm('priorityLabel'), hideBelow: 'xl', cell: (row) => <Stamp tone={priorityTone(row.priority)} size="sm">{copy.priority(row.priority)}</Stamp> },
     {
-      key: 'inQueue',
-      label: tp('inQueue'),
-      hint: tp('sectionInQueueHint'),
-      count: sections.inQueue.length,
-      icon: <ListOrdered className="h-4 w-4" />,
-      activeClass: 'border-brand bg-[var(--maher-brand-soft)] text-brand',
+      key: 'actions',
+      header: '',
+      numeric: true,
+      width: '120px',
+      cell: (row) =>
+        START_STATUSES.has(row.status) ? (
+          <Button size="sm" variant="secondary" leadingIcon={<Play className="h-3.5 w-3.5" />} onClick={(e) => (e.preventDefault(), e.stopPropagation(), setStartRow(row))}>
+            {tp('start')}
+          </Button>
+        ) : row.assignedEmployee ? (
+          <span className="text-[12px] text-[var(--maher-text-secondary)]">{copy.worker(row.assignedEmployee)}</span>
+        ) : null,
     },
   ];
 
-  const activeRows = useMemo(() => {
-    const base = sections[activeSection];
-    if (lifecycleFilter === 'all') return base;
-    return base.filter((row) => matchesProductionLifecycleFilter(row, lifecycleFilter));
-  }, [sections, activeSection, lifecycleFilter]);
-  const activeTab = tabs.find((tab) => tab.key === activeSection) ?? tabs[2]!;
-  const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = activeRows.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  const initialLoading = listQuery.isLoading && !listQuery.data;
-
-  function productTitle(row: ProductionRow) {
-    if (row.product) return localizedName(locale, row.product, row.product.nameEn);
-    return row.productDescription || row.number;
-  }
-
-  function stageLabel(row: ProductionRow) {
-    const localized =
-      row.currentStage != null
-        ? localizedName(locale, row.currentStage, row.currentStage.nameEn)
-        : null;
-    return productionLifecycleBoardLabel(
-      row,
-      {
-        inspection: tp('lifecycleInspection'),
-        packaging: tp('lifecyclePackaging'),
-        ready: tp('lifecycleReady'),
-        rework: tp('reworkRequired'),
-        stageFallback: (name) => `${tp('stage')}: ${name}`,
-      },
-      localized,
-    );
-  }
-
-  function dealerName(row: ProductionRow) {
-    if (!row.customer) return null;
-    return localizedName(locale, row.customer, row.customer.name) || row.customer.name;
-  }
+  const filtered = Boolean(params.q || activeCount);
 
   return (
-    <div className="space-y-6">
-      <PageHero title={t('production')} description={tp('orders')} tone="soft" />
-      <PillTabBar
-        value={viewMode}
-        onChange={(id: string) => setViewMode(id as 'items' | 'boards')}
-        items={[
-          { id: 'boards', label: tp('viewBoards') },
-          { id: 'items', label: tp('viewItems') },
-        ]}
-      />
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {error && !startId ? <Alert variant="error">{error}</Alert> : null}
-
-      <div
-        role="tablist"
-        aria-label={t('production')}
-        className="maher-stagger flex flex-wrap gap-2"
-      >
-        {tabs.map((tab) => {
-          const selected = tab.key === activeSection;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => {
-                setActiveSection(tab.key);
-                setPage(1);
-              }}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                selected
-                  ? tab.activeClass
-                  : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-primary'
-              }`}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
-                  selected ? 'bg-surface/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
-                }`}
-              >
-                {tab.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-sm text-text-secondary">{activeTab.hint}</p>
-
-      <div
-        role="tablist"
-        aria-label={tp('lifecycleFilterLabel')}
-        className="flex flex-wrap gap-2"
-      >
-        {lifecycleTabs.map((tab) => {
-          const selected = lifecycleFilter === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => {
-                setPage(1);
-                setLifecycleFilter(tab.key);
-              }}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                selected
-                  ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
-                  : 'border-border bg-surface text-text-secondary hover:border-brand/40'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="maher-animate-rise flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="block min-w-0 flex-1 sm:max-w-md">
-          <span className="sr-only">{tp('searchPlaceholder')}</span>
-          <Input
-            withSearchIcon
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-            placeholder={tp('searchPlaceholder')}
-          />
-        </label>
-
-        <div className="relative w-full sm:w-64">
-          <div className="pointer-events-none absolute start-3 top-1/2 z-[1] -translate-y-1/2 text-text-tertiary">
-            <Store className="h-4 w-4" />
-          </div>
-          <Select
-            aria-label={tp('filterDealer')}
-            value={dealerId}
-            onChange={(e) => {
-              setPage(1);
-              setDealerId(e.target.value);
-            }}
-            placeholder={tp('allDealers')}
-            options={dealerOptions}
-            className="ps-9 transition-shadow duration-300 focus:shadow-[0_0_0_4px_var(--maher-brand-soft)]"
-            disabled={dealersQuery.isLoading}
-          />
-        </div>
-      </div>
-
-      {selectedDealer ? (
-        <div className="maher-animate-bounce-in inline-flex max-w-full items-center gap-2 rounded-full border border-brand/25 bg-[var(--maher-brand-soft)] px-3 py-1.5 text-sm text-brand">
-          <Store className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">
-            {tp('dealerFilterActive', { dealer: selectedDealer.label })}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setPage(1);
-              setDealerId('');
-            }}
-            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface/70 text-brand transition hover:scale-105 hover:bg-surface active:scale-95"
-            aria-label={tp('clearDealerFilter')}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : null}
-
-      {viewMode === 'boards' ? (
-        boardsQuery.isError && !boardsQuery.data ? (
-          <ErrorState title={t('production')} onRetry={() => boardsQuery.refetch()} retryLabel={tCommon('retry')} />
-        ) : boardsQuery.isLoading && !boardsQuery.data ? (
-          <Skeleton className="h-48 w-full rounded-xl" />
-        ) : (
-          <ProductionBasketBoard boards={boardsQuery.data?.data ?? []} />
-        )
-      ) : listQuery.isError && !listQuery.data ? (
-        <ErrorState
-          title={t('production')}
-          onRetry={() => listQuery.refetch()}
-          retryLabel={tCommon('retry')}
-        />
-      ) : initialLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-56 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : pageRows.length === 0 ? (
-        <EmptyState
-          title={dealerId ? tp('emptyOrdersForDealer') : tp('emptyOrders')}
-          description={activeTab.hint}
-        />
-      ) : (
-        <div
-          key={`${activeSection}-${dealerId}-${q.trim()}`}
-          className={`space-y-3 ${listQuery.isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}`}
-        >
-          <div className="maher-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {pageRows.map((row) => {
-              const canStart =
-                row.status === 'DRAFT' ||
-                row.status === 'PLANNED' ||
-                row.status === 'READY' ||
-                row.status === 'WAITING_FOR_MATERIALS';
-              return (
-                <ProductionCard
-                  key={row.id}
-                  row={row}
-                  productTitle={productTitle(row)}
-                  stageLabel={stageLabel(row)}
-                  systemOrderLabel={tSales('systemOrderNumber')}
-                  dealerOrderLabel={tSales('dealerOrderNumber')}
-                  dealerName={dealerName(row)}
-                  canStart={canStart}
-                  onStart={() => {
-                    setError(null);
-                    setStartId(row.id);
-                  }}
-                  startLabel={tp('start')}
-                />
-              );
-            })}
-          </div>
-          {totalPages > 1 ? (
-            <div className="flex items-center justify-end gap-2">
-              <Button
+    <div className="maher-stagger space-y-5">
+      <Board tone={s && s.lateMissed > 0 ? 'error' : 'brand'} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)] rtl:tracking-normal">{tm('pulseEyebrow')}</p>
+                <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('production')}</h1>
+                <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tm('subtitle')}</p>
+              </div>
+              <SegmentedControl
                 size="sm"
-                variant="secondary"
-                disabled={safePage <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                {tCommon('previous')}
-              </Button>
-              <span className="text-sm text-text-secondary tabular-nums" dir="ltr">
-                {safePage} / {totalPages}
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={safePage >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                {tCommon('next')}
-              </Button>
+                aria-label={tCommon('view')}
+                value={params.view}
+                onChange={(view) => set({ view }, { replace: true })}
+                options={[
+                  { value: 'orders', label: <span className="inline-flex items-center gap-1.5"><List className="h-4 w-4" />{tp('viewItems')}</span> },
+                  { value: 'boards', label: <span className="inline-flex items-center gap-1.5"><LayoutGrid className="h-4 w-4" />{tp('viewBoards')}</span> },
+                ]}
+              />
             </div>
-          ) : null}
+            {laneSegments.length ? <Ribbon className="mt-4" segments={laneSegments} /> : null}
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <Figure size="sm" value={s?.planned.orders ?? 0} label={tm('dayLens.plannedToday')} delta={s ? tm('dayLens.ordersTasks', { orders: s.planned.orders, tasks: s.planned.tasks }) : undefined} />
+              <Figure size="sm" value={s?.actual.orders ?? 0} label={tm('dayLens.actualSoFar')} tone="info" />
+              <Figure size="sm" value={s?.lateMissed ?? 0} label={tm('dayLens.lateMissed')} tone={s && s.lateMissed > 0 ? 'error' : 'success'} />
+              <Figure size="sm" value={s?.atRisk ?? 0} label={tm('dayLens.atRisk')} tone={s && s.atRisk > 0 ? 'warning' : 'success'} />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[13px] leading-5 text-[var(--maher-text-secondary)]">{tm('dayLens.title')}</p>
+              <div className="flex items-center gap-2">
+                <SegmentedControl
+                  size="sm"
+                  aria-label={tm('dayLens.title')}
+                  value={params.dateMode}
+                  onChange={(v) => set({ dateMode: v as 'planned' | 'actual' }, { replace: true })}
+                  options={[
+                    { value: 'planned', label: tm('dayLens.planned') },
+                    { value: 'actual', label: tm('dayLens.actual') },
+                  ]}
+                />
+                <DateField aria-label={tm('dueDate')} value={params.onDate} onChange={(onDate) => set({ onDate, page: 1 })} copy={kit.date} locale={copy.locale} clearable todayShortcut className="w-40" />
+              </div>
+            </div>
+            <DayStrip
+              columns={(week.data ?? Array.from({ length: 7 }, (_, i) => ({ date: addDaysYmd(todayYmd(), i), planned: 0, late: 0 }))).map((d) => ({
+                key: d.date,
+                label: new Intl.DateTimeFormat(copy.locale, { weekday: 'short' }).format(new Date(`${d.date}T00:00:00`)),
+                value: d.planned,
+                compare: d.late || undefined,
+                today: d.date === todayYmd(),
+                tone: d.date === params.onDate ? ('brand' as const) : d.planned > 0 ? ('info' as const) : undefined,
+                href: `?onDate=${d.date}`,
+              }))}
+              compareTone="error"
+              LinkComponent={Link}
+            />
+            {params.onDate ? (
+              <div className="mt-3">
+                <StatusChips
+                  aria-label={tm('dayLens.title')}
+                  value={params.dayFocus || 'all'}
+                  onChange={(id) => set({ dayFocus: id === 'all' ? '' : (id as 'late_missed' | 'at_risk'), page: 1 })}
+                  items={[
+                    { id: 'all', label: tCommon('all') },
+                    { id: 'late_missed', label: tm('dayLens.lateMissed'), count: s?.lateMissed ?? null, tone: 'error' },
+                    { id: 'at_risk', label: tm('dayLens.atRisk'), count: s?.atRisk ?? null, tone: 'warning' },
+                  ]}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
+      </Board>
+
+      <ListToolbar
+        copy={kit.toolbar}
+        search={{ value: params.q, onChange: (q) => set({ q, page: 1 }, { replace: true }), placeholder: tm('searchPlaceholder') }}
+        filterCount={[params.priority, params.origin, params.complexity, params.customerId, params.assignedEmployeeId].filter(Boolean).length}
+        onOpenFilters={() => setFilterOpen(true)}
+      >
+        <StatusChips
+          aria-label={tm('boardSections')}
+          value={params.bucket || 'all'}
+          onChange={(id) => set({ bucket: id === 'all' ? '' : (id as Exclude<ProductionBucket, 'all'>), page: 1 })}
+          items={[{ id: 'all', label: tCommon('all') }, ...PRODUCTION_BUCKETS.map((b) => ({ id: b, label: copy.bucket(b), count: laneCount(b), tone: bucketTone(b) }))]}
+        />
+      </ListToolbar>
+
+      {params.view === 'boards' ? (
+        boards.isError && !boards.data ? (
+          <ErrorBoard title={t('production')} description={mutationErrorMessage(boards.error)} onRetry={() => boards.refetch()} />
+        ) : boards.isLoading && !boards.data ? (
+          <div className="maher-board h-48 animate-pulse rounded-[18px] bg-[var(--maher-surface)]" />
+        ) : (boards.data?.data ?? []).length === 0 ? (
+          <Board tone="neutral">
+            <Board.Empty title={tm('emptyTitle')} description={filtered ? tm('emptySearchBody') : tm('emptyBody')} action={filtered ? <Button size="sm" variant="secondary" onClick={reset}>{tCommon('clearFilters')}</Button> : undefined} />
+          </Board>
+        ) : (
+          <ProductionBasketBoard boards={boards.data?.data ?? []} />
+        )
+      ) : list.isError && !list.data ? (
+        <ErrorBoard title={t('production')} description={mutationErrorMessage(list.error)} onRetry={() => list.refetch()} />
+      ) : (
+        <DataBoard<ProductionRow>
+          aria-label={tp('orders')}
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          rowHref={(r) => `/admin/production/${r.id}`}
+          LinkComponent={Link}
+          loading={list.isLoading && !list.data}
+          rowClassName={(r) => (r.isLate && r.status !== 'COMPLETED' ? 'bg-[var(--maher-error-soft)]/30' : undefined)}
+          mobileRow={(r) => ({
+            leading: <RowThumb src={r.imageUrl ?? r.product?.imageUrl} icon={<Armchair className="h-4 w-4" />} />,
+            title: title(r),
+            meta: `${r.number} · ${stage(r)}`,
+            trailing: <Stamp tone={productionTone(r.status)} size="sm">{`${Math.round(Number(r.progressPercent ?? 0))}%`}</Stamp>,
+          })}
+          empty={<Board.Empty title={tm('emptyTitle')} description={filtered ? tm('emptySearchBody') : tm('emptyBody')} action={filtered ? <Button size="sm" variant="secondary" onClick={reset}>{tCommon('clearFilters')}</Button> : undefined} />}
+          footer={meta && meta.totalPages > 1 ? <Pagination className="w-full" page={params.page} pageSize={params.pageSize} total={meta.totalItems} onPageChange={(page) => set({ page })} copy={kit.pagination} /> : null}
+        />
       )}
 
+      <FilterDrawer
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title={kit.filters.title}
+        applyLabel={kit.filters.apply}
+        clearLabel={kit.filters.clear}
+        closeLabel={kit.filters.close}
+        count={[params.priority, params.origin, params.complexity, params.customerId, params.assignedEmployeeId].filter(Boolean).length}
+        onApply={() => setFilterOpen(false)}
+        onClear={() => (set({ priority: '', origin: '', complexity: '', customerId: '', assignedEmployeeId: '', page: 1 }), setFilterOpen(false))}
+      >
+        <div className="space-y-5">
+          <DealerCombobox label={tm('filterDealer')} value={params.customerId || null} onChange={(id) => set({ customerId: id ?? '', page: 1 })} />
+          <Combobox
+            label={tm('assignWorker')}
+            value={params.assignedEmployeeId || null}
+            onChange={(v) => set({ assignedEmployeeId: v ?? '', page: 1 })}
+            options={(workers.data ?? []).map((w) => ({ value: w.id, label: copy.worker(w), description: w.activeTaskCount != null ? tm('activeTasks', { count: w.activeTaskCount }) : undefined }))}
+            placeholder={tm('searchWorkers')}
+            emptyText={tm('noWorkers')}
+            loadingText={tm('loadingWorkers')}
+            clearLabel={kit.combobox.clear}
+          />
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tm('priorityLabel')}</span>
+            <SegmentedControl size="sm" aria-label={tm('priorityLabel')} value={params.priority || 'all'} onChange={(v) => set({ priority: v === 'all' ? '' : (v as Priority), page: 1 })} options={[{ value: 'all', label: tCommon('all') }, ...PRIORITIES.map((p) => ({ value: p, label: copy.priority(p) }))]} />
+          </div>
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tm('origin.all')}</span>
+            <SegmentedControl
+              size="sm"
+              aria-label={tm('origin.all')}
+              value={params.origin || 'all'}
+              onChange={(v) => set({ origin: v === 'all' ? '' : (v as 'normal' | 'returned'), page: 1 })}
+              options={[
+                { value: 'all', label: tm('origin.all') },
+                { value: 'normal', label: tm('origin.normal') },
+                { value: 'returned', label: tm('origin.returned') },
+              ]}
+            />
+          </div>
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tSales('desk.complexity')}</span>
+            <SegmentedControl size="sm" aria-label={tSales('desk.complexity')} value={params.complexity || 'all'} onChange={(v) => set({ complexity: v === 'all' ? '' : (v as Complexity), page: 1 })} options={[{ value: 'all', label: tCommon('all') }, ...COMPLEXITIES.map((c) => ({ value: c, label: copy.complexity(c) }))]} />
+          </div>
+        </div>
+      </FilterDrawer>
+
       <ConfirmDialog
-        open={Boolean(startId)}
+        open={Boolean(startRow)}
         title={tp('startConfirmTitle')}
-        description={tp('startConfirmDescription')}
+        description={startRow ? `${startRow.number} · ${tp('startConfirmDescription')}` : ''}
         confirmLabel={tp('start')}
-        loading={startMutation.isPending}
-        error={error}
-        onConfirm={() => {
-          if (startId) startMutation.mutate(startId);
-        }}
-        onClose={() => {
-          setStartId(null);
-          setError(null);
-        }}
+        cancelLabel={tCommon('cancel')}
+        loading={start.isPending}
+        onClose={() => setStartRow(null)}
+        onConfirm={() => startRow && start.mutate(startRow.id)}
       />
+
     </div>
   );
 }
 
 export default function ProductionPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+    <Suspense fallback={<div className="maher-board h-64 animate-pulse rounded-[18px] bg-[var(--maher-surface)]" />}>
       <ProductionPageInner />
     </Suspense>
   );

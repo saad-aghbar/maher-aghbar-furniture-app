@@ -2,7 +2,7 @@
 
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
-import { Badge, Card, EmptyState, Skeleton, StatusBadge } from '@maher/ui';
+import { Board, BoardSkeleton, Figure, KeyFacts, Stamp, Timeline, type BoardTone } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -131,180 +131,116 @@ export function ProductionQualityPanel({ productionOrderId }: Props) {
     }
   }
 
-  return (
-    <Card className="space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--maher-brand)]">
-            {tp('qualityEyebrow')}
-          </p>
-          <h2 className="text-base font-semibold">{tp('hubQuality')}</h2>
-          <p className="text-sm text-text-secondary">{tp('qualityHint')}</p>
-        </div>
-        {inspections.length > 0 ? <Badge>{inspections.length}</Badge> : null}
-      </div>
+  const resultTone = (r?: string | null): BoardTone => (r === 'PASSED' || r === 'PASS' ? 'success' : r === 'FAILED' || r === 'FAIL' ? 'error' : r === 'PARTIAL' ? 'warning' : 'info');
+  const tone: BoardTone = openRework ? 'error' : latestResult ? resultTone(latestResult) : 'info';
 
-      {contextQuery.isLoading ? (
-        <Skeleton className="h-24 w-full" />
-      ) : contextQuery.isError ? (
-        <p className="text-sm text-[var(--maher-error)]">{tp('qualityError')}</p>
-      ) : !ctx ? (
-        <EmptyState title={tp('qualityEmptyTitle')} description={tp('qualityEmptyBody')} />
-      ) : (
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] p-3">
-              <p className="text-xs text-text-tertiary">{tp('qualityState')}</p>
-              <div className="mt-1">
-                <StatusBadge status={ctx.orderStatus} label={statusLabel(ctx.orderStatus)} />
-              </div>
-              {ctx.currentStageCode ? (
-                <p className="mt-1 text-xs text-text-secondary">
-                  {tp('stage')}: {ctx.currentStageCode}
-                </p>
-              ) : null}
-            </div>
-            <div className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] p-3">
-              <p className="text-xs text-text-tertiary">{tp('qualityLatestResult')}</p>
-              <div className="mt-1">
-                {latestResult ? (
-                  <StatusBadge status={latestResult} label={statusLabel(latestResult)} />
-                ) : (
-                  <span className="text-sm text-text-secondary">{tp('qualityPending')}</span>
-                )}
-              </div>
-              {latest?.number ? (
-                <Link
-                  href={`/admin/quality/${latest.id}`}
-                  className="mt-1 inline-block text-xs font-medium text-brand hover:underline"
-                  dir="ltr"
-                >
-                  {latest.number}
-                </Link>
-              ) : null}
-            </div>
-            <div className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] p-3">
-              <p className="text-xs text-text-tertiary">{tp('qualityAttempts')}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums" dir="ltr">
-                {analytics?.inspectionAttempts ?? inspections.filter((i) => i.result).length}
-              </p>
-              <p className="text-xs text-text-secondary">
-                {tp('qualityReworkCount', { count: analytics?.reworkCount ?? 0 })}
-              </p>
-            </div>
-            <div className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] p-3">
-              <p className="text-xs text-text-tertiary">{tp('qualityOpenRework')}</p>
-              {openRework ? (
-                <div className="mt-1 space-y-1">
-                  <StatusBadge
-                    status={openRework.status}
-                    label={statusLabel(openRework.status)}
-                  />
-                  {openRework.number ? (
-                    <p className="text-xs text-text-secondary" dir="ltr">
-                      {openRework.number}
-                    </p>
-                  ) : null}
-                  {openRework.description ? (
-                    <p className="text-xs text-text-secondary line-clamp-2">
-                      {openRework.description}
-                    </p>
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+      <Board tone={tone} wash="top">
+        <Board.Header title={tp('hubQuality')} description={tp('qualityHint')} meta={inspections.length > 0 ? <Stamp tone={tone} size="sm">{inspections.length}</Stamp> : null} />
+        {contextQuery.isLoading ? (
+          <BoardSkeleton header={false} rows={3} />
+        ) : contextQuery.isError ? (
+          <Board.Empty title={tp('qualityError')} />
+        ) : !ctx ? (
+          <Board.Empty title={tp('qualityEmptyTitle')} description={tp('qualityEmptyBody')} />
+        ) : (
+          <Board.Body className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Figure size="sm" value={analytics?.inspectionAttempts ?? inspections.filter((i) => i.result).length} label={tp('qualityAttempts')} delta={tp('qualityReworkCount', { count: analytics?.reworkCount ?? 0 })} />
+              <div>
+                <p className="text-[12px] leading-4 text-[var(--maher-text-tertiary)]">{tp('qualityLatestResult')}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {latestResult ? <Stamp tone={resultTone(latestResult)}>{statusLabel(latestResult)}</Stamp> : <span className="text-[13px] text-[var(--maher-text-secondary)]">{tp('qualityPending')}</span>}
+                  {latest?.number ? (
+                    <Link href={`/admin/quality/${latest.id}`} className="text-[12px] font-medium text-[var(--maher-brand)] hover:underline" dir="ltr">
+                      {latest.number}
+                    </Link>
                   ) : null}
                 </div>
-              ) : (
-                <p className="mt-1 text-sm text-text-secondary">{tp('qualityNoOpenRework')}</p>
-              )}
+              </div>
             </div>
-          </div>
-
-          {packages.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('qualityExpectedPackages')}
-                {ctx.packagingUnlocked ? (
-                  <span className="ms-2 font-normal normal-case text-[var(--maher-success)]">
-                    · {tp('qualityPackagingUnlocked')}
-                  </span>
-                ) : null}
-              </p>
-              <ul className="flex flex-wrap gap-2">
-                {packages.map((pkg) => (
-                  <li
-                    key={pkg.code}
-                    className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="font-medium" dir="ltr">
-                      {pkg.code}
+            <KeyFacts
+              columns={2}
+              facts={[
+                { label: tp('qualityState'), value: <Stamp tone={tone} size="sm">{statusLabel(ctx.orderStatus)}</Stamp> },
+                { label: tp('stage'), value: ctx.currentStageCode ?? '—', ltr: true },
+                {
+                  label: tp('qualityOpenRework'),
+                  wide: true,
+                  value: openRework ? (
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <Stamp tone="error" size="sm">{statusLabel(openRework.status)}</Stamp>
+                      {openRework.number ? <span dir="ltr">{openRework.number}</span> : null}
+                      {openRework.description ? <span className="text-[var(--maher-text-secondary)]">— {openRework.description}</span> : null}
                     </span>
-                    <span className="ms-1.5 text-text-secondary">
-                      {packageLabel(pkg, locale)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+                  ) : (
+                    tp('qualityNoOpenRework')
+                  ),
+                },
+              ]}
+            />
+            {packages.length > 0 ? (
+              <div>
+                <p className="mb-1.5 text-[12px] text-[var(--maher-text-tertiary)]">
+                  {tp('qualityExpectedPackages')}
+                  {ctx.packagingUnlocked ? <span className="ms-1.5 text-[var(--maher-success)]">· {tp('qualityPackagingUnlocked')}</span> : null}
+                </p>
+                <ul className="flex flex-wrap gap-1.5">
+                  {packages.map((pkg) => (
+                    <li key={pkg.code}>
+                      <Stamp tone="neutral" size="sm">
+                        <span dir="ltr">{pkg.code}</span>
+                        <span className="ms-1 font-normal text-[var(--maher-text-secondary)]">{packageLabel(pkg, locale)}</span>
+                      </Stamp>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </Board.Body>
+        )}
+      </Board>
 
-          {inspections.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('qualityInspections')}
-              </p>
-              <ul className="space-y-2">
-                {inspections.map((insp) => (
-                  <li
-                    key={insp.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <Link
-                        href={`/admin/quality/${insp.id}`}
-                        className="font-medium text-brand hover:underline"
-                        dir="ltr"
-                      >
-                        {insp.number}
-                      </Link>
-                      {insp.stageCode ? (
-                        <p className="text-xs text-text-secondary">{insp.stageCode}</p>
-                      ) : null}
-                    </div>
-                    {insp.result ? (
-                      <StatusBadge status={insp.result} label={statusLabel(insp.result)} />
-                    ) : (
-                      <span className="text-xs text-text-secondary">{tp('qualityPending')}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+      <div className="space-y-5">
+        <Board tone="neutral">
+          <Board.Header title={tp('qualityInspections')} />
+          {inspections.length === 0 ? (
+            <Board.Empty title={tp('qualityEmptyTitle')} description={tp('qualityEmptyBody')} />
           ) : (
-            <EmptyState title={tp('qualityEmptyTitle')} description={tp('qualityEmptyBody')} />
+            <ul className="divide-y divide-[var(--maher-border)]">
+              {inspections.map((insp) => (
+                <li key={insp.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+                  <span className="min-w-0">
+                    <Link href={`/admin/quality/${insp.id}`} className="font-semibold text-[var(--maher-text-primary)] hover:text-[var(--maher-brand)]" dir="ltr">
+                      {insp.number}
+                    </Link>
+                    {insp.stageCode ? <span className="block text-[12px] text-[var(--maher-text-tertiary)]">{insp.stageCode}</span> : null}
+                  </span>
+                  {insp.result ? <Stamp tone={resultTone(insp.result)} size="sm">{statusLabel(insp.result)}</Stamp> : <span className="text-[12px] text-[var(--maher-text-secondary)]">{tp('qualityPending')}</span>}
+                </li>
+              ))}
+            </ul>
           )}
-
-          {timeline.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('qualityTimeline')}
-              </p>
-              <ol className="space-y-2 border-s border-border ps-3">
-                {[...timeline].reverse().map((ev, idx) => (
-                  <li key={`${ev.at}-${ev.kind}-${idx}`} className="relative text-sm">
-                    <span className="absolute -start-[17px] top-1.5 h-2 w-2 rounded-full bg-[var(--maher-brand)]" />
-                    <p className="font-medium">{timelineKindLabel(ev.kind, tp)}</p>
-                    {ev.detailEn ? (
-                      <p className="text-xs text-text-secondary line-clamp-2">{ev.detailEn}</p>
-                    ) : null}
-                    <p className="text-[11px] text-text-tertiary">
-                      <span dir="ltr">{formatWhen(ev.at, locale)}</span>
-                      {ev.actorName ? ` · ${ev.actorName}` : ''}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
-        </div>
-      )}
-    </Card>
+        </Board>
+        {timeline.length > 0 ? (
+          <Board tone="neutral">
+            <Board.Header title={tp('qualityTimeline')} />
+            <Timeline
+              dense
+              className="px-5 py-4"
+              items={[...timeline].reverse().map((ev, idx) => ({
+                id: `${ev.at}-${ev.kind}-${idx}`,
+                time: formatWhen(ev.at, locale),
+                title: timelineKindLabel(ev.kind, tp),
+                description: ev.detailEn ?? undefined,
+                actor: ev.actorName ?? undefined,
+                tone: (ev.kind.toLowerCase().includes('fail') || ev.kind.toLowerCase().includes('rework') ? 'error' : ev.kind.toLowerCase().includes('pass') ? 'success' : 'neutral') as BoardTone,
+              }))}
+            />
+          </Board>
+        ) : null}
+      </div>
+    </div>
   );
 }

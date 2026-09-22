@@ -1,17 +1,20 @@
-'use client';
+"use client";
 
-import { PageHeader } from '@/components/admin/page-header';
-import { Link } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
-import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { PageHeader } from "@/components/admin/page-header";
+import { Link, useRouter } from "@/i18n/navigation";
+import { apiFetch } from "@/lib/api-client";
+import { usePdfDownload } from "@/hooks/use-pdf-download";
+import { mutationErrorMessage } from "@/hooks/use-api-mutation";
 import {
   Alert,
+  Board,
   Button,
-  Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Skeleton,
   StatusBadge,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -19,15 +22,14 @@ import {
   TableHeaderCell,
   TableNumericCell,
   TableRow,
-  Tabs,
   TabList,
-  Tab,
   TabPanel,
-} from '@maher/ui';
-import { localizedName } from '@maher/i18n';
-import { useQuery } from '@tanstack/react-query';
-import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+  Tabs,
+} from "@maher/ui";
+import { localizedName } from "@maher/i18n";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
+import { useState } from "react";
 
 type PurchaseOrder = {
   id: string;
@@ -74,20 +76,37 @@ type InvoiceRow = {
   paidAmount?: number | string | null;
 };
 
-export default function SupplierDetailPage({ params }: { params: { id: string } }) {
+export default function SupplierDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const locale = useLocale();
-  const tc = useTranslations('catalog');
-  const tPurchasing = useTranslations('purchasing');
-  const tCommon = useTranslations('common');
-  const tNav = useTranslations('navigation');
+  const tc = useTranslations("catalog");
+  const tPurchasing = useTranslations("purchasing");
+  const tCommon = useTranslations("common");
+  const tNav = useTranslations("navigation");
   const [error, setError] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { openPdf, pdfDialog } = usePdfDownload();
+  const archiveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/suppliers/${params.id}/archive`, { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["suppliers"] });
+      router.push("/admin/suppliers");
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
 
   const detailQuery = useQuery({
-    queryKey: ['supplier', params.id],
+    queryKey: ["supplier", params.id],
     queryFn: () => apiFetch<SupplierDetail>(`/api/v1/suppliers/${params.id}`),
   });
   const invoicesQuery = useQuery({
-    queryKey: ['supplier-invoices', params.id],
+    queryKey: ["supplier-invoices", params.id],
     queryFn: () =>
       apiFetch<{ data: InvoiceRow[] }>(
         `/api/v1/supplier-invoices?supplierId=${params.id}&pageSize=50`,
@@ -105,17 +124,23 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
   if (detailQuery.isError || !detailQuery.data) {
     return (
       <ErrorState
-        title={tNav('suppliers')}
+        title={tNav("suppliers")}
         onRetry={() => detailQuery.refetch()}
-        retryLabel={tCommon('retry')}
+        retryLabel={tCommon("retry")}
       />
     );
   }
 
   const supplier = detailQuery.data;
   const invoices = invoicesQuery.data ?? [];
-  const outstanding = invoices.reduce((sum, inv) => sum + Number(inv.outstandingAmount ?? 0), 0);
-  const paid = invoices.reduce((sum, inv) => sum + Number(inv.paidAmount ?? 0), 0);
+  const outstanding = invoices.reduce(
+    (sum, inv) => sum + Number(inv.outstandingAmount ?? 0),
+    0,
+  );
+  const paid = invoices.reduce(
+    (sum, inv) => sum + Number(inv.paidAmount ?? 0),
+    0,
+  );
   const name = localizedName(locale, supplier, supplier.name);
 
   return (
@@ -125,109 +150,144 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
         title={name}
         description={supplier.code}
         actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              try {
-                window.open(
-                  `${API_URL}/api/v1/suppliers/${supplier.id}/statement/pdf`,
-                  '_blank',
-                  'noopener,noreferrer',
-                );
-              } catch (err) {
-                setError(mutationErrorMessage(err));
+          <>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                openPdf({
+                  path: `/api/v1/suppliers/${supplier.id}/statement/pdf`,
+                  documentName: `${tPurchasing("statementPdf")} · ${name}`,
+                  filename: `${supplier.code}-statement.pdf`,
+                  withRange: true,
+                })
               }
-            }}
-          >
-            {tPurchasing('statementPdf')}
-          </Button>
+            >
+              {tPurchasing("statementPdf")}
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-[var(--maher-error)]"
+              onClick={() => setArchiveOpen(true)}
+            >
+              {tCommon("archive")}
+            </Button>
+          </>
         }
       />
+      <ConfirmDialog
+        open={archiveOpen}
+        title={tCommon("archive")}
+        description={name}
+        danger
+        confirmLabel={tCommon("archive")}
+        cancelLabel={tCommon("cancel")}
+        loading={archiveMutation.isPending}
+        error={error}
+        onClose={() => setArchiveOpen(false)}
+        onConfirm={() => archiveMutation.mutate()}
+      />
+      {pdfDialog}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tc('phone')}</p>
-          <p className="mt-1 font-medium" dir="ltr">
-            {supplier.phone ?? '—'}
-          </p>
-          <p className="mt-3 text-xs text-text-secondary">{tc('email')}</p>
-          <p className="mt-1" dir="ltr">
-            {supplier.email ?? '—'}
-          </p>
-          <div className="mt-3">
-            <StatusBadge status={supplier.status} />
-          </div>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tPurchasing('outstandingAp')}</p>
-          <p className="mt-1 text-2xl font-semibold text-[var(--maher-warning)]" dir="ltr">
-            {outstanding.toFixed(2)}
-          </p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tPurchasing('paidAp')}</p>
-          <p className="mt-1 text-2xl font-semibold text-[var(--maher-success)]" dir="ltr">
-            {paid.toFixed(2)}
-          </p>
-        </Card>
+        <Board className="p-4">
+          <Board.Body>
+            <p className="text-xs text-text-secondary">{tc("phone")}</p>
+            <p className="mt-1 font-medium" dir="ltr">
+              {supplier.phone ?? "—"}
+            </p>
+            <p className="mt-3 text-xs text-text-secondary">{tc("email")}</p>
+            <p className="mt-1" dir="ltr">
+              {supplier.email ?? "—"}
+            </p>
+            <div className="mt-3">
+              <StatusBadge status={supplier.status} />
+            </div>
+          </Board.Body>
+        </Board>
+        <Board className="p-4">
+          <Board.Body>
+            <p className="text-xs text-text-secondary">
+              {tPurchasing("outstandingAp")}
+            </p>
+            <p
+              className="mt-1 text-2xl font-semibold text-[var(--maher-warning)]"
+              dir="ltr"
+            >
+              {outstanding.toFixed(2)}
+            </p>
+          </Board.Body>
+        </Board>
+        <Board className="p-4">
+          <Board.Body>
+            <p className="text-xs text-text-secondary">
+              {tPurchasing("paidAp")}
+            </p>
+            <p
+              className="mt-1 text-2xl font-semibold text-[var(--maher-success)]"
+              dir="ltr"
+            >
+              {paid.toFixed(2)}
+            </p>
+          </Board.Body>
+        </Board>
       </div>
 
       <Tabs defaultValue="open">
         <TabList>
           <Tab value="open" count={supplier.openPurchaseOrders?.length}>
-            {tPurchasing('openOrders')}
+            {tPurchasing("openOrders")}
           </Tab>
           <Tab value="recent" count={supplier.recentPurchaseOrders?.length}>
-            {tPurchasing('recentOrders')}
+            {tPurchasing("recentOrders")}
           </Tab>
           <Tab value="history" count={supplier.purchaseHistory?.length}>
-            {tPurchasing('purchaseHistory')}
+            {tPurchasing("purchaseHistory")}
           </Tab>
           <Tab value="invoices" count={invoices.length}>
-            {tc('supplierInvoices')}
+            {tc("supplierInvoices")}
           </Tab>
         </TabList>
 
         <TabPanel value="open">
           <OrderTable
             rows={supplier.openPurchaseOrders ?? []}
-            empty={tc('noPurchaseOrders')}
-            details={tCommon('details')}
-            statusLabel={tCommon('status')}
-            totalLabel={tCommon('total')}
+            empty={tc("noPurchaseOrders")}
+            details={tCommon("details")}
+            statusLabel={tCommon("status")}
+            totalLabel={tCommon("total")}
           />
         </TabPanel>
         <TabPanel value="recent">
           <OrderTable
             rows={supplier.recentPurchaseOrders ?? []}
-            empty={tc('noPurchaseOrders')}
-            details={tCommon('details')}
-            statusLabel={tCommon('status')}
-            totalLabel={tCommon('total')}
+            empty={tc("noPurchaseOrders")}
+            details={tCommon("details")}
+            statusLabel={tCommon("status")}
+            totalLabel={tCommon("total")}
           />
         </TabPanel>
         <TabPanel value="history">
           {(supplier.purchaseHistory ?? []).length === 0 ? (
-            <EmptyState title={tPurchasing('purchaseHistory')} />
+            <EmptyState title={tPurchasing("purchaseHistory")} />
           ) : (
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableHeaderCell>{tc('code')}</TableHeaderCell>
-                  <TableHeaderCell>{tc('material')}</TableHeaderCell>
-                  <TableHeaderCell>{tc('qty')}</TableHeaderCell>
-                  <TableHeaderCell>{tc('unitCost')}</TableHeaderCell>
+                  <TableHeaderCell>{tc("code")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("material")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("qty")}</TableHeaderCell>
+                  <TableHeaderCell>{tc("unitCost")}</TableHeaderCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {(supplier.purchaseHistory ?? []).map((row, idx) => (
                   <TableRow key={`${row.receiptNumber}-${idx}`}>
-                    <TableCell dir="ltr">{row.sku ?? '—'}</TableCell>
-                    <TableCell>{row.nameEn ?? '—'}</TableCell>
+                    <TableCell dir="ltr">{row.sku ?? "—"}</TableCell>
+                    <TableCell>{row.nameEn ?? "—"}</TableCell>
                     <TableNumericCell>{row.acceptedQty}</TableNumericCell>
                     <TableNumericCell>
-                      {row.unitCost != null ? row.unitCost.toFixed(2) : '—'}
+                      {row.unitCost != null ? row.unitCost.toFixed(2) : "—"}
                     </TableNumericCell>
                   </TableRow>
                 ))}
@@ -237,15 +297,17 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
         </TabPanel>
         <TabPanel value="invoices">
           {invoices.length === 0 ? (
-            <EmptyState title={tc('supplierInvoices')} />
+            <EmptyState title={tc("supplierInvoices")} />
           ) : (
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableHeaderCell>{tc('code')}</TableHeaderCell>
-                  <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                  <TableHeaderCell>{tPurchasing('outstandingAp')}</TableHeaderCell>
-                  <TableHeaderCell>{tPurchasing('paidAp')}</TableHeaderCell>
+                  <TableHeaderCell>{tc("code")}</TableHeaderCell>
+                  <TableHeaderCell>{tCommon("status")}</TableHeaderCell>
+                  <TableHeaderCell>
+                    {tPurchasing("outstandingAp")}
+                  </TableHeaderCell>
+                  <TableHeaderCell>{tPurchasing("paidAp")}</TableHeaderCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -262,8 +324,12 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                     <TableCell>
                       <StatusBadge status={inv.status} />
                     </TableCell>
-                    <TableNumericCell>{Number(inv.outstandingAmount ?? 0).toFixed(2)}</TableNumericCell>
-                    <TableNumericCell>{Number(inv.paidAmount ?? 0).toFixed(2)}</TableNumericCell>
+                    <TableNumericCell>
+                      {Number(inv.outstandingAmount ?? 0).toFixed(2)}
+                    </TableNumericCell>
+                    <TableNumericCell>
+                      {Number(inv.paidAmount ?? 0).toFixed(2)}
+                    </TableNumericCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -306,9 +372,14 @@ function OrderTable({
             <TableCell>
               <StatusBadge status={row.status} />
             </TableCell>
-            <TableNumericCell>{Number(row.total ?? 0).toFixed(2)}</TableNumericCell>
+            <TableNumericCell>
+              {Number(row.total ?? 0).toFixed(2)}
+            </TableNumericCell>
             <TableCell>
-              <Link href={`/admin/purchasing/${row.id}`} className="text-sm font-medium text-brand">
+              <Link
+                href={`/admin/purchasing/${row.id}`}
+                className="text-sm font-medium text-brand"
+              >
                 {details}
               </Link>
             </TableCell>

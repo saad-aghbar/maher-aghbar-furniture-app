@@ -1,132 +1,126 @@
 'use client';
 
-import { apiFetch, API_URL } from '@/lib/api-client';
-import { Link } from '@/i18n/navigation';
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  FilterChip,
-  FilterPanel,
-  MotionSection,
-  PageHero,
-  Skeleton,
-  StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  TableSkeleton,
-} from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useDealerMoney } from '@/components/dealer/catalog-shared';
+import { DealerListDesk } from '@/components/dealer/dealer-list-desk';
+import { usePdfDownload } from '@/hooks/use-pdf-download';
+import { Button, Ltr, Meter, Stamp, type BoardTone } from '@maher/ui';
+import { FileText } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface Invoice {
   id: string;
   number: string;
   total: string | number;
+  paidAmount?: string | number | null;
   outstandingAmount?: string | number;
   status: string;
+  issueDate?: string | null;
+  dueDate?: string | null;
+}
+
+const OPEN = new Set(['ISSUED', 'PARTIAL', 'PARTIALLY_PAID', 'SENT', 'OVERDUE']);
+
+function tone(status: string): BoardTone {
+  const s = status.toUpperCase();
+  if (s === 'PAID') return 'success';
+  if (s === 'OVERDUE') return 'error';
+  if (s === 'PARTIAL' || s === 'PARTIALLY_PAID') return 'warning';
+  if (s === 'VOID' || s === 'CANCELLED') return 'neutral';
+  if (s === 'DRAFT') return 'neutral';
+  return 'brand';
 }
 
 export default function InvoicesPage() {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
-  const [status, setStatus] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
-
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['customer-invoices'],
-    queryFn: async () => {
-      const json = await apiFetch<{ data: Invoice[] } | Invoice[]>('/api/v1/invoices?pageSize=50');
-      return Array.isArray(json) ? json : (json.data ?? []);
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
-        <TableSkeleton columns={5} />
-      </div>
-    );
-  }
-  if (isError) {
-    return <ErrorState title={t('invoices')} onRetry={() => refetch()} />;
-  }
-
-  const rows = (data ?? []).filter((row) => !status || row.status === status);
+  const tAcc = useTranslations('accounting');
+  const tStatus = useTranslations('statuses');
+  const locale = useLocale();
+  const money = useDealerMoney();
+  const { openPdf, pdfDialog } = usePdfDownload();
+  const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
+  const label = (code: string) => {
+    try {
+      return tStatus(code as 'PENDING');
+    } catch {
+      return code.replaceAll('_', ' ').toLowerCase();
+    }
+  };
+  const isOverdue = (r: Invoice) => r.status.toUpperCase() === 'OVERDUE' || (OPEN.has(r.status.toUpperCase()) && Boolean(r.dueDate) && new Date(r.dueDate!).getTime() < Date.now() && Number(r.outstandingAmount ?? 0) > 0);
+  const outstanding = (rows: Invoice[]) => rows.reduce((acc, r) => acc + (Number(r.outstandingAmount) || 0), 0);
 
   return (
-    <div className="space-y-6">
-      <PageHero tone="soft" title={t('invoices')} description={tCommon('invoicesSubtitle')} />
-      <button type="button" className="text-sm text-brand hover:underline" onClick={() => setFilterOpen(true)}>
-        {tCommon('filter')}
-      </button>
-      <FilterPanel
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        title={tCommon('filter')}
-        onApply={() => setFilterOpen(false)}
-        onClear={() => setStatus('')}
-      >
-        {['', 'DRAFT', 'ISSUED', 'PARTIAL', 'PAID', 'OVERDUE', 'VOID'].map((s) => (
-          <FilterChip key={s || 'all'} selected={status === s} onClick={() => setStatus(s)}>
-            {s || tCommon('all')}
-          </FilterChip>
-        ))}
-      </FilterPanel>
-      {rows.length === 0 ? (
-        <MotionSection>
-          <EmptyState title={tCommon('emptyList')} />
-        </MotionSection>
-      ) : (
-        <MotionSection delayMs={60}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('outstanding')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">
-                    <Link href={`/dealer/invoices/${row.id}`} className="text-brand hover:underline">
-                      {row.number}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    {String(row.total)} {tCommon('currency')}
-                  </TableCell>
-                  <TableCell>{String(row.outstandingAmount ?? '—')}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={row.status} />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank')
-                      }
-                    >
-                      PDF
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </MotionSection>
-      )}
-    </div>
+    <>
+      <DealerListDesk<Invoice>
+        title={t('invoices')}
+        description={tAcc('invoicesHint')}
+        tone="brand"
+        queryKey={['customer-invoices']}
+        fetchPath="/api/v1/invoices?pageSize=50"
+        emptyTitle={tCommon('emptyList')}
+        emptyDescription={tCommon('invoicesSubtitle')}
+        rowHref={(row) => `/dealer/invoices/${row.id}`}
+        chips={[
+          { id: 'all', label: tCommon('all'), match: () => true },
+          { id: 'open', label: tAcc('openInvoices'), tone: 'brand', match: (r) => OPEN.has(r.status.toUpperCase()) && !isOverdue(r) },
+          { id: 'overdue', label: tAcc('overdueInvoices'), tone: 'error', match: isOverdue },
+          { id: 'paid', label: tAcc('paidInvoices'), tone: 'success', match: (r) => r.status.toUpperCase() === 'PAID' },
+        ]}
+        figures={(rows) => [
+          { label: tAcc('outstanding'), value: money(outstanding(rows)), tone: outstanding(rows) > 0 ? 'warning' : 'success' },
+          { label: tAcc('overdueInvoices'), value: rows.filter(isOverdue).length, tone: rows.filter(isOverdue).length ? 'error' : 'neutral' },
+          { label: tAcc('paidInvoices'), value: rows.filter((r) => r.status.toUpperCase() === 'PAID').length, tone: 'success' },
+        ]}
+        search={{ placeholder: tCommon('number'), match: (r, q) => r.number.toLowerCase().includes(q) }}
+        columns={[
+          {
+            key: 'number',
+            header: tCommon('number'),
+            cell: (row) => (
+              <span className="min-w-0">
+                <Ltr className="block font-semibold text-[var(--maher-text-primary)]">{row.number}</Ltr>
+                {row.issueDate ? <Ltr className="block text-[12px] text-[var(--maher-text-tertiary)]">{tAcc('issuedOn', { date: dateFmt.format(new Date(row.issueDate)) })}</Ltr> : null}
+              </span>
+            ),
+          },
+          { key: 'due', header: tAcc('dueDate'), hideBelow: 'md', cell: (row) => (row.dueDate ? <Ltr className={isOverdue(row) ? 'font-medium text-[var(--maher-error)]' : 'text-[var(--maher-text-secondary)]'}>{dateFmt.format(new Date(row.dueDate))}</Ltr> : '—') },
+          {
+            key: 'paid',
+            header: tAcc('paid'),
+            hideBelow: 'lg',
+            width: '160px',
+            cell: (row) => {
+              const total = Number(row.total) || 0;
+              const out = Number(row.outstandingAmount ?? 0) || 0;
+              return total > 0 ? <Meter value={Math.max(0, total - out)} max={total} tone={out > 0 ? 'warning' : 'success'} valueLabel={`${Math.round(((total - out) / total) * 100)}%`} /> : '—';
+            },
+          },
+          { key: 'total', header: tCommon('total'), numeric: true, cell: (row) => <Ltr className="font-semibold">{money(Number(row.total))}</Ltr> },
+          { key: 'outstanding', header: tAcc('outstanding'), numeric: true, hideBelow: 'md', cell: (row) => <Ltr className={Number(row.outstandingAmount ?? 0) > 0 ? 'font-medium text-[var(--maher-warning)]' : 'text-[var(--maher-text-tertiary)]'}>{money(Number(row.outstandingAmount ?? 0))}</Ltr> },
+          { key: 'status', header: tCommon('status'), cell: (row) => <Stamp tone={isOverdue(row) ? 'error' : tone(row.status)} size="sm">{isOverdue(row) ? tAcc('overdueInvoices') : label(row.status)}</Stamp> },
+          {
+            key: 'pdf',
+            header: '',
+            numeric: true,
+            width: '56px',
+            cell: (row) => (
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={tAcc('downloadPdf')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openPdf({ path: `/api/v1/invoices/${row.id}/pdf`, documentName: row.number, filename: `${row.number}.pdf` });
+                }}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            ),
+          },
+        ]}
+        mobileRow={(row) => ({ title: row.number, meta: `${money(Number(row.total))} · ${tAcc('outstanding')} ${money(Number(row.outstandingAmount ?? 0))}`, trailing: <Stamp tone={isOverdue(row) ? 'error' : tone(row.status)} size="sm">{label(row.status)}</Stamp> })}
+      />
+      {pdfDialog}
+    </>
   );
 }

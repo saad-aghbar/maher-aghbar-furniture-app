@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, cn } from '@maher/ui';
+import { Stamp, cn } from '@maher/ui';
 import { layoutStageGraph } from '@/lib/stage-graph-layout';
 import type { FlowMapStage } from '@/components/workflow/production-flow-map';
 import {
@@ -89,16 +89,16 @@ export function WorkflowStageList({
                   {stage.name}
                 </span>
                 {locked ? (
-                  <Badge variant="default">
+                  <Stamp tone="neutral" size="sm">
                     <span className="inline-flex items-center gap-1">
                       <Lock className="h-3 w-3" aria-hidden />
                       {t('workflow.openingLocked')}
                     </span>
-                  </Badge>
+                  </Stamp>
                 ) : (
-                  <Badge variant={stage.optional ? 'warning' : 'default'}>
+                  <Stamp tone={stage.optional ? 'warning' : 'neutral'} size="sm">
                     {stage.optional ? t('workflow.optional') : t('workflow.required')}
-                  </Badge>
+                  </Stamp>
                 )}
               </button>
               {link && onBandLinkChange ? (

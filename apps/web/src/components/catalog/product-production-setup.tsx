@@ -4,15 +4,7 @@ import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { formatProductionPreviewStep, localizedName } from '@maher/i18n';
-import {
-  Alert,
-  Button,
-  Card,
-  Input,
-  Select,
-  Skeleton,
-  StatusBadge,
-} from '@maher/ui';
+import { Alert, Board, BoardSkeleton, Button, Checkbox, Input, Select, Stamp } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -400,58 +392,41 @@ export function ProductProductionSetup({
   );
 
   if (setupQuery.isLoading) {
-    return (
-      <Card title={t('setup.title')} description={t('setup.subtitle')}>
-        <Skeleton className="h-40 w-full" />
-      </Card>
-    );
+    return <BoardSkeleton rows={5} />;
   }
   if (setupQuery.error) {
     return (
-      <Card title={t('setup.title')} description={t('setup.subtitle')}>
-        <Alert variant="error">{mutationErrorMessage(setupQuery.error)}</Alert>
-      </Card>
+      <Board tone="error">
+        <Board.Header title={t('setup.title')} description={t('setup.subtitle')} />
+        <Board.Body>
+          <Alert variant="error">{mutationErrorMessage(setupQuery.error)}</Alert>
+        </Board.Body>
+      </Board>
     );
   }
   const setup = setupQuery.data;
   if (!setup) return null;
   const savedOutputs = setup.outputs;
 
+  const setupTone = setup.status === 'READY' ? 'success' : setup.status === 'INVALID' ? 'error' : 'warning';
   return (
-    <Card
-      title={t('setup.title')}
-      description={t('setup.subtitle')}
-      actions={
-        <div className="flex items-center gap-2">
-          <StatusBadge
-            status={
-              setup.status === 'READY'
-                ? 'READY'
-                : setup.status === 'INVALID'
-                  ? 'FAILED'
-                  : 'NEEDS_REVIEW'
-            }
-            label={
-              setup.status === 'READY'
-                ? t('setup.statusReady')
-                : setup.status === 'INVALID'
-                  ? t('setup.statusInvalid')
-                  : t('setup.statusNeedsSetup')
-            }
-          />
-          <Button
-            size="sm"
-            loading={saveMutation.isPending}
-            disabled={!setup.workflow}
-            onClick={() => saveMutation.mutate()}
-          >
+    <Board tone={setupTone} wash="top">
+      <Board.Header
+        title={t('setup.title')}
+        description={t('setup.subtitle')}
+        meta={
+          <Stamp tone={setupTone} size="sm">
+            {setup.status === 'READY' ? t('setup.statusReady') : setup.status === 'INVALID' ? t('setup.statusInvalid') : t('setup.statusNeedsSetup')}
+          </Stamp>
+        }
+        actions={
+          <Button size="sm" loading={saveMutation.isPending} disabled={!setup.workflow} onClick={() => saveMutation.mutate()}>
             {t('setup.saveSetup')}
           </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        <p className="text-sm text-text-secondary">{t('setup.newOrdersOnly')}</p>
+        }
+      />
+      <Board.Body className="space-y-4">
+        <p className="text-sm text-[var(--maher-text-secondary)]">{t('setup.newOrdersOnly')}</p>
         {banner ? <Alert variant="success">{banner}</Alert> : null}
         {saveMutation.error ? (
           <Alert variant="error">
@@ -462,9 +437,9 @@ export function ProductProductionSetup({
         ) : null}
 
         {setup.issues.length ? (
-          <div className="rounded-xl border border-border p-3">
+          <div className="rounded-[12px] border border-[var(--maher-border)] p-3">
             <p className="mb-2 text-sm font-semibold">{t('setup.issues')}</p>
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="space-y-1 text-sm text-[var(--maher-text-secondary)]">
               {setup.issues.map((issue, i) => (
                 <li key={`${issue.code}-${i}`}>
                   {tErr(issue.code)}
@@ -474,20 +449,20 @@ export function ProductProductionSetup({
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-border p-3">
+        <div className="rounded-[12px] border border-[var(--maher-border)] p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">{t('setup.bomTitle')}</p>
             <a
               href="#product-bom"
-              className="text-sm font-medium text-brand underline-offset-2 hover:underline"
+              className="text-sm font-medium text-[var(--maher-brand)] underline-offset-2 hover:underline"
             >
               {t('setup.editBom')}
             </a>
           </div>
           {(setup.bomLines ?? []).length === 0 ? (
-            <p className="text-sm text-text-tertiary">{t('setup.bomEmpty')}</p>
+            <p className="text-sm text-[var(--maher-text-tertiary)]">{t('setup.bomEmpty')}</p>
           ) : (
-            <ul className="space-y-1 text-sm text-text-secondary">
+            <ul className="space-y-1 text-sm text-[var(--maher-text-secondary)]">
               {(setup.bomLines ?? []).map((line) => (
                 <li key={line.sku} className="flex items-center gap-2" dir="ltr">
                   <InventoryItemThumb src={line.imageUrl} alt="" size={28} />
@@ -504,7 +479,7 @@ export function ProductProductionSetup({
         </div>
 
         {!setup.workflow ? (
-          <p className="text-sm text-text-tertiary">{tErr('SETUP_WORKFLOW_REQUIRED')}</p>
+          <p className="text-sm text-[var(--maher-text-tertiary)]">{tErr('SETUP_WORKFLOW_REQUIRED')}</p>
         ) : (
           <>
             <div>
@@ -515,7 +490,7 @@ export function ProductProductionSetup({
                   return (
                     <span
                       key={stage.workflowNodeId}
-                      className="rounded-full border border-border px-3 py-1 text-xs"
+                      className="rounded-full border border-[var(--maher-border)] px-3 py-1 text-xs text-[var(--maher-text-secondary)]"
                     >
                       {localizedName(locale, stage)}
                       {d && produces(d.behavior) ? ` · ${t('setup.producesBadge')}` : ''}
@@ -558,7 +533,7 @@ export function ProductProductionSetup({
                   <div
                     key={stage.workflowNodeId}
                     id={`setup-stage-${stage.workflowNodeId}`}
-                    className="rounded-2xl border border-border p-4 space-y-3"
+                    className="space-y-3 rounded-[14px] border border-[var(--maher-border)] p-4"
                   >
                     <p className="font-semibold">{localizedName(locale, stage)}</p>
                     <Select
@@ -577,40 +552,22 @@ export function ProductProductionSetup({
                       options={behaviorOptionsForStage(stage.stageCode, behaviorOptions)}
                     />
                     {produces(d.behavior) ? (
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={d.consumesRawMaterials}
-                          onChange={(e) =>
-                            setDrafts((prev) => ({
+                      <Checkbox checked={d.consumesRawMaterials} onChange={(checked) => setDrafts((prev) => ({
                               ...prev,
                               [stage.workflowNodeId]: {
                                 ...d,
-                                consumesRawMaterials: e.target.checked,
+                                consumesRawMaterials: checked,
                               },
-                            }))
-                          }
-                        />
-                        {t('setup.alsoUsesMaterials')}
-                      </label>
+                            }))} label={t('setup.alsoUsesMaterials')} />
                     ) : null}
                     {d.behavior === 'PRODUCES_FINISHED' ? (
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={d.consumesSemiFinished}
-                          onChange={(e) =>
-                            setDrafts((prev) => ({
+                      <Checkbox checked={d.consumesSemiFinished} onChange={(checked) => setDrafts((prev) => ({
                               ...prev,
                               [stage.workflowNodeId]: {
                                 ...d,
-                                consumesSemiFinished: e.target.checked,
+                                consumesSemiFinished: checked,
                               },
-                            }))
-                          }
-                        />
-                        {t('setup.alsoUsesSemi')}
-                      </label>
+                            }))} label={t('setup.alsoUsesSemi')} />
                     ) : null}
                     {produces(d.behavior) ? (
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -679,13 +636,13 @@ export function ProductProductionSetup({
                           }}
                         />
                         {produces(d.behavior) ? (
-                          <div className="sm:col-span-2 space-y-2 rounded-xl border border-border p-3">
+                          <div className="sm:col-span-2 space-y-2 rounded-[12px] border border-[var(--maher-border)] p-3">
                             <p className="text-sm font-semibold">
                               {d.behavior === 'PRODUCES_FINISHED'
                                 ? t('setup.packPiecesTitle')
                                 : t('setup.piecesTitle')}
                             </p>
-                            <p className="text-xs text-text-secondary">
+                            <p className="text-xs text-[var(--maher-text-secondary)]">
                               {d.behavior === 'PRODUCES_FINISHED'
                                 ? t('setup.packPieceNamesHint')
                                 : t('setup.piecesHint')}
@@ -780,7 +737,7 @@ export function ProductProductionSetup({
                     <div>
                       <p className="mb-2 text-sm font-medium">{t('setup.rawMaterialsTitle')}</p>
                       {(setup.bomLines ?? []).length === 0 ? (
-                        <p className="text-sm text-text-tertiary">{t('setup.bomEmpty')}</p>
+                        <p className="text-sm text-[var(--maher-text-tertiary)]">{t('setup.bomEmpty')}</p>
                       ) : (
                         <div className="grid gap-2">
                           {(setup.bomLines ?? [])
@@ -799,15 +756,14 @@ export function ProductProductionSetup({
                               const currentQty = mapped ? Number(mapped.qtyPerUnit) || 0 : 0;
                               const leftForOthers = Math.max(0, available - currentQty);
                               return (
-                                <label
+                                <div
                                   key={line.sku}
                                   className="flex flex-wrap items-center gap-2 text-sm"
                                 >
-                                  <input
-                                    type="checkbox"
+                                  <Checkbox
                                     checked={Boolean(mapped)}
-                                    onChange={(e) => {
-                                      const next = e.target.checked
+                                    onChange={(checked) => {
+                                      const next = checked
                                         ? [
                                             ...d.materialInputs.filter(
                                               (row) => row.sku !== line.sku,
@@ -859,7 +815,7 @@ export function ProductProductionSetup({
                                           }));
                                         }}
                                       />
-                                      <span className="text-xs text-text-tertiary" dir="ltr">
+                                      <span className="text-xs text-[var(--maher-text-tertiary)]" dir="ltr">
                                         {t('setup.materialsRemaining', {
                                           remaining: leftForOthers,
                                           bom: line.qty,
@@ -867,14 +823,14 @@ export function ProductProductionSetup({
                                       </span>
                                     </>
                                   ) : (
-                                    <span className="text-xs text-text-tertiary" dir="ltr">
+                                    <span className="text-xs text-[var(--maher-text-tertiary)]" dir="ltr">
                                       {t('setup.materialsRemaining', {
                                         remaining: available,
                                         bom: line.qty,
                                       })}
                                     </span>
                                   )}
-                                </label>
+                                </div>
                               );
                             })}
                           {(setup.bomLines ?? []).every((line) => {
@@ -887,7 +843,7 @@ export function ProductProductionSetup({
                             );
                             return !mapped && available <= 0;
                           }) && (setup.bomLines ?? []).length > 0 ? (
-                            <p className="text-sm text-text-tertiary">
+                            <p className="text-sm text-[var(--maher-text-tertiary)]">
                               {t('setup.materialsBoardPoolEmpty')}
                             </p>
                           ) : null}
@@ -898,11 +854,11 @@ export function ProductProductionSetup({
                     (usesSemi(d.behavior) || d.consumesSemiFinished) ? (
                       <div>
                         <p className="mb-2 text-sm font-medium">{t('setup.consumeInputs')}</p>
-                        <p className="mb-2 text-xs text-text-tertiary">
+                        <p className="mb-2 text-xs text-[var(--maher-text-tertiary)]">
                           {t('setup.consumeInputsHint')}
                         </p>
                         {upstream.length === 0 ? (
-                          <p className="text-sm text-text-tertiary">
+                          <p className="text-sm text-[var(--maher-text-tertiary)]">
                             {earlierSemiExists
                               ? t('setup.takeSemiAllClaimedHint')
                               : t('setup.noUpstream')}
@@ -910,12 +866,11 @@ export function ProductProductionSetup({
                         ) : (
                           <div className="grid gap-2">
                             {upstream.map((out) => (
-                              <label key={out.id} className="flex items-center gap-2 text-sm">
-                                <input
-                                  type="checkbox"
+                              <Checkbox
+                                key={out.id}
                                   checked={d.consumeOutputIds.includes(out.id)}
-                                  onChange={(e) => {
-                                    const exclusiveNext = e.target.checked
+                                  onChange={(checked) => {
+                                    const exclusiveNext = checked
                                       ? semiOutputClaimedElsewhere(
                                           out.id,
                                           stage.workflowNodeId,
@@ -935,9 +890,8 @@ export function ProductProductionSetup({
                                       },
                                     }));
                                   }}
+                                  label={localizedName(locale, out)}
                                 />
-                                {localizedName(locale, out)}
-                              </label>
                             ))}
                           </div>
                         )}
@@ -948,10 +902,10 @@ export function ProductProductionSetup({
               })}
             </div>
 
-            <div className="rounded-2xl border border-border p-4">
+            <div className="rounded-[14px] border border-[var(--maher-border)] p-4">
               <p className="mb-2 text-sm font-semibold">{t('setup.preview')}</p>
               {(previewQuery.data?.steps ?? []).length === 0 ? (
-                <p className="text-sm text-text-tertiary">{t('setup.previewEmpty')}</p>
+                <p className="text-sm text-[var(--maher-text-tertiary)]">{t('setup.previewEmpty')}</p>
               ) : (
                 <ol className="space-y-2 text-sm">
                   {(previewQuery.data?.steps ?? []).map((step, i) => {
@@ -975,7 +929,7 @@ export function ProductProductionSetup({
             </div>
           </>
         )}
-      </div>
-    </Card>
+      </Board.Body>
+    </Board>
   );
 }

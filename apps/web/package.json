@@ -16,7 +16,10 @@
     "@maher/types": "workspace:*",
     "@maher/ui": "workspace:*",
     "@maher/workflow-domain": "workspace:^",
+    "@react-three/fiber": "^8",
+    "@shadergradient/react": "^2.4.20",
     "@tanstack/react-query": "^5.62.8",
+    "camera-controls": "^3.1.2",
     "html2canvas": "1.4.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.28.0",
@@ -24,7 +27,9 @@
     "next-intl": "^3.26.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-leaflet": "^4.2.1"
+    "react-leaflet": "^4.2.1",
+    "three": "^0.186.0",
+    "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
     "@maher/tsconfig": "workspace:*",
@@ -33,6 +38,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.186.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.22",

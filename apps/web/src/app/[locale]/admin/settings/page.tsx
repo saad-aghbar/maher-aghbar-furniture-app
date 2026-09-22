@@ -3,11 +3,36 @@
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import type { FactoryCalendarSettings } from '@/lib/scheduling';
-import { Alert, Button, Card, ErrorState, Input, PageHero, Select, Skeleton, TextArea } from '@maher/ui';
+import {
+  Alert,
+  Board,
+  BoardSkeleton,
+  Button,
+  DateField,
+  ErrorBoard,
+  FormFooter,
+  FormSection,
+  Input,
+  Ledger,
+  LedgerRow,
+  Ltr,
+  MonthCalendar,
+  NumberField,
+  QrDisplay,
+  SectionTabs,
+  SegmentedControl,
+  Select,
+  Stamp,
+  Switch,
+  TextArea,
+  type DayMeta,
+} from '@maher/ui';
+import { useKitCopy } from '@/lib/kit-copy';
+import { CalendarDays, Building2, Plug, ShieldCheck } from 'lucide-react';
 import { renderWhatsAppTemplate } from '@/lib/low-stock-review';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
@@ -78,11 +103,18 @@ const PROVIDER_OPTIONS = {
   ocr: ['mock', 'local', 'tesseract', 'openai', 'http'],
 } as const;
 
+type SettingsTab = 'company' | 'calendar' | 'integrations' | 'security';
+
 export default function SettingsPage() {
   const tc = useTranslations('catalog');
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const kit = useKitCopy();
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<SettingsTab>('company');
+  const today = new Date();
+  const [calCursor, setCalCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [companyForm, setCompanyForm] = useState<CompanySettings | null>(null);
   const [integrationsForm, setIntegrationsForm] = useState<IntegrationsSettings | null>(null);
   const [whatsappForm, setWhatsappForm] = useState<PurchasingWhatsAppSettings>(EMPTY_WHATSAPP);
@@ -311,22 +343,47 @@ export default function SettingsPage() {
     );
   }
 
+  const exceptions = useMemo(() => calendarSettingsQuery.data?.exceptions ?? [], [calendarSettingsQuery.data?.exceptions]);
+  const calendarDayMeta = useMemo<Record<string, DayMeta>>(() => {
+    const meta: Record<string, DayMeta> = {};
+    const first = new Date(calCursor.y, calCursor.m, 1);
+    const last = new Date(calCursor.y, calCursor.m + 1, 0);
+    for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+      const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      meta[ymd] = workingWeekdays.includes(d.getDay()) ? { tone: 'available' } : { tone: 'closed' };
+    }
+    for (const ex of exceptions) {
+      const ymd = String(ex.date).slice(0, 10);
+      if (ex.type === 'EXTRA_SHIFT') {
+        const overtime = Boolean(ex.shiftEnd && ex.shiftEnd > (calendarSettingsQuery.data?.shiftEnd ?? shiftEnd));
+        meta[ymd] = { tone: overtime ? 'busy' : 'available', markers: ['confirmed'] };
+      } else {
+        meta[ymd] = { tone: 'closed', markers: ['attention'] };
+      }
+    }
+    return meta;
+  }, [calCursor, workingWeekdays, exceptions, calendarSettingsQuery.data?.shiftEnd, shiftEnd]);
+
   function configuredBadge(configured?: boolean) {
-    return configured ? tc('integrationConfigured') : tc('integrationNotConfigured');
+    return (
+      <Stamp tone={configured ? 'success' : 'neutral'} size="sm">
+        {configured ? tc('integrationConfigured') : tc('integrationNotConfigured')}
+      </Stamp>
+    );
   }
 
   if (settingsQuery.isLoading || !companyForm || !integrationsForm) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} />
+        <BoardSkeleton rows={6} />
       </div>
     );
   }
 
   if (settingsQuery.isError) {
     return (
-      <ErrorState
+      <ErrorBoard
         title={tc('settings')}
         description={tCommon('loadFailed')}
         onRetry={() => settingsQuery.refetch()}
@@ -335,565 +392,335 @@ export default function SettingsPage() {
     );
   }
 
+  const workingDaysThisMonth = Object.values(calendarDayMeta).filter((m) => m.tone !== 'closed').length;
+  const closedDaysThisMonth = Object.values(calendarDayMeta).length - workingDaysThisMonth;
+
+  const tabs = [
+    { id: 'company', label: tc('company'), icon: <Building2 className="h-4 w-4" /> },
+    { id: 'calendar', label: tc('productionCalendar'), icon: <CalendarDays className="h-4 w-4" /> },
+    { id: 'integrations', label: tc('integrations'), icon: <Plug className="h-4 w-4" /> },
+    { id: 'security', label: tAuth('mfaSetup'), icon: <ShieldCheck className="h-4 w-4" /> },
+  ];
+
   return (
-    <div className="space-y-6">
-      <PageHero
-        title={tc('settings')}
-        tone="soft"
-        actions={
-          <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-            {tCommon('save')}
-          </Button>
-        }
-      />
+    <div className="maher-stagger space-y-5">
+      <Board tone="brand" wash="top" as="section">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6">
+          <div className="min-w-0">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{tc('settings')}</h1>
+            <p className="mt-1 text-[14px] leading-5 text-[var(--maher-text-secondary)]">{companyForm.nameEn || companyForm.nameAr}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Stamp tone={meQuery.data?.mfaEnabled ? 'success' : 'neutral'} size="sm">{meQuery.data?.mfaEnabled ? tAuth('mfaEnabled') : tAuth('mfaDisabled')}</Stamp>
+            <Stamp tone="info" size="sm"><Ltr>{companyForm.currency}</Ltr></Stamp>
+            <Stamp tone="info" size="sm"><Ltr>{companyForm.timezone}</Ltr></Stamp>
+          </div>
+        </div>
+      </Board>
+
+      <SectionTabs aria-label={tc('settings')} items={tabs} value={tab} onChange={(id) => setTab(id as SettingsTab)} />
+
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <Card title={tc('company')}>
-        <div className="maher-form-section grid gap-3 sm:grid-cols-2">
-          <Input
-            label={tc('nameAr')}
-            value={companyForm.nameAr}
-            onChange={(e) => setCompanyForm({ ...companyForm, nameAr: e.target.value })}
-          />
-          <Input
-            label={tc('nameEn')}
-            value={companyForm.nameEn}
-            onChange={(e) => setCompanyForm({ ...companyForm, nameEn: e.target.value })}
-          />
-          <Input
-            label={tc('phone')}
-            value={companyForm.phone}
-            onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })}
-          />
-          <Input
-            label={tc('email')}
-            value={companyForm.email}
-            onChange={(e) => setCompanyForm({ ...companyForm, email: e.target.value })}
-          />
-          <Input
-            label={tCommon('address')}
-            value={companyForm.address}
-            onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
-          />
-          <Input
-            label={tc('currencyLabel')}
-            value={companyForm.currency}
-            onChange={(e) => setCompanyForm({ ...companyForm, currency: e.target.value })}
-          />
-          <Input
-            label={tc('defaultVat')}
-            type="number"
-            value={String(companyForm.defaultVatPercent)}
-            onChange={(e) =>
-              setCompanyForm({ ...companyForm, defaultVatPercent: Number(e.target.value) })
-            }
-          />
-          <Input
-            label={tc('timezone')}
-            value={companyForm.timezone}
-            onChange={(e) => setCompanyForm({ ...companyForm, timezone: e.target.value })}
-          />
-          <Select
-            label={tc('defaultLanguage')}
-            value={companyForm.defaultLanguage}
-            onChange={(e) => setCompanyForm({ ...companyForm, defaultLanguage: e.target.value })}
-          >
-            <option value="ar">العربية</option>
-            <option value="en">English</option>
-            <option value="he">עברית</option>
-          </Select>
-          <Input
-            label={tc('quotationValidityDays')}
-            type="number"
-            value={String(companyForm.quotationValidityDays)}
-            onChange={(e) =>
-              setCompanyForm({ ...companyForm, quotationValidityDays: Number(e.target.value) })
-            }
-          />
-          <Input
-            label={tc('invoiceTermsDays')}
-            type="number"
-            value={String(companyForm.invoiceTermsDays)}
-            onChange={(e) =>
-              setCompanyForm({ ...companyForm, invoiceTermsDays: Number(e.target.value) })
-            }
-          />
-          <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input
-              type="checkbox"
-              checked={companyForm.lowStockAlertsEnabled}
-              onChange={(e) =>
-                setCompanyForm({ ...companyForm, lowStockAlertsEnabled: e.target.checked })
-              }
-            />
-            {tc('lowStockAlerts')}
-          </label>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input
-              type="checkbox"
-              checked={companyForm.autoReorderEnabled}
-              onChange={(e) =>
-                setCompanyForm({ ...companyForm, autoReorderEnabled: e.target.checked })
-              }
-            />
-            {tc('autoReorderEnabled')}
-          </label>
+      {tab === 'company' ? (
+        <div className="space-y-5">
+          <FormSection title={tc('company')} description={companyForm.address || undefined}>
+            <Input label={tc('nameAr')} value={companyForm.nameAr} onChange={(e) => setCompanyForm({ ...companyForm, nameAr: e.target.value })} dir="rtl" />
+            <Input label={tc('nameEn')} value={companyForm.nameEn} onChange={(e) => setCompanyForm({ ...companyForm, nameEn: e.target.value })} dir="ltr" />
+            <Input label={tc('phone')} value={companyForm.phone} onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })} dir="ltr" inputMode="tel" />
+            <Input label={tc('email')} value={companyForm.email} onChange={(e) => setCompanyForm({ ...companyForm, email: e.target.value })} dir="ltr" inputMode="email" />
+            <Input className="md:col-span-2" label={tCommon('address')} value={companyForm.address} onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })} />
+          </FormSection>
+          <FormSection title={tc('defaultLanguage')} description={tc('timezone')} columns={3}>
+            <Input label={tc('currencyLabel')} value={companyForm.currency} onChange={(e) => setCompanyForm({ ...companyForm, currency: e.target.value })} dir="ltr" />
+            <NumberField label={tc('defaultVat')} unit="%" value={companyForm.defaultVatPercent} onChange={(v) => setCompanyForm({ ...companyForm, defaultVatPercent: v ?? 0 })} min={0} max={100} />
+            <Input label={tc('timezone')} value={companyForm.timezone} onChange={(e) => setCompanyForm({ ...companyForm, timezone: e.target.value })} dir="ltr" />
+            <Select label={tc('defaultLanguage')} value={companyForm.defaultLanguage} onChange={(e) => setCompanyForm({ ...companyForm, defaultLanguage: e.target.value })}>
+              <option value="ar">العربية</option>
+              <option value="en">English</option>
+              <option value="he">עברית</option>
+            </Select>
+            <NumberField label={tc('quotationValidityDays')} value={companyForm.quotationValidityDays} onChange={(v) => setCompanyForm({ ...companyForm, quotationValidityDays: v ?? 0 })} min={0} />
+            <NumberField label={tc('invoiceTermsDays')} value={companyForm.invoiceTermsDays} onChange={(v) => setCompanyForm({ ...companyForm, invoiceTermsDays: v ?? 0 })} min={0} />
+          </FormSection>
+          <FormSection title={tc('lowStockAlerts')} columns={1} tone="warning">
+            <Switch label={tc('lowStockAlerts')} checked={companyForm.lowStockAlertsEnabled} onChange={(checked) => setCompanyForm({ ...companyForm, lowStockAlertsEnabled: checked })} />
+            <Switch label={tc('autoReorderEnabled')} checked={companyForm.autoReorderEnabled} onChange={(checked) => setCompanyForm({ ...companyForm, autoReorderEnabled: checked })} />
+          </FormSection>
+          <FormFooter primary={<Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>{tCommon('save')}</Button>} error={error} />
         </div>
-      </Card>
+      ) : null}
 
-      <Card title={tc('integrations')}>
-        <p className="mb-4 text-sm text-[var(--maher-text-secondary)]">{tc('integrationsHint')}</p>
-        <div className="maher-stagger grid gap-4 lg:grid-cols-2">
-          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold">{tc('integrationWhatsApp')}</h3>
-              <span className="text-xs text-[var(--maher-text-secondary)]">
-                {configuredBadge(integrationsForm.whatsappLiveConfigured)}
-              </span>
-            </div>
-            <Select
-              label={tc('provider')}
-              value={integrationsForm.whatsappProvider}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, whatsappProvider: e.target.value })
-              }
-            >
-              {PROVIDER_OPTIONS.whatsapp.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('whatsappInboundStatus')}:{' '}
-              {configuredBadge(integrationsForm.whatsappInboundConfigured)}
-            </p>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('emailInboundStatus')}:{' '}
-              {configuredBadge(integrationsForm.emailInboundConfigured)}
-            </p>
-            <Select
-              label={tc('smsProvider')}
-              value={integrationsForm.smsProvider ?? 'console'}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, smsProvider: e.target.value })
-              }
-            >
-              {PROVIDER_OPTIONS.sms.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('smsLiveStatus')}: {configuredBadge(integrationsForm.smsLiveConfigured)}
-            </p>
-          </div>
-
-          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold">{tc('integrationSmtp')}</h3>
-              <span className="text-xs text-[var(--maher-text-secondary)]">
-                {configuredBadge(integrationsForm.smtpConfigured)}
-              </span>
-            </div>
-            <Select
-              label={tc('emailProvider')}
-              value={integrationsForm.emailProvider}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, emailProvider: e.target.value })
-              }
-            >
-              {PROVIDER_OPTIONS.email.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label={tc('smtpFrom')}
-              value={integrationsForm.smtpFrom ?? ''}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, smtpFrom: e.target.value })
-              }
-              dir="ltr"
-              hint={tc('integrationSecretsEnvHint')}
-            />
-          </div>
-
-          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold">{tc('integrationOpenAi')}</h3>
-              <span className="text-xs text-[var(--maher-text-secondary)]">
-                {configuredBadge(integrationsForm.openaiConfigured)}
-              </span>
-            </div>
-            <Select
-              label={tc('aiProvider')}
-              value={integrationsForm.aiProvider}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, aiProvider: e.target.value })
-              }
-            >
-              {PROVIDER_OPTIONS.ai.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-            <Select
-              label={tc('ocrProvider')}
-              value={integrationsForm.ocrProvider}
-              onChange={(e) =>
-                setIntegrationsForm({ ...integrationsForm, ocrProvider: e.target.value })
-              }
-            >
-              {PROVIDER_OPTIONS.ocr.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('ocrLiveStatus')}: {configuredBadge(integrationsForm.ocrLiveConfigured)}
-            </p>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('ocrLocalStatus')}: {configuredBadge(integrationsForm.ocrLocalConfigured)}
-            </p>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('storageProviderStatus')}: {integrationsForm.storageProvider ?? 'local'} (
-              {configuredBadge(integrationsForm.s3Configured)})
-            </p>
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('mapsProviderStatus')}: {integrationsForm.mapsProvider ?? 'nominatim'}
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      <Card title={tc('purchasingWhatsApp')}>
-        <p className="mb-4 text-sm text-[var(--maher-text-secondary)]">{tc('purchasingWhatsAppHint')}</p>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-3">
-            <TextArea
-              label={tc('whatsappTemplate')}
-              value={whatsappForm.template}
-              onChange={(e) => setWhatsappForm({ ...whatsappForm, template: e.target.value })}
-            />
-            <p className="text-xs text-[var(--maher-text-secondary)]">{tc('templateTokens')}</p>
-            <Input
-              label={tc('signature')}
-              value={whatsappForm.signature}
-              onChange={(e) => setWhatsappForm({ ...whatsappForm, signature: e.target.value })}
-            />
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 rounded border-[var(--maher-border)]"
-                checked={whatsappForm.includePrices}
-                onChange={(e) =>
-                  setWhatsappForm({ ...whatsappForm, includePrices: e.target.checked })
-                }
-              />
-              {tc('includePrices')}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 rounded border-[var(--maher-border)]"
-                checked={whatsappForm.includeWarehouse}
-                onChange={(e) =>
-                  setWhatsappForm({ ...whatsappForm, includeWarehouse: e.target.checked })
-                }
-              />
-              {tc('includeWarehouse')}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 rounded border-[var(--maher-border)]"
-                checked={whatsappForm.includeExpectedDate}
-                onChange={(e) =>
-                  setWhatsappForm({ ...whatsappForm, includeExpectedDate: e.target.checked })
-                }
-              />
-              {tc('includeExpectedDate')}
-            </label>
-          </div>
-          <div className="rounded border border-[var(--maher-border)] p-4">
-            <p className="mb-2 text-sm font-medium">{tc('whatsappPreview')}</p>
-            <pre className="whitespace-pre-wrap text-sm" dir="ltr">
-              {renderWhatsAppTemplate(
-                whatsappForm.template ||
-                  'Hello {{supplierName}}\n{{orderNumber}}\n{{lines}}\n{{total}} {{currency}}\n{{expectedDate}}\n{{companyName}}\n{{signature}}',
-                {
-                  supplierName: 'Marka',
-                  orderNumber: 'PORD-1001',
-                  lines: whatsappForm.includePrices ? 'Oak x 2 @ 12.00' : 'Oak x 2',
-                  total: '24.00',
-                  currency: companyForm.currency,
-                  expectedDate: whatsappForm.includeExpectedDate ? '2026-09-20' : '',
-                  companyName: companyForm.nameEn || companyForm.nameAr,
-                  signature: whatsappForm.signature,
-                },
-              )}
-            </pre>
-          </div>
-        </div>
-      </Card>
-
-      <Card title={tAuth('mfaSetup')}>
-        <div className="space-y-3">
-          <p className="text-sm text-[var(--maher-text-secondary)]">{tAuth('mfaSetupHint')}</p>
-          <p className="text-sm">
-            {meQuery.data?.mfaEnabled ? tAuth('mfaEnabled') : tAuth('mfaDisabled')}
-            {meQuery.data?.mfaPending ? ' (pending confirm)' : ''}
-          </p>
-          {mfaOtpauth ? (
-            <div className="space-y-2 rounded-md border border-border p-3 text-xs break-all" dir="ltr">
-              <p>
-                {tAuth('mfaSecret')}: {mfaSecret}
-              </p>
-              <p>{mfaOtpauth}</p>
-              <Input
-                label={tAuth('mfaCode')}
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-              />
-              <Button
-                loading={mfaConfirmMutation.isPending}
-                onClick={() => mfaConfirmMutation.mutate()}
-              >
-                {tAuth('mfaConfirm')}
-              </Button>
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            {!meQuery.data?.mfaEnabled ? (
-              <Button
-                variant="secondary"
-                loading={mfaEnableMutation.isPending}
-                onClick={() => mfaEnableMutation.mutate()}
-              >
-                {tAuth('mfaEnable')}
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                loading={mfaDisableMutation.isPending}
-                onClick={() => mfaDisableMutation.mutate()}
-              >
-                {tAuth('mfaDisable')}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      <Card
-        title={tc('productionCalendar')}
-        description={tc('productionCalendarHint')}
-        actions={
-          <Button
-            size="sm"
-            loading={saveCalendarMutation.isPending}
-            onClick={() => saveCalendarMutation.mutate()}
-          >
-            {tCommon('save')}
-          </Button>
-        }
-      >
-        <div className="space-y-4">
+      {tab === 'calendar' ? (
+        <div className="space-y-5">
           {calendarError ? <Alert variant="error">{calendarError}</Alert> : null}
-          {calendarSettingsQuery.isError ? (
-            <p className="text-xs text-[var(--maher-text-secondary)]">
-              {tc('productionCalendarUnavailableHint')}
-            </p>
-          ) : null}
-          <div className="maher-form-section grid gap-3 sm:grid-cols-2">
-            <Input
-              label={tc('timezone')}
-              value={calendarTimezone}
-              onChange={(e) => setCalendarTimezone(e.target.value)}
-              dir="ltr"
-            />
-            <Input
-              label={tc('shiftStart')}
-              type="time"
-              dir="ltr"
-              value={shiftStart}
-              onChange={(e) => setShiftStart(e.target.value)}
-            />
-            <Input
-              label={tc('shiftEnd')}
-              type="time"
-              dir="ltr"
-              value={shiftEnd}
-              onChange={(e) => setShiftEnd(e.target.value)}
-            />
-            <Input
-              label={tc('deliveryBufferWorkingDays')}
-              type="number"
-              min={0}
-              max={10}
-              dir="ltr"
-              value={String(deliveryBufferWorkingDays)}
-              onChange={(e) => setDeliveryBufferWorkingDays(Number(e.target.value) || 0)}
-            />
-            <Input
-              label={tc('maxProductionEarlyWorkingDays')}
-              type="number"
-              min={0}
-              max={60}
-              dir="ltr"
-              value={String(maxProductionEarlyWorkingDays)}
-              onChange={(e) => setMaxProductionEarlyWorkingDays(Number(e.target.value) || 0)}
-            />
-            <Input
-              label={tc('targetFactoryUtilizationPercent')}
-              type="number"
-              min={1}
-              max={100}
-              dir="ltr"
-              value={String(targetFactoryUtilizationPercent)}
-              onChange={(e) => setTargetFactoryUtilizationPercent(Number(e.target.value) || 85)}
-            />
-          </div>
-          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
-            {tc('deliveryBufferWorkingDaysHint')}
-          </p>
-          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
-            {tc('maxProductionEarlyWorkingDaysHint')}
-          </p>
-          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
-            {tc('targetFactoryUtilizationPercentHint')}
-          </p>
-          <div>
-            <p className="mb-2 text-sm font-medium text-[var(--maher-text-primary)]">
-              {tc('workingWeekdays')}
-            </p>
-            <p className="mb-2 text-xs text-[var(--maher-text-secondary)]">
-              {tc('calendar.workingDaysHint')}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {WEEKDAY_KEYS.map((key, day) => {
-                const checked = workingWeekdays.includes(day);
-                return (
-                  <label
-                    key={key}
-                    className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                      checked
-                        ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
-                        : 'border-[var(--maher-border)] bg-[var(--maher-surface)] text-[var(--maher-text-secondary)]'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 accent-[var(--maher-brand)]"
-                      checked={checked}
-                      onChange={() => toggleWeekday(day)}
-                    />
-                    {tc(`weekdayShort.${key}`)}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-[var(--maher-border)] pt-4">
-            <div>
-              <p className="text-sm font-medium text-[var(--maher-text-primary)]">
-                {tc('calendar.exceptions.title')}
-              </p>
-              <p className="text-xs text-[var(--maher-text-secondary)]">
-                {tc('calendar.exceptions.hint')}
-              </p>
-            </div>
-            <div className="maher-form-section grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Input
-                label={tc('calendar.exceptions.date')}
-                type="date"
-                dir="ltr"
-                value={exceptionDate}
-                onChange={(e) => setExceptionDate(e.target.value)}
-              />
-              <Select
-                label={tc('calendar.exceptions.action')}
-                value={exceptionAction}
-                onChange={(e) =>
-                  setExceptionAction(e.target.value as 'open' | 'close' | 'overtime')
-                }
-                options={[
-                  { value: 'open', label: tc('calendar.exceptions.open') },
-                  { value: 'close', label: tc('calendar.exceptions.close') },
-                  { value: 'overtime', label: tc('calendar.exceptions.overtime') },
-                ]}
-              />
-              {exceptionAction === 'overtime' ? (
-                <Input
-                  label={tc('calendar.exceptions.overtimeUntil')}
-                  type="time"
-                  dir="ltr"
-                  value={overtimeEnd}
-                  onChange={(e) => setOvertimeEnd(e.target.value)}
-                />
-              ) : (
-                <div />
-              )}
-              <div className="flex items-end">
-                <Button
-                  size="sm"
-                  loading={addExceptionMutation.isPending}
-                  onClick={() => addExceptionMutation.mutate()}
-                >
-                  {tc('calendar.exceptions.apply')}
-                </Button>
-              </div>
-            </div>
-            <ul className="space-y-2">
-              {(calendarSettingsQuery.data?.exceptions ?? []).length === 0 ? (
-                <li className="text-xs text-[var(--maher-text-secondary)]">
-                  {tc('calendar.exceptions.empty')}
-                </li>
-              ) : (
-                (calendarSettingsQuery.data?.exceptions ?? []).map((ex) => {
-                  const date = String(ex.date).slice(0, 10);
-                  const label =
-                    ex.type === 'EXTRA_SHIFT' &&
-                    ex.shiftEnd &&
-                    ex.shiftEnd > (calendarSettingsQuery.data?.shiftEnd ?? '16:00')
-                      ? tc('calendar.exceptions.typeOvertime', {
-                          start: ex.shiftStart ?? shiftStart,
-                          end: ex.shiftEnd,
-                        })
-                      : ex.type === 'EXTRA_SHIFT'
-                        ? tc('calendar.exceptions.typeOpen')
-                        : tc('calendar.exceptions.typeClosed');
-                  return (
-                    <li
-                      key={ex.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium text-[var(--maher-text-primary)]" dir="ltr">
-                        {date} — {label}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        loading={deleteExceptionMutation.isPending}
-                        onClick={() => deleteExceptionMutation.mutate(date)}
+          {calendarSettingsQuery.isError ? <Alert variant="warning">{tc('productionCalendarUnavailableHint')}</Alert> : null}
+          <div className="grid gap-5 xl:grid-cols-12">
+            <div className="space-y-5 xl:col-span-7">
+              <FormSection title={tc('productionCalendar')} description={tc('productionCalendarHint')} columns={3}>
+                <Input label={tc('timezone')} value={calendarTimezone} onChange={(e) => setCalendarTimezone(e.target.value)} dir="ltr" />
+                <Input label={tc('shiftStart')} type="time" dir="ltr" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} />
+                <Input label={tc('shiftEnd')} type="time" dir="ltr" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} />
+                <NumberField label={tc('deliveryBufferWorkingDays')} hint={tc('deliveryBufferWorkingDaysHint')} value={deliveryBufferWorkingDays} onChange={(v) => setDeliveryBufferWorkingDays(v ?? 0)} min={0} max={10} />
+                <NumberField label={tc('maxProductionEarlyWorkingDays')} hint={tc('maxProductionEarlyWorkingDaysHint')} value={maxProductionEarlyWorkingDays} onChange={(v) => setMaxProductionEarlyWorkingDays(v ?? 0)} min={0} max={60} />
+                <NumberField label={tc('targetFactoryUtilizationPercent')} hint={tc('targetFactoryUtilizationPercentHint')} unit="%" value={targetFactoryUtilizationPercent} onChange={(v) => setTargetFactoryUtilizationPercent(v ?? 85)} min={1} max={100} />
+              </FormSection>
+              <FormSection title={tc('workingWeekdays')} description={tc('calendar.workingDaysHint')} columns={1}>
+                <div className="flex flex-wrap gap-2" role="group" aria-label={tc('workingWeekdays')}>
+                  {WEEKDAY_KEYS.map((key, day) => {
+                    const checked = workingWeekdays.includes(day);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        onClick={() => toggleWeekday(day)}
+                        className={`flex h-10 min-w-[3.25rem] items-center justify-center rounded-full border px-4 text-[13px] font-semibold transition ${
+                          checked
+                            ? 'border-[var(--maher-text-primary)] bg-[var(--maher-text-primary)] text-[var(--maher-surface)]'
+                            : 'border-[var(--maher-border)] bg-[var(--maher-surface)] text-[var(--maher-text-secondary)] hover:border-[var(--maher-brand)]'
+                        }`}
                       >
-                        {tc('calendar.exceptions.clear')}
-                      </Button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
+                        {tc(`weekdayShort.${key}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FormSection>
+              <FormSection title={tc('calendar.exceptions.title')} description={tc('calendar.exceptions.hint')} columns={3} tone="info">
+                <DateField label={tc('calendar.exceptions.date')} value={exceptionDate} onChange={setExceptionDate} copy={kit.date} locale={locale} dayMeta={calendarDayMeta} todayShortcut presentation="popover" />
+                <div className="md:col-span-2">
+                  <span className="mb-1.5 block text-[13px] font-medium text-[var(--maher-text-primary)]">{tc('calendar.exceptions.action')}</span>
+                  <SegmentedControl<'open' | 'close' | 'overtime'>
+                    fill
+                    value={exceptionAction}
+                    onChange={setExceptionAction}
+                    options={[
+                      { value: 'open', label: tc('calendar.exceptions.open') },
+                      { value: 'close', label: tc('calendar.exceptions.close') },
+                      { value: 'overtime', label: tc('calendar.exceptions.overtime') },
+                    ]}
+                  />
+                </div>
+                {exceptionAction === 'overtime' ? (
+                  <Input label={tc('calendar.exceptions.overtimeUntil')} type="time" dir="ltr" value={overtimeEnd} onChange={(e) => setOvertimeEnd(e.target.value)} />
+                ) : null}
+                <div className="flex items-end md:col-span-3">
+                  <Button size="sm" disabled={!exceptionDate} loading={addExceptionMutation.isPending} onClick={() => addExceptionMutation.mutate()}>
+                    {tc('calendar.exceptions.apply')}
+                  </Button>
+                </div>
+                {exceptions.length ? (
+                  <Ledger className="md:col-span-3">
+                    {exceptions.map((ex) => {
+                      const date = String(ex.date).slice(0, 10);
+                      const overtime = ex.type === 'EXTRA_SHIFT' && ex.shiftEnd && ex.shiftEnd > (calendarSettingsQuery.data?.shiftEnd ?? '16:00');
+                      const label = overtime
+                        ? tc('calendar.exceptions.typeOvertime', { start: ex.shiftStart ?? shiftStart, end: ex.shiftEnd ?? '' })
+                        : ex.type === 'EXTRA_SHIFT'
+                          ? tc('calendar.exceptions.typeOpen')
+                          : tc('calendar.exceptions.typeClosed');
+                      return (
+                        <LedgerRow
+                          key={ex.id}
+                          label={<Ltr>{new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${date}T00:00:00`))}</Ltr>}
+                          hint={label}
+                          tone={ex.type === 'EXTRA_SHIFT' ? (overtime ? 'warning' : 'success') : 'error'}
+                          stamp
+                          value={
+                            <Button size="sm" variant="ghost" loading={deleteExceptionMutation.isPending && deleteExceptionMutation.variables === date} onClick={() => deleteExceptionMutation.mutate(date)}>
+                              {tc('calendar.exceptions.clear')}
+                            </Button>
+                          }
+                        />
+                      );
+                    })}
+                  </Ledger>
+                ) : (
+                  <p className="text-[13px] text-[var(--maher-text-tertiary)] md:col-span-3">{tc('calendar.exceptions.empty')}</p>
+                )}
+              </FormSection>
+            </div>
+            <div className="xl:col-span-5">
+              <Board tone="brand" className="xl:sticky xl:top-24">
+                <Board.Header
+                  title={tc('productionCalendar')}
+                  description={`${shiftStart}–${shiftEnd}`}
+                  meta={
+                    <span className="flex gap-1">
+                      <Stamp tone="success" size="sm">{workingDaysThisMonth}</Stamp>
+                      <Stamp tone="neutral" size="sm">{closedDaysThisMonth}</Stamp>
+                    </span>
+                  }
+                />
+                <Board.Body>
+                  <MonthCalendar
+                    embedded
+                    variant="admin"
+                    locale={locale}
+                    monthCursor={calCursor}
+                    onMonthChange={setCalCursor}
+                    value={exceptionDate}
+                    onSelect={setExceptionDate}
+                    dayMeta={calendarDayMeta}
+                    prevLabel={kit.date.prevMonth}
+                    nextLabel={kit.date.nextMonth}
+                  />
+                </Board.Body>
+                <Board.Footer>
+                  <Button size="sm" loading={saveCalendarMutation.isPending} onClick={() => saveCalendarMutation.mutate()}>
+                    {tCommon('save')}
+                  </Button>
+                </Board.Footer>
+              </Board>
+            </div>
           </div>
         </div>
-      </Card>
+      ) : null}
+
+      {tab === 'integrations' ? (
+        <div className="space-y-5">
+          <p className="text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('integrationsHint')}</p>
+          <div className="maher-stagger grid gap-5 lg:grid-cols-3">
+            <Board tone={integrationsForm.whatsappLiveConfigured ? 'success' : 'neutral'}>
+              <Board.Header title={tc('integrationWhatsApp')} meta={configuredBadge(integrationsForm.whatsappLiveConfigured)} />
+              <Board.Body className="space-y-3">
+                <Select label={tc('provider')} value={integrationsForm.whatsappProvider} onChange={(e) => setIntegrationsForm({ ...integrationsForm, whatsappProvider: e.target.value })}>
+                  {PROVIDER_OPTIONS.whatsapp.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <Select label={tc('smsProvider')} value={integrationsForm.smsProvider ?? 'console'} onChange={(e) => setIntegrationsForm({ ...integrationsForm, smsProvider: e.target.value })}>
+                  {PROVIDER_OPTIONS.sms.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <Ledger>
+                  <LedgerRow label={tc('whatsappInboundStatus')} value={configuredBadge(integrationsForm.whatsappInboundConfigured)} />
+                  <LedgerRow label={tc('emailInboundStatus')} value={configuredBadge(integrationsForm.emailInboundConfigured)} />
+                  <LedgerRow label={tc('smsLiveStatus')} value={configuredBadge(integrationsForm.smsLiveConfigured)} />
+                </Ledger>
+              </Board.Body>
+            </Board>
+            <Board tone={integrationsForm.smtpConfigured ? 'success' : 'neutral'}>
+              <Board.Header title={tc('integrationSmtp')} meta={configuredBadge(integrationsForm.smtpConfigured)} />
+              <Board.Body className="space-y-3">
+                <Select label={tc('emailProvider')} value={integrationsForm.emailProvider} onChange={(e) => setIntegrationsForm({ ...integrationsForm, emailProvider: e.target.value })}>
+                  {PROVIDER_OPTIONS.email.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <Input label={tc('smtpFrom')} value={integrationsForm.smtpFrom ?? ''} onChange={(e) => setIntegrationsForm({ ...integrationsForm, smtpFrom: e.target.value })} dir="ltr" hint={tc('integrationSecretsEnvHint')} />
+              </Board.Body>
+            </Board>
+            <Board tone={integrationsForm.openaiConfigured ? 'success' : 'neutral'}>
+              <Board.Header title={tc('integrationOpenAi')} meta={configuredBadge(integrationsForm.openaiConfigured)} />
+              <Board.Body className="space-y-3">
+                <Select label={tc('aiProvider')} value={integrationsForm.aiProvider} onChange={(e) => setIntegrationsForm({ ...integrationsForm, aiProvider: e.target.value })}>
+                  {PROVIDER_OPTIONS.ai.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <Select label={tc('ocrProvider')} value={integrationsForm.ocrProvider} onChange={(e) => setIntegrationsForm({ ...integrationsForm, ocrProvider: e.target.value })}>
+                  {PROVIDER_OPTIONS.ocr.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <Ledger>
+                  <LedgerRow label={tc('ocrLiveStatus')} value={configuredBadge(integrationsForm.ocrLiveConfigured)} />
+                  <LedgerRow label={tc('ocrLocalStatus')} value={configuredBadge(integrationsForm.ocrLocalConfigured)} />
+                  <LedgerRow label={tc('storageProviderStatus')} hint={<Ltr>{integrationsForm.storageProvider ?? 'local'}</Ltr>} value={configuredBadge(integrationsForm.s3Configured)} />
+                  <LedgerRow label={tc('mapsProviderStatus')} value={<Ltr>{integrationsForm.mapsProvider ?? 'nominatim'}</Ltr>} />
+                </Ledger>
+              </Board.Body>
+            </Board>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <FormSection title={tc('purchasingWhatsApp')} description={tc('purchasingWhatsAppHint')} columns={1}>
+              <TextArea label={tc('whatsappTemplate')} value={whatsappForm.template} onChange={(e) => setWhatsappForm({ ...whatsappForm, template: e.target.value })} rows={6} />
+              <p className="-mt-2 text-[12px] text-[var(--maher-text-tertiary)]">{tc('templateTokens')}</p>
+              <Input label={tc('signature')} value={whatsappForm.signature} onChange={(e) => setWhatsappForm({ ...whatsappForm, signature: e.target.value })} />
+              <Switch label={tc('includePrices')} checked={whatsappForm.includePrices} onChange={(checked) => setWhatsappForm({ ...whatsappForm, includePrices: checked })} />
+              <Switch label={tc('includeWarehouse')} checked={whatsappForm.includeWarehouse} onChange={(checked) => setWhatsappForm({ ...whatsappForm, includeWarehouse: checked })} />
+              <Switch label={tc('includeExpectedDate')} checked={whatsappForm.includeExpectedDate} onChange={(checked) => setWhatsappForm({ ...whatsappForm, includeExpectedDate: checked })} />
+            </FormSection>
+            <Board variant="ink" tone="success">
+              <Board.Header title={tc('whatsappPreview')} />
+              <Board.Body>
+                <pre className="whitespace-pre-wrap font-sans text-[14px] leading-6" dir="ltr">
+                  {renderWhatsAppTemplate(
+                    whatsappForm.template ||
+                      'Hello {{supplierName}}\n{{orderNumber}}\n{{lines}}\n{{total}} {{currency}}\n{{expectedDate}}\n{{companyName}}\n{{signature}}',
+                    {
+                      supplierName: 'Marka',
+                      orderNumber: 'PORD-1001',
+                      lines: whatsappForm.includePrices ? 'Oak x 2 @ 12.00' : 'Oak x 2',
+                      total: '24.00',
+                      currency: companyForm.currency,
+                      expectedDate: whatsappForm.includeExpectedDate ? '2026-09-20' : '',
+                      companyName: companyForm.nameEn || companyForm.nameAr,
+                      signature: whatsappForm.signature,
+                    },
+                  )}
+                </pre>
+              </Board.Body>
+            </Board>
+          </div>
+          <FormFooter primary={<Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>{tCommon('save')}</Button>} error={error} />
+        </div>
+      ) : null}
+
+      {tab === 'security' ? (
+        <div className="grid gap-5 lg:grid-cols-12">
+          <Board tone={meQuery.data?.mfaEnabled ? 'success' : 'warning'} wash="top" className="lg:col-span-7">
+            <Board.Header
+              title={tAuth('mfaSetup')}
+              description={tAuth('mfaSetupHint')}
+              meta={<Stamp tone={meQuery.data?.mfaEnabled ? 'success' : meQuery.data?.mfaPending ? 'warning' : 'neutral'} size="sm">{meQuery.data?.mfaEnabled ? tAuth('mfaEnabled') : meQuery.data?.mfaPending ? tAuth('mfaConfirm') : tAuth('mfaDisabled')}</Stamp>}
+            />
+            <Board.Body className="space-y-4">
+              {mfaOtpauth ? (
+                <div className="grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+                  <QrDisplay value={mfaOtpauth} size={168} caption={tAuth('mfaSecret')} />
+                  <div className="space-y-3">
+                    <Ledger>
+                      <LedgerRow label={tAuth('mfaSecret')} value={<Ltr wrap className="font-mono text-[12px]">{mfaSecret}</Ltr>} />
+                    </Ledger>
+                    <Input label={tAuth('mfaCode')} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} dir="ltr" inputMode="numeric" autoComplete="one-time-code" />
+                    <Button loading={mfaConfirmMutation.isPending} onClick={() => mfaConfirmMutation.mutate()}>
+                      {tAuth('mfaConfirm')}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </Board.Body>
+            <Board.Footer>
+              {!meQuery.data?.mfaEnabled ? (
+                <Button variant="secondary" loading={mfaEnableMutation.isPending} onClick={() => mfaEnableMutation.mutate()}>
+                  {tAuth('mfaEnable')}
+                </Button>
+              ) : (
+                <Button variant="secondary" loading={mfaDisableMutation.isPending} onClick={() => mfaDisableMutation.mutate()}>
+                  {tAuth('mfaDisable')}
+                </Button>
+              )}
+            </Board.Footer>
+          </Board>
+        </div>
+      ) : null}
     </div>
   );
 }

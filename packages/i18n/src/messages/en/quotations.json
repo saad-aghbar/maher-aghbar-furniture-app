@@ -85,5 +85,16 @@
     "EXPIRED": "Expired",
     "REVISION_REQUESTED": "Revision requested",
     "CANCELLED": "Cancelled"
-  }
+  },
+  "requestsHint": "Price requests you sent to the atelier and where each one stands.",
+  "requestQuoteCta": "Request a quote",
+  "awaitingYou": "Awaiting you",
+  "laneOpen": "Open",
+  "laneQuoted": "Quoted",
+  "laneClosed": "Closed",
+  "laneSent": "To review",
+  "laneAccepted": "Accepted",
+  "laneRejected": "Declined",
+  "laneExpired": "Expired",
+  "laneDraft": "Drafts"
 }

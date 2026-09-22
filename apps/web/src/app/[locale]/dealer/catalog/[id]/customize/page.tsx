@@ -1,12 +1,11 @@
 'use client';
 
-import { BackButton } from '@/components/back-button';
 import { useOrderBasket } from '@/components/order-basket-provider';
 import { apiFetch } from '@/lib/api-client';
 import { emptyBasketLine, type BasketLine, type BasketOption } from '@/lib/basket';
 import { mediaSrc } from '@/lib/media';
 import { useRouter } from '@/i18n/navigation';
-import { Button, Card, Input, PageHero, Select } from '@maher/ui';
+import { Board, BoardSkeleton, Button, Combobox, DetailHero, FormFooter, FormSection, Ledger, LedgerRow, Ltr, NumberField, Stamp } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -69,6 +68,7 @@ function CustomizeForm({ productId }: { productId: string }) {
   const locale = useLocale();
   const tc = useTranslations('catalog');
   const tNav = useTranslations('navigation');
+  const tCommon = useTranslations('common');
   const router = useRouter();
   const search = useSearchParams();
   const basket = useOrderBasket();
@@ -186,73 +186,90 @@ function CustomizeForm({ productId }: { productId: string }) {
     router.push('/dealer/basket');
   }
 
+  const chosen = grouped
+    .map(({ group, values: opts }) => {
+      const picked = line.options.find((o) => o.groupId === group.id || o.groupCode === group.code);
+      const value = opts.find((v) => v.id === picked?.specOptionValueId);
+      return value ? { key: group.id, label: localizedName(locale, group), value: localizedName(locale, value) } : null;
+    })
+    .filter(Boolean) as Array<{ key: string; label: string; value: string }>;
+  const dims = [line.dimWidth, line.dimHeight, line.dimDepth].filter(Boolean).join(' × ');
+  const num = (v: string) => (v === '' ? null : Number(v));
+  const str = (v: number | null) => (v == null ? '' : String(v));
+
   return (
-    <div className="space-y-6">
-      <BackButton fallbackHref={`/catalog/${productId}`} />
-      <PageHero tone="soft" title={tNav('customize')} description={localizedName(locale, product)} />
-      <Card className="space-y-4">
-        {product.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaSrc(product.imageUrl) ?? ''} alt="" className="h-28 w-28 rounded-xl object-cover" />
-        ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label={tc('dimWidth')}
-            value={line.dimWidth}
-            onChange={(e) => setLine({ ...line, dimWidth: e.target.value, modifiedByDealer: true })}
-            dir="ltr"
-          />
-          <Input
-            label={tc('dimHeight')}
-            value={line.dimHeight}
-            onChange={(e) => setLine({ ...line, dimHeight: e.target.value, modifiedByDealer: true })}
-            dir="ltr"
-          />
-          <Input
-            label={tc('dimDepth')}
-            value={line.dimDepth}
-            onChange={(e) => setLine({ ...line, dimDepth: e.target.value, modifiedByDealer: true })}
-            dir="ltr"
-          />
-          <Input
-            label={tc('seatHeight')}
-            value={line.dimSeat}
-            onChange={(e) => setLine({ ...line, dimSeat: e.target.value, modifiedByDealer: true })}
-            dir="ltr"
-          />
-          <Input
-            label={tc('quantity')}
-            value={line.quantity}
-            onChange={(e) => setLine({ ...line, quantity: e.target.value })}
-            dir="ltr"
-          />
+    <div className="maher-stagger space-y-5">
+      <DetailHero
+        tone="warning"
+        back={{ label: localizedName(locale, product), onClick: () => router.push(`/dealer/catalog/${productId}`) }}
+        title={tNav('customize')}
+        subtitle={localizedName(locale, product)}
+        status={{ label: tc('basketLineModified'), tone: 'warning' }}
+        media={
+          product.imageUrl ? (
+            <span className="block h-16 w-16 overflow-hidden rounded-[14px] bg-[var(--maher-surface-muted)] sm:h-20 sm:w-20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mediaSrc(product.imageUrl) ?? ''} alt="" className="h-full w-full object-cover" />
+            </span>
+          ) : undefined
+        }
+        facts={[
+          { label: tc('quantity'), value: line.quantity || '1', ltr: true },
+          ...(dims ? [{ label: tc('dimensions'), value: `${dims} cm`, ltr: true }] : []),
+          ...(chosen.length ? [{ label: tc('variants'), value: `${chosen.length}` }] : []),
+        ]}
+        primary={<Button onClick={save}>{tc('addToBasket')}</Button>}
+      />
+
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-8">
+          <FormSection title={tc('dimensions')} columns={3}>
+            <NumberField label={tc('dimWidth')} unit="cm" value={num(line.dimWidth)} onChange={(v) => setLine({ ...line, dimWidth: str(v), modifiedByDealer: true })} min={0} />
+            <NumberField label={tc('dimHeight')} unit="cm" value={num(line.dimHeight)} onChange={(v) => setLine({ ...line, dimHeight: str(v), modifiedByDealer: true })} min={0} />
+            <NumberField label={tc('dimDepth')} unit="cm" value={num(line.dimDepth)} onChange={(v) => setLine({ ...line, dimDepth: str(v), modifiedByDealer: true })} min={0} />
+            <NumberField label={tc('seatHeight')} unit="cm" value={num(line.dimSeat)} onChange={(v) => setLine({ ...line, dimSeat: str(v), modifiedByDealer: true })} min={0} />
+            <NumberField label={tc('quantity')} value={num(line.quantity) ?? 1} onChange={(v) => setLine({ ...line, quantity: String(Math.max(1, Math.round(v ?? 1))) })} min={1} step={1} decimals={0} />
+          </FormSection>
+          {grouped.some(({ values: opts }) => opts.length) ? (
+            <FormSection title={tc('variants')} columns={2}>
+              {grouped.map(({ group, values: opts }) =>
+                opts.length ? (
+                  <Combobox<string>
+                    key={group.id}
+                    label={localizedName(locale, group)}
+                    value={line.options.find((o) => o.groupId === group.id || o.groupCode === group.code)?.specOptionValueId ?? null}
+                    onChange={(value) => setOption(group, value ?? '')}
+                    placeholder={tc('emptyValue')}
+                    clearable
+                    options={opts.map((opt) => ({ value: opt.id, label: localizedName(locale, opt) }))}
+                  />
+                ) : null,
+              )}
+            </FormSection>
+          ) : null}
+          <FormFooter primary={<Button onClick={save}>{tc('addToBasket')}</Button>} secondary={<Button variant="ghost" onClick={() => router.push(`/dealer/catalog/${productId}`)}>{tCommon('cancel')}</Button>} dirty={Boolean(line.modifiedByDealer)} />
         </div>
-        {grouped.map(({ group, values: opts }) =>
-          opts.length ? (
-            <Select
-              key={group.id}
-              label={localizedName(locale, group)}
-              value={line.options.find((o) => o.groupId === group.id || o.groupCode === group.code)?.specOptionValueId ?? ''}
-              onChange={(e) => setOption(group, e.target.value)}
-            >
-              <option value="">{tc('emptyValue')}</option>
-              {opts.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {localizedName(locale, opt)}
-                </option>
+        <div className="xl:col-span-4">
+          <Board tone="warning" wash="top" className="xl:sticky xl:top-28">
+            <Board.Header title={localizedName(locale, product)} meta={<Stamp tone="warning" size="sm">{tc('basketLineModified')}</Stamp>} />
+            <Ledger className="px-5 pb-3">
+              <LedgerRow label={tc('quantity')} value={<Ltr>{line.quantity || '1'}</Ltr>} />
+              {dims ? <LedgerRow label={tc('dimensions')} value={<Ltr>{dims} cm</Ltr>} /> : null}
+              {line.dimSeat ? <LedgerRow label={tc('seatHeight')} value={<Ltr>{line.dimSeat} cm</Ltr>} /> : null}
+              {chosen.map((c) => (
+                <LedgerRow key={c.key} label={c.label} value={c.value} tone="brand" stamp />
               ))}
-            </Select>
-          ) : null,
-        )}
-        <Button onClick={save}>{tc('addToBasket')}</Button>
-      </Card>
+            </Ledger>
+          </Board>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function CustomizePage({ params }: { params: { id: string } }) {
   return (
-    <Suspense fallback={<p>…</p>}>
+    <Suspense fallback={<BoardSkeleton rows={6} />}>
       <CustomizeForm productId={params.id} />
     </Suspense>
   );

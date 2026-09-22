@@ -194,6 +194,20 @@ export type ManagementSummaryPayload = {
     grossMfgDifference: number | null;
   } | null;
   activity: MgmtEvent[];
+  /** Day-bucketed series used by the web desk; mobile ignores it today. */
+  series?: {
+    completedLast7: Array<{ date: string; count: number }>;
+    dueNext7: Array<{ date: string; count: number }>;
+    deliveriesNext7: Array<{ date: string; count: number }>;
+    qualityLast14: Array<{ date: string; passed: number; failed: number }>;
+    paymentsLast30: Array<{ date: string; amount: number }> | null;
+    stageDurations: Array<{
+      stageCode: string;
+      stageName: string;
+      avgMinutes: number;
+      samples: number;
+    }> | null;
+  } | null;
   generatedAt: string;
 };
 

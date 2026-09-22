@@ -89,8 +89,8 @@ export function Modal({
         aria-labelledby={title ? titleId : undefined}
         className={cn(
           closing ? 'maher-animate-pop-out' : 'maher-animate-pop',
-          'relative z-10 flex max-h-[90vh] w-full flex-col rounded-[var(--maher-radius-xl)]',
-          'border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-lg)]',
+          'maher-board relative z-10 flex max-h-[90vh] w-full flex-col rounded-[18px]',
+          'border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-board-hover)]',
           // A caller-supplied max-width wins over the size preset (cn does not merge conflicts)
           !className?.includes('max-w-') && sizeClasses[size],
           className,

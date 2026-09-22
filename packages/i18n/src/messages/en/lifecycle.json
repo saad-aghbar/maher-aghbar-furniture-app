@@ -190,5 +190,26 @@
     "action_open_returns": "Open returns",
     "action_review_finance": "Review finance",
     "action_review_semi": "Review SEMI"
+  },
+  "returnDesk": {
+    "photos": "Photos",
+    "lifecycle": "Return lifecycle",
+    "markSent": "Dealer sent it",
+    "markSentConfirm": "Mark the furniture as on its way to the factory? Nothing moves in stock yet.",
+    "linkedWork": "Linked work orders",
+    "piecesDone": "{done} of {total} pieces closed",
+    "decisionRepair": "Repair",
+    "decisionReplacement": "Replace",
+    "decisionRecovery": "Scrap & recover",
+    "openReturn": "Open return",
+    "attentionChip": "Attention",
+    "allChip": "All",
+    "closedChip": "Closed",
+    "inFactoryChip": "In factory",
+    "waitingChip": "Waiting return",
+    "reviewChip": "To review",
+    "chargesChip": "Charges",
+    "openCount": "Open",
+    "chargesPending": "Charges pending"
   }
 }

@@ -1,35 +1,46 @@
 'use client';
 
-import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { PageHeader } from '@/components/admin/page-header';
-import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { ApiClientError, apiFetch } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
+import { useListParams } from '@/lib/use-list-params';
 import {
   Alert,
+  Board,
+  BoardSkeleton,
   Button,
-  EmptyState,
-  ErrorState,
+  Checkbox,
+  Combobox,
+  ConfirmDialog,
+  DataBoard,
+  ErrorBoard,
+  Figure,
   Input,
-  Modal,
-  Select,
-  Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  TableSkeleton,
+  ListToolbar,
+  Menu,
+  NumberField,
+  Pagination,
+  SegmentedControl,
+  Sheet,
+  Stamp,
+  StatusChips,
+  Switch,
+  TextArea,
+  useToast,
+  type DataColumn,
 } from '@maher/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { LayoutGrid, List, MoreHorizontal, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, useMemo, useState, type ReactNode } from 'react';
 
 export interface CrudColumn<T> {
   key: string;
   header: string;
   render: (row: T) => ReactNode;
+  numeric?: boolean;
+  hideBelow?: 'md' | 'lg' | 'xl';
+  width?: string;
 }
 
 export interface CrudField {
@@ -37,12 +48,28 @@ export interface CrudField {
   label: string;
   type?: 'text' | 'number' | 'checkbox' | 'select' | 'textarea' | 'multiselect';
   required?: boolean;
-  options?: Array<{ value: string; label: string }>;
+  options?: Array<{ value: string; label: string; description?: string }>;
   hint?: string;
+  /** `ltr` for codes/SKUs, `rtl` for Arabic/Hebrew names. */
+  dir?: 'ltr' | 'rtl';
+  /** Put two fields on one row. */
+  half?: boolean;
+}
+
+export type CrudFormValue = string | boolean | number | string[];
+export type CrudForm = Record<string, CrudFormValue>;
+
+export interface CrudChip {
+  id: string;
+  label: string;
+  count?: number | null;
+  /** Query params applied to the list when the chip is active. */
+  params: Record<string, string>;
 }
 
 interface MasterCrudPageProps<T extends { id: string }> {
   title: string;
+  description?: string;
   queryKey: string;
   listPath: string;
   createPath?: string;
@@ -53,14 +80,48 @@ interface MasterCrudPageProps<T extends { id: string }> {
   columns: CrudColumn<T>[];
   fields: CrudField[];
   emptyTitle: string;
-  mapRowToForm?: (row: T) => Record<string, string | boolean | number | string[]>;
-  buildPayload?: (form: Record<string, string | boolean | number | string[]>) => Record<string, unknown>;
+  emptyDescription?: string;
+  mapRowToForm?: (row: T) => CrudForm;
+  buildPayload?: (form: CrudForm) => Record<string, unknown>;
   activeField?: keyof T;
+  /** Server supports `isActive=true|false` — shows the All / Active / Inactive control. */
+  activeFilter?: boolean;
+  /** Category chips above the list (single-select). */
+  chips?: CrudChip[];
+  /** Optional tile renderer; enables the grid/list toggle (fabric swatches, colors). */
+  tile?: (row: T, open: () => void) => ReactNode;
+  /** Hero figures: computed from the current page's rows unless `stats` is passed. */
+  stats?: Array<{ label: string; value: ReactNode; tone?: 'brand' | 'success' | 'warning' | 'error' | 'info' | 'neutral' }>;
   extraActions?: (row: T, refresh: () => void) => ReactNode;
+  /** Extra row menu items. */
+  rowMenu?: (row: T, refresh: () => void) => Array<{ id: string; label: string; icon?: ReactNode; onSelect?: () => void; href?: string; tone?: 'default' | 'error'; disabled?: boolean }>;
+  /** Mobile row summary. */
+  mobileRow?: (row: T) => { title: ReactNode; meta?: ReactNode; trailing?: ReactNode; leading?: ReactNode };
+  primaryLabel?: string;
+  pageSize?: number;
+  tone?: 'brand' | 'success' | 'warning' | 'error' | 'info' | 'neutral';
 }
 
-export function MasterCrudPage<T extends { id: string }>({
+const readActive = (v: unknown): boolean | undefined => (v === undefined || v === null ? undefined : typeof v === 'string' ? v === 'ACTIVE' || v.toLowerCase() === 'true' : Boolean(v));
+
+/**
+ * MasterBoard — every master-data page (materials, fabrics, spec options, suppliers,
+ * warehouses…) on one recipe: hero figures, toolbar, DataBoard or tile grid,
+ * create/edit Sheet, activate/deactivate stamps, confirm dialogs, URL-synced filters.
+ */
+export function MasterCrudPage<T extends { id: string }>(props: MasterCrudPageProps<T>) {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={6} />}>
+      <MasterBoardInner {...props} />
+    </Suspense>
+  );
+}
+
+export const MasterBoard = MasterCrudPage;
+
+function MasterBoardInner<T extends { id: string }>({
   title,
+  description,
   queryKey,
   listPath,
   createPath,
@@ -71,75 +132,62 @@ export function MasterCrudPage<T extends { id: string }>({
   columns,
   fields,
   emptyTitle,
+  emptyDescription,
   mapRowToForm,
   buildPayload,
   activeField,
+  activeFilter,
+  chips,
+  tile,
+  stats,
   extraActions,
+  rowMenu,
+  mobileRow,
+  primaryLabel,
+  pageSize = 24,
+  tone = 'brand',
 }: MasterCrudPageProps<T>) {
   const tCommon = useTranslations('common');
   const tVal = useTranslations('validation');
-  const queryClient = useQueryClient();
-  const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
+  const kit = useKitCopy();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { params, set, reset, activeCount } = useListParams({ defaults: { q: '', active: '' as '' | 'true' | 'false', chip: '', view: (tile ? 'grid' : 'list') as 'grid' | 'list', page: 1, pageSize } });
+
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
-  const [form, setForm] = useState<Record<string, string | boolean | number | string[]>>({});
+  const [form, setForm] = useState<CrudForm>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{ type: 'activate' | 'deactivate' | 'delete'; row: T } | null>(
-    null,
-  );
+  const [confirm, setConfirm] = useState<{ type: 'activate' | 'deactivate' | 'delete'; row: T } | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!banner) return;
-    const timer = setTimeout(() => setBanner(null), 4000);
-    return () => clearTimeout(timer);
-  }, [banner]);
-
+  const chip = chips?.find((c) => c.id === params.chip);
   const listParams = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
-    if (q.trim()) params.set('q', q.trim());
-    return params.toString();
-  }, [q, page]);
+    const sp = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+    if (params.q.trim()) sp.set('q', params.q.trim());
+    if (activeFilter && params.active) sp.set('isActive', params.active);
+    for (const [k, v] of Object.entries(chip?.params ?? {})) if (v) sp.set(k, v);
+    return sp.toString();
+  }, [params, activeFilter, chip]);
 
-  const listQuery = useQuery({
+  const list = useQuery({
     queryKey: [queryKey, listParams],
     queryFn: async () => {
-      const json = await apiFetch<{ data: T[]; meta?: { page: number; totalPages: number } } | T[]>(
-        `${listPath}${listPath.includes('?') ? '&' : '?'}${listParams}`,
-      );
-      if (Array.isArray(json)) return { data: json, meta: undefined };
-      return json;
+      const json = await apiFetch<{ data: T[]; meta?: { page: number; totalPages: number; totalItems?: number } } | T[]>(`${listPath}${listPath.includes('?') ? '&' : '?'}${listParams}`);
+      return Array.isArray(json) ? { data: json, meta: undefined } : json;
     },
     placeholderData: keepPreviousData,
   });
 
-  const defaults = () =>
-    Object.fromEntries(
-      fields.map((f) => [
-        f.name,
-        f.type === 'checkbox'
-          ? true
-          : f.type === 'multiselect'
-            ? []
-            : f.type === 'number'
-              ? 0
-              : (f.options?.[0]?.value ?? ''),
-      ]),
-    );
+  const refresh = () => qc.invalidateQueries({ queryKey: [queryKey] });
+  const defaults = (): CrudForm => Object.fromEntries(fields.map((f) => [f.name, f.type === 'checkbox' ? true : f.type === 'multiselect' ? [] : f.type === 'number' ? 0 : (f.options?.[0]?.value ?? '')]));
+  const openCreate = () => (setEditing(null), setForm(defaults()), setFormError(null), setFormOpen(true));
+  const openEdit = (row: T) => (setEditing(row), setForm(mapRowToForm ? mapRowToForm(row) : defaults()), setFormError(null), setFormOpen(true));
 
-  const saveMutation = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
       for (const field of fields) {
-        if (
-          field.required &&
-          field.type !== 'checkbox' &&
-          field.type !== 'multiselect' &&
-          !String(form[field.name] ?? '').trim()
-        ) {
-          throw new ApiClientError(tVal('fieldRequired', { field: field.label }), 400);
-        }
+        if (field.required && field.type !== 'checkbox' && field.type !== 'multiselect' && !String(form[field.name] ?? '').trim()) throw new ApiClientError(tVal('fieldRequired', { field: field.label }), 400);
       }
       const payload = buildPayload
         ? buildPayload(form)
@@ -152,369 +200,310 @@ export function MasterCrudPage<T extends { id: string }>({
               return [f.name, typeof v === 'string' ? v.trim() || undefined : v];
             }),
           );
-      if (editing && patchPath) {
-        return apiFetch(patchPath(editing.id), { method: 'PATCH', body: JSON.stringify(payload) });
-      }
+      if (editing && patchPath) return apiFetch(patchPath(editing.id), { method: 'PATCH', body: JSON.stringify(payload) });
       if (!createPath) throw new ApiClientError(tVal('createNotSupported'), 400);
       return apiFetch(createPath, { method: 'POST', body: JSON.stringify(payload) });
     },
     onSuccess: async () => {
       setFormError(null);
-      await queryClient.invalidateQueries({ queryKey: [queryKey] });
+      await refresh();
       setFormOpen(false);
       setEditing(null);
-      setBanner(tCommon('saved'));
+      toast.success(tCommon('saved'));
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
-  const actionMutation = useMutation({
+  const action = useMutation({
     mutationFn: async () => {
       if (!confirm) return;
-      if (confirm.type === 'delete' && deletePath) {
-        return apiFetch(deletePath(confirm.row.id), { method: 'DELETE' });
-      }
-      if (confirm.type === 'activate' && activatePath) {
-        return apiFetch(activatePath(confirm.row.id), { method: 'POST' });
-      }
-      if (confirm.type === 'deactivate' && deactivatePath) {
-        return apiFetch(deactivatePath(confirm.row.id), { method: 'POST' });
-      }
+      if (confirm.type === 'delete' && deletePath) return apiFetch(deletePath(confirm.row.id), { method: 'DELETE' });
+      if (confirm.type === 'activate' && activatePath) return apiFetch(activatePath(confirm.row.id), { method: 'POST' });
+      if (confirm.type === 'deactivate' && deactivatePath) return apiFetch(deactivatePath(confirm.row.id), { method: 'POST' });
     },
     onSuccess: async () => {
       setConfirmError(null);
-      await queryClient.invalidateQueries({ queryKey: [queryKey] });
-      setBanner(tCommon('saved'));
+      await refresh();
+      toast.success(tCommon('saved'));
       setConfirm(null);
     },
     onError: (err) => setConfirmError(mutationErrorMessage(err)),
   });
 
-  if (listQuery.isLoading && !listQuery.data) {
-    return (
-      <div className="space-y-6">
-        <div className="space-y-2 border-b border-border pb-5">
-          <Skeleton className="h-8 w-52" />
-        </div>
-        <Skeleton className="h-10 w-full max-w-md" />
-        <TableSkeleton columns={columns.length + 1} />
-      </div>
-    );
-  }
+  const rows = list.data?.data ?? [];
+  const meta = list.data?.meta;
+  const pageActive = activeField ? rows.filter((r) => readActive(r[activeField]) === true).length : null;
+  const figures = stats ?? [
+    { label: title, value: meta?.totalItems ?? rows.length },
+    ...(activeField ? [{ label: tCommon('active'), value: pageActive ?? 0, tone: 'success' as const }, { label: tCommon('inactive'), value: rows.length - (pageActive ?? 0), tone: rows.length - (pageActive ?? 0) > 0 ? ('neutral' as const) : ('success' as const) }] : []),
+  ];
 
-  if (listQuery.isError && !listQuery.data) {
-    return (
-      <ErrorState
-        title={title}
-        onRetry={() => listQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
-  }
+  const menuFor = (row: T) => {
+    const isActive = activeField ? readActive(row[activeField]) : undefined;
+    const items: Array<{ id: string; label: string; icon?: ReactNode; onSelect?: () => void; href?: string; tone?: 'default' | 'error'; disabled?: boolean; separator?: boolean }> = [];
+    if (patchPath) items.push({ id: 'edit', label: tCommon('edit'), icon: <Pencil className="h-4 w-4" />, onSelect: () => openEdit(row) });
+    for (const extra of rowMenu?.(row, refresh) ?? []) items.push(extra);
+    if (isActive === true && deactivatePath) items.push({ id: 'off', label: tCommon('deactivate'), icon: <Power className="h-4 w-4" />, onSelect: () => (setConfirmError(null), setConfirm({ type: 'deactivate', row })) });
+    if (isActive === false && activatePath) items.push({ id: 'on', label: tCommon('activate'), icon: <Power className="h-4 w-4" />, onSelect: () => (setConfirmError(null), setConfirm({ type: 'activate', row })) });
+    if (deletePath) items.push({ id: 'del', label: tCommon('delete'), icon: <Trash2 className="h-4 w-4" />, tone: 'error', separator: items.length > 0, onSelect: () => (setConfirmError(null), setConfirm({ type: 'delete', row })) });
+    return items;
+  };
 
-  const rows = listQuery.data?.data ?? [];
-  const meta = listQuery.data?.meta;
+  const dataColumns: DataColumn<T>[] = [
+    ...columns.map<DataColumn<T>>((c) => ({ key: c.key, header: c.header, cell: c.render, numeric: c.numeric, hideBelow: c.hideBelow, width: c.width })),
+    ...(activeField
+      ? [
+          {
+            key: '__active',
+            header: tCommon('status'),
+            hideBelow: 'md' as const,
+            cell: (row: T) => {
+              const a = readActive(row[activeField]);
+              return a === undefined ? null : (
+                <Stamp tone={a ? 'success' : 'neutral'} size="sm">
+                  {a ? tCommon('active') : tCommon('inactive')}
+                </Stamp>
+              );
+            },
+          },
+        ]
+      : []),
+    {
+      key: '__actions',
+      header: '',
+      numeric: true,
+      width: '56px',
+      cell: (row: T) => (
+        <span className="flex items-center justify-end gap-1">
+          {extraActions?.(row, refresh)}
+          {menuFor(row).length ? <Menu aria-label={tCommon('actions')} trigger={<Button size="sm" variant="ghost" aria-label={tCommon('actions')}><MoreHorizontal className="h-4 w-4" /></Button>} items={menuFor(row)} /> : null}
+        </span>
+      ),
+    },
+  ];
+
+  if (list.isError && !list.data) return <ErrorBoard title={title} description={mutationErrorMessage(list.error)} onRetry={() => list.refetch()} />;
+
+  const empty = (
+    <Board.Empty
+      title={params.q || activeCount ? tCommon('noResults') : emptyTitle}
+      description={params.q || activeCount ? undefined : emptyDescription}
+      action={
+        params.q || activeCount ? (
+          <Button size="sm" variant="secondary" onClick={reset}>
+            {tCommon('clearFilters')}
+          </Button>
+        ) : createPath ? (
+          <Button size="sm" leadingIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+            {primaryLabel ?? tCommon('add')}
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={title}
-        actions={
-          createPath ? (
-            <Button
-              leadingIcon={<Plus className="h-4 w-4" />}
-              onClick={() => {
-                setEditing(null);
-                setForm(defaults());
-                setFormError(null);
-                setFormOpen(true);
-              }}
-            >
-              {tCommon('add')}
-            </Button>
-          ) : null
-        }
-      />
-      {banner ? (
-        <Alert variant="success" className="maher-animate-fade">
-          {banner}
-        </Alert>
-      ) : null}
-      <div className="maher-stagger space-y-6">
-      <Input
-        value={q}
-        onChange={(e) => {
-          setPage(1);
-          setQ(e.target.value);
-        }}
-        placeholder={tCommon('search')}
-        withSearchIcon
-        className="max-w-md"
-      />
-      {rows.length === 0 ? (
-        <EmptyState
-          title={emptyTitle}
-          description={q ? tCommon('noResults') : undefined}
-          action={
-            createPath && !q ? (
-              <Button
-                leadingIcon={<Plus className="h-4 w-4" />}
-                onClick={() => {
-                  setEditing(null);
-                  setForm(defaults());
-                  setFormError(null);
-                  setFormOpen(true);
-                }}
-              >
-                {tCommon('add')}
+    <div className="maher-stagger space-y-5">
+      <Board tone={tone} wash="top">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{title}</h1>
+              {description ? <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{description}</p> : null}
+            </div>
+            {createPath ? (
+              <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+                {primaryLabel ?? tCommon('add')}
               </Button>
-            ) : null
-          }
-        />
-      ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              {columns.map((c) => (
-                <TableHeaderCell key={c.key}>{c.header}</TableHeaderCell>
-              ))}
-              <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => {
-              const rawActive = activeField ? row[activeField] : undefined;
-              const isActive =
-                rawActive === undefined
-                  ? undefined
-                  : typeof rawActive === 'string'
-                    ? rawActive === 'ACTIVE' || rawActive.toLowerCase() === 'true'
-                    : Boolean(rawActive);
-              return (
-                <TableRow key={row.id}>
-                  {columns.map((c) => (
-                    <TableCell key={c.key}>{c.render(row)}</TableCell>
-                  ))}
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {patchPath ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          leadingIcon={<Pencil className="h-3.5 w-3.5" />}
-                          onClick={() => {
-                            setEditing(row);
-                            setForm(mapRowToForm ? mapRowToForm(row) : defaults());
-                            setFormError(null);
-                            setFormOpen(true);
-                          }}
-                        >
-                          {tCommon('edit')}
-                        </Button>
-                      ) : null}
-                      {isActive === true && deactivatePath ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setConfirmError(null);
-                            setConfirm({ type: 'deactivate', row });
-                          }}
-                        >
-                          {tCommon('deactivate')}
-                        </Button>
-                      ) : null}
-                      {isActive === false && activatePath ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setConfirmError(null);
-                            setConfirm({ type: 'activate', row });
-                          }}
-                        >
-                          {tCommon('activate')}
-                        </Button>
-                      ) : null}
-                      {deletePath ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          leadingIcon={<Trash2 className="h-3.5 w-3.5" />}
-                          className="text-[var(--maher-error)] hover:bg-[var(--maher-error-soft)] hover:text-[var(--maher-error)]"
-                          onClick={() => {
-                            setConfirmError(null);
-                            setConfirm({ type: 'delete', row });
-                          }}
-                        >
-                          {tCommon('delete')}
-                        </Button>
-                      ) : null}
-                      {extraActions?.(row, () =>
-                        queryClient.invalidateQueries({ queryKey: [queryKey] }),
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
-      {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-end gap-3">
-          <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            {tCommon('previous')}
-          </Button>
-          <span className="text-sm tabular-nums text-text-secondary">
-            {meta.page} / {meta.totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={page >= meta.totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {tCommon('next')}
-          </Button>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {figures.map((f, i) => (
+              <Figure key={i} size="sm" value={f.value} label={f.label} tone={f.tone} locale={kit.locale} />
+            ))}
+          </div>
         </div>
-      ) : null}
-      </div>
+      </Board>
 
-      <Modal
+      <ListToolbar
+        copy={kit.toolbar}
+        search={{ value: params.q, onChange: (q) => set({ q, page: 1 }, { replace: true }), placeholder: tCommon('search') }}
+        actions={
+          <>
+            {activeFilter ? (
+              <SegmentedControl
+                size="sm"
+                aria-label={tCommon('status')}
+                value={params.active || 'all'}
+                onChange={(v) => set({ active: v === 'all' ? '' : (v as 'true' | 'false'), page: 1 })}
+                options={[
+                  { value: 'all', label: tCommon('all') },
+                  { value: 'true', label: tCommon('active') },
+                  { value: 'false', label: tCommon('inactive') },
+                ]}
+              />
+            ) : null}
+            {tile ? (
+              <SegmentedControl
+                size="sm"
+                aria-label={tCommon('view')}
+                value={params.view}
+                onChange={(view) => set({ view }, { replace: true })}
+                options={[
+                  { value: 'grid', label: <LayoutGrid className="h-4 w-4" /> },
+                  { value: 'list', label: <List className="h-4 w-4" /> },
+                ]}
+              />
+            ) : null}
+          </>
+        }
+      >
+        {chips?.length ? <StatusChips aria-label={title} value={params.chip || 'all'} onChange={(id) => set({ chip: id === 'all' ? '' : id, page: 1 })} items={[{ id: 'all', label: tCommon('all') }, ...chips.map((c) => ({ id: c.id, label: c.label, count: c.count }))]} /> : null}
+      </ListToolbar>
+
+      {tile && params.view === 'grid' ? (
+        list.isLoading && !list.data ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <BoardSkeleton key={i} header={false} rows={1} bodyClassName="pt-20" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <Board tone="neutral">{empty}</Board>
+        ) : (
+          <>
+            <div className={`maher-stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 ${list.isFetching ? 'opacity-80 transition-opacity' : ''}`}>
+              {rows.map((row) => (
+                <Board key={row.id} as="article" tone={activeField && readActive(row[activeField]) === false ? 'neutral' : tone} className="group/tile relative">
+                  {tile(row, () => openEdit(row))}
+                  {menuFor(row).length ? (
+                    <span className="absolute end-2 top-2 z-[2]">
+                      <Menu aria-label={tCommon('actions')} trigger={<Button size="sm" variant="secondary" aria-label={tCommon('actions')} className="h-8 w-8 px-0"><MoreHorizontal className="h-4 w-4" /></Button>} items={menuFor(row)} />
+                    </span>
+                  ) : null}
+                </Board>
+              ))}
+            </div>
+            {meta && meta.totalPages > 1 ? <Pagination page={params.page} pageSize={params.pageSize} total={meta.totalItems ?? meta.totalPages * params.pageSize} onPageChange={(page) => set({ page })} copy={kit.pagination} /> : null}
+          </>
+        )
+      ) : (
+        <DataBoard<T>
+          aria-label={title}
+          columns={dataColumns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          onRowClick={patchPath ? openEdit : undefined}
+          loading={list.isLoading && !list.data}
+          mobileRow={mobileRow ?? ((row) => ({ title: columns[1]?.render(row) ?? columns[0]?.render(row), meta: columns[0]?.render(row), trailing: activeField ? <Stamp tone={readActive(row[activeField]) ? 'success' : 'neutral'} size="sm">{readActive(row[activeField]) ? tCommon('active') : tCommon('inactive')}</Stamp> : undefined }))}
+          empty={empty}
+          footer={meta && meta.totalPages > 1 ? <Pagination className="w-full" page={params.page} pageSize={params.pageSize} total={meta.totalItems ?? meta.totalPages * params.pageSize} onPageChange={(page) => set({ page })} copy={kit.pagination} /> : null}
+        />
+      )}
+
+      <Sheet
         open={formOpen}
-        onClose={() => !saveMutation.isPending && setFormOpen(false)}
-        title={editing ? tCommon('edit') : tCommon('add')}
-        className="max-w-xl"
+        onClose={() => !save.isPending && setFormOpen(false)}
+        title={editing ? tCommon('edit') : (primaryLabel ?? tCommon('add'))}
+        description={editing ? undefined : description}
+        tone={tone}
         footer={
           <>
-            <Button variant="ghost" disabled={saveMutation.isPending} onClick={() => setFormOpen(false)}>
+            <Button variant="ghost" disabled={save.isPending} onClick={() => setFormOpen(false)}>
               {tCommon('cancel')}
             </Button>
-            <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            <Button loading={save.isPending} onClick={() => save.mutate()}>
               {tCommon('save')}
             </Button>
           </>
         }
       >
-        <div className="maher-form-section grid gap-4">
-          {formError ? <Alert variant="error">{formError}</Alert> : null}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {formError ? (
+            <div className="sm:col-span-2">
+              <Alert variant="error">{formError}</Alert>
+            </div>
+          ) : null}
           {fields.map((field) => {
+            const span = field.half ? '' : 'sm:col-span-2';
+            const label = `${field.label}${field.required ? ' *' : ''}`;
             if (field.type === 'checkbox') {
               return (
-                <label
-                  key={field.name}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-[var(--maher-radius-md)] border border-border bg-surface-muted px-3 py-2.5 text-sm font-medium text-text-primary"
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--maher-brand)]"
-                    checked={Boolean(form[field.name])}
-                    onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.checked }))}
-                  />
-                  {field.label}
-                </label>
+                <div key={field.name} className={span}>
+                  <Switch checked={Boolean(form[field.name])} onChange={(v) => setForm((f) => ({ ...f, [field.name]: v }))} label={field.label} description={field.hint} />
+                </div>
               );
             }
             if (field.type === 'select') {
               return (
-                <Select
-                  key={field.name}
-                  label={`${field.label}${field.required ? ' *' : ''}`}
-                  hint={field.hint}
-                  options={field.options ?? []}
-                  value={String(form[field.name] ?? '')}
-                  onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))}
-                />
+                <div key={field.name} className={span}>
+                  <Combobox label={label} hint={field.hint} value={String(form[field.name] ?? '') || null} onChange={(v) => setForm((f) => ({ ...f, [field.name]: v ?? '' }))} options={(field.options ?? []).filter((o) => o.value !== '')} placeholder={field.options?.find((o) => o.value === '')?.label ?? tCommon('select')} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} />
+                </div>
               );
             }
             if (field.type === 'multiselect') {
-              const selected = Array.isArray(form[field.name])
-                ? (form[field.name] as string[])
-                : [];
+              const selected = Array.isArray(form[field.name]) ? (form[field.name] as string[]) : [];
               return (
-                <div key={field.name} className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-text-primary">
-                    {field.label}
-                    {field.required ? ' *' : ''}
-                  </span>
-                  {field.hint ? (
-                    <p className="text-xs text-text-secondary">{field.hint}</p>
-                  ) : null}
+                <div key={field.name} className={`${span} space-y-2`}>
+                  <span className="block text-[13px] font-medium text-[var(--maher-text-primary)]">{label}</span>
+                  {field.hint ? <p className="text-[12px] text-[var(--maher-text-secondary)]">{field.hint}</p> : null}
                   {(field.options ?? []).length === 0 ? (
-                    <p className="text-xs text-text-tertiary">—</p>
+                    <p className="text-[12px] text-[var(--maher-text-tertiary)]">—</p>
                   ) : (
-                    <div className="flex flex-wrap gap-2 rounded-[var(--maher-radius-md)] border border-border bg-surface-muted p-2.5">
-                      {(field.options ?? []).map((opt) => {
-                        const checked = selected.includes(opt.value);
-                        return (
-                          <label
-                            key={opt.value}
-                            className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                              checked
-                                ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
-                                : 'border-border bg-surface text-text-secondary hover:border-border-strong'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-3.5 w-3.5 accent-[var(--maher-brand)]"
-                              checked={checked}
-                              onChange={(e) =>
-                                setForm((f) => {
-                                  const current = Array.isArray(f[field.name])
-                                    ? (f[field.name] as string[])
-                                    : [];
-                                  const next = e.target.checked
-                                    ? [...current, opt.value]
-                                    : current.filter((v) => v !== opt.value);
-                                  return { ...f, [field.name]: next };
-                                })
-                              }
-                            />
-                            {opt.label}
-                          </label>
-                        );
-                      })}
+                    <div className="grid gap-2 rounded-[12px] border border-[var(--maher-border)] p-3 sm:grid-cols-2">
+                      {(field.options ?? []).map((opt) => (
+                        <Checkbox
+                          key={opt.value}
+                          checked={selected.includes(opt.value)}
+                          onChange={(checked) =>
+                            setForm((f) => {
+                              const current = Array.isArray(f[field.name]) ? (f[field.name] as string[]) : [];
+                              return { ...f, [field.name]: checked ? [...current, opt.value] : current.filter((v) => v !== opt.value) };
+                            })
+                          }
+                          label={opt.label}
+                          description={opt.description}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
               );
             }
+            if (field.type === 'textarea') {
+              return (
+                <div key={field.name} className={span}>
+                  <TextArea label={label} value={String(form[field.name] ?? '')} onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))} rows={3} dir={field.dir} />
+                </div>
+              );
+            }
+            if (field.type === 'number') {
+              return (
+                <div key={field.name} className={span}>
+                  <NumberField label={label} hint={field.hint} value={form[field.name] === '' || form[field.name] == null ? null : Number(form[field.name])} onChange={(v) => setForm((f) => ({ ...f, [field.name]: v == null ? '' : v }))} decimals={3} />
+                </div>
+              );
+            }
             return (
-              <Input
-                key={field.name}
-                label={`${field.label}${field.required ? ' *' : ''}`}
-                type={field.type === 'number' ? 'number' : 'text'}
-                value={String(form[field.name] ?? '')}
-                hint={field.hint}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    [field.name]: field.type === 'number' ? e.target.value : e.target.value,
-                  }))
-                }
-              />
+              <div key={field.name} className={span}>
+                <Input label={label} value={String(form[field.name] ?? '')} hint={field.hint} dir={field.dir} onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))} />
+              </div>
             );
           })}
         </div>
-      </Modal>
+      </Sheet>
 
       <ConfirmDialog
-        open={!!confirm}
-        title={
-          confirm?.type === 'delete'
-            ? tCommon('delete')
-            : confirm?.type === 'activate'
-              ? tCommon('activate')
-              : tCommon('deactivate')
-        }
+        open={Boolean(confirm)}
+        title={confirm?.type === 'delete' ? tCommon('delete') : confirm?.type === 'activate' ? tCommon('activate') : tCommon('deactivate')}
         description={tCommon('confirm')}
         danger={confirm?.type === 'delete' || confirm?.type === 'deactivate'}
-        loading={actionMutation.isPending}
+        confirmLabel={confirm?.type === 'delete' ? tCommon('delete') : confirm?.type === 'activate' ? tCommon('activate') : tCommon('deactivate')}
+        cancelLabel={tCommon('cancel')}
+        loading={action.isPending}
         error={confirmError}
-        onClose={() => !actionMutation.isPending && setConfirm(null)}
-        onConfirm={() => actionMutation.mutate()}
+        onClose={() => !action.isPending && setConfirm(null)}
+        onConfirm={() => action.mutate()}
       />
     </div>
   );

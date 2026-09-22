@@ -108,6 +108,7 @@ export const WEB_PARITY: ParityRow[] = [
   { mobile: '/(app)/(customer)/invoices/[id]', web: '/dealer/invoices/[id]', surface: 'dealer', status: 'ported' },
   { mobile: '/(app)/(customer)/invoices', web: '/dealer/invoices', surface: 'dealer', status: 'ported' },
   { mobile: '/(app)/(customer)/order/custom', web: '/dealer/order/custom', surface: 'dealer', status: 'ported' },
+  { mobile: '/(app)/(customer)/order/modify', web: '/dealer/catalog/[id]/customize', surface: 'dealer', status: 'ported' },
   { mobile: '/(app)/(customer)/orders/[id]/flow', web: '/dealer/orders/[id]/flow', surface: 'dealer', status: 'ported' },
   { mobile: '/(app)/(customer)/orders/[id]', web: '/dealer/orders/[id]', surface: 'dealer', status: 'ported' },
   { mobile: '/(app)/(customer)/quotations/[id]', web: '/dealer/quotations/[id]', surface: 'dealer', status: 'ported' },
@@ -140,6 +141,38 @@ export const WEB_PARITY: ParityRow[] = [
   { mobile: '/(auth)/unlock', web: null, surface: 'auth', status: 'intentionally-native-only' },
 ];
 
+export type ApiParityRow = {
+  /** API path as the web calls it (no host, no query). `[id]` for params. */
+  path: string;
+  /** Where the web consumes it. */
+  web: string;
+  status: 'ported' | 'intentionally-native-only';
+};
+
+/**
+ * Endpoints the mobile app used that the web did not, before the Board rebuild.
+ * `intentionally-native-only` rows have no web caller by design.
+ */
+export const API_PARITY: ApiParityRow[] = [
+  { path: '/api/v1/reports/cost/money', web: 'components/cost-performance/money-desk-board.tsx', status: 'ported' },
+  { path: '/api/v1/catalog/browse/previously-ordered', web: 'app/[locale]/dealer/catalog/page.tsx', status: 'ported' },
+  { path: '/api/v1/catalog/translate-name', web: 'components/catalog/catalog-shared.ts', status: 'ported' },
+  { path: '/api/v1/returns/[id]/mark-sent', web: 'components/returns/use-return-desk.ts', status: 'ported' },
+  { path: '/api/v1/notifications/topics', web: 'components/notifications/notifications-desk.tsx', status: 'ported' },
+  { path: '/api/v1/notifications/preferences', web: 'components/notifications/notifications-desk.tsx', status: 'ported' },
+  { path: '/api/v1/auth/sessions', web: 'components/account/security-desk.tsx', status: 'ported' },
+  { path: '/api/v1/auth/mfa/enable', web: 'components/account/security-desk.tsx', status: 'ported' },
+  { path: '/api/v1/tasks/completed-dealers', web: 'app/[locale]/worker/tasks/completed/page.tsx', status: 'ported' },
+  { path: '/api/v1/tasks/my-orders', web: 'app/[locale]/worker/tasks/page.tsx', status: 'ported' },
+  { path: '/api/v1/tasks/[id]/wip-receive', web: 'app/[locale]/worker/tasks/[id]/take-in/page.tsx', status: 'ported' },
+  { path: '/api/v1/tasks/[id]/material-usage/identify', web: 'app/[locale]/worker/tasks/[id]/page.tsx', status: 'ported' },
+  { path: '/api/v1/deliveries/[id]/load-sheet', web: 'app/[locale]/worker/deliveries/[id]/page.tsx', status: 'ported' },
+  { path: '/api/v1/scheduling/own-deliveries', web: 'app/[locale]/dealer/deliveries/page.tsx', status: 'ported' },
+  { path: '/api/v1/scheduling/availability', web: 'components/orders/delivery-availability-board.tsx', status: 'ported' },
+  { path: '/api/v1/statements/[customerId]/pdf', web: 'app/[locale]/dealer/statement/page.tsx', status: 'ported' },
+  { path: '/api/v1/payments/[id]/pdf', web: 'app/[locale]/dealer/payments/page.tsx', status: 'ported' },
+  { path: '/api/v1/notifications/device-token', web: '', status: 'intentionally-native-only' },
+];
 
 export function mobileRouteKey(filePath: string): string | null {
   const match = filePath.match(/apps\/mobile\/app\/(.+)\.tsx$/);

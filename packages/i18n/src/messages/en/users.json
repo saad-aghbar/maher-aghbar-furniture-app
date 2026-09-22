@@ -127,5 +127,7 @@
   "staffTypeDeleted": "Staff type deleted.",
   "confirmDeactivateStaffType": "Deactivate this staff type? It will not appear for new users. Existing people keep access until you reassign them.",
   "confirmDeleteStaffType": "Delete this staff type? This cannot be undone.",
-  "emptyStaffTypes": "No staff types yet"
+  "emptyStaffTypes": "No staff types yet",
+  "usersAssigned": "People",
+  "activeThisWeek": "Signed in this week"
 }

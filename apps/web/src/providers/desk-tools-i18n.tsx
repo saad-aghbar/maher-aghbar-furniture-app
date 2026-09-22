@@ -1,6 +1,6 @@
 'use client';
 
-import { DEFAULT_DESK_COPY, DeskToolsProvider, type DeskCopy } from '@maher/ui';
+import { DEFAULT_DESK_COPY, DeskToolsProvider, ToastProvider, type DeskCopy } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 
@@ -36,5 +36,9 @@ export function DeskToolsI18n({ children }: { children: ReactNode }) {
     close: pick(t, 'close', DEFAULT_DESK_COPY.close),
     cancel: pick(t, 'cancel', DEFAULT_DESK_COPY.cancel),
   };
-  return <DeskToolsProvider copy={copy}>{children}</DeskToolsProvider>;
+  return (
+    <ToastProvider closeLabel={pick(t, 'dismiss', 'Dismiss')}>
+      <DeskToolsProvider copy={copy}>{children}</DeskToolsProvider>
+    </ToastProvider>
+  );
 }

@@ -1,7 +1,9 @@
 'use client';
 
 import { apiFetch } from '@/lib/api-client';
-import { Badge, Card, EmptyState, QrDisplay, Skeleton, StatusBadge } from '@maher/ui';
+import { usePdfDownload } from '@/hooks/use-pdf-download';
+import { Board, BoardSkeleton, Button, QrDisplay, Stamp, type BoardTone } from '@maher/ui';
+import { FileText } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -54,6 +56,7 @@ function directionForKit(status: string): 'outgoing' | 'incoming' | 'in_use' | '
 
 export function ProductionWipPanel({ productionOrderId }: Props) {
   const tp = useTranslations('production');
+  const { openPdf, pdfDialog } = usePdfDownload();
   const locale = useLocale();
 
   const boardQuery = useQuery({
@@ -96,102 +99,72 @@ export function ProductionWipPanel({ productionOrderId }: Props) {
             : kit.status === 'CONSUMED'
               ? 'IN_USE'
               : null);
+    const tone: BoardTone = lane === 'outgoing' ? 'brand' : lane === 'incoming' ? 'info' : 'neutral';
     return (
-      <li
-        key={kit.id}
-        className="rounded-[var(--maher-radius-md)] border border-border bg-[var(--maher-surface-muted)] p-3"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1">
-            <p className="text-xs font-semibold text-[var(--maher-brand)]">
-              {lane === 'outgoing'
-                ? tp('hubWipOutgoing')
-                : lane === 'incoming'
-                  ? tp('hubWipIncoming')
-                  : tp('hubWipOther')}
-              {' · '}
-              {stage}
+      <li key={kit.id} className="flex flex-wrap items-start gap-4 px-5 py-4">
+        <QrDisplay value={kit.qrCode} size={88} label={tp('kitQr')} />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="flex flex-wrap items-center gap-1.5">
+            <Stamp tone={tone} size="sm">
+              {lane === 'outgoing' ? tp('hubWipOutgoing') : lane === 'incoming' ? tp('hubWipIncoming') : tp('hubWipOther')}
+            </Stamp>
+            <span className="text-[13px] text-[var(--maher-text-secondary)]">{stage}</span>
+          </p>
+          <p className="text-[15px] font-semibold text-[var(--maher-text-primary)]" dir="ltr">
+            {kit.qrCode}
+          </p>
+          <p className="text-[12px] text-[var(--maher-text-secondary)]" dir="ltr">
+            {tp('hubWipLocation')}: {loc}
+            {` · ${kit.pieces.length}/${kit.expectedPieceCount}`}
+          </p>
+          {custody ? (
+            <p className="text-[12px] text-[var(--maher-text-secondary)]">
+              {tp('hubWipCustody')}: {custody.replace(/_/g, ' ')}
             </p>
-            <p className="font-medium" dir="ltr">
-              {kit.qrCode}
+          ) : null}
+          {kit.claimedByUser ? (
+            <p className="text-[12px] text-[var(--maher-text-secondary)]">
+              {tp('hubWipClaimedBy', { name: `${kit.claimedByUser.firstName} ${kit.claimedByUser.lastName}`.trim() })}
             </p>
-            <QrDisplay value={kit.qrCode} size={96} label={tp('kitQr')} />
-            <p className="text-xs text-text-secondary" dir="ltr">
-              {tp('hubWipLocation')}: {loc}
-              {` · ${kit.pieces.length}/${kit.expectedPieceCount}`}
-            </p>
-            {custody ? (
-              <p className="text-xs text-text-secondary">
-                {tp('hubWipCustody')}: {custody.replace(/_/g, ' ')}
-              </p>
-            ) : null}
-            {kit.claimedByUser ? (
-              <p className="text-xs text-text-secondary">
-                {tp('hubWipClaimedBy', {
-                  name: `${kit.claimedByUser.firstName} ${kit.claimedByUser.lastName}`.trim(),
-                })}
-              </p>
-            ) : null}
-          </div>
-          <StatusBadge status={kit.status} />
+          ) : null}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <Stamp tone={kit.status === 'CONSUMED' ? 'success' : kit.status === 'CLAIMED' ? 'info' : kit.status === 'READY' ? 'warning' : 'neutral'} size="sm">
+            {kit.status.replace(/_/g, ' ')}
+          </Stamp>
+          <Button size="sm" variant="secondary" leadingIcon={<FileText className="h-3.5 w-3.5" />} onClick={() => openPdf({ path: `/api/v1/inventory/wip-kits/${kit.id}/qr-label`, documentName: kit.qrCode, filename: `${kit.qrCode}.pdf` })}>
+            {tp('kitQr')}
+          </Button>
         </div>
       </li>
     );
   }
 
-  return (
-    <Card className="space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--maher-brand)]">
-            {tp('hubWipEyebrow')}
-          </p>
-          <h2 className="text-base font-semibold">{tp('hubWip')}</h2>
-          <p className="text-sm text-text-secondary">{tp('hubWipHint')}</p>
-        </div>
-        {total > 0 ? <Badge>{total}</Badge> : null}
-      </div>
+  const section = (label: string, items: typeof flat, lane: 'outgoing' | 'incoming' | 'other') =>
+    items.length ? (
+      <li>
+        <p className="border-b border-[var(--maher-border)] bg-[var(--maher-surface-muted)] px-5 py-2 text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--maher-text-tertiary)] rtl:tracking-normal">{label}</p>
+        <ul className="divide-y divide-[var(--maher-border)]">{items.map(({ kit, stage }) => renderKitRow(kit, stage, lane))}</ul>
+      </li>
+    ) : null;
 
+  return (
+    <Board tone="info">
+      <Board.Header title={tp('hubWip')} description={tp('hubWipHint')} meta={total > 0 ? <Stamp tone="info" size="sm">{total}</Stamp> : null} />
       {boardQuery.isLoading ? (
-        <Skeleton className="h-24 w-full" />
+        <BoardSkeleton header={false} rows={3} />
       ) : boardQuery.isError ? (
-        <p className="text-sm text-[var(--maher-error)]">{tp('hubWipError')}</p>
+        <Board.Empty title={tp('hubWipError')} />
       ) : flat.length === 0 ? (
-        <EmptyState title={tp('hubWipEmptyTitle')} description={tp('hubWipEmptyBody')} />
+        <Board.Empty title={tp('hubWipEmptyTitle')} description={tp('hubWipEmptyBody')} />
       ) : (
-        <div className="space-y-4">
-          {outgoing.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('hubWipOutgoingSection')}
-              </p>
-              <ul className="space-y-2">
-                {outgoing.map(({ kit, stage }) => renderKitRow(kit, stage, 'outgoing'))}
-              </ul>
-            </div>
-          ) : null}
-          {incoming.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('hubWipIncomingSection')}
-              </p>
-              <ul className="space-y-2">
-                {incoming.map(({ kit, stage }) => renderKitRow(kit, stage, 'incoming'))}
-              </ul>
-            </div>
-          ) : null}
-          {other.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                {tp('hubWipOtherSection')}
-              </p>
-              <ul className="space-y-2">
-                {other.map(({ kit, stage }) => renderKitRow(kit, stage, 'other'))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
+        <ul className="divide-y divide-[var(--maher-border)]">
+          {section(tp('hubWipOutgoingSection'), outgoing, 'outgoing')}
+          {section(tp('hubWipIncomingSection'), incoming, 'incoming')}
+          {section(tp('hubWipOtherSection'), other, 'other')}
+        </ul>
       )}
-    </Card>
+      {pdfDialog}
+    </Board>
   );
 }

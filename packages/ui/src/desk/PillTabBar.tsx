@@ -86,7 +86,7 @@ export type InboxCellItem = {
   icon?: ReactNode;
 };
 
-/** Five-way inbox (3 + 2). Selected = brand wash + 3px bottom bar. */
+/** Five-way inbox (3 + 2). Selected = brand wash + corner stamp. */
 export function InboxCellGrid({
   items,
   value,
@@ -119,7 +119,7 @@ export function InboxCellGrid({
             {item.icon}
             <span className="text-center text-[11px] font-medium">{item.label}</span>
             {selected ? (
-              <span aria-hidden className="absolute inset-x-2 bottom-0 h-[3px] bg-[var(--maher-brand)]" />
+              <span aria-hidden className="absolute end-2 top-2 h-2 w-2 rounded-full bg-[var(--maher-brand)]" />
             ) : null}
           </button>
         );

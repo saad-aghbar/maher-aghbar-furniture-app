@@ -1,23 +1,33 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
-import { AvailabilityCard, localDealerMinimumRequestYmd } from '@/components/availability-card';
+import { localDealerMinimumRequestYmd } from '@/components/availability-card';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { useRouter } from '@/i18n/navigation';
 import { useOrderBasket } from '@/components/order-basket-provider';
 import { lineHasProduct, lineToRequestItem } from '@/lib/basket';
 import {
+  ActionDock,
   Alert,
+  Board,
   Button,
-  Card,
+  Combobox,
+  DateField,
+  FormSection,
   ImageSourceField,
   Input,
-  Modal,
-  PageHero,
-  Select,
-  TextArea,
+  Ledger,
+  LedgerRow,
   Ltr,
+  Select,
+  Sheet,
+  StageStrip,
+  Stamp,
+  TextArea,
+  type StageStripStage,
 } from '@maher/ui';
+import { useKitCopy } from '@/lib/kit-copy';
+import { DeliveryAvailabilityBoard } from '@/components/orders/delivery-availability-board';
 import { localizedName } from '@maher/i18n';
 import type { AuthUser } from '@maher/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -91,6 +101,7 @@ function CreateOrderForm() {
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
+  const kit = useKitCopy();
   const router = useRouter();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -583,32 +594,57 @@ function CreateOrderForm() {
     : Boolean(productName.trim()) && Number(quantity) > 0 && Boolean(deliveryAddress.trim());
   const busy = loading || aiBusy;
 
+  const orderDone = basketLines.length > 0 || (Boolean(productName.trim()) && Number(quantity) > 0);
+  const customerDone = Boolean(deliveryAddress.trim());
+  const fabricDone = Boolean(fabric.trim() || fabricDescription.trim());
+  const attachmentsDone = orderImages.length + handwrittenFiles.length > 0;
+  const steps: StageStripStage[] = [
+    { key: 'order', label: tc('orderSection'), state: orderDone ? 'done' : 'current' },
+    { key: 'fabric', label: tc('fabricSection'), state: fabricDone ? 'done' : orderDone ? 'current' : 'todo' },
+    { key: 'customer', label: tc('customerSection'), state: customerDone ? 'done' : orderDone && fabricDone ? 'current' : 'todo' },
+    { key: 'attachments', label: tc('attachmentsSection'), state: attachmentsDone ? 'done' : 'todo' },
+  ];
+  const lineCount = basketLines.length || (productName.trim() ? 1 : 0);
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <PageHero tone="soft" title={t('createOrder')} description={tc('orderSection')} />
+    <div className="maher-stagger space-y-5 pb-24 md:pb-0">
+      <Board tone={canSubmit ? 'success' : 'brand'} wash="top" as="section">
+        <div className="px-5 pt-5 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('createOrder')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('deliveryLeadTimeNotice')}</p>
+            </div>
+            <Stamp tone={canSubmit ? 'success' : 'neutral'} size="sm">{tc('lines')}: {lineCount}</Stamp>
+          </div>
+        </div>
+        <Board.Body>
+          <StageStrip stages={steps} compact />
+        </Board.Body>
+      </Board>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
-
-      {basketLines.length ? (
-        <Card title={t('basket')} className="maher-form-section">
-          <ul className="space-y-2 text-sm">
-            {basketLines.map((line) => (
-              <li key={line.id} className="flex justify-between gap-2">
-                <span>
-                  {line.customProductName || line.variantLabel || line.productId}
-                  {` · ${line.quantity}`}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
       {banner ? <Alert variant={aiBusy ? 'info' : 'success'}>{banner}</Alert> : null}
 
-      <Modal
+      <div className="grid gap-5 xl:grid-cols-12">
+      <div className="space-y-5 xl:col-span-8">
+      {basketLines.length ? (
+        <Board tone="brand">
+          <Board.Header title={t('basket')} meta={<Stamp tone="brand" size="sm">{basketLines.length}</Stamp>} actions={<Button size="sm" variant="ghost" onClick={() => router.push('/dealer/basket')}>{tCommon('edit')}</Button>} />
+          <Ledger className="px-5 pb-3">
+            {basketLines.map((line) => (
+              <LedgerRow key={line.id} label={line.customProductName || line.variantLabel || line.productId} hint={line.variantLabel || undefined} value={<Ltr>× {line.quantity}</Ltr>} />
+            ))}
+          </Ledger>
+        </Board>
+      ) : null}
+
+      <Sheet
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title={confirmDraft ? tc('orderDraftSavedTitle') : tc('orderSubmittedTitle')}
+        tone={confirmDraft ? 'neutral' : 'success'}
+        closeLabel={tCommon('close')}
         footer={
           <>
             <Button
@@ -636,14 +672,13 @@ function CreateOrderForm() {
             : tc('orderSubmittedBody', { number: confirmNumber })}
         </p>
         {confirmNumber ? (
-          <p className="mt-3 text-lg font-semibold tracking-tight text-text-primary">
+          <p className="mt-3 text-[24px] font-semibold tracking-tight text-[var(--maher-text-primary)]">
             <Ltr>{confirmNumber}</Ltr>
           </p>
         ) : null}
-      </Modal>
+      </Sheet>
 
-      <Card title={tc('orderSection')} className="maher-form-section">
-        <div className="space-y-4">
+      <FormSection title={tc('orderSection')} columns={1} tone={orderDone ? 'success' : 'brand'}>
           <Input
             label={tc('dealerCustomerOrderNumber')}
             value={externalOrderNumber}
@@ -653,22 +688,18 @@ function CreateOrderForm() {
             disabled={busy}
           />
 
-          <Select
+          <Combobox<string>
             label={tc('modelName')}
-            value={productId}
-            onChange={(e) => {
-              setProductId(e.target.value);
-              if (e.target.value) setCustomProductName('');
-            }}
+            value={productId || null}
+            placeholder={tc('select')}
+            clearable
             disabled={busy}
-          >
-            <option value="">{tc('select')}</option>
-            {(productsQuery.data ?? []).map((product) => (
-              <option key={product.id} value={product.id}>
-                {localizedName(locale, product)}
-              </option>
-            ))}
-          </Select>
+            options={(productsQuery.data ?? []).map((product) => ({ value: product.id, label: localizedName(locale, product), description: product.sku }))}
+            onChange={(value) => {
+              setProductId(value ?? '');
+              if (value) setCustomProductName('');
+            }}
+          />
 
           <Input
             label={tc('modelNameManual')}
@@ -692,20 +723,21 @@ function CreateOrderForm() {
             disabled={busy}
           />
 
-          <Input
+          <DateField
             label={tc('preferredDeliveryDate')}
             hint={tc('deliveryLeadTimeNotice')}
-            type="date"
-            min={localDealerMinimumRequestYmd()}
             value={preferredDeliveryDate}
-            onChange={(e) => {
-              const next = e.target.value;
+            onChange={(next) => {
               const min = localDealerMinimumRequestYmd();
               if (next && next < min) return;
               setPreferredDeliveryDate(next);
             }}
-            dir="ltr"
+            minDate={localDealerMinimumRequestYmd()}
+            variant="dealer"
+            copy={kit.date}
+            locale={locale}
             disabled={busy}
+            clearable
           />
 
           <div className="grid grid-cols-3 gap-3">
@@ -791,18 +823,22 @@ function CreateOrderForm() {
             rows={3}
             disabled={busy}
           />
-        </div>
-      </Card>
+      </FormSection>
 
-      {productId ? (
-        <AvailabilityCard
-          items={[{ productId, quantity: Number(quantity) || 0 }]}
-          requestedDeliveryDate={preferredDeliveryDate || undefined}
+      {productId || basketLines.some((l) => l.productId) ? (
+        <DeliveryAvailabilityBoard
+          title={tc('availabilityTitle')}
+          description={tc('deliveryLeadTimeNotice')}
+          items={basketLines.length ? basketLines.filter((l) => l.productId).map((l) => ({ productId: l.productId, quantity: Number(l.quantity) || 1 })) : [{ productId, quantity: Number(quantity) || 1 }]}
+          requestedDate={preferredDeliveryDate || undefined}
+          selected={preferredDeliveryDate || undefined}
+          onSelect={(ymd) => {
+            if (ymd >= localDealerMinimumRequestYmd()) setPreferredDeliveryDate(ymd);
+          }}
         />
       ) : null}
 
-      <Card title={tc('fabricSection')} className="maher-form-section" style={{ animationDelay: '80ms' }}>
-        <div className="space-y-4">
+      <FormSection title={tc('fabricSection')} columns={1} tone={fabricDone ? 'success' : 'neutral'}>
           <Input
             label={tc('fabricName')}
             value={fabric}
@@ -863,11 +899,9 @@ function CreateOrderForm() {
           >
             {tc('addFabric')}
           </Button>
-        </div>
-      </Card>
+      </FormSection>
 
-      <Card title={tc('customerSection')} className="maher-form-section" style={{ animationDelay: '140ms' }}>
-        <div className="space-y-4">
+      <FormSection title={tc('customerSection')} columns={1} tone={customerDone ? 'success' : 'warning'}>
           <Input
             label={tc('endCustomerName')}
             value={endCustomerName}
@@ -957,11 +991,9 @@ function CreateOrderForm() {
             }}
             onAddressSuggest={suggestAddress}
           />
-        </div>
-      </Card>
+      </FormSection>
 
-      <Card title={tc('attachmentsSection')} className="maher-form-section" style={{ animationDelay: '200ms' }}>
-        <div className="space-y-5">
+      <FormSection title={tc('attachmentsSection')} columns={1} tone={attachmentsDone ? 'success' : 'neutral'}>
           <div className="space-y-2">
             <ImageSourceField
               label={tc('orderImages')}
@@ -1087,28 +1119,44 @@ function CreateOrderForm() {
               </ul>
             ) : null}
           </div>
-        </div>
-      </Card>
+      </FormSection>
 
-      <div className="maher-detail-sticky-actions flex flex-col gap-2 sm:flex-row">
-        <Button
-          variant="secondary"
-          onClick={() => void submit(true)}
-          loading={loading}
-          disabled={!canSubmit || busy}
-          className="flex-1"
-        >
+      </div>
+
+      <div className="xl:col-span-4">
+        <Board tone={canSubmit ? 'success' : 'neutral'} wash={canSubmit ? 'top' : 'none'} className="xl:sticky xl:top-28">
+          <Board.Header title={tc('orderSection')} meta={<Stamp tone={canSubmit ? 'success' : 'neutral'} size="sm">{lineCount}</Stamp>} />
+          <Ledger className="px-5">
+            {basketLines.length ? (
+              basketLines.map((line) => <LedgerRow key={line.id} label={line.customProductName || line.variantLabel || line.productId} value={<Ltr>× {line.quantity}</Ltr>} />)
+            ) : (
+              <LedgerRow label={productName.trim() || tc('modelName')} value={<Ltr>× {quantity || '1'}</Ltr>} tone={productName.trim() ? 'success' : 'neutral'} stamp />
+            )}
+            <LedgerRow label={tc('preferredDeliveryDate')} value={preferredDeliveryDate ? <Ltr>{preferredDeliveryDate}</Ltr> : '—'} tone={preferredDeliveryDate ? 'info' : 'neutral'} stamp />
+            <LedgerRow label={tc('fabricSection')} value={fabric.trim() || (fabricDescription.trim() ? tc('fabricDescription') : '—')} />
+            <LedgerRow label={tc('deliveryAddress')} value={deliveryAddress.trim() ? <span className="line-clamp-2 text-end">{deliveryAddress}</span> : '—'} tone={customerDone ? 'success' : 'warning'} stamp />
+            <LedgerRow label={tc('attachmentsSection')} value={<Ltr>{orderImages.length + handwrittenFiles.length}</Ltr>} />
+          </Ledger>
+          <Board.Footer>
+            <Button onClick={() => void submit(false)} loading={loading && !aiBusy} disabled={!canSubmit || busy} className="flex-1">
+              {tCommon('submit')}
+            </Button>
+            <Button variant="secondary" onClick={() => void submit(true)} loading={loading && !aiBusy} disabled={!canSubmit || busy}>
+              {tc('saveDraft')}
+            </Button>
+          </Board.Footer>
+        </Board>
+      </div>
+      </div>
+
+      <ActionDock className="md:hidden" note={<Stamp tone={canSubmit ? 'success' : 'neutral'} size="sm">{tc('lines')}: {lineCount}</Stamp>}>
+        <Button variant="secondary" onClick={() => void submit(true)} loading={loading} disabled={!canSubmit || busy}>
           {tc('saveDraft')}
         </Button>
-        <Button
-          onClick={() => void submit(false)}
-          loading={loading}
-          disabled={!canSubmit || busy}
-          className="flex-1"
-        >
+        <Button onClick={() => void submit(false)} loading={loading} disabled={!canSubmit || busy} className="flex-1">
           {tCommon('submit')}
         </Button>
-      </div>
+      </ActionDock>
     </div>
   );
 }

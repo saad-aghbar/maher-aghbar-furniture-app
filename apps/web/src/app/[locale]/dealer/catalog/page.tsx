@@ -1,212 +1,110 @@
 'use client';
 
-import { Link } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
-import {
-  EmptyState,
-  ErrorState,
-  Input,
-  MotionSection,
-  PageHero,
-  Skeleton,
-  StaggerGrid,
-  SurfaceCard,
-} from '@maher/ui';
+import { ProductBoard, type CatalogCategory, type CatalogProduct } from '@/components/dealer/catalog-shared';
+import { useRouter } from '@/i18n/navigation';
+import { apiFetch } from '@/lib/api-client';
+import { useKitCopy } from '@/lib/kit-copy';
+import { Board, BoardSkeleton, Button, ErrorBoard, Figure, ListToolbar, StatusChips } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Armchair } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
-
-interface CatalogCategory {
-  id: string;
-  code: string;
-  nameEn: string;
-  nameAr?: string | null;
-  nameHe?: string | null;
-}
-
-interface CatalogProduct {
-  id: string;
-  sku: string;
-  nameEn: string;
-  nameAr?: string;
-  nameHe?: string;
-  description?: string | null;
-  imageUrl?: string | null;
-  basePrice?: string | number | null;
-  price?: string | number | null;
-  dealerPrice?: string | number | null;
-  categoryId?: string | null;
-  category?: {
-    id?: string;
-    nameEn: string;
-    nameAr?: string;
-    nameHe?: string;
-  } | null;
-}
-
-function mediaSrc(url: string | null | undefined): string | null {
-  if (!url?.trim()) return null;
-  if (/^https?:\/\//i.test(url) || url.startsWith('blob:')) return url;
-  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-}
 
 export default function CatalogPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
-  const tCommon = useTranslations('common');
+  const kit = useKitCopy();
+  const router = useRouter();
   const [q, setQ] = useState('');
   const [sectionId, setSectionId] = useState('all');
 
-  const categoriesQuery = useQuery({
-    queryKey: ['catalog-browse-categories'],
-    queryFn: () => apiFetch<CatalogCategory[]>('/api/v1/catalog/browse/categories'),
-  });
-
+  const categoriesQuery = useQuery({ queryKey: ['catalog-browse-categories'], queryFn: () => apiFetch<CatalogCategory[]>('/api/v1/catalog/browse/categories') });
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ pageSize: '100' });
     if (q.trim()) params.set('q', q.trim());
     if (sectionId !== 'all') params.set('categoryId', sectionId);
     return params.toString();
   }, [q, sectionId]);
-
   const productsQuery = useQuery({
     queryKey: ['catalog-browse', listParams],
-    queryFn: () =>
-      apiFetch<{ data: CatalogProduct[] }>(
-        `/api/v1/catalog/browse/products?${listParams}`,
-      ).then((r) => r.data ?? []),
+    queryFn: () => apiFetch<{ data: CatalogProduct[] }>(`/api/v1/catalog/browse/products?${listParams}`).then((r) => r.data ?? []),
     placeholderData: keepPreviousData,
+  });
+  const previouslyQuery = useQuery({
+    queryKey: ['catalog-browse-previously-ordered'],
+    queryFn: () => apiFetch<{ data: CatalogProduct[] }>('/api/v1/catalog/browse/previously-ordered').then((r) => r.data ?? []),
+    staleTime: 60_000,
   });
 
   const categories = categoriesQuery.data ?? [];
   const products = productsQuery.data ?? [];
-  const initialLoading =
-    (productsQuery.isLoading && !productsQuery.data) || categoriesQuery.isLoading;
+  const previously = previouslyQuery.data ?? [];
+  const initialLoading = (productsQuery.isLoading && !productsQuery.data) || categoriesQuery.isLoading;
+  const showShelf = !q.trim() && sectionId === 'all' && previously.length > 0;
 
   return (
-    <div className="space-y-6">
-      <PageHero
-        tone="soft"
-        title={t('catalog')}
-        description={tc('products')}
-        actions={
-          <Link
-            href="/dealer/order/custom"
-            className="inline-flex h-10 items-center rounded-[var(--maher-radius-md)] bg-[var(--maher-brand-soft)] px-4 text-sm font-medium text-brand"
-          >
-            {t('customItem')}
-          </Link>
-        }
+    <div className="maher-stagger space-y-5">
+      <Board tone="brand" wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t('catalog')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('catalogHint')}</p>
+            </div>
+            <Button variant="secondary" leadingIcon={<Sparkles className="h-4 w-4" />} onClick={() => router.push('/dealer/order/custom')}>
+              {t('customItem')}
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-5 lg:min-w-[20rem]">
+            <Figure size="sm" value={products.length} label={tc('products')} />
+            <Figure size="sm" value={categories.length} label={tc('allSections')} tone="info" />
+            <Figure size="sm" value={previously.length} label={tc('previouslyOrdered')} tone="success" />
+          </div>
+        </div>
+      </Board>
+
+      <ListToolbar copy={kit.toolbar} search={{ value: q, onChange: setQ, placeholder: tc('searchProducts') }} />
+
+      <StatusChips
+        aria-label={tc('allSections')}
+        value={sectionId}
+        onChange={setSectionId}
+        items={[{ id: 'all', label: tc('allSections'), count: sectionId === 'all' ? products.length : undefined }, ...categories.map((c) => ({ id: c.id, label: localizedName(locale, c) }))]}
       />
 
-      <MotionSection delayMs={40} className="space-y-4">
-        <div className="maher-stagger flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setSectionId('all')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-              sectionId === 'all'
-                ? 'bg-brand text-white'
-                : 'bg-[var(--maher-surface-muted)] text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {tc('allSections')}
-          </button>
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSectionId(c.id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                sectionId === c.id
-                  ? 'bg-brand text-white'
-                  : 'bg-[var(--maher-surface-muted)] text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {localizedName(locale, c)}
-            </button>
-          ))}
-        </div>
-
-        <Input
-          type="search"
-          withSearchIcon
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={tc('searchProducts')}
-          className="max-w-md"
-        />
-      </MotionSection>
+      {showShelf ? (
+        <Board tone="success" wash="top">
+          <Board.Header title={tc('previouslyOrdered')} description={tc('previouslyOrderedHint')} />
+          <ul className="flex gap-3 overflow-x-auto px-5 pb-5 pt-1 [scrollbar-width:thin]">
+            {previously.slice(0, 12).map((product) => (
+              <div key={product.id} className="w-44 shrink-0">
+                <ProductBoard product={product} compact badge={tc('previouslyOrdered')} />
+              </div>
+            ))}
+          </ul>
+        </Board>
+      ) : null}
 
       {productsQuery.isError && !productsQuery.data ? (
-        <ErrorState title={t('catalog')} onRetry={() => productsQuery.refetch()} />
+        <ErrorBoard title={t('catalog')} onRetry={() => productsQuery.refetch()} />
       ) : initialLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-[4/5] rounded-xl" />
+            <BoardSkeleton key={i} rows={3} />
           ))}
         </div>
       ) : products.length === 0 ? (
-        <EmptyState title={tc('noProducts')} />
+        <Board tone="neutral">
+          <Board.Empty title={tc('noProducts')} action={<Button size="sm" variant="secondary" onClick={() => (setQ(''), setSectionId('all'))}>{tc('allSections')}</Button>} />
+        </Board>
       ) : (
-        <StaggerGrid
-          className={`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 ${
-            productsQuery.isFetching ? 'opacity-70 transition-opacity' : ''
-          }`}
-        >
-          {products.map((product) => {
-            const title = localizedName(locale, product);
-            const image = mediaSrc(product.imageUrl);
-            const price = product.price ?? product.dealerPrice ?? product.basePrice;
-            const priceNum = price != null ? Number(price) : NaN;
-            return (
-              <Link key={product.id} href={`/dealer/catalog/${product.id}`} className="flex">
-                <SurfaceCard
-                  tilt
-                  className="maher-list-card group flex flex-1 flex-col !rounded-xl"
-                >
-                <div className="relative aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]">
-                  {image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={image}
-                      alt={title}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.05]"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
-                      <Armchair className="h-8 w-8 opacity-40" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-1 flex-col gap-1.5 p-3">
-                  <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
-                    {title}
-                  </h2>
-                  {product.category ? (
-                    <p className="truncate text-xs text-text-secondary">
-                      {localizedName(locale, product.category)}
-                    </p>
-                  ) : null}
-                  <div className="mt-auto flex items-end justify-between gap-2 maher-card-rule-t pt-2.5">
-                    <span className="text-sm font-bold tracking-tight text-text-primary" dir="ltr">
-                      {Number.isFinite(priceNum)
-                        ? `${priceNum.toFixed(0)} ${tCommon('currency')}`
-                        : '—'}
-                    </span>
-                    <span className="shrink-0 text-xs font-semibold text-brand">
-                      {tCommon('viewDetails')}
-                    </span>
-                  </div>
-                </div>
-              </SurfaceCard>
-              </Link>
-            );
-          })}
-        </StaggerGrid>
+        <ul className={`maher-stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 ${productsQuery.isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}`}>
+          {products.map((product) => (
+            <ProductBoard key={product.id} product={product} />
+          ))}
+        </ul>
       )}
     </div>
   );

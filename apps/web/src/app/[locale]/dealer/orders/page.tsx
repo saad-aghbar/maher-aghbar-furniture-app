@@ -12,34 +12,12 @@ import {
   ORDER_LIFECYCLE_TABS,
   type OrderLifecycleTab,
 } from '@/lib/dealer-order-ui';
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  Input,
-  Ltr,
-  MotionSection,
-  PageHero,
-  Skeleton,
-  StatusBadge,
-  StaggerGrid,
-  cn,
-} from '@maher/ui';
+import { Board, BoardSkeleton, Button, ErrorBoard, Figure, ListToolbar, Ltr, Meter, Ribbon, Stamp, StatusChips, type BoardTone } from '@maher/ui';
+import { useKitCopy } from '@/lib/kit-copy';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Armchair,
-  AlertCircle,
-  CheckCircle2,
-  Factory,
-  FileText,
-  Hourglass,
-  Package,
-  PackageCheck,
-  Search,
-  Truck,
-} from 'lucide-react';
+import { Armchair } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface RequestDoc {
   id: string;
@@ -91,16 +69,25 @@ type HubRow =
   | (RequestRow & { kind: 'rfq' })
   | (SalesOrderRow & { kind: 'sales_order'; deliveryStatus?: string | null });
 
-const TAB_ICONS: Record<OrderLifecycleTab, ReactNode> = {
-  all: <Package className="h-4 w-4" />,
-  draft: <FileText className="h-4 w-4" />,
-  waiting: <Hourglass className="h-4 w-4" />,
-  needsInformation: <AlertCircle className="h-4 w-4" />,
-  inProduction: <Factory className="h-4 w-4" />,
-  ready: <PackageCheck className="h-4 w-4" />,
-  shipped: <Truck className="h-4 w-4" />,
-  delivered: <CheckCircle2 className="h-4 w-4" />,
+const TAB_TONE: Record<OrderLifecycleTab, BoardTone> = {
+  all: 'neutral',
+  draft: 'neutral',
+  waiting: 'warning',
+  needsInformation: 'error',
+  inProduction: 'brand',
+  ready: 'success',
+  shipped: 'info',
+  delivered: 'success',
 };
+
+function statusTone(status: string): BoardTone {
+  const key = status.toUpperCase();
+  if (/(DELIVERED|COMPLETED|ACCEPTED|APPROVED)/.test(key)) return 'success';
+  if (/(REJECTED|CANCEL|OVERDUE)/.test(key)) return 'error';
+  if (/(NEED|PENDING|WAITING|DRAFT|SUBMITTED)/.test(key)) return 'warning';
+  if (/(PRODUCTION|PROGRESS|CONFIRMED|SHIPPED|READY|IN_TRANSIT)/.test(key)) return 'brand';
+  return 'neutral';
+}
 
 function mediaSrc(url: string | null | undefined): string | null {
   if (!url?.trim()) return null;
@@ -148,8 +135,8 @@ function OrderCard({
   title,
   imageUrl,
   tSales,
-  tCommon,
   tLifecycle,
+  tStatus,
   delivery,
 }: {
   row: HubRow;
@@ -157,103 +144,58 @@ function OrderCard({
   title: string;
   imageUrl: string | null;
   tSales: ReturnType<typeof useTranslations>;
-  tCommon: ReturnType<typeof useTranslations>;
   tLifecycle: ReturnType<typeof useTranslations>;
+  tStatus: ReturnType<typeof useTranslations>;
   delivery?: DealerDeliveryRow;
 }) {
   const dealerNo = dealerOrderNumber(row);
-  const progress =
-    row.kind === 'sales_order' && row.progressPercent != null ? row.progressPercent : null;
+  const progress = row.kind === 'sales_order' && row.progressPercent != null ? row.progressPercent : null;
   const rawEnd = row.kind === 'rfq' ? row.endCustomerName?.trim() : null;
-  const endCustomer =
-    rawEnd && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawEnd)
-      ? rawEnd
-      : null;
+  const endCustomer = rawEnd && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawEnd) ? rawEnd : null;
   const lifecycle = classifyHubLifecycle(row);
+  const tone = lifecycle && lifecycle !== 'pending' ? TAB_TONE[lifecycle as OrderLifecycleTab] ?? statusTone(row.status) : statusTone(row.status);
+  const safeStatus = (code: string) => {
+    try {
+      return tStatus(code as 'PENDING');
+    } catch {
+      return code.replaceAll('_', ' ').toLowerCase();
+    }
+  };
 
   return (
-    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-      <Link
-        href={detailHref}
-        className="relative block aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]"
-      >
+    <Board as="li" tone={tone} interactive href={detailHref} LinkComponent={Link} className="h-full">
+      <div className="relative aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={title}
-            className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 ease-out group-hover:scale-[1.06]"
-          />
+          <img src={imageUrl} alt={title} className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 ease-out group-hover:scale-[1.05]" />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-text-tertiary transition duration-300 group-hover:scale-105 group-hover:text-brand/50">
-            <Armchair className="h-7 w-7 opacity-40 transition group-hover:opacity-70" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[var(--maher-text-tertiary)]">
+            <Armchair className="h-7 w-7 opacity-40" />
             <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
           </div>
         )}
-        <div className="absolute start-1.5 top-1.5 origin-top-start scale-90">
-          <StatusBadge status={row.status} />
-        </div>
-        {progress != null ? (
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-2 pb-1.5 pt-5">
-            <div className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-white">
-              <span>{tSales('progress')}</span>
-              <Ltr>{progress}%</Ltr>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/35">
-              <div
-                className="maher-progress-fill h-full rounded-full bg-[var(--maher-brand)]"
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
-            </div>
-          </div>
-        ) : null}
-      </Link>
-
-      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-        <div className="space-y-0.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            <span className="font-medium normal-case tracking-normal">{tSales('systemOrderNumber')}: </span>
-            <Ltr>{row.number}</Ltr>
-          </p>
-          {dealerNo ? (
-            <p className="truncate text-[11px] text-text-secondary">
-              <span className="text-text-tertiary">{tSales('dealerOrderNumber')}: </span>
-              <Ltr>{dealerNo}</Ltr>
-            </p>
-          ) : null}
-        </div>
-        <Link
-          href={detailHref}
-          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary transition-colors hover:text-brand"
-        >
-          {title}
-        </Link>
-        {endCustomer ? (
-          <p className="truncate text-[11px] text-text-tertiary">{endCustomer}</p>
-        ) : null}
-        {lifecycle && lifecycle !== 'pending' ? (
-          <p className="truncate text-[11px] font-medium text-text-secondary">
-            {tLifecycle(`tabs.${lifecycle}`)}
-          </p>
-        ) : null}
-        {delivery?.calendarDate || delivery?.customerStatus ? (
-          <p className="truncate text-[11px] text-text-secondary">
-            {delivery.customerStatus ? <StatusBadge status={delivery.customerStatus} /> : null}
-            {delivery.calendarDate ? (
-              <Ltr className="ms-1">{delivery.calendarDate}</Ltr>
-            ) : null}
-          </p>
-        ) : null}
-
-        <div className="mt-auto flex items-center justify-end maher-card-rule-t pt-2">
-          <Link href={detailHref}>
-            <Button size="sm" variant="ghost">
-              {tCommon('details')}
-            </Button>
-          </Link>
-        </div>
+        <span className="absolute start-2 top-2">
+          <Stamp tone={tone} size="sm">{lifecycle && lifecycle !== 'pending' ? tLifecycle(`tabs.${lifecycle}`) : safeStatus(row.status)}</Stamp>
+        </span>
       </div>
-    </article>
+      <div className="flex flex-1 flex-col gap-1.5 px-3.5 pb-3.5 pt-3">
+        <Ltr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--maher-text-tertiary)]">{row.number}</Ltr>
+        <h2 className="line-clamp-2 text-[14px] font-semibold leading-5 text-[var(--maher-text-primary)]">{title}</h2>
+        {dealerNo ? (
+          <p className="truncate text-[12px] text-[var(--maher-text-secondary)]">
+            {tSales('dealerOrderNumber')}: <Ltr>{dealerNo}</Ltr>
+          </p>
+        ) : null}
+        {endCustomer ? <p className="truncate text-[12px] text-[var(--maher-text-tertiary)]">{endCustomer}</p> : null}
+        {progress != null ? <Meter value={progress} max={100} tone={tone} valueLabel={`${Math.round(progress)}%`} /> : null}
+        {delivery?.calendarDate || delivery?.customerStatus ? (
+          <p className="mt-auto flex flex-wrap items-center gap-1.5 pt-1 text-[12px] text-[var(--maher-text-secondary)]">
+            {delivery.customerStatus ? <Stamp tone={statusTone(delivery.customerStatus)} size="sm">{safeStatus(delivery.customerStatus)}</Stamp> : null}
+            {delivery.calendarDate ? <Ltr>{delivery.calendarDate}</Ltr> : null}
+          </p>
+        ) : null}
+      </div>
+    </Board>
   );
 }
 
@@ -263,6 +205,8 @@ export default function OrdersPage() {
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
   const tl = useTranslations('lifecycle');
+  const tStatus = useTranslations('statuses');
+  const kit = useKitCopy();
   const [tab, setTab] = useState<OrderLifecycleTab>('all');
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -394,25 +338,17 @@ export default function OrdersPage() {
     return null;
   }
 
-  const tabs = ORDER_LIFECYCLE_TABS.map((key) => ({
-    key,
-    label: tl(`tabs.${key}`),
-    count: tabCounts[key],
-    icon: TAB_ICONS[key],
-    activeClass: 'border-brand bg-[var(--maher-brand-soft)] text-brand',
-  }));
-
   const isLoading = requestsQuery.isLoading || salesOrdersQuery.isLoading;
   const isError = requestsQuery.isError || salesOrdersQuery.isError;
   const emptyKey = lifecycleEmptyMessageKey(tab, Boolean(debouncedSearch));
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-[4/5] w-full rounded-xl" />
+      <div className="space-y-5">
+        <BoardSkeleton rows={2} />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <BoardSkeleton key={i} rows={3} />
           ))}
         </div>
       </div>
@@ -421,7 +357,7 @@ export default function OrdersPage() {
 
   if (isError) {
     return (
-      <ErrorState
+      <ErrorBoard
         title={tNav('myOrders')}
         description={tCommon('loadFailed')}
         onRetry={() => {
@@ -433,78 +369,67 @@ export default function OrdersPage() {
     );
   }
 
+  const lanes = ORDER_LIFECYCLE_TABS.filter((key) => key !== 'all');
+  const attention = (tabCounts.needsInformation ?? 0) + (tabCounts.ready ?? 0);
+  const heroTone: BoardTone = tabCounts.needsInformation ? 'warning' : tabCounts.ready ? 'success' : 'brand';
+
   return (
-    <div className="space-y-6">
-      <PageHero tone="soft" title={tNav('myOrders')} description={tCommon('ordersSubtitle')} />
-
-      <MotionSection delayMs={20} className="space-y-3">
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-          <Input
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder={tl('searchOrders')}
-            className="ps-9"
-            aria-label={tl('searchOrders')}
-          />
+    <div className="maher-stagger space-y-5">
+      <Board tone={heroTone} wash="top" as="section">
+        <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{tNav('myOrders')}</h1>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tCommon('ordersSubtitle')}</p>
+            </div>
+            <Link href="/dealer/orders/new">
+              <Button>{tNav('createOrder')}</Button>
+            </Link>
+          </div>
+          <div className="min-w-0">
+            <Ribbon size="sm" segments={lanes.map((key) => ({ key, label: tl(`tabs.${key}`), value: tabCounts[key] ?? 0, tone: TAB_TONE[key] }))} />
+            <div className="mt-3 grid grid-cols-3 gap-4">
+              <Figure size="sm" value={rows.length} label={tl('tabs.all')} />
+              <Figure size="sm" value={tabCounts.inProduction ?? 0} label={tl('tabs.inProduction')} tone="brand" />
+              <Figure size="sm" value={attention} label={tl('tabs.ready')} tone={attention ? heroTone : 'neutral'} />
+            </div>
+          </div>
         </div>
-      </MotionSection>
+      </Board>
 
-      <MotionSection delayMs={40} className="space-y-2">
-        <div className="maher-stagger flex flex-wrap gap-2">
-          {tabs.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="tab"
-              aria-selected={tab === item.key}
-              onClick={() => setTab(item.key)}
-              className={cn(
-                'maher-filter-chip maher-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
-                tab === item.key
-                  ? item.activeClass
-                  : 'border-border bg-surface text-text-secondary hover:border-brand/30 hover:text-text-primary',
-              )}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-              <Ltr className="maher-filter-chip__count rounded-full bg-black/5 px-1.5 text-xs tabular-nums">
-                {item.count}
-              </Ltr>
-            </button>
-          ))}
-        </div>
-      </MotionSection>
+      <ListToolbar copy={kit.toolbar} search={{ value: searchInput, onChange: setSearchInput, placeholder: tl('searchOrders') }} />
+
+      <StatusChips
+        aria-label={tNav('myOrders')}
+        value={tab}
+        onChange={(id) => setTab(id as OrderLifecycleTab)}
+        items={ORDER_LIFECYCLE_TABS.map((key) => ({ id: key, label: tl(`tabs.${key}`), count: tabCounts[key] ?? 0, tone: key === 'all' ? undefined : TAB_TONE[key] }))}
+      />
 
       {filteredRows.length === 0 ? (
-        <div key={`empty-${tab}-${debouncedSearch}`} className="maher-panel-swap">
-          <EmptyState
+        <Board tone="neutral" key={`empty-${tab}-${debouncedSearch}`}>
+          <Board.Empty
             title={tl(emptyKey, debouncedSearch ? { query: debouncedSearch } : undefined)}
             description={tab === 'all' ? tc('noOrdersYetHint') : undefined}
+            action={tab !== 'all' ? <Button size="sm" variant="secondary" onClick={() => setTab('all')}>{tl('tabs.all')}</Button> : <Link href="/dealer/catalog"><Button size="sm">{tNav('catalog')}</Button></Link>}
           />
-        </div>
+        </Board>
       ) : (
-        <StaggerGrid
-          key={`${tab}-${debouncedSearch}`}
-          className="maher-panel-swap grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-        >
+        <ul key={`${tab}-${debouncedSearch}`} className="maher-stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {filteredRows.map((row) => (
             <OrderCard
               key={`${row.kind}-${row.id}`}
               row={row}
               title={orderTitle(row)}
               imageUrl={cardImageUrl(row)}
-              detailHref={
-                row.kind === 'rfq' ? `/orders/requests/${row.id}` : `/orders/${row.id}`
-              }
+              detailHref={row.kind === 'rfq' ? `/dealer/orders/requests/${row.id}` : `/dealer/orders/${row.id}`}
               tSales={t}
-              tCommon={tCommon}
               tLifecycle={tl}
+              tStatus={tStatus}
               delivery={row.kind === 'sales_order' ? deliveryByOrderId.get(row.id) : undefined}
             />
           ))}
-        </StaggerGrid>
+        </ul>
       )}
     </div>
   );
