@@ -3,11 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  InventoryTracking,
-  Prisma,
-  WipKitStatus,
-} from '@maher/database';
+import { InventoryTracking, InventoryTxType, Prisma, WipKitStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import {
   canConsumeQty,
@@ -36,6 +32,7 @@ import {
 } from './floor-execution';
 import { productionOriginWhere } from './production-origin';
 import { allocateBinQrCode } from '../inventory/bin-resolve';
+import { SequenceService } from '../../common/sequence.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -187,7 +184,64 @@ function kitOutputName(kit: WipKitDetail | null): {
 
 @Injectable()
 export class WipKitService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequences: SequenceService,
+  ) {}
+
+  /**
+   * Move a lot to another bin *with its stock*: the balance follows the lot via a
+   * paired WAREHOUSE_TRANSFER, so a later issue from the lot's bin never finds 0.
+   */
+  private async relocateLot(
+    db: Prisma.TransactionClient | PrismaService,
+    lotId: string,
+    toLocationId: string,
+    userId?: string | null,
+  ): Promise<void> {
+    const lot = await db.inventoryLot.findUnique({
+      where: { id: lotId },
+      select: { id: true, inventoryItemId: true, warehouseId: true, locationId: true, quantity: true },
+    });
+    if (!lot || lot.locationId === toLocationId) return;
+    const target = await db.warehouseLocation.findUnique({ where: { id: toLocationId }, select: { id: true, warehouseId: true } });
+    if (!target) return;
+    const qty = Number(lot.quantity) || 0;
+    if (qty > 0) {
+      const from = await db.inventoryBalance.findFirst({
+        where: { inventoryItemId: lot.inventoryItemId, warehouseId: lot.warehouseId, locationId: lot.locationId },
+      });
+      const movable = Math.min(qty, Math.max(0, Number(from?.availableQty ?? 0)));
+      if (movable > 0) {
+        await db.inventoryBalance.update({ where: { id: from!.id }, data: { availableQty: { decrement: movable } } });
+        const to = await db.inventoryBalance.findFirst({
+          where: { inventoryItemId: lot.inventoryItemId, warehouseId: target.warehouseId, locationId: toLocationId },
+        });
+        if (to) await db.inventoryBalance.update({ where: { id: to.id }, data: { availableQty: { increment: movable } } });
+        else await db.inventoryBalance.create({ data: { inventoryItemId: lot.inventoryItemId, warehouseId: target.warehouseId, locationId: toLocationId, availableQty: movable } });
+        for (const [sign, warehouseId, locationId] of [
+          [-1, lot.warehouseId, lot.locationId],
+          [1, target.warehouseId, toLocationId],
+        ] as Array<[number, string, string | null]>) {
+          await db.inventoryTransaction.create({
+            data: {
+              number: await this.sequences.next('INVTX', 'INV'),
+              type: InventoryTxType.WAREHOUSE_TRANSFER,
+              inventoryItemId: lot.inventoryItemId,
+              warehouseId,
+              locationId,
+              quantity: sign * movable,
+              notes: 'Kit moved to stage bin',
+              createdById: userId ?? undefined,
+              referenceType: 'InventoryLot',
+              referenceId: lot.id,
+            },
+          });
+        }
+      }
+    }
+    await db.inventoryLot.update({ where: { id: lotId }, data: { locationId: toLocationId, warehouseId: target.warehouseId } });
+  }
 
   /** Whether this snapshot node should register a WIP kit on produce. */
   static producesWipKit(snap: {
@@ -486,10 +540,7 @@ export class WipKitService {
           stage.stageDefinition.code,
           stage.stageDefinition.nameEn,
         );
-        await this.prisma.inventoryLot.update({
-          where: { id: lot.id },
-          data: { locationId },
-        });
+        await this.relocateLot(this.prisma, lot.id, locationId);
       }
 
       const backfillLabels = pieceLabelsFromMetadata(snapNode?.metadata);
@@ -1514,10 +1565,7 @@ export class WipKitService {
         },
       });
       if (destBin && primaryLotId) {
-        await tx.inventoryLot.update({
-          where: { id: primaryLotId },
-          data: { locationId: destBin },
-        });
+        await this.relocateLot(tx, primaryLotId, destBin, params.userId);
       }
       return row;
     });
@@ -1914,11 +1962,8 @@ export class WipKitService {
     });
 
     const lotId = updated.pieces.find((p) => p.inventoryLotId)?.inventoryLotId;
-    if (lotId) {
-      await this.prisma.inventoryLot.update({
-        where: { id: lotId },
-        data: { locationId },
-      });
+    if (lotId && locationId) {
+      await this.relocateLot(this.prisma, lotId, locationId);
     }
 
     return updated;

@@ -2,6 +2,9 @@
 
 import { VoiceNote } from '@/components/voice-note';
 import { FabricDispositionSheet, TaskFabricBoard, useTaskFabric } from '@/components/worker/task-fabric-board';
+import { QualityGatePanel, useQualityFloor } from '@/components/worker/quality-gate-panel';
+import { RecoveryFloorPanel, useRecoveryPiece } from '@/components/worker/recovery-floor-panel';
+import { classifyTaskQualityKind, countPriorFails } from '@/lib/task-quality-kind';
 import { useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { isScheduledForToday, toDateOnly } from '@/lib/worker-scheduling';
@@ -30,9 +33,9 @@ import {
 } from '@maher/ui';
 import { localizedName, translateApiError } from '@maher/i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Armchair, CheckCircle2, ImageIcon, MoreHorizontal, PackageOpen, Pause, Play, ScanLine, XCircle } from 'lucide-react';
+import { AlertTriangle, Armchair, ImageIcon, MoreHorizontal, PackageOpen, Pause, Play, ScanLine } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 interface TaskDetail {
   id: string;
@@ -67,9 +70,13 @@ interface TaskDetail {
       nameAr?: string | null;
     } | null;
     salesOrder?: { id: string; number: string } | null;
+    returnRequestId?: string | null;
+    returnPieceId?: string | null;
   };
+  isRework?: boolean;
   stageDefinition?: {
     code: string;
+    executionKind?: string | null;
     nameEn: string;
     nameAr?: string;
     dependsOnCodes?: string[];
@@ -116,6 +123,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const [problemReason, setProblemReason] = useState('');
   const tStatus = useTranslations('statuses');
   const tMobileProd = useTranslations('mobile.production');
+  const tQuality = useTranslations('mobile.quality');
   const router = useRouter();
 
   const { data, isLoading, isError, error: loadError, refetch } = useQuery({
@@ -130,7 +138,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     try {
       await apiFetch(`/api/v1/tasks/${params.id}/${path}`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify(path === 'complete' && confirmedPackages.length ? { confirmedPackageLabels: confirmedPackages } : {}),
       });
       await qc.invalidateQueries({ queryKey: ['task', params.id] });
       await qc.invalidateQueries({ queryKey: ['my-tasks'] });
@@ -144,9 +152,18 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   }
 
   const fabric = useTaskFabric(params.id, Boolean(data));
+  const stageCodeForKind = (data?.stageDefinition?.code ?? '').toUpperCase();
+  const floorCtx = useQualityFloor(data?.productionOrder?.id, Boolean(data) && (Boolean(data?.isRework) || /INSPECTION|QC|PACKAGING|PACK/.test(stageCodeForKind)));
+  const recovery = useRecoveryPiece(data?.productionOrder?.returnRequestId, data?.productionOrder?.returnPieceId);
+  const [packagesReady, setPackagesReady] = useState(false);
+  const [confirmedPackages, setConfirmedPackages] = useState<string[]>([]);
+  const onPackagesReady = useCallback((ready: boolean, labels: string[]) => {
+    setPackagesReady(ready);
+    setConfirmedPackages(labels);
+  }, []);
   async function finish() {
     // Fabric stages record leftovers (return / scrap) before the stage closes.
-    if (fabric.relevant && fabric.items.some((i) => i.issuedQty > 0)) {
+    if (fabric.relevant && fabric.openLots.length > 0) {
       setDispositionOpen(true);
       return;
     }
@@ -219,7 +236,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const canResume = data.status === 'PAUSED' && !waiting;
   const canAttach = canFinish;
   const openBlockers = (data.blockers ?? []).filter((b) => !b.resolvedAt);
-  const needsPhotos = Boolean(data.stageDefinition?.requiresPhotos) && !(data.photos?.length);
+  const needsPhotos = Boolean(data.stageDefinition?.requiresPhotos) && !(data.photos?.length) && !/INSPECTION|QC/.test((data.stageDefinition?.code ?? '').toUpperCase());
   const factoryNo = data.factoryOrderNumber ?? data.productionOrder?.number ?? '—';
   const salesNo = data.salesOrderNumber ?? data.productionOrder?.salesOrder?.number ?? null;
   const productImage = mediaSrc(data.productImageUrl ?? data.productionOrder?.product?.imageUrl ?? null);
@@ -236,11 +253,15 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   })();
   const elapsed = data.timing?.elapsedMinutes ?? 0;
   const estimated = data.timing?.estimatedMinutes ?? null;
-  const finishBlocked = !canFinish || openBlockers.length > 0 || needsPhotos || uploading;
+  const qualityKind = classifyTaskQualityKind({ stageCode: data.stageDefinition?.code, executionKind: data.stageDefinition?.executionKind, isRework: data.isRework, priorFailCount: Math.max(countPriorFails(floorCtx.data?.inspections), floorCtx.data?.lightAnalytics?.reworkCount ?? 0) });
+  const isQcGate = qualityKind === 'inspection' || qualityKind === 'reinspection';
+  const isPackaging = qualityKind === 'packaging';
+  const isRecovery = qualityKind === 'recovery';
+  const finishBlocked = !canFinish || openBlockers.length > 0 || needsPhotos || uploading || isQcGate || (isPackaging && !packagesReady) || (isRecovery && recovery.finishBlocked);
   const stageTitle = data.stageDefinition ? localizedName(locale, data.stageDefinition, data.name) : data.name;
   const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
 
-  async function quickAction(kind: 'qc-pass' | 'qc-fail' | 'identify') {
+  async function quickAction(kind: 'identify') {
     setError(null);
     setBanner(null);
     try {
@@ -251,8 +272,6 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
         setBanner(t('materialsIdentify'));
         return;
       }
-      await apiFetch('/api/v1/quality-inspections', { method: 'POST', body: JSON.stringify({ taskId: data!.id, productionOrderId: data!.productionOrder?.id, result: kind === 'qc-pass' ? 'PASS' : 'FAIL' }) });
-      setBanner(kind === 'qc-pass' ? t('qcPass') : t('qcFail'));
     } catch (err) {
       setError(translateApiError(locale, err, tCommon('actionFailed')));
     }
@@ -321,8 +340,6 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
             items={[
               { id: 'take-in', label: tNav('takeIn'), icon: <PackageOpen className="h-4 w-4" />, onSelect: () => router.push(`/worker/tasks/${params.id}/take-in`) },
               { id: 'identify', label: t('materialsIdentify'), icon: <ScanLine className="h-4 w-4" />, onSelect: () => void quickAction('identify') },
-              { id: 'qc-pass', label: t('qcPass'), icon: <CheckCircle2 className="h-4 w-4" />, separator: true, onSelect: () => void quickAction('qc-pass') },
-              { id: 'qc-fail', label: t('qcFail'), icon: <XCircle className="h-4 w-4" />, tone: 'error' as const, onSelect: () => void quickAction('qc-fail') },
               { id: 'problem', label: t('reportProblem'), icon: <AlertTriangle className="h-4 w-4" />, tone: 'error' as const, separator: true, onSelect: () => setProblemOpen(true) },
             ]}
           />
@@ -337,7 +354,32 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <TaskFabricBoard taskId={params.id} salesOrderId={data.productionOrder?.salesOrder?.id ?? null} canAct={!['COMPLETED', 'CANCELLED'].includes(data.status)} />
+      {qualityKind === 'rework' && floorCtx.data ? (
+        <Alert variant="warning">
+          <p className="font-medium">{tQuality('stampRework')} · {tQuality('reworkFixHint')}</p>
+          {(floorCtx.data.openRework?.description || floorCtx.data.inspections.flatMap((i) => i.defects ?? []).slice(-1)[0]?.description) ? (
+            <p className="mt-1 text-sm">{floorCtx.data.openRework?.description ?? floorCtx.data.inspections.flatMap((i) => i.defects ?? []).slice(-1)[0]?.description}</p>
+          ) : null}
+        </Alert>
+      ) : null}
+      {isQcGate || isPackaging ? (
+        <QualityGatePanel
+          kind={qualityKind as 'inspection' | 'reinspection' | 'packaging'}
+          productionOrderId={data.productionOrder?.id ?? ''}
+          stageCode={data.stageDefinition?.code}
+          canPerform={!['COMPLETED', 'CANCELLED'].includes(data.status)}
+          onPassed={async () => {
+            await qc.invalidateQueries({ queryKey: ['task', params.id] });
+            await qc.invalidateQueries({ queryKey: ['my-tasks'] });
+            router.push('/worker/tasks/completed');
+          }}
+          onPackagesReady={onPackagesReady}
+        />
+      ) : null}
+      {isRecovery && data.productionOrder?.returnRequestId && data.productionOrder.returnPieceId ? (
+        <RecoveryFloorPanel taskId={params.id} returnRequestId={data.productionOrder.returnRequestId} returnPieceId={data.productionOrder.returnPieceId} readOnly={['COMPLETED', 'CANCELLED'].includes(data.status)} />
+      ) : null}
+      {!isRecovery && !isQcGate ? <TaskFabricBoard taskId={params.id} salesOrderId={data.productionOrder?.salesOrder?.id ?? null} canAct={!['COMPLETED', 'CANCELLED'].includes(data.status)} /> : null}
       <FabricDispositionSheet
         taskId={params.id}
         open={dispositionOpen}

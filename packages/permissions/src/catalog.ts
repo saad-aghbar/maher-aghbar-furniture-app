@@ -283,6 +283,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     p.deliveryUpdate,
     p.salesOrderRead,
     p.returnRead,
+    // Recovery floor: workers on DISMANTLE_RECOVER log and post recovered parts.
+    p.returnRecoveryPost,
     p.documentRead,
     p.documentManage,
     p.notificationRead,

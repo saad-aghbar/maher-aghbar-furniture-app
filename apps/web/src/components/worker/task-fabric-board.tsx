@@ -26,7 +26,9 @@ export function useTaskFabric(taskId: string, enabled: boolean) {
   const items = board.data?.items ?? [];
   const relevant = items.length > 0;
   const allTaken = relevant && (board.data?.taken ?? 0) >= (board.data?.total ?? 0);
-  return { board, items, relevant, allTaken };
+  // Bundles taken into this stage whose leftovers have not been recorded yet.
+  const openLots = items.flatMap((i) => i.lots.filter((l) => l.qrCode && String(l.status).toUpperCase() === 'ISSUED'));
+  return { board, items, relevant, allTaken, openLots };
 }
 
 export function TaskFabricBoard({ taskId, salesOrderId, canAct }: { taskId: string; salesOrderId?: string | null; canAct: boolean }) {
@@ -192,7 +194,7 @@ export function FabricDispositionSheet({ taskId, open, onClose, onDone }: { task
   const toast = useToast();
   const qc = useQueryClient();
   const { items } = useTaskFabric(taskId, open);
-  const lots = items.flatMap((item) => item.lots.filter((l) => l.qrCode && (item.issuedQty > 0 || l.status === 'ISSUED' || l.status === 'CONSUMED')).map((l) => ({ ...l, itemLabel: item.label, unit: item.unit ?? '' })));
+  const lots = items.flatMap((item) => item.lots.filter((l) => l.qrCode && String(l.status).toUpperCase() === 'ISSUED').map((l) => ({ ...l, itemLabel: item.label, unit: item.unit ?? '' })));
   const [rows, setRows] = useState<Record<string, { returnedQty: number | null; scrapQty: number | null; scrapReason: string }>>({});
   const save = useMutation({
     mutationFn: async () => {

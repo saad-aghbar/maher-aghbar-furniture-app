@@ -36,6 +36,7 @@ import { FloorHandoffService } from '../notifications/floor-handoff.service';
 import { OpsNotifyService } from '../notifications/ops-notify.service';
 import type { PipelineHandoffFacts } from '../production/pipeline-handoff';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { ProductionReworkService } from '../production/production-rework.service';
 import { PlacementService } from '../scheduling/placement.service';
 import { ReturnPieceService } from '../contracts/return-piece.service';
 import { ensureTaskTimeEntry } from './ensure-time-entry';
@@ -112,6 +113,7 @@ export class TasksService {
     @Optional() placement?: PlacementService,
     @Optional() private readonly floorHandoff?: FloorHandoffService,
     @Optional() private readonly opsNotify?: OpsNotifyService,
+    @Optional() private readonly rework?: ProductionReworkService,
   ) {
     this.placement = placement ?? new PlacementService(this.prisma);
   }
@@ -2137,6 +2139,19 @@ export class TasksService {
     }
 
     this.notifyScheduleLifecycle(id, 'complete');
+
+    // Finishing the last task of a rework request closes the request and reopens
+    // inspection for reinspection — otherwise packaging stays locked forever.
+    if (task.isRework && task.reworkRequestId) {
+      try {
+        const stillOpen = await this.prisma.productionTask.count({
+          where: { reworkRequestId: task.reworkRequestId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+        });
+        if (stillOpen === 0) await this.rework?.completeRework(task.reworkRequestId, userId);
+      } catch {
+        /* best effort — the request can still be completed from the quality desk */
+      }
+    }
 
     if (handoffFacts) {
       await this.floorHandoff?.emitPipeline(handoffFacts, { actorUserId: userId });

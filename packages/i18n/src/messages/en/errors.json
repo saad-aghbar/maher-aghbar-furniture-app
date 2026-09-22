@@ -167,5 +167,6 @@
   "SETUP_INSPECTION_MUST_NOT_CONSUME": "Inspection confirms quality only and must not take kits or materials.",
   "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection confirms quality only and must not take kits or materials.",
   "DELIVERY_DATE_TOO_SOON": "Choose a delivery date at least 4 days from today.",
-  "NOT_RELEASED_TO_FACTORY": "Production has not been started on this factory order yet. A supervisor starts it from the factory floor once workers are assigned."
+  "NOT_RELEASED_TO_FACTORY": "Production has not been started on this factory order yet. A supervisor starts it from the factory floor once workers are assigned.",
+  "REWORK_OPEN": "A rework on this piece is still open. Finish the rework before passing inspection."
 }

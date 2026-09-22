@@ -24,7 +24,7 @@ import { jsonIdList } from '../../common/helpers/inventory-stage-behavior.util';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import { fabricStageIsReady } from './fabric-readiness';
 import { positiveUnitCost, resolveIssueUnitCost } from '../inventory/issue-unit-cost';
-import { isQualityPassthroughStage } from './workflow/domain/wip-handoff';
+import { incomingProducerSnapshotIds, isQualityPassthroughStage, passthroughSnapshotNodeIds } from './workflow/domain/wip-handoff';
 import {
   loadFabricReadinessForProductionOrder,
   loadFabricReadinessForSalesOrder,
@@ -893,6 +893,28 @@ export class ProductionInventoryService {
     return balances.reduce((s, b) => s + Number(b.availableQty), 0);
   }
 
+  private async consumerHasProducingPredecessor(db: Tx, stageInstanceId: string): Promise<boolean> {
+    const consumer = await db.productionOrderWorkflowSnapshotNode.findFirst({
+      where: { stageInstanceId },
+      select: { id: true, snapshotId: true },
+    });
+    if (!consumer) return true;
+    const [edges, nodes] = await Promise.all([
+      db.productionOrderWorkflowSnapshotEdge.findMany({
+        where: { snapshotId: consumer.snapshotId },
+        select: { fromSnapshotNodeId: true, toSnapshotNodeId: true },
+      }),
+      db.productionOrderWorkflowSnapshotNode.findMany({
+        where: { snapshotId: consumer.snapshotId },
+        select: { id: true, stageCode: true, executionKind: true, inventoryTracking: true, isSkipped: true },
+      }),
+    ]);
+    const predecessorIds = incomingProducerSnapshotIds(consumer.id, edges, passthroughSnapshotNodeIds(nodes));
+    return nodes.some(
+      (n) => predecessorIds.includes(n.id) && !n.isSkipped && n.inventoryTracking === InventoryTracking.PRODUCES_SEMI_FINISHED,
+    );
+  }
+
   private async semiFinishedNeeds(
     db: Tx | PrismaService,
     productionOrderId: string,
@@ -991,7 +1013,11 @@ export class ProductionInventoryService {
     const needs = await this.semiFinishedNeeds(params.tx, productionOrderId, qty, snap);
     await this.assertSemiFinishedReady(params.tx, productionOrderId, qty, snap ?? {});
 
-    const totalNeed = needs.reduce((s, n) => s + Number(n.qty), 0);
+    // Only producing stages that actually feed this consumer (DAG predecessors,
+    // through quality passthroughs) count — the same rule the incoming board uses,
+    // so a worker is never told "nothing to receive" and then blocked at finish.
+    const feeds = await this.consumerHasProducingPredecessor(params.tx, params.stageInstanceId);
+    const totalNeed = feeds ? needs.reduce((s, n) => s + Number(n.qty), 0) : 0;
     if (totalNeed > 0) {
       const receivedAgg = await params.tx.wipHandoff.aggregate({
         where: {

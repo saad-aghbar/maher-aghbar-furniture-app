@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { QualityResult } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
@@ -140,6 +140,21 @@ export class QualityInspectionService {
     });
     if (inspection.result && isQcPass(inspection.result)) {
       return this.load(params.id);
+    }
+
+    // A pass while a rework request is still open would unlock packaging on an
+    // unfinished piece; the rework must be closed (which reopens inspection) first.
+    if (params.result && isQcPass(String(params.result))) {
+      const openRework = await this.prisma.reworkRequest.findFirst({
+        where: { productionOrderId: inspection.productionOrderId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+        select: { id: true, number: true },
+      });
+      if (openRework) {
+        throw new BadRequestException({
+          code: 'REWORK_OPEN',
+          message: `Rework ${openRework.number} is still open. Finish the rework before passing inspection.`,
+        });
+      }
     }
 
     const merged = mergeChecklistPatches(inspection.items, params.checklistResults);

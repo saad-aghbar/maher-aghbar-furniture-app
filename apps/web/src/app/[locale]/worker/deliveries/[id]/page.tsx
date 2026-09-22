@@ -126,7 +126,7 @@ export default function EmployeeDeliveryPage({ params }: { params: { id: string 
 
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <div className="maher-stagger grid gap-5 lg:grid-cols-2">
+      <div className={sheet.products.length > 1 ? "maher-stagger grid gap-5 lg:grid-cols-2" : "maher-stagger grid gap-5"}>
         {sheet.products.map((product) => {
           const done = product.pieces.filter((p) => p.loadedAt).length;
           return (
