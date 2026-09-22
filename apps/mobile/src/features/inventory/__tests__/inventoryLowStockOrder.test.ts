@@ -19,7 +19,8 @@ describe('inventory low-stock purchase order', () => {
 
   it('reviews low stock on a dedicated inventory page', () => {
     expect(home).toContain('inventory/low-stock?group=');
-    expect(home).not.toContain('onOrder=');
+    // `onSelectProductionOrder=` is fine — only a low-stock `onOrder` callback is banned here.
+    expect(home).not.toMatch(/\bonOrder=/);
     expect(focus).not.toContain('onOrder');
     expect(focus).not.toContain('createPurchaseOrder');
   });

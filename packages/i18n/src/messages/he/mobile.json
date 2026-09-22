@@ -2980,7 +2980,15 @@
     "price": "מחיר יחידה",
     "lineTotal": "סה״כ",
     "linkedRequest": "בקשה {number}",
-    "openSalesOrder": "פתח הזמנת מכירה"
+    "openSalesOrder": "פתח הזמנת מכירה",
+    "costPlanned": "עלות מתוכננת",
+    "costLastActual": "בפועל אחרונה",
+    "costAvgActual": "ממוצע בפועל",
+    "costSamples": "{n} ייצורים",
+    "costMargin": "מרווח {pct}%",
+    "costBelow": "מתחת לעלות",
+    "costUsePlanned": "השתמש בעלות +{pct}%",
+    "costNoHistory": "אין היסטוריית מפעל עדיין"
   },
   "dealerQuotations": {
     "title": "הצעות מחיר",

@@ -2980,7 +2980,15 @@
     "price": "سعر الوحدة",
     "lineTotal": "الإجمالي",
     "linkedRequest": "الطلب {number}",
-    "openSalesOrder": "فتح الطلبية"
+    "openSalesOrder": "فتح الطلبية",
+    "costPlanned": "التكلفة المخططة",
+    "costLastActual": "آخر فعلية",
+    "costAvgActual": "متوسط الفعلية",
+    "costSamples": "{n} عمليات",
+    "costMargin": "الهامش {pct}%",
+    "costBelow": "أقل من التكلفة",
+    "costUsePlanned": "استخدم التكلفة +{pct}%",
+    "costNoHistory": "لا سجل مصنع بعد"
   },
   "dealerQuotations": {
     "title": "عروض الأسعار",

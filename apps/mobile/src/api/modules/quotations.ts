@@ -192,6 +192,22 @@ export async function getQuotation(id: string): Promise<QuotationDetail> {
   return apiGet<QuotationDetail>(`/quotations/${encodeURIComponent(id)}`);
 }
 
+export type QuotationLineCostHint = {
+  lineId: string;
+  basis: 'variant' | 'product' | 'modified' | 'custom' | 'none';
+  plannedCost: number | null;
+  lastActualCost: number | null;
+  lastActualAt: string | null;
+  avgActualCost: number | null;
+  sampleCount: number;
+  matched: 'exact' | 'product' | 'cohort' | 'none';
+};
+
+/** Staff-only: BOM baseline + last/avg factory actual per line, for pricing (same endpoint as web). */
+export async function getQuotationCostHints(id: string): Promise<{ lines: QuotationLineCostHint[] }> {
+  return apiGet<{ lines: QuotationLineCostHint[] }>(`/quotations/${encodeURIComponent(id)}/cost-hints`);
+}
+
 export async function updateQuotation(
   id: string,
   body: UpdateQuotationInput,

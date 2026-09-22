@@ -224,7 +224,7 @@ describe('inventory scan identity (mobile)', () => {
     const admin = readFileSync(
       join(
         __dirname,
-        '../../../../../admin-web/src/app/[locale]/inventory/inventory-client.tsx',
+        '../../../../../web/src/app/[locale]/admin/inventory/inventory-client.tsx',
       ),
       'utf8',
     );

@@ -2980,7 +2980,15 @@
     "price": "Unit price",
     "lineTotal": "Total",
     "linkedRequest": "Request {number}",
-    "openSalesOrder": "Open sales order"
+    "openSalesOrder": "Open sales order",
+    "costPlanned": "Planned cost",
+    "costLastActual": "Last actual",
+    "costAvgActual": "Avg actual",
+    "costSamples": "{n} builds",
+    "costMargin": "Margin {pct}%",
+    "costBelow": "Below cost",
+    "costUsePlanned": "Use cost +{pct}%",
+    "costNoHistory": "No factory history yet"
   },
   "dealerQuotations": {
     "title": "Quotations",

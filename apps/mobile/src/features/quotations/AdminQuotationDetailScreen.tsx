@@ -11,6 +11,7 @@ import { toastMessageForError } from '@/api/queryClient';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import {
   getQuotation,
+  getQuotationCostHints,
   openQuotationPdf,
   rejectQuotation,
   reviseQuotation,
@@ -240,6 +241,16 @@ export function AdminQuotationDetailScreen({
   });
 
   const detail = query.data;
+  const costHintsQuery = useQuery({
+    queryKey: [...queryKeys.quotations.detail(quotationId), 'cost-hints'],
+    queryFn: () => getQuotationCostHints(quotationId),
+    enabled: allowed && Boolean(quotationId) && detail?.status === 'DRAFT',
+    retry: false,
+  });
+  const costHintByLine = useMemo(
+    () => new Map((costHintsQuery.data?.lines ?? []).map((h) => [h.lineId, h])),
+    [costHintsQuery.data],
+  );
 
   useEffect(() => {
     if (!detail) return;
@@ -813,6 +824,59 @@ export function AdminQuotationDetailScreen({
                               {boardMoney(locale, line.referenceUnitPrice)}
                             </AppText>
                           ) : null}
+                          {(() => {
+                            const hint = costHintByLine.get(row.id);
+                            if (!hint) return null;
+                            const reference =
+                              hint.lastActualCost ?? hint.avgActualCost ?? hint.plannedCost ?? null;
+                            const unit = Number(row.unitPrice);
+                            const margin =
+                              reference != null && reference > 0 && Number.isFinite(unit) && unit > 0
+                                ? Math.round(((unit - reference) / unit) * 100)
+                                : null;
+                            return (
+                              <View style={{ gap: 2, marginTop: 4 }}>
+                                <AppText variant="caption" color="muted" dir="ltr">
+                                  {t('mobile.adminQuotation.costPlanned')}{' '}
+                                  {hint.plannedCost != null ? boardMoney(locale, hint.plannedCost) : '—'}
+                                  {hint.lastActualCost != null
+                                    ? ` · ${t('mobile.adminQuotation.costLastActual')} ${boardMoney(locale, hint.lastActualCost)}`
+                                    : ''}
+                                  {hint.avgActualCost != null && hint.sampleCount > 1
+                                    ? ` · ${t('mobile.adminQuotation.costAvgActual')} ${boardMoney(locale, hint.avgActualCost)} (${t('mobile.adminQuotation.costSamples', { n: hint.sampleCount })})`
+                                    : ''}
+                                  {hint.sampleCount === 0 && hint.plannedCost == null
+                                    ? t('mobile.adminQuotation.costNoHistory')
+                                    : ''}
+                                </AppText>
+                                {margin != null ? (
+                                  <AppText
+                                    variant="caption"
+                                    weight="medium"
+                                    color={margin < 0 ? 'error' : margin < 15 ? 'warning' : 'success'}
+                                    dir="ltr"
+                                  >
+                                    {margin < 0
+                                      ? t('mobile.adminQuotation.costBelow')
+                                      : t('mobile.adminQuotation.costMargin', { pct: margin })}
+                                  </AppText>
+                                ) : reference != null && reference > 0 && !(Number(row.unitPrice) > 0) ? (
+                                  <SecondaryButton
+                                    label={t('mobile.adminQuotation.costUsePlanned', { pct: 35 })}
+                                    onPress={() =>
+                                      setDraftLines((prev) =>
+                                        prev.map((entry) =>
+                                          entry.id === row.id
+                                            ? { ...entry, unitPrice: String(Math.round(reference * 1.35)) }
+                                            : entry,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                ) : null}
+                              </View>
+                            );
+                          })()}
                           <SecondaryButton
                             label={t('mobile.adminQuotation.editLine')}
                             onPress={() => {
