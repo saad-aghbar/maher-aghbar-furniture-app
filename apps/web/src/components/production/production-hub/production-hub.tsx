@@ -247,8 +247,8 @@ function LifecycleTab({ ctl, blockers }: { ctl: ProductionOrderCtl; blockers: Ar
 
       <Board tone={inProduction ? 'info' : 'warning'} className={blockers.length ? 'xl:col-span-7' : 'xl:col-span-7'}>
         <Board.Header
-          title={tc('savePlanning')}
-          description={inProduction ? tp('stageAssignLocked') : undefined}
+          title={tp('planning')}
+          description={inProduction ? tp('stageAssignLocked') : tp('planningHint')}
           actions={
             !isCompleted ? (
               <Button size="sm" loading={ctl.plan.isPending} disabled={!dirty} onClick={() => ctl.plan.mutate(inProduction ? { priority, plannedCompletionDate: plannedEnd || undefined } : { priority, plannedStartDate: plannedStart || undefined, plannedCompletionDate: plannedEnd || undefined, estimatedMinutes: estimated ?? undefined })}>
@@ -610,7 +610,7 @@ function WorkflowTab({ ctl }: { ctl: ProductionOrderCtl }) {
     <div className="space-y-5">
       {canAssign ? (
         <Board tone="info">
-          <Board.Header title={tp('workflow.title')} description={tp('workflow.subtitle')} actions={<Button size="sm" disabled={!workflowId} loading={ctl.assignWorkflow.isPending} onClick={() => workflowId && ctl.assignWorkflow.mutate(workflowId)}>{tc('assign')}</Button>} />
+          <Board.Header title={tp('workflow.assignTitle')} description={tp('workflow.assignHint')} actions={<Button size="sm" disabled={!workflowId} loading={ctl.assignWorkflow.isPending} onClick={() => workflowId && ctl.assignWorkflow.mutate(workflowId)}>{tc('assign')}</Button>} />
           <Board.Body>
             <Combobox label={tp('workflow.title')} value={workflowId} onChange={setWorkflowId} options={(workflows.data ?? []).map((w) => ({ value: w.id, label: localizedName(copy.locale, w, w.code), description: w.code }))} placeholder={tc('select')} emptyText={kit.combobox.empty} clearLabel={kit.combobox.clear} />
           </Board.Body>

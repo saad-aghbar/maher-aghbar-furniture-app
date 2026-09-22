@@ -540,7 +540,9 @@
     "timeLeft": "נותרו {n}",
     "timeRunning": "פועל",
     "timePaused": "מושהה",
-    "timeNotStarted": "לא התחיל"
+    "timeNotStarted": "לא התחיל",
+    "assignTitle": "מסלול השלבים להזמנה זו",
+    "assignHint": "בחרו איזה תהליך מפורסם הזמנת המפעל תעקוב אחריו. אפשר לשנות עד תחילת העבודה."
   },
   "setup": {
     "title": "הגדרת ייצור",
@@ -826,5 +828,7 @@
   "hubStageOutputNone": "אין תוצר חצי־מוגמר",
   "hubStageOutputNext": "הבא: {stages}",
   "hubStageOutputPieces": "{done}/{expected} חלקים",
-  "hubStageOutputKits": "{count} ערכות"
+  "hubStageOutputKits": "{count} ערכות",
+  "planning": "תכנון",
+  "planningHint": "עדיפות, חלון מתוכנן וזמן שלב ברירת מחדל להזמנת מפעל זו."
 }

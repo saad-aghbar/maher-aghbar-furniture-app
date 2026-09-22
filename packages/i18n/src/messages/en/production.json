@@ -540,7 +540,9 @@
     "timeLeft": "{n} left",
     "timeRunning": "Running",
     "timePaused": "Paused",
-    "timeNotStarted": "Not started"
+    "timeNotStarted": "Not started",
+    "assignTitle": "Stage path for this order",
+    "assignHint": "Choose which published workflow this factory order follows. You can change it until work starts."
   },
   "setup": {
     "title": "Production setup",
@@ -826,5 +828,7 @@
   "hubStageOutputNone": "No semi-finished output",
   "hubStageOutputNext": "Next: {stages}",
   "hubStageOutputPieces": "{done}/{expected} pieces",
-  "hubStageOutputKits": "{count} kits"
+  "hubStageOutputKits": "{count} kits",
+  "planning": "Planning",
+  "planningHint": "Priority, planned window and default stage time for this factory order."
 }

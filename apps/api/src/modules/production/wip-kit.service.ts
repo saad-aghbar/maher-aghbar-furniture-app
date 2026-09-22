@@ -1928,7 +1928,36 @@ export class WipKitService {
    * Live semi-finished output for a producing task (soft expected piece count).
    */
   async getTaskWipOutput(taskId: string) {
-    const ctx = await this.resolveProduceSemiTask(taskId);
+    // A read on a stage without semi output is a plain "nothing here", not an error.
+    let ctx: Awaited<ReturnType<WipKitService['resolveProduceSemiTask']>>;
+    try {
+      ctx = await this.resolveProduceSemiTask(taskId);
+    } catch (err) {
+      const code = (err as { response?: { code?: string } })?.response?.code;
+      if (code === 'NOT_PRODUCE_SEMI' || code === 'NO_STAGE_INSTANCE') {
+        return {
+          producesSemiFinished: false,
+          expectedPieceCount: 0,
+          expectedKitCount: 0,
+          piecesPerKit: 0,
+          requiresPhotos: false,
+          kitId: null,
+          qrCode: null,
+          status: null,
+          completedPieceCount: 0,
+          stageCode: null,
+          stageNameEn: null,
+          stageNameAr: null,
+          stageNameHe: null,
+          outputNameEn: null,
+          outputNameAr: null,
+          outputNameHe: null,
+          nextStages: [],
+          pieces: [],
+        };
+      }
+      throw err;
+    }
     const kit = await this.prisma.wipKit.findUnique({
       where: { stageInstanceId: ctx.stageInstanceId },
       include: kitInclude,

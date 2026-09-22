@@ -540,7 +540,9 @@
     "timeLeft": "متبقٍ {n}",
     "timeRunning": "جارٍ",
     "timePaused": "متوقف",
-    "timeNotStarted": "لم يبدأ"
+    "timeNotStarted": "لم يبدأ",
+    "assignTitle": "مسار المراحل لهذا الأمر",
+    "assignHint": "اختر سير العمل المنشور الذي سيتبعه هذا الأمر. يمكن تغييره حتى بدء العمل."
   },
   "setup": {
     "title": "إعداد الإنتاج",
@@ -826,5 +828,7 @@
   "hubStageOutputNone": "لا مخرجات نصف مصنّعة",
   "hubStageOutputNext": "التالي: {stages}",
   "hubStageOutputPieces": "{done}/{expected} قطعة",
-  "hubStageOutputKits": "{count} أطقم"
+  "hubStageOutputKits": "{count} أطقم",
+  "planning": "التخطيط",
+  "planningHint": "الأولوية والنافذة المخططة ومدة المرحلة الافتراضية لهذا الأمر."
 }

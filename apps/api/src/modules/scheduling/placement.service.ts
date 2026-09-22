@@ -662,17 +662,30 @@ export class PlacementService {
           },
         });
 
+        // The order window envelopes its stages: a stage placed earlier can pull the
+        // start forward and one placed later can push the end back, but a single
+        // short stage must never drag the order's due date earlier.
         const po = await tx.productionOrder.findUnique({
           where: { id: opts.task.productionOrderId },
-          select: { plannedStartDate: true },
+          select: { plannedStartDate: true, plannedCompletionDate: true },
         });
-        await tx.productionOrder.update({
-          where: { id: opts.task.productionOrderId },
-          data: {
-            ...(!po?.plannedStartDate && opts.plannedStart ? { plannedStartDate: opts.plannedStart } : {}),
-            ...(opts.plannedEnd ? { plannedCompletionDate: opts.plannedEnd } : {}),
-          },
-        });
+        const nextStart =
+          opts.plannedStart && (!po?.plannedStartDate || opts.plannedStart.getTime() < po.plannedStartDate.getTime())
+            ? opts.plannedStart
+            : null;
+        const nextEnd =
+          opts.plannedEnd && (!po?.plannedCompletionDate || opts.plannedEnd.getTime() > po.plannedCompletionDate.getTime())
+            ? opts.plannedEnd
+            : null;
+        if (nextStart || nextEnd) {
+          await tx.productionOrder.update({
+            where: { id: opts.task.productionOrderId },
+            data: {
+              ...(nextStart ? { plannedStartDate: nextStart } : {}),
+              ...(nextEnd ? { plannedCompletionDate: nextEnd } : {}),
+            },
+          });
+        }
 
         await tx.scheduleChangeHistory.create({
           data: {

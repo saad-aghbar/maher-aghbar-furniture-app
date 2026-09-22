@@ -113,6 +113,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const [problemOpen, setProblemOpen] = useState(false);
   const [problemReason, setProblemReason] = useState('');
   const tStatus = useTranslations('statuses');
+  const tMobileProd = useTranslations('mobile.production');
   const router = useRouter();
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -301,7 +302,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
         facts={[
           { label: t('factoryOrderNumber'), value: factoryNo, ltr: true },
           ...(salesNo ? [{ label: t('salesOrderNumber'), value: salesNo, ltr: true }] : []),
-          { label: t('priority'), value: data.priority.toLowerCase(), tone: /URGENT|HIGH|CRITICAL/i.test(data.priority) ? ('error' as const) : undefined },
+          { label: t('priority'), value: (() => { try { return tMobileProd(`priority.${data.priority}` as never); } catch { return data.priority; } })(), tone: /URGENT|HIGH|CRITICAL/i.test(data.priority) ? ('error' as const) : undefined },
           ...(data.plannedCompletion ? [{ label: t('plannedCompletion'), value: toDateOnly(data.plannedCompletion) ?? '—', ltr: true, tone: scheduledToday ? ('brand' as const) : undefined }] : []),
         ]}
         primary={primaryControl}
