@@ -256,13 +256,9 @@ export class AuthService {
 
   private async issueTokens(userId: string, meta: { ip?: string; userAgent?: string }) {
     const accessSecret = resolveJwtAccessSecret();
-    const accessToken = await this.jwt.signAsync(
-      { sub: userId, typ: 'access' },
-      { secret: accessSecret, expiresIn: '15m' },
-    );
     const refreshToken = randomBytes(48).toString('hex');
     const refreshTokenHash = this.hashToken(refreshToken);
-    await this.prisma.session.create({
+    const session = await this.prisma.session.create({
       data: {
         userId,
         refreshTokenHash,
@@ -270,7 +266,13 @@ export class AuthService {
         userAgent: meta.userAgent,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
+      select: { id: true },
     });
+    // `sid` lets the sessions list mark "this device" precisely.
+    const accessToken = await this.jwt.signAsync(
+      { sub: userId, typ: 'access', sid: session.id },
+      { secret: accessSecret, expiresIn: '15m' },
+    );
     return { accessToken, refreshToken };
   }
 
@@ -630,8 +632,8 @@ export class AuthService {
     return { ok: true };
   }
 
-  async listSessions(userId: string) {
-    return this.prisma.session.findMany({
+  async listSessions(userId: string, currentSessionId?: string) {
+    const rows = await this.prisma.session.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       select: {
         id: true,
@@ -642,6 +644,7 @@ export class AuthService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => ({ ...row, current: currentSessionId ? row.id === currentSessionId : false }));
   }
 
   async revokeSession(userId: string, sessionId: string) {
@@ -650,6 +653,15 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     return { ok: true };
+  }
+
+  /** Sign out every other device; the current session stays. */
+  async revokeOtherSessions(userId: string, currentSessionId?: string) {
+    const result = await this.prisma.session.updateMany({
+      where: { userId, revokedAt: null, ...(currentSessionId ? { id: { not: currentSessionId } } : {}) },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true, revoked: result.count };
   }
 
   async invite(

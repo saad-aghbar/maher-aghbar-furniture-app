@@ -116,7 +116,14 @@ export class AuthController {
   @Get('sessions')
   @ApiBearerAuth()
   sessions(@CurrentUser() user: AuthUser) {
-    return this.auth.listSessions(user.id);
+    return this.auth.listSessions(user.id, user.sessionId);
+  }
+
+  @Delete('sessions')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Sign out all other devices' })
+  revokeOtherSessions(@CurrentUser() user: AuthUser) {
+    return this.auth.revokeOtherSessions(user.id, user.sessionId);
   }
 
   @Delete('sessions/:id')

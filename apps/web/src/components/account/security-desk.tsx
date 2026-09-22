@@ -32,6 +32,7 @@ interface SessionRow {
   ipAddress?: string | null;
   createdAt: string;
   expiresAt: string;
+  current?: boolean;
 }
 
 function describeAgent(ua: string | null | undefined, unknown: string) {
@@ -113,10 +114,21 @@ export function SecurityDesk({ showPassword = true }: { showPassword?: boolean }
     },
     onError: (err) => toast.error(mutationErrorMessage(err)),
   });
+  const [revokingOthers, setRevokingOthers] = useState(false);
+  const revokeOthers = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean; revoked: number }>('/api/v1/auth/sessions', { method: 'DELETE' }),
+    onSuccess: async (res) => {
+      setRevokingOthers(false);
+      toast.success(t('revokedOthers', { count: res.revoked }));
+      await queryClient.invalidateQueries({ queryKey: ['auth-sessions'] });
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
 
   const fmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const rows = sessions.data ?? [];
-  const newest = rows[0]?.id;
+  // The API marks the session behind this access token; fall back to newest for older tokens.
+  const currentId = rows.find((r) => r.current)?.id ?? rows[0]?.id;
   const mfaOn = Boolean(me.data?.mfaEnabled);
 
   const columns: DataColumn<SessionRow>[] = [
@@ -131,7 +143,7 @@ export function SecurityDesk({ showPassword = true }: { showPassword?: boolean }
             <span className="min-w-0">
               <span className="flex items-center gap-2 font-semibold text-[var(--maher-text-primary)]">
                 {agent.label}
-                {row.id === newest ? <Stamp tone="success" size="sm">{t('thisDevice')}</Stamp> : null}
+                {row.id === currentId ? <Stamp tone="success" size="sm">{t('thisDevice')}</Stamp> : null}
               </span>
               {row.ipAddress ? <Ltr className="block truncate text-[12px] text-[var(--maher-text-tertiary)]">{row.ipAddress}</Ltr> : null}
             </span>
@@ -182,6 +194,13 @@ export function SecurityDesk({ showPassword = true }: { showPassword?: boolean }
             aria-label={t('sessions')}
             title={t('sessions')}
             description={t('sessionsHint')}
+            actions={
+              rows.length > 1 ? (
+                <Button size="sm" variant="secondary" onClick={() => setRevokingOthers(true)}>
+                  {t('revokeOthers')}
+                </Button>
+              ) : null
+            }
             columns={columns}
             rows={rows}
             rowKey={(r) => r.id}
@@ -249,6 +268,16 @@ export function SecurityDesk({ showPassword = true }: { showPassword?: boolean }
         loading={revoke.isPending}
         onClose={() => !revoke.isPending && setRevoking(null)}
         onConfirm={() => revoking && revoke.mutate(revoking.id)}
+      />
+      <ConfirmDialog
+        open={revokingOthers}
+        title={t('revokeOthers')}
+        description={t('revokeOthersConfirm')}
+        confirmLabel={t('revokeOthers')}
+        danger
+        loading={revokeOthers.isPending}
+        onClose={() => !revokeOthers.isPending && setRevokingOthers(false)}
+        onConfirm={() => revokeOthers.mutate()}
       />
     </div>
   );

@@ -333,7 +333,9 @@
     "dealersWithDebt": "مدينون",
     "overdueCount": "{count, plural, one {# متأخرة} other {# متأخرة}}",
     "complexity": "درجة التعقيد",
-    "paymentsLast30": "الدفعات · آخر 30 يومًا"
+    "paymentsLast30": "الدفعات · آخر 30 يومًا",
+    "deliveryDate": "تاريخ التسليم",
+    "progress": "التقدم"
   },
   "productionSetupWhy": "اختر سير العمل والمواد وملاحظات المصنع والعمال لكل سطر، ثم أفرج للمصنع."
 }

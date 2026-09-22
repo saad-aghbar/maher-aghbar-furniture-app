@@ -333,7 +333,9 @@
     "dealersWithDebt": "Owing",
     "overdueCount": "{count, plural, one {# overdue} other {# overdue}}",
     "complexity": "Complexity",
-    "paymentsLast30": "Payments · last 30 days"
+    "paymentsLast30": "Payments · last 30 days",
+    "deliveryDate": "Delivery date",
+    "progress": "Progress"
   },
   "productionSetupWhy": "Choose the workflow, materials, factory notes and people for each line, then release to the factory."
 }

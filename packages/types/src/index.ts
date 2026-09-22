@@ -68,6 +68,8 @@ export interface AuthUser {
   stageSkillCodes?: string[];
   preferredLanguage: Locale;
   customerId?: string;
+  /** Session behind the current access token (marks "this device" in the sessions list). */
+  sessionId?: string;
 }
 
 export type UserStatus = 'ACTIVE' | 'INVITED' | 'LOCKED' | 'ARCHIVED';

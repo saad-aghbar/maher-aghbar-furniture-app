@@ -40,7 +40,7 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Authentication required.' });
 
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
+      const payload = await this.jwt.verifyAsync<{ sub: string; sid?: string }>(token, {
         secret: resolveJwtAccessSecret(),
       });
       const user = await this.prisma.user.findFirst({
@@ -81,6 +81,7 @@ export class JwtAuthGuard implements CanActivate {
         stageSkillCodes,
         preferredLanguage: user.preferredLanguage,
         customerId: user.customerId ?? undefined,
+        sessionId: payload.sid,
       } as AuthUser & { customerId?: string };
 
       return true;

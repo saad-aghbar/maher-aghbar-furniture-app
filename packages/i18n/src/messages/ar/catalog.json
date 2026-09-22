@@ -990,5 +990,6 @@
   "specConfirmed": "تم تأكيد المواصفات",
   "reviewHistory": "سجل المراجعة",
   "reviewNoHistory": "لا إجراءات مراجعة بعد.",
-  "noChanges": "لا تغييرات بعد"
+  "noChanges": "لا تغييرات بعد",
+  "linkedPo": "أمر الشراء"
 }

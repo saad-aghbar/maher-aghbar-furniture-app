@@ -394,10 +394,11 @@ function OrdersTab({ rows, loading }: { rows: SalesOrderRow[]; loading: boolean 
   const oc = useOrdersCopy();
   const t = useTranslations('customers');
   const tSales = useTranslations('sales');
+  const tCommon = useTranslations('common');
   const columns: DataColumn<SalesOrderRow>[] = [
     {
       key: 'number',
-      header: oc.tm('columns.number' as never),
+      header: tCommon('number'),
       cell: (o) => (
         <span className="min-w-0">
           <Ltr className="block font-semibold text-[var(--maher-text-primary)]">{o.number}</Ltr>

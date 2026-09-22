@@ -990,5 +990,6 @@
   "specConfirmed": "Spec confirmed",
   "reviewHistory": "Review trail",
   "reviewNoHistory": "No review actions yet.",
-  "noChanges": "Nothing changed yet"
+  "noChanges": "Nothing changed yet",
+  "linkedPo": "Purchase order"
 }
