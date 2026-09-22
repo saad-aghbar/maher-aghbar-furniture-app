@@ -11,7 +11,6 @@
   "NETWORK": "Check your connection and try again.",
   "NETWORK_ERROR": "Could not load the product production plan. Try again.",
   "TIMEOUT": "The request timed out. Try again.",
-
   "USERNAME_IN_USE": "A user with this username already exists.",
   "EMAIL_IN_USE": "A user with this email already exists.",
   "USER_EXISTS": "User already exists.",
@@ -19,14 +18,12 @@
   "CANNOT_DELETE_SELF": "You cannot delete your own account.",
   "CANNOT_REMOVE_OWN_ADMIN": "You cannot remove your own system administrator role.",
   "LAST_ADMIN": "There must be at least one active system administrator.",
-
   "INVALID_CREDENTIALS": "Invalid credentials.",
   "ACCOUNT_LOCKED": "Account temporarily locked.",
   "ACCOUNT_SUSPENDED": "Account suspended.",
   "INVALID_TOKEN": "Reset token is invalid or expired.",
   "WEAK_PASSWORD": "Password is required.",
   "INVALID_ROLE": "Role not found.",
-
   "DUPLICATE_CODE": "This code already exists.",
   "UNIT_EXISTS": "Unit code already exists.",
   "ROLE_EXISTS": "Role code already exists.",
@@ -40,7 +37,6 @@
   "STAFF_FORBIDDEN_PERMISSION": "This permission cannot be assigned to a staff type.",
   "STAFF_CODE_IMMUTABLE": "The internal staff type code cannot be changed.",
   "PROFILE_LOCKED": "This account is managed by an administrator.",
-
   "INSUFFICIENT_STOCK": "Insufficient stock for this operation.",
   "FABRIC_NOT_READY": "Required fabric is not ready for this stage.",
   "FABRIC_WRONG_ORDER": "This fabric belongs to another order.",
@@ -62,7 +58,6 @@
   "WAREHOUSE_HAS_STOCK": "Warehouse still has stock and cannot be removed.",
   "LOCATION_EXISTS": "Location code already exists in this warehouse.",
   "LOCATION_HAS_STOCK": "Location still has stock and cannot be removed.",
-
   "RETURN_CHARGE_NOT_CONFIRMED": "Confirm the dealer charge before starting factory work.",
   "RETURN_CHARGE_LOCKED": "The return invoice already exists — the charge cannot be edited.",
   "RETURN_CHARGE_NOT_DRAFT": "Save a dealer amount before sending it for confirmation.",
@@ -71,7 +66,6 @@
   "INVOICE_EXISTS": "An invoice already exists for this sales order.",
   "SUPPLIER_INVOICE_EXISTS": "A supplier invoice already exists for this purchase order.",
   "PAYMENT_EXCEEDS_OUTSTANDING": "Payment amount exceeds the outstanding balance.",
-
   "SUPPLIER_NOT_CERTIFIED": "Supplier must be certified before creating a purchase order.",
   "ORDER_LOCKED": "This order is locked and can no longer be edited.",
   "SETUP_LOCKED": "Production has started or been confirmed — the production plan can no longer be changed from the catalog.",
@@ -83,13 +77,11 @@
   "NO_PUBLISHED_WORKFLOW": "This product has no published workflow.",
   "MATERIALS_REVIEW_REQUIRED": "Review modifications before Confirm.",
   "FABRIC_LOCKED": "Fabric fields are locked because production has started.",
-
   "STAGE_LOCKED": "This stage is locked until prerequisites are completed.",
   "LOCKED_ANCHOR_STAGE": "Material Prep, Inspection, Packaging, and Delivery cannot be deleted.",
   "LOCKED_ANCHOR_NAME": "The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.",
   "ASSIGN_LOCKED": "Task assignment cannot be changed in the current state.",
   "PHOTOS_REQUIRED": "Photos are required before completing this task.",
-
   "INVALID_FILE_TYPE": "File type is not allowed.",
   "CONFIG_ERROR": "System configuration is incomplete.",
   "NO_SOURCE": "No source document was provided.",
@@ -98,12 +90,10 @@
   "QUOTATION_EXPIRED": "This quotation has expired.",
   "WEBHOOK_DISABLED": "Webhook is disabled.",
   "OFFLINE": "You are offline",
-
   "MFA_REQUIRED": "An authenticator code is required.",
   "MFA_INVALID": "Invalid authenticator code.",
   "MFA_NOT_SETUP": "Two-factor authentication is not enabled.",
   "EMAIL_TAKEN": "This email is already in use.",
-
   "SCHEDULE_STALE": "The schedule changed since your last update. Please reload and try again.",
   "SCHEDULE_CONFLICT": "There is a scheduling conflict. Please review the dates.",
   "SCHEDULE_REPLAN_FAILED": "Could not recalculate the schedule. Please try again.",
@@ -114,7 +104,6 @@
   "NO_SCHEDULABLE_STAGES": "There are no stages that can be scheduled for this order.",
   "DATE_CHANGE_LOCKED": "The delivery date can no longer be changed.",
   "STAGE_CYCLE": "Stages cannot be saved because they depend on each other in a loop.",
-
   "WORKFLOW_CYCLE": "The production flow cannot be saved because some stages depend on each other in a loop.",
   "WORKFLOW_SELF_LINK": "A stage cannot depend on itself.",
   "WORKFLOW_DUPLICATE_EDGE": "This link between the two stages already exists.",
@@ -130,7 +119,6 @@
   "ORDER_WORKFLOW_LOCKED": "The production flow cannot be changed after work on the order has started.",
   "STAGE_TIME_LOCKED": "Stage times are locked after the production plan is confirmed.",
   "WORKFLOW_SCOPE_MISMATCH": "A return workflow cannot be assigned to a regular sales order.",
-
   "AI_CHAT_DISABLED": "The assistant is not available right now.",
   "AI_CHAT_RATE_LIMIT": "Too many requests. Please wait and try again.",
   "TASK_TERMINAL": "This task is finished and cannot be changed.",
@@ -178,5 +166,6 @@
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "Packaging must take the upstream semi-finished kit.",
   "SETUP_INSPECTION_MUST_NOT_CONSUME": "Inspection confirms quality only and must not take kits or materials.",
   "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection confirms quality only and must not take kits or materials.",
-  "DELIVERY_DATE_TOO_SOON": "Choose a delivery date at least 4 days from today."
+  "DELIVERY_DATE_TOO_SOON": "Choose a delivery date at least 4 days from today.",
+  "NOT_RELEASED_TO_FACTORY": "Production has not been started on this factory order yet. A supervisor starts it from the factory floor once workers are assigned."
 }

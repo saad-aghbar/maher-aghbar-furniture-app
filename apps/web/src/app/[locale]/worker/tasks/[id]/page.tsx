@@ -1,6 +1,7 @@
 'use client';
 
 import { VoiceNote } from '@/components/voice-note';
+import { FabricDispositionSheet, TaskFabricBoard, useTaskFabric } from '@/components/worker/task-fabric-board';
 import { useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { isScheduledForToday, toDateOnly } from '@/lib/worker-scheduling';
@@ -109,6 +110,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dispositionOpen, setDispositionOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [problemOpen, setProblemOpen] = useState(false);
   const [problemReason, setProblemReason] = useState('');
@@ -116,7 +118,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const tMobileProd = useTranslations('mobile.production');
   const router = useRouter();
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error: loadError, refetch } = useQuery({
     queryKey: ['task', params.id],
     queryFn: () => apiFetch<TaskDetail>(`/api/v1/tasks/${params.id}`),
   });
@@ -141,7 +143,13 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
+  const fabric = useTaskFabric(params.id, Boolean(data));
   async function finish() {
+    // Fabric stages record leftovers (return / scrap) before the stage closes.
+    if (fabric.relevant && fabric.items.some((i) => i.issuedQty > 0)) {
+      setDispositionOpen(true);
+      return;
+    }
     await runAction('complete');
   }
 
@@ -201,7 +209,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     );
   }
   if (isError || !data) {
-    return <ErrorBoard title={t('taskDetail')} description={tCommon('loadFailed')} onRetry={() => refetch()} retryLabel={tCommon('retry')} />;
+    return <ErrorBoard title={t('taskDetail')} description={loadError ? translateApiError(locale, loadError, tCommon('loadFailed')) : tCommon('loadFailed')} onRetry={() => refetch()} retryLabel={tCommon('retry')} />;
   }
 
   const waiting = data.status === 'NOT_STARTED' && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0 ? data.stageDefinition!.dependsOnCodes!.join(', ') : null;
@@ -328,6 +336,17 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       {needsPhotos ? <Alert variant="warning">{tc('photosRequired')}</Alert> : null}
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
+
+      <TaskFabricBoard taskId={params.id} salesOrderId={data.productionOrder?.salesOrder?.id ?? null} canAct={!['COMPLETED', 'CANCELLED'].includes(data.status)} />
+      <FabricDispositionSheet
+        taskId={params.id}
+        open={dispositionOpen}
+        onClose={() => setDispositionOpen(false)}
+        onDone={() => {
+          setDispositionOpen(false);
+          void runAction('complete');
+        }}
+      />
 
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="space-y-5 xl:col-span-7">

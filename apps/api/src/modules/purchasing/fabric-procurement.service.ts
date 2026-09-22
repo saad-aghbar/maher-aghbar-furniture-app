@@ -647,9 +647,13 @@ export class FabricProcurementService {
     if (!task) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Task not found.' });
     const soId = task.productionOrder.salesOrderId;
     const poId = task.productionOrder.id;
-    const items = soId
+    const all = soId
       ? await this.list({ salesOrderId: soId })
       : await this.list({ productionOrderId: poId });
+    // A multi-line order has one factory order per line: only this line's fabric
+    // belongs on this bench. Jobs not yet pinned to a factory order stay visible.
+    const scoped = all.filter((i) => !i.productionOrderId || i.productionOrderId === poId);
+    const items = scoped.some((i) => i.productionOrderId === poId) ? scoped.filter((i) => i.productionOrderId === poId) : scoped;
     if (!items.length) return { taskId, taken: 0, total: 0, items: [] as unknown[] };
     const stageCode = task.stageDefinition?.code ?? null;
     const forStage = items.filter((i) => {

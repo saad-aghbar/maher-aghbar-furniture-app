@@ -89,7 +89,11 @@ export function HoldButton({ onHold, durationMs = 1200, children, holdingLabel, 
       aria-busy={loading || undefined}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture?.(e.pointerId);
+        try {
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+        } catch {
+          /* synthetic / already-released pointer */
+        }
         begin();
       }}
       onPointerUp={cancel}

@@ -67,6 +67,7 @@ import {
   resolveAssignStageMinutes,
   shouldWriteBackStageTime,
 } from './assign-stage-time';
+import { isQualityGateStage } from '../scheduling/domain/milestone';
 
 function startOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
@@ -1101,7 +1102,11 @@ export class TasksService {
       taskMinutes: task.estimatedMinutes,
       snapshotMinutes: snapshotNode?.estimatedMinutes,
     });
-    if (resolvedMinutes == null) {
+    // Quality gates (inspection) are untimed: an inspector can always be assigned.
+    const gateStage = isQualityGateStage({
+      code: task.stageDefinition?.code ?? null,
+    });
+    if (resolvedMinutes == null && !gateStage) {
       throw new BadRequestException({
         code: 'STAGE_TIME_REQUIRED',
         message: 'Set this stage time in the workflow before assigning a worker.',
@@ -1113,7 +1118,8 @@ export class TasksService {
         snapshotMinutes: snapshotNode?.estimatedMinutes,
         stageStatus: task.stageInstance?.status,
       }) &&
-      snapshotNode
+      snapshotNode &&
+      resolvedMinutes != null
     ) {
       await this.prisma.productionOrderWorkflowSnapshotNode.update({
         where: { id: snapshotNode.id },
@@ -1136,7 +1142,7 @@ export class TasksService {
       plannedStart: dto.plannedStart,
       plannedEnd: dto.plannedCompletion,
       priority: dto.priority,
-      estimatedMinutes: resolvedMinutes,
+      estimatedMinutes: resolvedMinutes ?? undefined,
       override: dto.overrideConflict,
       acknowledge: dto.acknowledge,
       actorUserId,
@@ -1227,7 +1233,7 @@ export class TasksService {
         throw new BadRequestException({
           code: 'NOT_RELEASED_TO_FACTORY',
           message:
-            'This order has not been released to the factory yet. Finish the production plan and release it first.',
+            'Production has not been started on this factory order yet. A supervisor starts it from the factory floor once workers are assigned.',
         });
       }
     }

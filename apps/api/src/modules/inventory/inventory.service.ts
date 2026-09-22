@@ -723,7 +723,9 @@ export class InventoryService {
       const currentReserved = Number(balance?.reservedQty ?? 0);
       const nextAvail = currentAvail + signedQty;
       const nextReserved = currentReserved + (params.reservedDelta ?? 0);
-      if (nextAvail < 0 && !params.allowNegative) {
+      // Only movements that take stock out can be refused; an inbound receipt onto an
+      // already-negative balance (legacy drift) must always be accepted — it repairs it.
+      if (nextAvail < 0 && signedQty < 0 && !params.allowNegative) {
         throw new BadRequestException({
           code: 'INSUFFICIENT_STOCK',
           message: 'Inventory cannot go negative.',

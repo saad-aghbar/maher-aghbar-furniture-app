@@ -389,5 +389,8 @@
   "pdfCsvHint": "Plain data file in the chosen language (no paper style)",
   "pdfExportTitle": "Export report",
   "bin": "Bin / location",
-  "noBinsDefault": "This warehouse has no bins; the return goes to its default location."
+  "noBinsDefault": "This warehouse has no bins; the return goes to its default location.",
+  "skip": "Skip",
+  "saveAndContinue": "Save and continue",
+  "scan": "Scan"
 }

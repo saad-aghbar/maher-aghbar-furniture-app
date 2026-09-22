@@ -1,16 +1,43 @@
 'use client';
 
 import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
-import { fabricEventTone, fabricTone, SUPPLIER_STATES, type FabricJob, type SupplierState } from '@/components/purchasing/fabric-shared';
+import { fabricEventTone, fabricTone, SUPPLIER_STATES, type FabricJob, type SupplierState, fabricEffectiveState } from '@/components/purchasing/fabric-shared';
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { usePdfDownload } from '@/hooks/use-pdf-download';
 import { apiFetch } from '@/lib/api-client';
 import { useKitCopy } from '@/lib/kit-copy';
+import { SupplierMessageSheet } from '@/components/purchasing/supplier-message-sheet';
 import { localizedName } from '@maher/i18n';
-import { ActionDock, Alert, Board, BoardSkeleton, Button, Combobox, DateField, DetailHero, ErrorBoard, Figure, KeyFacts, Ltr, Menu, Meter, MoneyField, NumberField, QrDisplay, SegmentedControl, Sheet, Stamp, TextArea, Timeline, useToast, type BoardTone } from '@maher/ui';
+import {
+  ActionDock,
+  Alert,
+  Board,
+  BoardSkeleton,
+  type BoardTone,
+  Button,
+  Combobox,
+  DateField,
+  DetailHero,
+  ErrorBoard,
+  Figure,
+  Input,
+  KeyFacts,
+  Ltr,
+  Menu,
+  Meter,
+  MoneyField,
+  NumberField,
+  QrDisplay,
+  SegmentedControl,
+  Sheet,
+  Stamp,
+  TextArea,
+  Timeline,
+  useToast,
+} from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, MoreHorizontal, PackageCheck, Repeat, ShieldAlert, Truck, Warehouse } from 'lucide-react';
+import { Clock, MessageCircle, MoreHorizontal, PackageCheck, Repeat, ShieldAlert, Truck, Warehouse } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -45,6 +72,8 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
   const [stockItemId, setStockItemId] = useState<string | null>(null);
   const [replaceFabric, setReplaceFabric] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [newBin, setNewBin] = useState<{ code: string; name: string } | null>(null);
 
   const query = useQuery({ queryKey: ['fabric-procurement', params.id], queryFn: () => apiFetch<FabricJob>(`/api/v1/fabric-procurements/${params.id}`) });
   const suppliers = useQuery({ queryKey: ['suppliers-pick'], queryFn: () => apiFetch<{ data: Supplier[] }>('/api/v1/suppliers?pageSize=100&status=ACTIVE').then((r) => r.data), enabled: action === 'redirect' });
@@ -52,6 +81,16 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
   const stock = useQuery({ queryKey: ['inventory-items', 'fabric-pick'], queryFn: () => apiFetch<{ data: StockItem[] }>('/api/v1/inventory/items?categoryGroup=fabric&pageSize=100').then((r) => r.data), enabled: action === 'allocate' });
 
   const invalidate = () => Promise.all([qc.invalidateQueries({ queryKey: ['fabric-procurement', params.id] }), qc.invalidateQueries({ queryKey: ['fabric-procurements'] }), qc.invalidateQueries({ queryKey: ['inventory-fabric-holding'] })]);
+  const createBin = useMutation({
+    mutationFn: () => apiFetch<{ id: string }>(`/api/v1/warehouses/${warehouseId}/locations`, { method: 'POST', body: JSON.stringify({ code: newBin?.code.trim(), name: newBin?.name.trim() || undefined }) }),
+    onSuccess: async (loc) => {
+      toast.success(tp('binCreated'));
+      setNewBin(null);
+      await qc.invalidateQueries({ queryKey: ['warehouses', 'fabric'] });
+      setLocationId(loc.id);
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
   const act = useMutation({
     mutationFn: async (a: Action) => {
       const base = `/api/v1/fabric-procurements/${params.id}`;
@@ -86,15 +125,23 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
   if (query.isLoading) return <BoardSkeleton rows={6} />;
   if (query.isError || !query.data) return <ErrorBoard title={t('fabricJobs')} description={mutationErrorMessage(query.error)} onRetry={() => query.refetch()} />;
   const job = query.data;
-  const tone = fabricTone(job.state);
+  const effective = fabricEffectiveState(job);
+  const tone = fabricTone(effective);
   const label = job.requestedLabel ?? job.productName ?? job.sku ?? job.qrCode ?? params.id;
   const lots = job.lots ?? [];
   const arrived = job.arrivedQty ?? lots.reduce((s, l) => s + Number(l.quantity ?? 0), 0);
   const required = job.requiredQty ?? null;
   const date = (v?: string | null, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }) => (v ? new Intl.DateTimeFormat(locale, opts).format(new Date(v)) : '—');
   const money = (v?: number | null) => (v == null ? '—' : new Intl.NumberFormat(locale, { style: 'currency', currency: 'ILS' }).format(v));
-  const stateLabel = (s?: string) => (s ? (te.has(s as never) ? te(s as never) : s.replace(/_/g, ' ')) : '—');
-  const done = /RECEIVED|ALLOCATED|TAKEN|COMPLETE/.test((job.state ?? '').toUpperCase());
+  const DERIVED_LABEL: Record<string, string> = { ARRIVED: 'inHolding', RECEIVED: 'inHolding', READY_FOR_PRODUCTION: 'ready', ISSUED: 'taken', PARTIAL: 'partial', UNAVAILABLE: 'unavailable' };
+  const stateLabel = (s?: string) => {
+    if (!s) return '—';
+    if (te.has(s as never)) return te(s as never);
+    const mapped = DERIVED_LABEL[s.toUpperCase()];
+    if (mapped && tf.has(mapped as never)) return tf(mapped as never);
+    return s.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+  };
+  const done = /RECEIVED|ARRIVED|ISSUED|READY_FOR_PRODUCTION|ALLOCATED|TAKEN|COMPLETE/.test(effective);
   const selectedWh = (warehouses.data ?? []).find((w) => w.id === warehouseId);
   const open = (a: Action) => {
     setError(null);
@@ -121,7 +168,7 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
         code={job.qrCode ?? job.sku ?? undefined}
         title={label}
         subtitle={[job.dealerName, job.salesOrderNumber, job.itemLetter ? `${tp('item')} ${job.itemLetter}` : null].filter(Boolean).join(' · ')}
-        status={{ label: stateLabel(job.state), tone }}
+        status={{ label: stateLabel(effective), tone }}
         tone={tone}
         media={<InventoryItemThumb src={job.imageUrl ?? job.productImageUrl} alt="" size={88} />}
         facts={[
@@ -168,6 +215,9 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
             />
             {!done ? (
               <div className="grid grid-cols-2 gap-2">
+                <Button variant="primary" size="sm" className="col-span-2" leadingIcon={<MessageCircle className="h-3.5 w-3.5" />} onClick={() => setMessageOpen(true)}>
+                  {job.whatsappSentAt ? tp('resendWhatsApp') : tp('messageSupplier')}
+                </Button>
                 <Button variant="secondary" size="sm" leadingIcon={<Clock className="h-3.5 w-3.5" />} onClick={() => open('wait')}>
                   {te('WAIT')}
                 </Button>
@@ -238,7 +288,7 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
       </Board>
 
       {!done ? (
-        <ActionDock note={`${stateLabel(job.state)} · ${job.supplier?.name ?? tp('noSupplier')}`}>
+        <ActionDock note={`${stateLabel(effective)} · ${job.supplier?.name ?? tp('noSupplier')}`}>
           <Button variant="secondary" onClick={() => open('state')}>
             {tp('supplierState')}
           </Button>
@@ -282,7 +332,30 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
                 {action === 'receive' ? <MoneyField label={tp('unitCost')} currency="ILS" value={unitCost} onChange={setUnitCost} min={0} /> : null}
               </div>
               <Combobox label={ti('warehouse')} value={warehouseId} onChange={(v) => (setWarehouseId(v), setLocationId((warehouses.data ?? []).find((w) => w.id === v)?.locations?.find((l) => l.isDefault)?.id ?? null))} options={(warehouses.data ?? []).map((w) => ({ value: w.id, label: localizedName(locale, w, w.code), description: w.code }))} clearable={false} emptyText={kit.combobox.empty} />
-              <Combobox label={ti('bin')} value={locationId} onChange={setLocationId} options={(selectedWh?.locations ?? []).filter((l) => l.isActive !== false).map((l) => ({ value: l.id, label: l.name && l.name !== l.code ? `${l.code} · ${l.name}` : l.code }))} emptyText={ti('noBins')} clearLabel={kit.combobox.clear} />
+              <div className="space-y-2">
+                <Combobox label={ti('bin')} value={locationId} onChange={setLocationId} options={(selectedWh?.locations ?? []).filter((l) => l.isActive !== false).map((l) => ({ value: l.id, label: l.name && l.name !== l.code ? `${l.code} · ${l.name}` : l.code }))} emptyText={ti('noBins')} clearLabel={kit.combobox.clear} />
+                {newBin ? (
+                  <div className="rounded-[12px] border border-dashed border-[var(--maher-border-strong)] p-3">
+                    <p className="m-0 mb-2 text-[12px] text-[var(--maher-text-secondary)]">{tp('newBinHint')}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input label={tp('binCode')} value={newBin.code} onChange={(e) => setNewBin({ ...newBin, code: e.target.value.toUpperCase() })} dir="ltr" placeholder="FAB-A1" />
+                      <Input label={tp('binName')} value={newBin.name} onChange={(e) => setNewBin({ ...newBin, name: e.target.value })} />
+                    </div>
+                    <div className="mt-2 flex justify-end gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setNewBin(null)}>
+                        {tCommon('cancel')}
+                      </Button>
+                      <Button size="sm" loading={createBin.isPending} disabled={!warehouseId || !newBin.code.trim()} onClick={() => createBin.mutate()}>
+                        {tCommon('create')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="text-[12px] font-medium text-[var(--maher-brand)] hover:underline disabled:opacity-50" disabled={!warehouseId} onClick={() => setNewBin({ code: '', name: '' })}>
+                    + {tp('newBin')}
+                  </button>
+                )}
+              </div>
               {action === 'allocate' ? (
                 <SegmentedControl
                   aria-label={tp('replaceFabric')}
@@ -301,6 +374,7 @@ export default function FabricJobDetailPage({ params }: { params: { id: string }
         </div>
       </Sheet>
       {pdfDialog}
+      <SupplierMessageSheet open={messageOpen} onClose={() => setMessageOpen(false)} procurementIds={[params.id]} defaultSupplierId={job.supplier?.id ?? null} onSent={() => void invalidate()} />
     </div>
   );
 }

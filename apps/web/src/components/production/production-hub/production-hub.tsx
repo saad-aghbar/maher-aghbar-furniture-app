@@ -5,6 +5,7 @@ import { ProductionMaterialsPanel } from '@/components/production/production-mat
 import { ProductionQualityPanel } from '@/components/production/production-quality-panel';
 import { ProductionWipPanel } from '@/components/production/production-wip-panel';
 import { StageOutputsBoard } from '@/components/production/stage-outputs-board';
+import { OrderFabricTracker } from '@/components/purchasing/order-fabric-tracker';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -163,7 +164,12 @@ export function ProductionHub({ id }: { id: string }) {
         <Ticket tone="warning" title={tp('planDriftBody')} action={<Button size="sm" loading={ctl.resync.isPending} onClick={() => ctl.resync.mutate()}>{tp('planResync')}</Button>} />
       ) : null}
 
-      {tab === 'lifecycle' ? <LifecycleTab ctl={ctl} blockers={openBlockers} /> : null}
+      {tab === 'lifecycle' ? (
+        <>
+          <LifecycleTab ctl={ctl} blockers={openBlockers} />
+          {order.salesOrder?.id ? <OrderFabricTracker salesOrderId={order.salesOrder.id} compact /> : null}
+        </>
+      ) : null}
       {tab === 'tasks' ? <TasksTab ctl={ctl} /> : null}
       {tab === 'materials' ? <MaterialsTab ctl={ctl} /> : null}
       {tab === 'quality' ? <ProductionQualityPanel productionOrderId={id} /> : null}

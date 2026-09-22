@@ -3,6 +3,7 @@
 import { daysUntil, dueTone, isClosedSalesOrder, salesOrderTone, useOrdersCopy, type JourneyBucket } from '@/components/orders/orders-shared';
 import { CancelImpactSheet } from '@/components/sales-orders/cancel-impact-sheet';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
+import { OrderFabricTracker } from '@/components/purchasing/order-fabric-tracker';
 import { Link, useRouter } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { apiFetch, fetchOrderProductionSetup, type OrderProductionSetup } from '@/lib/api-client';
@@ -593,6 +594,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         </div>
 
         <div className="flex flex-col gap-5 xl:col-span-5">
+          <OrderFabricTracker salesOrderId={params.id} />
           {/* Money */}
           <Board tone={profit < 0 ? 'error' : 'brand'} id="commercial">
             <Board.Header title={tSales('manufacturingCost')} description={tSales('fromInventoryCosts')} />

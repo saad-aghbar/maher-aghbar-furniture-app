@@ -2,6 +2,7 @@
 
 import { OrderLineSetupPanel } from '@/components/sales-orders/order-line-setup-panel';
 import { PlanStagesBoard } from '@/components/sales-orders/plan-stages-board';
+import { OrderFabricTracker } from '@/components/purchasing/order-fabric-tracker';
 import { useOrdersCopy } from '@/components/orders/orders-shared';
 import { Link } from '@/i18n/navigation';
 import {
@@ -277,6 +278,8 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
           onUpdated={() => void invalidate()}
         />
       ))}
+
+      <OrderFabricTracker salesOrderId={salesOrderId} />
 
       <PlanStagesBoard salesOrderId={salesOrderId} lines={setup.lines} released={readOnly} />
 

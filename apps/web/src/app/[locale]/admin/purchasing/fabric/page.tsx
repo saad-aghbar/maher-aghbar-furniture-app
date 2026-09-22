@@ -1,7 +1,7 @@
 'use client';
 
 import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
-import { fabricTone, type FabricJob } from '@/components/purchasing/fabric-shared';
+import { fabricTone, type FabricJob, fabricEffectiveState } from '@/components/purchasing/fabric-shared';
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { apiFetch } from '@/lib/api-client';
@@ -15,8 +15,8 @@ import { Suspense } from 'react';
 type Bucket = '' | 'needsOrdering' | 'waitingSupplier' | 'readyForPickup' | 'inHolding' | 'attention';
 
 const bucketOf = (job: FabricJob): Exclude<Bucket, ''> => {
-  const s = (job.state ?? '').toUpperCase();
-  if (/RECEIVED|IN_HOLDING|ALLOCATED|READY$/.test(s)) return 'inHolding';
+  const s = fabricEffectiveState(job);
+  if (/RECEIVED|ARRIVED|ISSUED|READY_FOR_PRODUCTION|IN_HOLDING|ALLOCATED|READY$/.test(s)) return 'inHolding';
   if (/READY_FOR_PICKUP/.test(s)) return 'readyForPickup';
   if (/UNAVAILABLE|OVERRIDE|ATTENTION/.test(s)) return 'attention';
   if (/SENT|CONFIRMED|WAIT|DELAYED|PARTIAL/.test(s) || job.whatsappSentAt) return 'waitingSupplier';
@@ -87,7 +87,7 @@ function FabricJobsInner() {
         return required ? <Meter value={Math.min(arrived, required)} max={required} size="sm" valueLabel={`${arrived}/${required}`} tone={arrived >= required ? 'success' : 'brand'} /> : <span className="text-[12px] text-[var(--maher-text-tertiary)]" dir="ltr">{arrived || '—'}</span>;
       },
     },
-    { key: 'state', header: tCommon('status'), cell: (job) => <Stamp tone={fabricTone(job.state)} size="sm">{tf(bucketOf(job))}</Stamp> },
+    { key: 'state', header: tCommon('status'), cell: (job) => <Stamp tone={fabricTone(fabricEffectiveState(job))} size="sm">{tf(bucketOf(job))}</Stamp> },
   ];
 
   return (
@@ -120,7 +120,7 @@ function FabricJobsInner() {
         rowHref={(r) => `/admin/purchasing/fabric/${r.id}`}
         LinkComponent={Link}
         rowClassName={(r) => (bucketOf(r) === 'attention' ? 'bg-[var(--maher-error-soft)]/30' : undefined)}
-        mobileRow={(job) => ({ leading: <InventoryItemThumb src={job.imageUrl ?? job.productImageUrl} alt="" size={36} />, title: label(job), meta: `${job.salesOrderNumber}${job.supplier ? ` · ${job.supplier.name}` : ''}`, trailing: <Stamp tone={fabricTone(job.state)} size="sm">{tf(bucketOf(job))}</Stamp> })}
+        mobileRow={(job) => ({ leading: <InventoryItemThumb src={job.imageUrl ?? job.productImageUrl} alt="" size={36} />, title: label(job), meta: `${job.salesOrderNumber}${job.supplier ? ` · ${job.supplier.name}` : ''}`, trailing: <Stamp tone={fabricTone(fabricEffectiveState(job))} size="sm">{tf(bucketOf(job))}</Stamp> })}
         empty={<Board.Empty title={t('fabricJobs')} description={tp('fabricJobsEmpty')} action={params.q || activeCount ? <Button size="sm" variant="secondary" onClick={reset}>{tCommon('clearFilters')}</Button> : undefined} />}
       />
     </div>
