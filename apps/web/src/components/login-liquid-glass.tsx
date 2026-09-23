@@ -67,7 +67,17 @@ export function loadLiquidGlass(): Promise<LiquidGlassGlobals> {
   if (loading) return loading
 
   loading = (async () => {
-    window.html2canvas = html2canvas
+    // The vendored container.js captures via window.html2canvas; wrap it so the
+    // initial snapshot also gets the color(srgb …) → rgba() normalisation.
+    const wrapped: typeof html2canvas = (element, options) =>
+      html2canvas(element, {
+        ...options,
+        onclone: (doc, el) => {
+          normalizeSnapshotColors(doc)
+          return options?.onclone?.(doc, el)
+        },
+      })
+    window.html2canvas = wrapped
     await loadClassicScript(`${SCRIPT_BASE}/container.js`)
     await loadClassicScript(`${SCRIPT_BASE}/button.js`)
     await loadClassicScript(`${SCRIPT_BASE}/expose-globals.js`)
@@ -103,6 +113,53 @@ type SnapshotContainer = {
   >
 }
 
+const SNAPSHOT_COLOR_PROPS = [
+  'color',
+  'background-color',
+  'background-image',
+  'border-top-color',
+  'border-right-color',
+  'border-bottom-color',
+  'border-left-color',
+  'outline-color',
+  'box-shadow',
+  'text-shadow',
+  'text-decoration-color',
+  'caret-color',
+  'fill',
+  'stroke',
+  '-webkit-text-fill-color',
+  '-webkit-text-stroke-color',
+] as const
+
+const SRGB_COLOR_FN = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)/g
+
+/**
+ * Chrome serializes `color-mix()` results as `color(srgb r g b / a)`, which html2canvas
+ * cannot parse (it rejects the whole capture). Rewrite those to `rgba()` on the clone.
+ */
+function srgbFunctionsToRgba(value: string): string {
+  return value.replace(SRGB_COLOR_FN, (_m, r: string, g: string, b: string, a?: string) => {
+    const ch = (v: string) => Math.round(Math.min(1, Math.max(0, Number(v))) * 255)
+    const alpha = a == null ? 1 : a.endsWith('%') ? Number(a.slice(0, -1)) / 100 : Number(a)
+    return `rgba(${ch(r)}, ${ch(g)}, ${ch(b)}, ${Number.isFinite(alpha) ? alpha : 1})`
+  })
+}
+
+function normalizeSnapshotColors(doc: Document): void {
+  const win = doc.defaultView
+  if (!win) return
+  doc.querySelectorAll<HTMLElement>('*').forEach((el) => {
+    const cs = win.getComputedStyle(el)
+    for (const prop of SNAPSHOT_COLOR_PROPS) {
+      const value = cs.getPropertyValue(prop)
+      if (value.includes('color(')) {
+        el.style.setProperty(prop, srgbFunctionsToRgba(value))
+      }
+    }
+  })
+}
+
 /** Debounced html2canvas recapture so glass samples the moving hero after layout changes. */
 export function recaptureGlassSnapshot(): void {
   const Container = window.Container as unknown as SnapshotContainer | undefined
@@ -115,6 +172,7 @@ export function recaptureGlassSnapshot(): void {
     useCORS: true,
     allowTaint: true,
     backgroundColor: null,
+    onclone: normalizeSnapshotColors,
     ignoreElements: (element) =>
       element.classList.contains('glass-container') ||
       element.classList.contains('glass-button') ||

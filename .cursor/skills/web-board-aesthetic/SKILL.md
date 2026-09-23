@@ -102,6 +102,9 @@ import { Board, Stamp } from '@maher/ui';
 | Form | `FormSection` grid → `Field`/`Input`/`Combobox`/`NumberField`/`MoneyField`/`SegmentedControl`/`Switch`/`Checkbox` → `FormFooter` (dirty stamp). |
 | Any date | `DateField` (popover / sheet with `MonthCalendar`), ranges `DateRangeField`. Never `input[type=date]`. |
 | Any PDF | `usePdfDownload().openPdf({ path, documentName })` + `DocumentActions`. Never raw `window.open(…/pdf)`. |
+| Any export | Same dialog with `csvPath` → branded PDF + CSV button (`PdfDownloadDialog csv`). Reports use `/api/v1/reports/export/<name>.{pdf,csv}`; never a bare CSV link. |
+| Any note / long text | `TextArea autoGrow maxRows={…}` — grows with content, never a fixed 3-row box. |
+| Live status | `Stamp pulse` for "running now" (live elapsed, active session); pulse stops under reduced motion. |
 | Any scan | `useCodeScanner().openScanner()` → `routeForScan` / page handler. `QrDisplay` for showing codes. |
 | Overlays | `Sheet`, `Popover`, `Menu`, `useToast`, `ConfirmDialog`, `ErrorBoard`, `BoardSkeleton`. |
 
@@ -110,6 +113,11 @@ import { Board, Stamp } from '@maher/ui';
 | Notifications | `NotificationsDesk` (`components/notifications/notifications-desk.tsx`): day-grouped inbox, topic `Switch` matrix, templates (admin). |
 | Dealer list page | `DealerListDesk` (`components/dealer/dealer-list-desk.tsx`): hero ribbon + figures, chips, search, `DataBoard`. |
 | Auth page | `AuthPanelLayout` (`components/auth/auth-panel-layout.tsx`): shader wash + watermark + one paper panel. |
+| Assign a stage | `StageAssignSheet` (`components/production/stage-assign-sheet.tsx`): worker cards with load meter, day `DateField`, ≥30-min slot picks from `worker-day-plan.ts`. Used by the orders-side `PlanStagesBoard` ("Prepare for production") and the hub ("Factory floor") — never a bare worker `Combobox`. |
+| Stage timing | `StageTimePanel` in `components/workflow/order-workflow-section.tsx`: Estimated · Actual · Live elapsed (pulsing stamp) with a `Meter` against the estimate. |
+| Fabric on an order | `OrderFabricTracker` (`components/purchasing/order-fabric-tracker.tsx`) on sales-order, plan and hub lifecycle; `SupplierMessageSheet` drafts/sends WhatsApp; `TaskFabricBoard` (`components/worker/task-fabric-board.tsx`) for take-in / disposition on the worker task. |
+| Worker gates | `QualityGatePanel` (inspector checklist, report-problem → rework stage, packer confirm) and `RecoveryFloorPanel` (recovery lines) in `components/worker/`. `task-quality-kind.ts` decides which one a task gets; gates block `HoldButton` finish until done. |
+| Cost hints on a quote | `GET /quotations/:id/cost-hints` → mini `Ledger` (planned · last actual · avg · samples) + margin `Stamp` beside `MoneyField`; "Use planned +35%" fills the price. |
 
 Copy for all of these: `useKitCopy()` in `apps/web/src/lib/kit-copy.ts`.
 
@@ -128,3 +136,5 @@ Copy for all of these: `useKitCopy()` in `apps/web/src/lib/kit-copy.ts`.
 4. Place in the 7 / 5 grid; make the column's last board elastic.
 5. Lists and details follow the kit table above; add the mobile-parity actions listed in the plan for that page.
 6. Verify light/dark, EN/AR, 1440/1024/768/390, reduced motion, empty and permission-gated states.
+7. New API call from web? Add an `API_PARITY` row in `apps/web/src/parity/manifest.ts` naming the file that calls it (the parity test greps for the path; use the static prefix for templated paths). Redirect-only routes must point at a real page, never a stub that "doesn't load".
+8. Dark-mode login glass: html2canvas cannot parse `color(srgb …)` (what `color-mix()` computes to); `login-liquid-glass.tsx` normalises the clone in `onclone` — keep that when touching the veil.

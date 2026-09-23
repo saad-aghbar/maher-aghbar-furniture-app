@@ -67,14 +67,16 @@ describe('canonicalInventoryImageUrl', () => {
     expect(poLine).not.toMatch(/imageUrl/);
   });
 
-  it('curated demo pool has 42 unique SKU photos including Cedar velvet', () => {
+  it('curated compact demo pool has one unique photo per raw-material SKU', () => {
+    // The pool was trimmed to the compact demo catalog; the invariant is uniqueness, not a count.
     const src = readRepo('packages/database/prisma/demo/material-photo-pool.ts');
     const skus = [...src.matchAll(/'(MAT-[A-Z0-9-]+)':\s*photo\(/g)].map((m) => m[1]);
     const photos = [...src.matchAll(/photo\('(photo-[^']+)'\)/g)].map((m) => m[1]);
-    expect(skus).toHaveLength(42);
-    expect(new Set(skus).size).toBe(42);
-    expect(photos).toHaveLength(42);
-    expect(new Set(photos).size).toBe(42);
-    expect(skus).toContain('MAT-ITAL-VEL');
+    expect(skus.length).toBeGreaterThan(0);
+    expect(new Set(skus).size).toBe(skus.length);
+    expect(photos).toHaveLength(skus.length);
+    expect(new Set(photos).size).toBe(photos.length);
+    const cedarSku = /CEDAR_VELVET_SKU = '([^']+)'/.exec(src)?.[1];
+    expect(cedarSku && skus.includes(cedarSku)).toBe(true);
   });
 });

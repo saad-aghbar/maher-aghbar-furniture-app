@@ -56,8 +56,8 @@ function makeDeps() {
     salesOrder: { findFirst: jest.fn() },
     inventoryItem: {
       findMany: jest.fn(async () => [
-        { id: 'oak', category: 'WOOD' },
-        { id: 'foam', category: 'FOAM' },
+        { id: 'oak', sku: 'MAT-OAK', category: 'WOOD', minStock: 0, balances: [] },
+        { id: 'foam', sku: 'MAT-FOAM', category: 'FOAM', minStock: 0, balances: [] },
       ]),
     },
     auditEvent: { create: jest.fn() },

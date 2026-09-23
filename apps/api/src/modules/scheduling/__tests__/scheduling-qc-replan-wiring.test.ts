@@ -150,6 +150,10 @@ function makeQuality() {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'insp-1', productionOrderId: 'po-1', result: null }),
     },
+    // PASS is refused while a rework is open — this scenario has none.
+    reworkRequest: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     qualityChecklistTemplate: { findFirst: jest.fn().mockResolvedValue(null) },
     productionTask: { findFirst: jest.fn().mockResolvedValue(null) },
     productionOrder: {

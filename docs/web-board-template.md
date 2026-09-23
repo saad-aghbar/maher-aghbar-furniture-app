@@ -140,6 +140,18 @@ All of these ship from `@maher/ui`; page-side copy comes from `useKitCopy()` in 
 | `SegmentedControl`, `Switch`, `Checkbox` | Authored controls; brand fill, no blue. |
 | `FormSection` | Board with a header band and a 1–3 column field grid. `tone="error"` when it holds invalid fields. |
 | `FormFooter` | Sticky save bar with the unsaved-changes stamp; arms `beforeunload`. |
+| `TextArea` | `autoGrow` + `maxRows` for notes, factory notes, reasons; sized by content, capped, then scrolls. |
+
+### Shared flow components (web, ported from mobile)
+
+| Component | File | Use |
+|-----------|------|-----|
+| `StageAssignSheet` | `components/production/stage-assign-sheet.tsx` | Worker day-slot assignment (`assignable-workers`, `scheduling/calendar`, `worker-day-plan.ts`). Same sheet on the orders-side `PlanStagesBoard` and the production hub. |
+| `StageTimePanel` | `components/workflow/order-workflow-section.tsx` | Estimated · Actual · Live elapsed with `Meter`; pulsing `Stamp` while running. |
+| `OrderFabricTracker` / `SupplierMessageSheet` | `components/purchasing/` | Order-level fabric jobs, supplier WhatsApp draft/send, holding bins. |
+| `TaskFabricBoard` | `components/worker/task-fabric-board.tsx` | Fabric take-in (scan) and leftover disposition on a worker task. |
+| `QualityGatePanel` / `RecoveryFloorPanel` | `components/worker/` | Inspector checklist + report-problem → rework, packer confirm, recovery lines. Gates block finish. |
+| `StageOutputsBoard` / WIP panel | `components/production/` | Per-task semi-finished output ledger; stage bins, kit relocation, labels. |
 
 ### Calendar
 
@@ -149,6 +161,7 @@ All of these ship from `@maher/ui`; page-side copy comes from `useKitCopy()` in 
 
 - PDFs are always rendered by the API. `usePdfDownload()` (web) opens `PdfDownloadDialog` — language, white/brown paper, optional range — then fetches with cookies and saves or opens. Never `window.open(…/pdf)` directly.
 - `DocumentActions` is the pill row for PDF / label / CSV buttons.
+- Exports (reports) go through the same dialog: `openPdf({ path: …/export/<name>.pdf, csvPath: …/export/<name>.csv })` renders a branded PDF sibling for every CSV (`apps/api/src/modules/reports/report-exports.ts`), and the dialog shows a CSV button when `csvPath` is set.
 - `CodeScanner` is the full-bleed ink camera (viewfinder, torch, typed fallback, USB wedge, ZXing fallback). `QrDisplay` shows a high-ECL code with the brand mark and prints through the API label PDF.
 
 ### Overlays
@@ -176,4 +189,4 @@ All of these ship from `@maher/ui`; page-side copy comes from `useKitCopy()` in 
 
 ## Verification matrix
 
-Every section was checked in the browser at 1440 (EXPANDED nav) with the seeded demo accounts (`admin`, `nile`, `carpenter`, password `123`). Before shipping a new page run through: light/dark · EN/AR · 1440/1024/768/390 · reduced motion · zero-data account · finance-less account. Popovers must open beside their trigger (floating-ui positions with `left/top`; never re-add `transform` to `.maher-popover`).
+Every section was checked in the browser at 1440 (EXPANDED nav) with the seeded demo accounts (`admin`, `nile`, `carpenter`, password `123`). The full-site QA pass (Sept 2026) drove one order end to end on web — RFQ → quote with cost hints → SO → plan/assign → release → tasks with fabric take-in → inspection fail/rework/reinspect → packaging → delivery → dealer receipt → return → recovery — with every worker persona (`carpenter`, `foam`, `upholsterer`, `inspector`, `packer`, `recovery`, `driver`), then a 216-shot matrix (auth/admin/dealer/worker × light/dark × EN/AR × 1440/390) with zero missing i18n keys, overflow, or console errors. Before shipping a new page run through: light/dark · EN/AR · 1440/1024/768/390 · reduced motion · zero-data account · finance-less account. Popovers must open beside their trigger (floating-ui positions with `left/top`; never re-add `transform` to `.maher-popover`).

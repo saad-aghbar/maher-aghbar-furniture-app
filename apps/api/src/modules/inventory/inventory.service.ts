@@ -726,8 +726,6 @@ export class InventoryService {
       // Only movements that take stock out can be refused; an inbound receipt onto an
       // already-negative balance (legacy drift) must always be accepted — it repairs it.
       if (nextAvail < 0 && signedQty < 0 && !params.allowNegative) {
-        // eslint-disable-next-line no-console
-        console.error('[stock] negative movement refused', { type: params.type, item: params.inventoryItemId, warehouse: params.warehouseId, locationId, currentAvail, signedQty, ref: params.referenceType, refId: params.referenceId });
         throw new BadRequestException({
           code: 'INSUFFICIENT_STOCK',
           message: 'Inventory cannot go negative.',
