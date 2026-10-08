@@ -15,7 +15,7 @@ export async function seedDemoExtras(
       action: 'DEMO_RESET',
       entityType: 'SystemSetting',
       entityId: 'company',
-      newValues: { seededWorld: 'demo-factory-v1', asOf: asOf.toISOString() },
+      newValues: { seededWorld: 'demo-factory-v2', asOf: asOf.toISOString() },
       createdAt: asOf,
     },
   });

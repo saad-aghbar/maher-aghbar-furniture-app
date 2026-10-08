@@ -49,7 +49,7 @@ async function ensureDeliveredNileOrder(
     driverId?: string;
   },
 ) {
-  const preferred = await prisma.salesOrder.findFirst({
+  const candidates = await prisma.salesOrder.findMany({
     where: {
       customerId: opts.nile.id,
       status: { in: [SalesOrderStatus.DELIVERED, SalesOrderStatus.COMPLETED] },
@@ -58,7 +58,7 @@ async function ensureDeliveredNileOrder(
       lines: { some: {} },
     },
     include: {
-      lines: { take: 1, orderBy: { sortOrder: 'asc' } },
+      lines: { orderBy: { sortOrder: 'asc' } },
       deliveries: {
         where: { status: DeliveryStatus.DELIVERED },
         take: 1,
@@ -67,6 +67,9 @@ async function ensureDeliveredNileOrder(
     },
     orderBy: [{ number: 'asc' }],
   });
+  const preferred =
+    candidates.find((so) => so.projectName === 'Abdoun lounge set') ??
+    candidates.find((so) => so.lines.reduce((sum, line) => sum + Number(line.quantity), 0) >= 3);
   if (preferred?.lines[0] && preferred.deliveries[0]) {
     return {
       soId: preferred.id,

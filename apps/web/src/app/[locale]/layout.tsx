@@ -1,17 +1,15 @@
 import { ConditionalShell } from '@/components/conditional-shell';
-import { getFontClass, getPrimaryFontFamily } from '@/lib/fonts';
 import { DeskToolsI18n } from '@/providers/desk-tools-i18n';
 import { QueryProvider } from '@/providers/query-provider';
 import { StatusI18nProvider } from '@/providers/status-i18n-provider';
 import { loadSessionUser } from '@/session/load-session';
 import { SessionProvider } from '@/session/session-provider';
-import { getDirection, isValidLocale } from '@maher/i18n';
-import { THEME_FOUC_SCRIPT, ThemeProvider } from '@maher/ui';
+import { isValidLocale } from '@maher/i18n';
+import { ThemeProvider } from '@maher/ui';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
-import '../globals.css';
 
 type Props = {
   children: ReactNode;
@@ -31,29 +29,21 @@ export default async function LocaleLayout({ children, params }: Props) {
 
   setRequestLocale(locale);
   const messages = await getMessages();
-  const dir = getDirection(locale);
   const sessionUser = await loadSessionUser();
 
   return (
-    <html lang={locale} dir={dir} className={getFontClass(locale)} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_FOUC_SCRIPT }} />
-      </head>
-      <body style={{ fontFamily: getPrimaryFontFamily(locale) }}>
-        <NextIntlClientProvider messages={messages}>
-          <ThemeProvider>
-            <StatusI18nProvider>
-              <QueryProvider>
-                <DeskToolsI18n>
-                  <SessionProvider user={sessionUser}>
-                    <ConditionalShell>{children}</ConditionalShell>
-                  </SessionProvider>
-                </DeskToolsI18n>
-              </QueryProvider>
-            </StatusI18nProvider>
-          </ThemeProvider>
-        </NextIntlClientProvider>
-      </body>
-    </html>
+    <NextIntlClientProvider messages={messages}>
+      <ThemeProvider>
+        <StatusI18nProvider>
+          <QueryProvider>
+            <DeskToolsI18n>
+              <SessionProvider user={sessionUser}>
+                <ConditionalShell>{children}</ConditionalShell>
+              </SessionProvider>
+            </DeskToolsI18n>
+          </QueryProvider>
+        </StatusI18nProvider>
+      </ThemeProvider>
+    </NextIntlClientProvider>
   );
 }

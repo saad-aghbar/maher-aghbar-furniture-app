@@ -2,6 +2,7 @@
 
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
+import { asRows } from '@/lib/paginated';
 import type { AuthUser } from '@maher/types';
 import { BrandMark, SectionTabs, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -39,12 +40,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
 
   const notifications = useQuery({
     queryKey: ['notifications-inbox'],
-    queryFn: () => apiFetch<Array<{ id: string; readAt?: string | null }>>('/api/v1/notifications'),
+    queryFn: () =>
+      apiFetch<unknown>('/api/v1/notifications').then((json) =>
+        asRows<{ id: string; readAt?: string | null }>(json),
+      ),
     retry: false,
     refetchInterval: 60_000,
   });
 
-  const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
+  const unread = asRows<{ readAt?: string | null }>(notifications.data).filter((n) => !n.readAt).length;
 
   useEffect(() => {
     if (!menuOpen) return;

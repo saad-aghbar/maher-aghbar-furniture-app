@@ -59,7 +59,7 @@
   "fabricJobsHint": "בד סוחר בדרכו למפעל — מוואטסאפ ועד תא ההמתנה.",
   "fabricJobsEmpty": "אין עבודות בד פתוחות.",
   "fabricTracker": "בד להזמנה זו",
-  "fabricTrackerHint": "בד הסוחר לכל שורה — היכן הוא, מוואטסאפ ועד תא ההמתנה. שלבים שזקוקים לו מחכים להגעתו.",
+  "fabricTrackerHint": "היכן הבד של כל שורה, מהודעת הספק ועד תא ההמתנה.",
   "fabricReady": "{ready}/{required} מוכן",
   "fabricNoneNeeded": "אין בד סוחר בהזמנה זו.",
   "fabricOpenJob": "פתח משימת בד",

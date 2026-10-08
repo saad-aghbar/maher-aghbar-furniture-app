@@ -457,4 +457,108 @@ export async function seedDemoFabricProcurement(
   });
 
   console.log(`  Seeded ${SO_NUMBER} fabric procurement (arrived / waiting / redirected+partial).`);
+  await seedFabricStateShelf(prisma, opts);
+}
+
+const EXTRA_FABRIC_STATES: FabricProcurementState[] = [
+  FabricProcurementState.NEEDS_ORDERING,
+  FabricProcurementState.AWAITING_SUPPLIER,
+  FabricProcurementState.SUPPLIER_CONFIRMED,
+  FabricProcurementState.UNAVAILABLE,
+  FabricProcurementState.DELAYED,
+  FabricProcurementState.CANCELLED,
+];
+
+/** Sibling order so SO-FB1042 stays the three-fabric UAT job. */
+async function seedFabricStateShelf(
+  prisma: PrismaClient,
+  opts: { dealers: DealerRef[]; products: ProductRef[]; adminUserId: string },
+) {
+  const dealer = opts.dealers.find((d) => d.username === 'balqis') ?? opts.dealers[0];
+  const product = opts.products.find((p) => p.sku === 'SOF-LOVE') ?? opts.products[0];
+  const mill = await prisma.supplier.findFirst({ where: { code: 'SUP-FABRIC' } });
+  const sand = await prisma.inventoryItem.findUnique({ where: { sku: 'MAT-VEL-SAND' } });
+  if (!dealer || !product || !mill || !sand) return;
+  if (await prisma.salesOrder.findUnique({ where: { number: 'SO-FB-STATES' } })) return;
+
+  const unit = Number(product.basePrice) || 700;
+  const totals = lineTotals(1, unit, VAT);
+  const so = await prisma.salesOrder.create({
+    data: {
+      number: 'SO-FB-STATES',
+      customerId: dealer.id,
+      orderDate: new Date(),
+      requiredDeliveryDate: new Date(Date.now() + 20 * 86400000),
+      status: SalesOrderStatus.WAITING_FOR_MATERIALS,
+      projectName: 'Balqis fabric state board',
+      subtotal: totals.subtotalM,
+      taxTotal: totals.taxAmountM,
+      total: totals.lineTotalM,
+      createdById: opts.adminUserId,
+      lines: {
+        create: [
+          {
+            productId: product.id,
+            ...variantLineFields(product),
+            description: product.nameEn,
+            quantity: 1,
+            unitPrice: money(unit),
+            taxRate: VAT,
+            lineTotal: totals.lineTotalM,
+            sortOrder: 0,
+          },
+        ],
+      },
+    },
+    include: { lines: true },
+  });
+  const line = so.lines[0];
+  if (!line) return;
+  const setup = await prisma.salesOrderProductionSetup.create({
+    data: {
+      salesOrderId: so.id,
+      status: SalesOrderProductionSetupStatus.SETUP_REQUIRED,
+      lines: {
+        create: {
+          salesOrderLineId: line.id,
+          status: SalesOrderLineSetupStatus.READY,
+          manufacturingName: product.nameEn,
+          manufacturingComplexity: ManufacturingComplexity.STANDARD,
+          materialRequirements: {
+            create: EXTRA_FABRIC_STATES.map((state, index) => ({
+              inventoryItemId: sand.id,
+              sku: sand.sku,
+              displayName: `${sand.nameEn} · ${state}`,
+              category: InventoryCategory.FABRIC,
+              unit: 'm',
+              expectedQty: 4,
+              source: SalesOrderMaterialRequirementSource.CATALOG,
+              needsReview: false,
+              stageCode: 'UPHOLSTERY',
+              fabricSelectionKey: `state-${state}`,
+              sortOrder: index,
+            })),
+          },
+        },
+      },
+    },
+    include: { lines: { include: { materialRequirements: true } } },
+  });
+  for (const req of setup.lines[0]?.materialRequirements ?? []) {
+    const state = EXTRA_FABRIC_STATES.find((s) => req.fabricSelectionKey === `state-${s}`);
+    if (!state) continue;
+    await prisma.fabricProcurement.create({
+      data: {
+        requirementId: req.id,
+        salesOrderId: so.id,
+        salesOrderLineId: line.id,
+        supplierId: mill.id,
+        state,
+        orderedQty: 4,
+        unit: 'm',
+        notes: `State sample ${state}`,
+      },
+    });
+  }
+  console.log('  fabric state shelf: SO-FB-STATES');
 }

@@ -147,7 +147,7 @@ export function ProductionHub({ id }: { id: string }) {
             aria-label={tCommon('more')}
             trigger={<Button variant="secondary" aria-label={tCommon('more')}><MoreHorizontal className="h-4 w-4" /></Button>}
             items={[
-              ...(order.salesOrder ? [{ id: 'so', label: tSales('systemOrderNumber'), href: `/admin/sales-orders/${order.salesOrder.id}` }, { id: 'plan', label: t('productionPlan'), href: `/admin/sales-orders/${order.salesOrder.id}/plan` }] : []),
+              ...(order.salesOrder ? [{ id: 'so', label: tSales('systemOrderNumber'), href: `/admin/sales-orders/${order.salesOrder.id}` }, { id: 'plan', label: t('productionPlan'), href: `/admin/sales-orders/${order.salesOrder.id}/production-plan` }] : []),
               ...(order.returnRequest ? [{ id: 'ret', label: order.returnRequest.number, href: `/admin/returns/${order.returnRequest.id}` }] : []),
               { id: 'resync', label: tp('planResync'), icon: <RefreshCw className="h-4 w-4" />, onSelect: () => ctl.resync.mutate(), separator: true },
             ]}

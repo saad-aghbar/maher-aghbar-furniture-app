@@ -35,7 +35,7 @@ export function ProductionBasketBoard({ boards }: { boards: ProductionBasket[] }
       {boards.map((board) => {
         const first = board.items[0];
         const soId = board.salesOrderId ?? first?.salesOrder?.id;
-        const href = soId ? `/admin/sales-orders/${soId}/plan` : first ? `/admin/production/${first.id}` : '/admin/production';
+        const href = soId ? `/admin/sales-orders/${soId}/production-plan` : first ? `/admin/production/${first.id}` : '/admin/production';
         const title = first?.salesOrder?.externalOrderNumber?.trim() || first?.salesOrder?.number || first?.number || board.id;
         const done = board.items.filter((i) => i.status === 'COMPLETED').length;
         const avg = board.items.length ? board.items.reduce((s, i) => s + Number(i.progressPercent ?? 0), 0) / board.items.length : 0;

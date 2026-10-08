@@ -5,6 +5,7 @@ import {
   type FlowMapStage,
 } from "@/components/workflow/production-flow-map";
 import { apiFetch } from "@/lib/api-client";
+import { asRows } from "@/lib/paginated";
 import type { ProductStageEstimateRow } from "@/lib/scheduling";
 import { workflowVersionToFlowStages } from "@/lib/workflow-labels";
 import { isQualityGateStageCode } from "@/lib/workflow-terminal";
@@ -84,7 +85,7 @@ export function ProductWorkflowTimes({
 
   const estimateMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const row of estimatesQuery.data ?? []) {
+    for (const row of asRows<ProductStageEstimateRow>(estimatesQuery.data)) {
       map.set(row.stageDefinitionId, stageEstimateMinutes(row));
     }
     return map;

@@ -125,15 +125,9 @@ export function OrderBasketProvider({ children }: { children: ReactNode }) {
           return prev;
         }
       }
-      const next = applyCatalogProductToBasket(prev, pick, {
-        preferUpdate: pick.preferUpdate,
-      });
-      const same = next.find(
-        (line) =>
-          line.productId === pick.productId &&
-          (line.variantId || '') === (pick.variantId || ''),
-      );
-      addedId = same?.id ?? next[next.length - 1]?.id ?? '';
+      const next = applyCatalogProductToBasket(prev, pick);
+      const created = [...next].reverse().find((line) => !prev.some((row) => row.id === line.id));
+      addedId = created?.id ?? next[next.length - 1]?.id ?? '';
       return next;
     });
     return addedId;

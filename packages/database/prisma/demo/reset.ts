@@ -4,6 +4,7 @@ import { demoAsOf } from './clock';
 import { runDemoReset } from './factory-world';
 import { releaseFabricUatSubject } from './release-fabric-uat';
 import { validateDemoFactory } from './validate';
+import { seedMonthInbox } from './month-inbox';
 import { writeFatherWalkthrough } from './write-walkthrough';
 
 /** Domain events during seed/release must not leave a stale inbox for UAT. */
@@ -23,8 +24,11 @@ async function main() {
     await runDemoReset(prisma);
     console.log('Releasing the SO-FB1042 fabric UAT order through the canonical release…');
     releaseFabricUatSubject();
-    console.log('Clearing notification / push state for a clean UAT inbox…');
+    console.log('Clearing notification / push state left by release…');
     await clearDemoNotificationState(prisma);
+    console.log('Seeding role inbox and AI…');
+    const admin = await prisma.user.findUniqueOrThrow({ where: { username: 'admin' }, select: { id: true } });
+    await seedMonthInbox(prisma, admin.id);
     await validateDemoFactory(prisma);
     await writeFatherWalkthrough(prisma);
   } finally {

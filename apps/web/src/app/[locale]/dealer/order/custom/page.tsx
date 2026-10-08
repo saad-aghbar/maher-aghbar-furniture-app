@@ -1,64 +1,63 @@
 'use client';
 
+import { DealerLineDetails, isNamedDealerSpec } from '@/components/dealer/dealer-line-details';
 import { useOrderBasket } from '@/components/order-basket-provider';
-import { apiUpload } from '@/lib/api-client';
-import { emptyBasketLine } from '@/lib/basket';
+import { emptyBasketLine, type BasketLine } from '@/lib/basket';
 import { useRouter } from '@/i18n/navigation';
-import { Alert, Board, Button, CameraCapture, FormFooter, FormSection, Input, Ledger, LedgerRow, Ltr, NumberField, Stamp, TextArea } from '@maher/ui';
+import { Alert, Board, BoardSkeleton, Button, FormFooter, Ledger, LedgerRow, Ltr, Stamp } from '@maher/ui';
 import { Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
-export default function CustomItemPage() {
+function CustomItemForm() {
   const tc = useTranslations('catalog');
+  const tn = useTranslations('mobile.newOrder');
   const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const router = useRouter();
+  const search = useSearchParams();
+  const lineId = search.get('lineId') ?? '';
   const basket = useOrderBasket();
-  const [name, setName] = useState('');
-  const [qty, setQty] = useState('1');
-  const [width, setWidth] = useState('');
-  const [height, setHeight] = useState('');
-  const [depth, setDepth] = useState('');
-  const [notes, setNotes] = useState('');
-  const [photoIds, setPhotoIds] = useState<string[]>([]);
+  const [line, setLine] = useState<BasketLine>(() => emptyBasketLine());
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const seeded = useRef(false);
 
-  async function onUpload(file: File) {
-    const form = new FormData();
-    form.append('file', file);
-    const res = await apiUpload<{ document: { id: string } }>('/api/v1/uploads?category=ORDER_IMAGE', form);
-    setPhotoIds((prev) => [...prev, res.document.id]);
-  }
+  useEffect(() => {
+    if (!lineId || !basket.hydrated || seeded.current) return;
+    const existing = basket.lines.find((row) => row.id === lineId);
+    seeded.current = true;
+    if (existing) setLine({ ...existing, productId: '', imageUrl: '' });
+  }, [basket.hydrated, basket.lines, lineId]);
 
   function save() {
-    if (!name.trim()) {
-      setError(tc('customerProductRequired'));
+    const name = line.customProductName.trim();
+    if (!name) {
+      setError(tn('customNameRequired'));
       return;
     }
-    if (!photoIds.length) {
-      setError(tc('photosRequired'));
+    if (!line.photoDocumentIds.filter(Boolean).length) {
+      setError(tn('customPhotoRequired'));
       return;
     }
-    setBusy(true);
-    basket.upsertLine(
-      emptyBasketLine({
-        customProductName: name.trim(),
-        quantity: qty || '1',
-        dimWidth: width,
-        dimHeight: height,
-        dimDepth: depth,
-        notes,
-        photoDocumentIds: photoIds,
-        primaryImageDocumentId: photoIds[0] ?? '',
-      }),
-    );
+    setError(null);
+    basket.upsertLine({
+      ...line,
+      id: lineId || line.id,
+      productId: '',
+      dealerPrice: '',
+      imageUrl: '',
+      customProductName: name,
+      primaryImageDocumentId: line.photoDocumentIds.find(Boolean) ?? '',
+    });
     router.push('/dealer/basket');
   }
 
-  const dims = [width, height, depth].filter(Boolean).join(' × ');
-  const canSave = name.trim().length > 0 && photoIds.length > 0 && !busy;
+  const named = line.options.filter(isNamedDealerSpec);
+  const library = line.options.filter((opt) => !isNamedDealerSpec(opt));
+  const dims = [line.dimWidth, line.dimHeight, line.dimDepth].filter(Boolean).join(' × ');
+  const saveLabel = lineId ? tn('saveCustomToBasket') : tn('addCustomToBasket');
+  const canSave = line.customProductName.trim().length > 0 && line.photoDocumentIds.some(Boolean);
 
   return (
     <div className="maher-stagger space-y-5">
@@ -70,7 +69,7 @@ export default function CustomItemPage() {
             </span>
             <div className="min-w-0">
               <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] text-[var(--maher-text-primary)] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{tNav('customItem')}</h1>
-              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tc('customItemHint')}</p>
+              <p className="mt-1 max-w-[56ch] text-[14px] leading-5 text-[var(--maher-text-secondary)]">{tn('customItemHint')}</p>
             </div>
           </div>
           <Stamp tone="info" size="sm">{tc('basketLineCustom')}</Stamp>
@@ -80,32 +79,43 @@ export default function CustomItemPage() {
 
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="space-y-5 xl:col-span-8">
-          <FormSection title={tc('name')} columns={1} tone={name.trim() ? 'success' : 'info'}>
-            <Input label={tc('name')} value={name} onChange={(e) => setName(e.target.value)} required />
-            <TextArea autoGrow label={tc('notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-          </FormSection>
-          <FormSection title={tc('dimensions')} columns={2}>
-            <NumberField label={tc('quantity')} value={Number(qty) || 1} onChange={(v) => setQty(String(Math.max(1, Math.round(v ?? 1))))} min={1} step={1} decimals={0} />
-            <NumberField label={tc('dimWidth')} unit="cm" value={width === '' ? null : Number(width)} onChange={(v) => setWidth(v == null ? '' : String(v))} min={0} />
-            <NumberField label={tc('dimHeight')} unit="cm" value={height === '' ? null : Number(height)} onChange={(v) => setHeight(v == null ? '' : String(v))} min={0} />
-            <NumberField label={tc('dimDepth')} unit="cm" value={depth === '' ? null : Number(depth)} onChange={(v) => setDepth(v == null ? '' : String(v))} min={0} />
-          </FormSection>
-          <FormSection title={tCommon('takePhoto')} description={tc('photosRequired')} columns={1} tone={photoIds.length ? 'success' : 'warning'} meta={<Stamp tone={photoIds.length ? 'success' : 'warning'} size="sm">{photoIds.length}</Stamp>}>
-            <CameraCapture label={tCommon('takePhoto')} onUploadFile={onUpload} hint={tc('photosRequired')} />
-          </FormSection>
-          <FormFooter primary={<Button onClick={save} loading={busy} disabled={!canSave}>{tc('addToBasket')}</Button>} secondary={<Button variant="ghost" onClick={() => router.push('/dealer/catalog')}>{tCommon('cancel')}</Button>} />
+          <DealerLineDetails line={line} mode="custom" onChange={setLine} />
+          <FormFooter
+            primary={<Button onClick={save} disabled={!canSave}>{saveLabel}</Button>}
+            secondary={<Button variant="ghost" onClick={() => router.push('/dealer/catalog')}>{tCommon('cancel')}</Button>}
+          />
         </div>
         <div className="xl:col-span-4">
           <Board tone="info" className="xl:sticky xl:top-28">
-            <Board.Header title={name.trim() || tNav('customItem')} meta={<Stamp tone="info" size="sm">{tc('basketLineCustom')}</Stamp>} />
+            <Board.Header title={line.customProductName.trim() || tNav('customItem')} meta={<Stamp tone="info" size="sm">{tc('basketLineCustom')}</Stamp>} />
             <Ledger className="px-5 pb-3">
-              <LedgerRow label={tc('quantity')} value={<Ltr>{qty || '1'}</Ltr>} />
+              <LedgerRow label={tc('quantity')} value={<Ltr>{line.quantity || '1'}</Ltr>} />
+              <LedgerRow label={tn('waitingForFactoryPrice')} value={tn('waitingForFactoryPrice')} tone="warning" stamp />
               {dims ? <LedgerRow label={tc('dimensions')} value={<Ltr>{dims} cm</Ltr>} /> : null}
-              <LedgerRow label={tCommon('takePhoto')} value={<Ltr>{photoIds.length}</Ltr>} tone={photoIds.length ? 'success' : 'warning'} stamp />
+              {line.dimSeat ? <LedgerRow label={tc('seatHeight')} value={<Ltr>{line.dimSeat} cm</Ltr>} /> : null}
+              {line.customMeasurements.map((row) => (
+                <LedgerRow key={row.id} label={row.label} value={<Ltr>{`${row.value} ${row.unit || 'cm'}`}</Ltr>} />
+              ))}
+              {library.map((opt) => (
+                <LedgerRow key={opt.specOptionValueId || opt.code} label={opt.groupCode || tc('specs')} value={opt.nameEn || '—'} tone="brand" stamp />
+              ))}
+              {named.map((opt) => (
+                <LedgerRow key={opt.code} label={opt.nameEn || tn('ownSpec')} value={opt.note || '—'} tone="info" stamp />
+              ))}
+              <LedgerRow label={tn('customPhotos')} value={<Ltr>{line.photoDocumentIds.filter(Boolean).length}</Ltr>} tone={line.photoDocumentIds.some(Boolean) ? 'success' : 'warning'} stamp />
+              {line.notes.trim() ? <LedgerRow label={tn('itemNotes')} value={line.notes} /> : null}
             </Ledger>
           </Board>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CustomItemPage() {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={6} />}>
+      <CustomItemForm />
+    </Suspense>
   );
 }

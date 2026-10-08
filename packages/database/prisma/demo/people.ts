@@ -30,6 +30,7 @@ export const DEMO_EXPECTED_USERNAMES = [
   'driver',
   'nile',
   'oasis',
+  'balqis',
 ] as const;
 
 export type StaffUser = {
@@ -306,6 +307,24 @@ const DEALERS: Array<{
     contact: 'Majd Khoury',
     phone: '+962790210002',
     email: 'hello@oasis-living.jo',
+  },
+  {
+    username: 'balqis',
+    code: 'CUS-0103',
+    nameEn: 'Balqis Hospitality',
+    nameAr: 'بلقيس للضيافة',
+    nameHe: 'בלקיס לאירוח',
+    city: 'Amman',
+    area: 'Jabal Amman',
+    street: 'Rainbow Street 7',
+    lat: 31.953,
+    lng: 35.929,
+    type: CustomerType.SHOWROOM,
+    credit: 120000,
+    terms: 45,
+    contact: 'Hala Balqis',
+    phone: '+962790210003',
+    email: 'desk@balqis-hospitality.jo',
   },
 ];
 

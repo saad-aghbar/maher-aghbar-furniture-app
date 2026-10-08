@@ -1007,5 +1007,5 @@
   "yourNotes": "Your notes",
   "dealerNoQuoteYet": "No quotation yet",
   "dealerNoQuoteYetBody": "The factory is reviewing your order. The quotation will appear here as soon as it is sent.",
-  "itemsFromBasketHint": "Items come from your basket. Edit quantities, variants and fabric per item in the basket; this page holds the order details."
+  "itemsFromBasketHint": "Select an item to set its quantity, fabric, and notes. Specs and dimensions open on that item. Delivery and order notes stay on the order."
 }

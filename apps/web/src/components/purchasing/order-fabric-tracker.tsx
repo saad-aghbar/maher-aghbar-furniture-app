@@ -3,7 +3,7 @@
 import { fabricTone, type FabricJob } from '@/components/purchasing/fabric-shared';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
-import { Board, BoardSkeleton, Ledger, LedgerRow, Meter, Stamp } from '@maher/ui';
+import { Board, BoardSkeleton, Meter, Stamp } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -70,48 +70,65 @@ export function OrderFabricTracker({ salesOrderId, compact }: { salesOrderId: st
         }
       />
       <Board.Body padding="none">
-        <Ledger>
+        <ul className="m-0 list-none divide-y divide-[var(--maher-border)] p-0">
           {data.items.map((item) => {
             const r = item.readiness ?? {};
             const expected = r.expectedQty ?? item.requiredQty ?? null;
             const arrived = r.arrivedQty ?? item.arrivedQty ?? 0;
             const state = r.derivedStatus ?? item.state ?? null;
             const label = r.label ?? item.requestedLabel ?? item.sku ?? '—';
-            const hintParts = [
-              item.itemLetter ? `${item.salesOrderNumber}.${item.itemLetter}` : item.salesOrderNumber,
-              item.productName ?? null,
-              item.supplier?.name ?? null,
-              r.stageCode ? humanizeCode(r.stageCode) : null,
-            ].filter(Boolean);
+            const orderRef = item.itemLetter ? `${item.salesOrderNumber}.${item.itemLetter}` : item.salesOrderNumber;
+            const meta = [orderRef, pieceTitle(item.productName), item.supplier?.name].filter(Boolean).join(' · ');
+            const unit = r.unit ?? item.unit ?? '';
             return (
-              <LedgerRow
-                key={item.id}
-                href={`/admin/purchasing/fabric/${item.id}`}
-                LinkComponent={Link}
-                label={label}
-                hint={hintParts.join(' · ')}
-                value={
-                  <span className="flex min-w-[150px] flex-col items-end gap-1">
-                    <Stamp tone={fabricTone(state)} size="sm">
+              <li key={item.id} className="m-0">
+                <Link
+                  href={`/admin/purchasing/fabric/${item.id}`}
+                  className="block px-5 py-3.5 transition-colors hover:bg-[var(--maher-surface-muted)]"
+                >
+                  <span className="flex items-start justify-between gap-4">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium leading-5 text-[var(--maher-text-primary)]">{label}</span>
+                      {meta ? (
+                        <span className="mt-0.5 block truncate text-xs leading-4 text-[var(--maher-text-tertiary)]" dir="ltr">
+                          {meta}
+                        </span>
+                      ) : null}
+                    </span>
+                    <Stamp tone={fabricTone(state)} size="sm" className="mt-0.5 shrink-0">
                       {status(state)}
                     </Stamp>
-                    {expected != null && expected > 0 ? (
-                      <span className="flex w-full items-center gap-2">
-                        <Meter value={Math.min(arrived, expected)} max={expected} size="sm" tone={arrived >= expected ? 'success' : 'info'} showValue={false} className="flex-1" />
-                        <span className="text-[11px] tabular-nums text-[var(--maher-text-tertiary)]" dir="ltr">
-                          {arrived}/{expected} {r.unit ?? item.unit ?? ''}
-                        </span>
-                      </span>
-                    ) : null}
                   </span>
-                }
-              />
+                  {expected != null && expected > 0 ? (
+                    <span className="mt-2.5 flex items-center gap-3">
+                      <Meter
+                        value={Math.min(arrived, expected)}
+                        max={expected}
+                        size="sm"
+                        tone={arrived >= expected ? 'success' : 'info'}
+                        showValue={false}
+                        className="min-w-0 flex-1"
+                      />
+                      <span className="shrink-0 text-[11px] tabular-nums text-[var(--maher-text-tertiary)]" dir="ltr">
+                        {arrived}/{expected} {unit}
+                      </span>
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
             );
           })}
-        </Ledger>
+        </ul>
       </Board.Body>
     </Board>
   );
+}
+
+/** Line descriptions sometimes append "— three fabrics". The row title is already the fabric. */
+function pieceTitle(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const cleaned = name.replace(/\s+[—–-]\s+.*\bfabrics?\b.*$/i, '').trim();
+  return cleaned || name;
 }
 
 function humanizeCode(code: string): string {

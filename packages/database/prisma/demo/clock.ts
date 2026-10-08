@@ -7,7 +7,7 @@ export const DEMO_UTC_OFFSET_HOURS = 3;
 /** @deprecated Prefer demoAsOf() — kept for docs/search that still mention the old freeze. */
 export const DEMO_AS_OF_YMD = 'relative';
 /** @deprecated Prefer daysAgo / demoWindowStart(). */
-export const DEMO_WINDOW_START_YMD = 'relative-21d';
+export const DEMO_WINDOW_START_YMD = 'relative-30d';
 
 /**
  * As-of instant for the demo world.
@@ -37,9 +37,9 @@ export function demoAsOf(): Date {
   return ammanLocal(year, month, day, 14, 0);
 }
 
-/** Start of the curated demo window (~3 weeks before as-of). */
+/** Start of the curated demo window (30 days before as-of). */
 export function demoWindowStart(): Date {
-  return daysAgo(21);
+  return daysAgo(30);
 }
 
 export function demoYear(): number {

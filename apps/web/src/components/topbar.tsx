@@ -2,6 +2,7 @@
 
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
+import { asRows } from '@/lib/paginated';
 import { Button, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-react';
@@ -59,13 +60,13 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
 
   const notifications = useQuery({
     queryKey: ['notifications-inbox'],
-    queryFn: () => apiFetch<NotificationItem[]>('/api/v1/notifications'),
+    queryFn: () => apiFetch<unknown>('/api/v1/notifications').then((json) => asRows<NotificationItem>(json)),
     enabled: canNotify,
     retry: false,
     refetchInterval: canNotify ? 60_000 : false,
   });
 
-  const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
+  const unread = asRows<NotificationItem>(notifications.data).filter((n) => !n.readAt).length;
 
   useEffect(() => {
     if (!menuOpen) return;

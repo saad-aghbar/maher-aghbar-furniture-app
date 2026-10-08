@@ -2,6 +2,7 @@
 
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
+import { asRows } from '@/lib/paginated';
 import type { AuthUser } from '@maher/types';
 import { BrandMark, SectionTabs, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -128,12 +129,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
 
   const notifications = useQuery({
     queryKey: ['notifications-inbox'],
-    queryFn: () => apiFetch<NotificationItem[]>('/api/v1/notifications'),
+    queryFn: () => apiFetch<unknown>('/api/v1/notifications').then((json) => asRows<NotificationItem>(json)),
     retry: false,
     refetchInterval: 60_000,
   });
 
-  const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
+  const unread = asRows<NotificationItem>(notifications.data).filter((n) => !n.readAt).length;
   const basketCount = useOrderBasketCount();
 
   useEffect(() => {

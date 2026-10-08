@@ -58,6 +58,7 @@ admin / 123
 DEALER
 nile / 123
 oasis / 123
+balqis / 123
 
 WAREHOUSE
 warehouse / 123

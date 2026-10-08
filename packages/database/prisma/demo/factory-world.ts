@@ -13,6 +13,10 @@ import { seedDemoFabricProcurement } from './fabric-procurement';
 import { seedCostPerformanceWorld } from './cost-performance-uat';
 import { seedDemoReturns } from './returns';
 import { seedDemoExtras } from './extras';
+import { seedMonthDesks } from './month-desks';
+import { seedMonthInbox } from './month-inbox';
+import { seedMonthLabor } from './month-labor';
+import { seedStatusShelf } from './status-shelf';
 import { wipeOperationalData } from './wipe';
 import { ensureQuotationAcceptedUniqueIndex } from './quotation-accepted-index';
 import {
@@ -38,7 +42,7 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
         country: 'JO',
         currency: 'ILS',
         phone: '+96265550000',
-        seededWorld: 'demo-factory-v1',
+        seededWorld: 'demo-factory-v2',
         demoAsOf: asOf.toISOString(),
       },
     },
@@ -51,7 +55,7 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
         country: 'JO',
         currency: 'ILS',
         phone: '+96265550000',
-        seededWorld: 'demo-factory-v1',
+        seededWorld: 'demo-factory-v2',
         demoAsOf: asOf.toISOString(),
       },
     },
@@ -92,6 +96,14 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     rawWhId: stock.rawWhId,
   });
 
+  console.log('Seeding list-filter shelf…');
+  await seedStatusShelf(prisma, {
+    adminId: people.adminId,
+    salesId: people.salesId,
+    dealers: people.dealers,
+    products: catalog.products,
+  });
+
   console.log('Seeding fabric procurement (SO-FB1042)…');
   await seedDemoFabricProcurement(prisma, {
     dealers: people.dealers,
@@ -112,12 +124,23 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     passwordHash,
   });
 
+  console.log('Seeding month labor time…');
+  await seedMonthLabor(prisma);
+
   console.log('Seeding RT-DEMO-001 return case…');
   await seedDemoReturns(prisma, {
     adminId: people.adminId,
     driverId: people.driverId,
     dealers: people.dealers,
     products: catalog.products,
+  });
+
+  console.log('Seeding month desks…');
+  await seedMonthDesks(prisma, {
+    adminId: people.adminId,
+    driverId: people.driverId,
+    warehouseUserId: people.warehouseId,
+    counters,
   });
 
   console.log('Seeding extras (audit only)…');

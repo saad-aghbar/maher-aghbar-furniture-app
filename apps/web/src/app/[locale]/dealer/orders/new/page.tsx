@@ -4,8 +4,9 @@ import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
 import { localDealerMinimumRequestYmd } from '@/components/availability-card';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { useRouter } from '@/i18n/navigation';
+import { DealerOrderLineEditor } from '@/components/dealer/dealer-order-line-editor';
 import { useOrderBasket } from '@/components/order-basket-provider';
-import { lineHasProduct, lineToRequestItem } from '@/lib/basket';
+import { lineFabricHint, lineHasFabric, lineHasProduct, lineToRequestItem } from '@/lib/basket';
 import {
   ActionDock,
   Alert,
@@ -109,6 +110,8 @@ function CreateOrderForm() {
 
   const basket = useOrderBasket();
   const basketLines = basket.lines.filter(lineHasProduct);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const selectedLine = basketLines.find((line) => line.id === selectedLineId) ?? basketLines[0] ?? null;
   const [productId, setProductId] = useState(initialProductId);
   const [customProductName, setCustomProductName] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -596,7 +599,9 @@ function CreateOrderForm() {
 
   const orderDone = basketLines.length > 0 || (Boolean(productName.trim()) && Number(quantity) > 0);
   const customerDone = Boolean(deliveryAddress.trim());
-  const fabricDone = Boolean(fabric.trim() || fabricDescription.trim());
+  const fabricDone = basketLines.length
+    ? basketLines.every(lineHasFabric)
+    : Boolean(fabric.trim() || fabricDescription.trim() || extraFabrics.some((row) => row.type.trim() || row.color.trim() || row.role.trim()));
   const attachmentsDone = orderImages.length + handwrittenFiles.length > 0;
   const steps: StageStripStage[] = [
     { key: 'order', label: tc('orderSection'), state: orderDone ? 'done' : 'current' },
@@ -628,15 +633,21 @@ function CreateOrderForm() {
 
       <div className="grid gap-5 xl:grid-cols-12">
       <div className="space-y-5 xl:col-span-8">
-      {basketLines.length ? (
-        <Board tone="brand">
-          <Board.Header title={t('basket')} meta={<Stamp tone="brand" size="sm">{basketLines.length}</Stamp>} actions={<Button size="sm" variant="ghost" onClick={() => router.push('/dealer/basket')}>{tCommon('edit')}</Button>} />
-          <Ledger className="px-5 pb-3">
-            {basketLines.map((line) => (
-              <LedgerRow key={line.id} label={line.customProductName || line.variantLabel || line.productId} hint={line.variantLabel || undefined} value={<Ltr>× {line.quantity}</Ltr>} />
-            ))}
-          </Ledger>
-        </Board>
+      {basketLines.length && selectedLine ? (
+        <DealerOrderLineEditor
+          lines={basketLines}
+          selectedId={selectedLine.id}
+          onSelect={setSelectedLineId}
+          onPatch={(id, patch) => basket.patchLine(id, patch)}
+          disabled={busy}
+          onEditDetails={(line) =>
+            router.push(
+              line.productId.trim()
+                ? `/dealer/catalog/${line.productId}/customize?variantId=${line.variantId}&qty=${line.quantity}&lineId=${line.id}`
+                : `/dealer/order/custom?lineId=${line.id}`,
+            )
+          }
+        />
       ) : null}
 
       <Sheet
@@ -847,6 +858,7 @@ function CreateOrderForm() {
         />
       ) : null}
 
+      {basketLines.length === 0 ? (
       <FormSection title={tc('fabricSection')} columns={1} tone={fabricDone ? 'success' : 'neutral'}>
           <Input
             label={tc('fabricName')}
@@ -909,6 +921,7 @@ function CreateOrderForm() {
             {tc('addFabric')}
           </Button>
       </FormSection>
+      ) : null}
 
       <FormSection title={tc('customerSection')} columns={1} tone={customerDone ? 'success' : 'warning'}>
           <Input
@@ -1137,12 +1150,22 @@ function CreateOrderForm() {
           <Board.Header title={tc('orderSection')} meta={<Stamp tone={canSubmit ? 'success' : 'neutral'} size="sm">{lineCount}</Stamp>} />
           <Ledger className="px-5">
             {basketLines.length ? (
-              basketLines.map((line) => <LedgerRow key={line.id} label={line.customProductName || line.variantLabel || line.productId} value={<Ltr>× {line.quantity}</Ltr>} />)
+              basketLines.map((line) => (
+                <LedgerRow
+                  key={line.id}
+                  label={line.customProductName || line.variantLabel || line.productId}
+                  hint={lineFabricHint(line) || undefined}
+                  value={<Ltr>× {line.quantity}</Ltr>}
+                  tone={line.id === selectedLine?.id ? 'brand' : 'neutral'}
+                />
+              ))
             ) : (
               <LedgerRow label={productName.trim() || tc('modelName')} value={<Ltr>× {quantity || '1'}</Ltr>} tone={productName.trim() ? 'success' : 'neutral'} stamp />
             )}
             <LedgerRow label={tc('preferredDeliveryDate')} value={preferredDeliveryDate ? <Ltr>{preferredDeliveryDate}</Ltr> : '—'} tone={preferredDeliveryDate ? 'info' : 'neutral'} stamp />
-            <LedgerRow label={tc('fabricSection')} value={fabric.trim() || (fabricDescription.trim() ? tc('fabricDescription') : '—')} />
+            {basketLines.length === 0 ? (
+              <LedgerRow label={tc('fabricSection')} value={fabric.trim() || (fabricDescription.trim() ? tc('fabricDescription') : '—')} />
+            ) : null}
             <LedgerRow label={tc('deliveryAddress')} value={deliveryAddress.trim() ? <span className="line-clamp-2 text-end">{deliveryAddress}</span> : '—'} tone={customerDone ? 'success' : 'warning'} stamp />
             <LedgerRow label={tc('attachmentsSection')} value={<Ltr>{orderImages.length + handwrittenFiles.length}</Ltr>} />
           </Ledger>

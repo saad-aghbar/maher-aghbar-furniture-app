@@ -15,6 +15,10 @@ export type BasketFabric = {
   color: string;
   role: string;
   notes: string;
+  code?: string;
+  quantity?: string;
+  fabricId?: string;
+  colorId?: string;
 };
 
 export type BasketMeasurement = {
@@ -175,16 +179,8 @@ function withReseededDims(line: BasketLine, pick: CatalogBasketPick): BasketLine
   };
 }
 
-/**
- * One existing line for a product updates (STD → named variant, dims reseeded
- * unless manufacturing diffs). Several lines of that product append.
- */
-export function applyCatalogProductToBasket(
-  lines: BasketLine[],
-  pick: CatalogBasketPick,
-  opts?: { preferUpdate?: boolean },
-): BasketLine[] {
-  const preferUpdate = opts?.preferUpdate ?? Boolean(pick.preferUpdate);
+/** Fill an empty basket, otherwise append. A second add of the same product is its own line. */
+export function applyCatalogProductToBasket(lines: BasketLine[], pick: CatalogBasketPick): BasketLine[] {
   const patch = catalogPatch(pick);
   if (!lines.length) return [emptyBasketLine(withReseededDims(emptyBasketLine(patch), pick))];
   const first = lines[0];
@@ -192,17 +188,21 @@ export function applyCatalogProductToBasket(
   if (!lines.some(lineHasProduct)) {
     return [withReseededDims({ ...first, ...patch, id: first.id }, pick)];
   }
-  if (preferUpdate) {
-    const sameProduct = lines.filter((line) => line.productId === pick.productId);
-    if (sameProduct.length === 1) {
-      const target = sameProduct[0]!;
-      return lines.map((line) => {
-        if (line.id !== target.id) return line;
-        return withReseededDims({ ...line, ...patch, id: line.id }, pick);
-      });
-    }
-  }
   return [...lines, withReseededDims(emptyBasketLine(patch), pick)];
+}
+
+export function lineHasFabric(line: BasketLine): boolean {
+  return line.fabrics.some(
+    (row) => row.type.trim() || row.color.trim() || row.role.trim() || Boolean(row.code?.trim()),
+  );
+}
+
+export function lineFabricHint(line: BasketLine): string {
+  const row = line.fabrics.find(
+    (entry) => entry.type.trim() || entry.color.trim() || entry.role.trim() || Boolean(entry.code?.trim()),
+  );
+  if (!row) return '';
+  return [row.type, row.color, row.role].map((part) => part.trim()).filter(Boolean).join(' · ');
 }
 
 export function upsertBasketLine(lines: BasketLine[], line: BasketLine): BasketLine[] {
@@ -233,14 +233,20 @@ export function saveBasketDraft(lines: BasketLine[]): void {
 
 export function lineToRequestItem(line: BasketLine, untitled: string) {
   const fabrics = line.fabrics
-    .map((row) => ({
-      key: row.key,
-      type: row.type.trim() || null,
-      color: row.color.trim() || null,
-      role: row.role.trim() || null,
-      notes: row.notes.trim() || null,
-    }))
-    .filter((row) => row.type || row.color || row.role);
+    .map((row) => {
+      const code = row.code?.trim() || null;
+      const quantity = row.quantity?.trim() ? Number(row.quantity) : null;
+      return {
+        key: row.key,
+        type: row.type.trim() || null,
+        color: row.color.trim() || null,
+        role: row.role.trim() || null,
+        notes: row.notes.trim() || null,
+        ...(code ? { code } : {}),
+        ...(quantity != null && Number.isFinite(quantity) ? { quantity, unit: 'm' } : {}),
+      };
+    })
+    .filter((row) => row.type || row.color || row.role || row.code);
   const customMeasurements = [
     ...(line.dimSeat.trim() ? [{ label: 'Seat', value: line.dimSeat.trim() }] : []),
     ...line.customMeasurements

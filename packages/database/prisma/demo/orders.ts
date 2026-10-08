@@ -1329,7 +1329,9 @@ export async function seedDemoOrders(
           paymentKind === 'paid' ? totals.lineTotal : paymentKind === 'partial' ? totals.lineTotal * 0.4 : 0;
         const invStatus =
           paid <= 0
-            ? InvoiceStatus.ISSUED
+            ? paymentKind === 'outstanding'
+              ? InvoiceStatus.OVERDUE
+              : InvoiceStatus.ISSUED
             : paid + 0.01 >= totals.lineTotal
               ? InvoiceStatus.PAID
               : InvoiceStatus.PARTIALLY_PAID;

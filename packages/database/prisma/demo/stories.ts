@@ -67,9 +67,9 @@ export type DemoStory = {
   physicalOutputQty?: number;
 };
 
-/** Compress older story day indices into the 21-day window. */
+/** Compress older story day indices into the 30-day window. */
 function windowDay(old: number): number {
-  return Math.min(20, Math.max(0, Math.round((old * 20) / 62)));
+  return Math.min(29, Math.max(0, Math.round((old * 29) / 62)));
 }
 
 /**
@@ -294,5 +294,155 @@ export function buildDemoStories(): DemoStory[] {
       deliveryLeadDays: 14,
       notes: 'Delivered unpaid / overdue — finance outstanding path.',
     },
+    ...monthStories(),
   ];
+}
+
+/** One of every remaining kind, then a spread of named Amman work across 30 days. */
+function monthStories(): DemoStory[] {
+  const kinds: DemoStory[] = [
+    {
+      id: 'balqis-packaging-banquet',
+      dealer: 'balqis',
+      sku: 'SOF-LOVE',
+      qty: 4,
+      kind: 'packaging',
+      projectName: 'Rainbow banquet loveseats',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: 18,
+      deliveryLeadDays: 16,
+    },
+    {
+      id: 'nile-qc-dining',
+      dealer: 'nile',
+      sku: 'CHR-DIN',
+      qty: 6,
+      kind: 'qc',
+      projectName: 'Abdoun dining chairs inspection',
+      fabric: 'Linen Natural',
+      wood: 'Oak',
+      orderDay: 16,
+      deliveryLeadDays: 18,
+    },
+    {
+      id: 'oasis-ready-coffee',
+      dealer: 'oasis',
+      sku: 'TBL-COF',
+      qty: 2,
+      kind: 'ready_delivery',
+      projectName: 'Sweifieh coffee tables packed',
+      wood: 'Oak',
+      orderDay: 14,
+      deliveryLeadDays: 20,
+    },
+    {
+      id: 'balqis-not-started-sectional',
+      dealer: 'balqis',
+      sku: 'SOF-SEC',
+      variantCode: 'CORNER',
+      qty: 1,
+      kind: 'not_started',
+      projectName: 'Jabal Amman sectional hold',
+      fabric: 'Boucle Cream',
+      wood: 'Beech',
+      orderDay: 26,
+      deliveryLeadDays: 21,
+    },
+    {
+      id: 'nile-waiting-oak',
+      dealer: 'nile',
+      sku: 'TBL-DIN',
+      qty: 1,
+      kind: 'waiting_materials',
+      projectName: 'Dabouq dining table timber',
+      wood: 'Oak',
+      orderDay: 22,
+      deliveryLeadDays: 24,
+    },
+    {
+      id: 'oasis-proposed-ottoman',
+      dealer: 'oasis',
+      sku: 'OTM-01',
+      qty: 2,
+      kind: 'proposed',
+      projectName: 'Sweifieh olive ottomans proposal',
+      fabric: 'Velvet Olive',
+      orderDay: 27,
+      deliveryLeadDays: 20,
+    },
+    {
+      id: 'balqis-draft-loveseat',
+      dealer: 'balqis',
+      sku: 'SOF-LOVE',
+      qty: 1,
+      kind: 'draft',
+      projectName: 'Balqis unconfirmed loveseat',
+      fabric: 'Velvet Sand',
+      orderDay: 28,
+      deliveryLeadDays: 21,
+    },
+    {
+      id: 'oasis-wip-risk-chair',
+      dealer: 'oasis',
+      sku: 'ARM-01',
+      qty: 2,
+      kind: 'at_risk_wip',
+      completeThrough: 'CARPENTRY',
+      projectName: 'Mecca Street armchair frames',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: 12,
+      deliveryLeadDays: 28,
+    },
+    {
+      id: 'balqis-committed-late',
+      dealer: 'balqis',
+      sku: 'SOF-3S-STD',
+      qty: 1,
+      kind: 'at_risk_committed',
+      projectName: 'Rainbow Street committed late',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: 3,
+      deliveryLeadDays: 6,
+      notes: 'Intentional late promise — scheduling shows the miss.',
+    },
+    {
+      id: 'nile-rework-historical-bed',
+      dealer: 'nile',
+      sku: 'BED-Q',
+      qty: 1,
+      kind: 'rework_historical',
+      payment: 'paid',
+      projectName: 'Khalda bed after rework',
+      fabric: 'Linen Natural',
+      wood: 'Pine',
+      orderDay: 4,
+      deliveryLeadDays: 14,
+    },
+  ];
+
+  const fill: Array<Pick<DemoStory, 'id' | 'dealer' | 'sku' | 'qty' | 'kind' | 'projectName' | 'orderDay' | 'deliveryLeadDays'> & Partial<DemoStory>> = [
+    { id: 'nile-abdoun-love-paid', dealer: 'nile', sku: 'SOF-LOVE', qty: 1, kind: 'delivered', payment: 'paid', projectName: 'Abdoun study loveseat', fabric: 'Velvet Sand', orderDay: 1, deliveryLeadDays: 12 },
+    { id: 'oasis-sweifieh-table', dealer: 'oasis', sku: 'TBL-DIN', variantCode: 'WHITE', qty: 1, kind: 'delivered', payment: 'partial', projectName: 'Sweifieh white dining table', wood: 'Oak', orderDay: 5, deliveryLeadDays: 14 },
+    { id: 'balqis-jabal-chairs', dealer: 'balqis', sku: 'CHR-DIN', qty: 8, kind: 'in_production', completeThrough: 'CARPENTRY', projectName: 'Jabal Amman dining set', fabric: 'Linen Natural', wood: 'Oak', orderDay: 20, deliveryLeadDays: 18 },
+    { id: 'nile-khalda-ottoman', dealer: 'nile', sku: 'OTM-01', qty: 2, kind: 'in_production', completeThrough: 'FOAM', projectName: 'Khalda olive ottomans', fabric: 'Velvet Olive', orderDay: 19, deliveryLeadDays: 16 },
+    { id: 'oasis-dabouq-sectional', dealer: 'oasis', sku: 'SOF-SEC', qty: 1, kind: 'fresh_production', projectName: 'Dabouq fresh sectional', fabric: 'Boucle Cream', orderDay: 24, deliveryLeadDays: 24 },
+    { id: 'balqis-lobby-sofa', dealer: 'balqis', sku: 'SOF-3S-STD', variantCode: 'KARINA', qty: 2, kind: 'in_production', completeThrough: 'UPHOLSTERY', projectName: 'Balqis lobby Karina pair', fabric: 'Velvet Navy', orderDay: 15, deliveryLeadDays: 20 },
+    { id: 'nile-um-uthaina-bed', dealer: 'nile', sku: 'BED-Q', qty: 1, kind: 'packaging', projectName: 'Um Uthaina queen bed', fabric: 'Linen Natural', wood: 'Pine', orderDay: 17, deliveryLeadDays: 18 },
+    { id: 'oasis-webdeh-luna', dealer: 'oasis', sku: 'SOF-LUNA', qty: 1, kind: 'qc', projectName: 'Webdeh Luna inspection', fabric: 'Boucle Cream', orderDay: 13, deliveryLeadDays: 22 },
+    { id: 'balqis-shmeisani-coffee', dealer: 'balqis', sku: 'TBL-COF', qty: 4, kind: 'ready_delivery', projectName: 'Shmeisani lobby tables', wood: 'Oak', orderDay: 11, deliveryLeadDays: 22 },
+    { id: 'nile-sport-city-chair', dealer: 'nile', sku: 'ARM-01', qty: 3, kind: 'not_started', projectName: 'Sports City armchair batch', fabric: 'Velvet Sand', orderDay: 25, deliveryLeadDays: 21 },
+    { id: 'oasis-tabarbour-love', dealer: 'oasis', sku: 'SOF-LOVE', qty: 2, kind: 'waiting_materials', projectName: 'Tabarbour velvet loveseats', fabric: 'Velvet Sand', orderDay: 21, deliveryLeadDays: 20 },
+    { id: 'balqis-marj-bed', dealer: 'balqis', sku: 'BED-Q', qty: 2, kind: 'delivered', payment: 'outstanding', projectName: 'Marj Al Hamam guest beds', fabric: 'Linen Natural', wood: 'Pine', orderDay: 6, deliveryLeadDays: 12 },
+    { id: 'nile-rabieh-sectional', dealer: 'nile', sku: 'SOF-SEC', variantCode: 'CORNER', qty: 1, kind: 'in_production', completeThrough: 'MATERIAL_PREP', projectName: 'Rabieh corner sectional', fabric: 'Boucle Cream', orderDay: 18, deliveryLeadDays: 24 },
+    { id: 'oasis-bayader-table', dealer: 'oasis', sku: 'TBL-DIN', qty: 1, kind: 'proposed', projectName: 'Bayader dining table quote floor', wood: 'Oak', orderDay: 27, deliveryLeadDays: 18 },
+    { id: 'balqis-fifth-circle', dealer: 'balqis', sku: 'SOF-LUNA', variantCode: 'CORNER', qty: 1, kind: 'delivered', payment: 'paid', projectName: 'Fifth Circle Luna corner', fabric: 'Boucle Cream', orderDay: 2, deliveryLeadDays: 16, extraLines: [{ sku: 'OTM-01', qty: 2, fabric: 'Velvet Olive' }] },
+    { id: 'nile-deir-ghbar-chairs', dealer: 'nile', sku: 'CHR-DIN', qty: 4, kind: 'in_production', completeThrough: 'UPHOLSTERY', projectName: 'Deir Ghbar dining chairs', fabric: 'Linen Natural', wood: 'Oak', orderDay: 14, deliveryLeadDays: 20 },
+    { id: 'oasis-naour-bed', dealer: 'oasis', sku: 'BED-Q', qty: 1, kind: 'rework_current', projectName: 'Naour bed stitch check', fabric: 'Linen Natural', wood: 'Pine', orderDay: 10, deliveryLeadDays: 24 },
+    { id: 'balqis-airport-ottoman', dealer: 'balqis', sku: 'OTM-01', qty: 6, kind: 'in_production', completeThrough: 'MATERIAL_PREP', projectName: 'Airport road ottoman run', fabric: 'Velvet Olive', orderDay: 23, deliveryLeadDays: 16 },
+  ];
+
+  return [...kinds, ...fill];
 }

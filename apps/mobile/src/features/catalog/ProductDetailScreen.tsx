@@ -209,7 +209,6 @@ export function ProductDetailScreen({
         selectedVariant?.seatHeight != null ? String(selectedVariant.seatHeight) : undefined,
       imageUrl: vm.imageUris[0],
       dealerPrice: displayPrice != null ? String(displayPrice) : undefined,
-      preferUpdate: true,
     };
   };
 
@@ -229,7 +228,7 @@ export function ProductDetailScreen({
   const onOrderNow = () => {
     void haptics.confirmMedium();
     if (basket) {
-      basket.addFromCatalog(catalogPick(), true);
+      basket.addFromCatalog(catalogPick());
       navigateToBasketReview(router);
       return;
     }

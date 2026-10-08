@@ -1,16 +1,17 @@
 'use client';
 
+import { DealerLineDetails, isNamedDealerSpec } from '@/components/dealer/dealer-line-details';
 import { useOrderBasket } from '@/components/order-basket-provider';
 import { apiFetch } from '@/lib/api-client';
 import { emptyBasketLine, type BasketLine, type BasketOption } from '@/lib/basket';
 import { mediaSrc } from '@/lib/media';
 import { useRouter } from '@/i18n/navigation';
-import { Board, BoardSkeleton, Button, Combobox, DetailHero, FormFooter, FormSection, Ledger, LedgerRow, Ltr, NumberField, Stamp } from '@maher/ui';
+import { Board, BoardSkeleton, Button, DetailHero, FormFooter, Ledger, LedgerRow, Ltr, Stamp } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 type Product = {
   id: string;
@@ -50,16 +51,6 @@ type Variant = {
   }>;
 };
 
-type SpecGroup = { id: string; code: string; nameEn: string; nameAr?: string; nameHe?: string | null };
-type SpecValue = {
-  id: string;
-  groupId: string;
-  code: string;
-  nameEn: string;
-  nameAr?: string;
-  nameHe?: string | null;
-};
-
 function dim(value: string | number | null | undefined): string {
   return value == null ? '' : String(value);
 }
@@ -68,6 +59,7 @@ function CustomizeForm({ productId }: { productId: string }) {
   const locale = useLocale();
   const tc = useTranslations('catalog');
   const tNav = useTranslations('navigation');
+  const tn = useTranslations('mobile.newOrder');
   const tCommon = useTranslations('common');
   const router = useRouter();
   const search = useSearchParams();
@@ -85,35 +77,29 @@ function CustomizeForm({ productId }: { productId: string }) {
     queryFn: () => apiFetch<Variant[]>(`/api/v1/products/${productId}/variants`),
     retry: false,
   });
-  const groupsQuery = useQuery({
-    queryKey: ['spec-option-groups'],
-    queryFn: () =>
-      apiFetch<{ data: SpecGroup[] }>('/api/v1/spec-option-groups?pageSize=100').then((r) => r.data ?? []),
-    retry: false,
-  });
-  const valuesQuery = useQuery({
-    queryKey: ['spec-option-values'],
-    queryFn: () =>
-      apiFetch<{ data: SpecValue[] }>('/api/v1/spec-option-values?pageSize=200').then((r) => r.data ?? []),
-    retry: false,
-  });
-
   const product = productQuery.data;
   const variant =
     variantsQuery.data?.find((row) => row.id === variantId) ??
     variantsQuery.data?.find((row) => row.isDefault) ??
     variantsQuery.data?.[0];
   const [line, setLine] = useState<BasketLine | null>(null);
+  const seeded = useRef('');
 
   useEffect(() => {
     if (!product || !variant) return;
+    if (lineId && !basket.hydrated) return;
     if (lineId) {
       const existing = basket.lines.find((row) => row.id === lineId);
       if (existing) {
+        if (seeded.current === lineId) return;
+        seeded.current = lineId;
         setLine(existing);
         return;
       }
     }
+    const seedKey = lineId ? `missing-${lineId}` : `new-${variant.id}`;
+    if (seeded.current === seedKey) return;
+    seeded.current = seedKey;
     const options: BasketOption[] = (variant.options ?? []).flatMap((row) => {
       const specOptionValueId = String(row.specOptionValueId ?? row.specOptionValue?.id ?? '');
       if (!specOptionValueId) return [];
@@ -146,38 +132,10 @@ function CustomizeForm({ productId }: { productId: string }) {
         modifiedByDealer: true,
       }),
     );
-  }, [product, variant, locale, qty, lineId, basket.lines]);
-
-  const groups = groupsQuery.data ?? [];
-  const values = valuesQuery.data ?? [];
-  const grouped = useMemo(() => {
-    return groups.map((group) => ({
-      group,
-      values: values.filter((v) => v.groupId === group.id),
-    }));
-  }, [groups, values]);
+  }, [product, variant, locale, qty, lineId, basket.hydrated, basket.lines]);
 
   if (!line || !product) {
     return <p className="text-sm text-text-secondary">{tc('products')}</p>;
-  }
-
-  function setOption(group: SpecGroup, valueId: string) {
-    const value = values.find((v) => v.id === valueId) ?? null;
-    setLine((prev) => {
-      if (!prev) return prev;
-      const options = prev.options.filter((opt) => opt.groupId !== group.id && opt.groupCode !== group.code);
-      if (value) {
-        options.push({
-          specOptionValueId: value.id,
-          groupId: group.id,
-          groupCode: group.code,
-          code: value.code,
-          nameEn: value.nameEn,
-          nameAr: value.nameAr,
-        });
-      }
-      return { ...prev, options, modifiedByDealer: true };
-    });
   }
 
   function save() {
@@ -186,16 +144,10 @@ function CustomizeForm({ productId }: { productId: string }) {
     router.push('/dealer/basket');
   }
 
-  const chosen = grouped
-    .map(({ group, values: opts }) => {
-      const picked = line.options.find((o) => o.groupId === group.id || o.groupCode === group.code);
-      const value = opts.find((v) => v.id === picked?.specOptionValueId);
-      return value ? { key: group.id, label: localizedName(locale, group), value: localizedName(locale, value) } : null;
-    })
-    .filter(Boolean) as Array<{ key: string; label: string; value: string }>;
+  const library = line.options.filter((opt) => !isNamedDealerSpec(opt));
+  const named = line.options.filter(isNamedDealerSpec);
   const dims = [line.dimWidth, line.dimHeight, line.dimDepth].filter(Boolean).join(' × ');
-  const num = (v: string) => (v === '' ? null : Number(v));
-  const str = (v: number | null) => (v == null ? '' : String(v));
+  const saveLabel = lineId ? tn('saveModifiedToBasket') : tn('addModifiedToBasket');
 
   return (
     <div className="maher-stagger space-y-5">
@@ -216,38 +168,15 @@ function CustomizeForm({ productId }: { productId: string }) {
         facts={[
           { label: tc('quantity'), value: line.quantity || '1', ltr: true },
           ...(dims ? [{ label: tc('dimensions'), value: `${dims} cm`, ltr: true }] : []),
-          ...(chosen.length ? [{ label: tc('variants'), value: `${chosen.length}` }] : []),
+          ...(library.length + named.length ? [{ label: tc('specs'), value: `${library.length + named.length}` }] : []),
         ]}
-        primary={<Button onClick={save}>{tc('addToBasket')}</Button>}
+        primary={<Button onClick={save}>{saveLabel}</Button>}
       />
 
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="space-y-5 xl:col-span-8">
-          <FormSection title={tc('dimensions')} columns={3}>
-            <NumberField label={tc('dimWidth')} unit="cm" value={num(line.dimWidth)} onChange={(v) => setLine({ ...line, dimWidth: str(v), modifiedByDealer: true })} min={0} />
-            <NumberField label={tc('dimHeight')} unit="cm" value={num(line.dimHeight)} onChange={(v) => setLine({ ...line, dimHeight: str(v), modifiedByDealer: true })} min={0} />
-            <NumberField label={tc('dimDepth')} unit="cm" value={num(line.dimDepth)} onChange={(v) => setLine({ ...line, dimDepth: str(v), modifiedByDealer: true })} min={0} />
-            <NumberField label={tc('seatHeight')} unit="cm" value={num(line.dimSeat)} onChange={(v) => setLine({ ...line, dimSeat: str(v), modifiedByDealer: true })} min={0} />
-            <NumberField label={tc('quantity')} value={num(line.quantity) ?? 1} onChange={(v) => setLine({ ...line, quantity: String(Math.max(1, Math.round(v ?? 1))) })} min={1} step={1} decimals={0} />
-          </FormSection>
-          {grouped.some(({ values: opts }) => opts.length) ? (
-            <FormSection title={tc('variants')} columns={2}>
-              {grouped.map(({ group, values: opts }) =>
-                opts.length ? (
-                  <Combobox<string>
-                    key={group.id}
-                    label={localizedName(locale, group)}
-                    value={line.options.find((o) => o.groupId === group.id || o.groupCode === group.code)?.specOptionValueId ?? null}
-                    onChange={(value) => setOption(group, value ?? '')}
-                    placeholder={tc('emptyValue')}
-                    clearable
-                    options={opts.map((opt) => ({ value: opt.id, label: localizedName(locale, opt) }))}
-                  />
-                ) : null,
-              )}
-            </FormSection>
-          ) : null}
-          <FormFooter primary={<Button onClick={save}>{tc('addToBasket')}</Button>} secondary={<Button variant="ghost" onClick={() => router.push(`/dealer/catalog/${productId}`)}>{tCommon('cancel')}</Button>} dirty={Boolean(line.modifiedByDealer)} />
+          <DealerLineDetails line={line} mode="modify" onChange={setLine} />
+          <FormFooter primary={<Button onClick={save}>{saveLabel}</Button>} secondary={<Button variant="ghost" onClick={() => router.push(`/dealer/catalog/${productId}`)}>{tCommon('cancel')}</Button>} dirty={Boolean(line.modifiedByDealer)} />
         </div>
         <div className="xl:col-span-4">
           <Board tone="warning" wash="top" className="xl:sticky xl:top-28">
@@ -256,9 +185,16 @@ function CustomizeForm({ productId }: { productId: string }) {
               <LedgerRow label={tc('quantity')} value={<Ltr>{line.quantity || '1'}</Ltr>} />
               {dims ? <LedgerRow label={tc('dimensions')} value={<Ltr>{dims} cm</Ltr>} /> : null}
               {line.dimSeat ? <LedgerRow label={tc('seatHeight')} value={<Ltr>{line.dimSeat} cm</Ltr>} /> : null}
-              {chosen.map((c) => (
-                <LedgerRow key={c.key} label={c.label} value={c.value} tone="brand" stamp />
+              {line.customMeasurements.map((row) => (
+                <LedgerRow key={row.id} label={row.label} value={<Ltr>{`${row.value} ${row.unit || 'cm'}`}</Ltr>} />
               ))}
+              {library.map((opt) => (
+                <LedgerRow key={opt.specOptionValueId || opt.code} label={opt.groupCode || tc('specs')} value={locale === 'ar' ? opt.nameAr || opt.nameEn || '—' : opt.nameEn || opt.nameAr || '—'} tone="brand" stamp />
+              ))}
+              {named.map((opt) => (
+                <LedgerRow key={opt.code} label={opt.nameEn || tn('ownSpec')} value={opt.note || '—'} tone="info" stamp />
+              ))}
+              {line.notes.trim() ? <LedgerRow label={tn('itemNotes')} value={line.notes} /> : null}
             </Ledger>
           </Board>
         </div>

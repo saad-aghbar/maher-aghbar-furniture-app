@@ -11,6 +11,7 @@ import { materialPhotoUrl } from './material-photo-pool';
 import { standardMeasurementsForProduct } from '../seed/productMeasurements';
 import { seedProductEstimates } from '../seed/product-estimates';
 import { STANDARD_FURNITURE_WORKFLOW_CODE } from '../seed/workflow';
+import { WF_ARMCHAIR, WF_OTTOMAN, WF_PAINTED_WOOD, WF_SECTIONAL } from './workflows';
 import { createRng } from '../seed/util';
 import type { DealerRef } from './people';
 import { seedSpecOptionLibraries } from '../seed/spec-options';
@@ -75,6 +76,7 @@ const CATEGORIES = [
   { code: 'SOFA', nameEn: 'Sofas', nameAr: 'كنب', nameHe: 'ספות' },
   { code: 'CHAIR', nameEn: 'Chairs', nameAr: 'كراسي', nameHe: 'כיסאות' },
   { code: 'BED', nameEn: 'Beds', nameAr: 'أسرّة', nameHe: 'מיטות' },
+  { code: 'TABLE', nameEn: 'Tables', nameAr: 'طاولات', nameHe: 'שולחנות' },
   { code: 'CUSTOM', nameEn: 'Custom', nameAr: 'تفصيل', nameHe: 'התאמה אישית' },
 ];
 
@@ -90,7 +92,7 @@ type ProductSpec = {
   bom: Array<{ sku: string; qty: number }>;
 };
 
-/** Compact catalog: 4 products / 7 variants (STD + named). */
+/** Month catalog: flagship SKUs plus tables, ottoman, dining chair, loveseat, sectional. */
 const PRODUCTS: ProductSpec[] = [
   {
     sku: 'SOF-3S-STD',
@@ -154,6 +156,97 @@ const PRODUCTS: ProductSpec[] = [
       { sku: 'MAT-FOAM-MD', qty: 1 },
       { sku: 'MAT-LIN-NAT', qty: 6 },
       { sku: 'MAT-HW-KIT', qty: 2 },
+    ],
+  },
+  {
+    sku: 'SOF-LOVE',
+    categoryCode: 'SOFA',
+    workflowCode: STANDARD_FURNITURE_WORKFLOW_CODE,
+    nameEn: 'Loveseat 160',
+    nameAr: 'كنبة مقعدين 160',
+    nameHe: 'ספת שני מושבים 160',
+    basePrice: 720,
+    mfg: 340,
+    bom: [
+      { sku: 'MAT-BEECH', qty: 8 },
+      { sku: 'MAT-FOAM-HD', qty: 2 },
+      { sku: 'MAT-VEL-SAND', qty: 9 },
+      { sku: 'MAT-HW-KIT', qty: 1 },
+    ],
+  },
+  {
+    sku: 'SOF-SEC',
+    categoryCode: 'SOFA',
+    workflowCode: WF_SECTIONAL,
+    nameEn: 'Jabal Sectional',
+    nameAr: 'كنبة جبل زاوية',
+    nameHe: 'ספת הר פינתית',
+    basePrice: 1640,
+    mfg: 760,
+    bom: [
+      { sku: 'MAT-BEECH', qty: 18 },
+      { sku: 'MAT-FOAM-HD', qty: 5 },
+      { sku: 'MAT-BOU-CRM', qty: 22 },
+      { sku: 'MAT-HW-KIT', qty: 2 },
+    ],
+  },
+  {
+    sku: 'CHR-DIN',
+    categoryCode: 'CHAIR',
+    workflowCode: WF_ARMCHAIR,
+    nameEn: 'Dining Chair',
+    nameAr: 'كرسي سفرة',
+    nameHe: 'כיסא אוכל',
+    basePrice: 210,
+    mfg: 95,
+    bom: [
+      { sku: 'MAT-OAK', qty: 3 },
+      { sku: 'MAT-FOAM-MD', qty: 1 },
+      { sku: 'MAT-LIN-NAT', qty: 2 },
+      { sku: 'MAT-HW-KIT', qty: 1 },
+    ],
+  },
+  {
+    sku: 'OTM-01',
+    categoryCode: 'CHAIR',
+    workflowCode: WF_OTTOMAN,
+    nameEn: 'Square Ottoman',
+    nameAr: 'عثماني مربع',
+    nameHe: 'הדום מרובע',
+    basePrice: 240,
+    mfg: 110,
+    bom: [
+      { sku: 'MAT-FOAM-MD', qty: 1 },
+      { sku: 'MAT-VEL-OLV', qty: 3 },
+      { sku: 'MAT-HW-KIT', qty: 1 },
+    ],
+  },
+  {
+    sku: 'TBL-DIN',
+    categoryCode: 'TABLE',
+    workflowCode: WF_PAINTED_WOOD,
+    nameEn: 'Dining Table',
+    nameAr: 'طاولة سفرة',
+    nameHe: 'שולחן אוכל',
+    basePrice: 640,
+    mfg: 280,
+    bom: [
+      { sku: 'MAT-OAK', qty: 10 },
+      { sku: 'MAT-HW-KIT', qty: 1 },
+    ],
+  },
+  {
+    sku: 'TBL-COF',
+    categoryCode: 'TABLE',
+    workflowCode: WF_PAINTED_WOOD,
+    nameEn: 'Coffee Table',
+    nameAr: 'طاولة قهوة',
+    nameHe: 'שולחן קפה',
+    basePrice: 320,
+    mfg: 145,
+    bom: [
+      { sku: 'MAT-OAK', qty: 4 },
+      { sku: 'MAT-HW-KIT', qty: 1 },
     ],
   },
 ];
@@ -259,6 +352,41 @@ const NAMED_VARIANTS: Record<string, NamedVariantSpec[]> = {
       },
     },
   ],
+  'SOF-SEC': [
+    {
+      code: 'CORNER',
+      nameEn: 'Jabal Sectional Corner',
+      nameAr: 'كنبة جبل زاوية كاملة',
+      nameHe: 'ספת הר פינה מלאה',
+      price: 1780,
+      mfg: 820,
+      options: [
+        { group: 'FABRIC_FINISH', value: 'BOUCLE' },
+        { group: 'FOAM_DENSITY', value: 'D40' },
+      ],
+      notes: {
+        ar: 'زاوية جبل: الإسفنج يمشي بالتوازي مع النجارة.',
+        en: 'Jabal corner: foam runs in parallel with the frame.',
+        he: 'פינת הר: הספוג רץ במקביל למסגרת.',
+      },
+    },
+  ],
+  'TBL-DIN': [
+    {
+      code: 'WHITE',
+      nameEn: 'Dining Table White',
+      nameAr: 'طاولة سفرة بيضاء',
+      nameHe: 'שולחן אוכל לבן',
+      price: 690,
+      mfg: 300,
+      options: [{ group: 'WOOD_TYPE', value: 'OAK' }],
+      notes: {
+        ar: 'دهان أبيض بعد الصنفرة. لا تخلط لوت الدهان.',
+        en: 'Painted white after sanding. Do not mix paint lots.',
+        he: 'צביעה לבנה אחרי ליטוש.',
+      },
+    },
+  ],
 };
 
 const MATERIALS: Array<{
@@ -283,6 +411,10 @@ const MATERIALS: Array<{
   { sku: 'MAT-LIN-NAT', nameEn: 'Linen 180 Natural', nameAr: 'كتان 180 طبيعي', nameHe: 'פשתן 180', category: 'FABRIC', group: 'FABRIC', unit: 'm', reorder: 20, opening: 70, unitCost: 9 },
   { sku: 'MAT-BOU-CRM', nameEn: 'Bouclé 611 Cream', nameAr: 'بوكليه 611 كريمي', nameHe: 'בוקלה 611', category: 'FABRIC', group: 'FABRIC', unit: 'm', reorder: 15, opening: 50, unitCost: 14 },
   { sku: 'MAT-HW-KIT', nameEn: 'Hardware kit / Karsta', nameAr: 'طقم معدات / كارستا', nameHe: 'ערכת חומרה', category: 'METAL_ACCESSORY', group: 'ACCESSORIES', unit: 'kit', reorder: 10, opening: 80, unitCost: 8 },
+  { sku: 'MAT-OAK', nameEn: 'Oak boards', nameAr: 'ألواح سنديان', nameHe: 'לוחות אלון', category: 'WOOD', group: 'WOOD', unit: 'm', reorder: 30, opening: 160, unitCost: 14 },
+  { sku: 'MAT-VEL-OLV', nameEn: 'Velvet Olive', nameAr: 'مخمل زيتوني', nameHe: 'קטיפה זית', category: 'FABRIC', group: 'FABRIC', unit: 'm', reorder: 20, opening: 40, unitCost: 13 },
+  // Not on a BOM — stays below reorder for the low-stock desk.
+  { sku: 'MAT-BRASS', nameEn: 'Brass feet', nameAr: 'أقدام نحاس', nameHe: 'רגלי פליז', category: 'METAL_ACCESSORY', group: 'ACCESSORIES', unit: 'pcs', reorder: 12, opening: 3, unitCost: 6.5 },
 ];
 
 const FABRICS = [
@@ -290,6 +422,7 @@ const FABRICS = [
   { code: 'FAB-VEL-NAVY', nameEn: 'Velvet Navy', nameAr: 'مخمل كحلي', nameHe: 'קטיפה כחול', color: 'Navy' },
   { code: 'FAB-LIN-NAT', nameEn: 'Linen 180', nameAr: 'كتان 180', nameHe: 'פשתן 180', color: 'Natural' },
   { code: 'FAB-BOU-CRM', nameEn: 'Bouclé 611', nameAr: 'بوكليه 611', nameHe: 'בוקלה 611', color: 'Cream' },
+  { code: 'FAB-VEL-OLV', nameEn: 'Velvet Olive', nameAr: 'مخمل زيتوني', nameHe: 'קטיפה זית', color: 'Olive' },
 ];
 
 const COLORS = [
@@ -578,7 +711,7 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
 
   for (const variant of variants) {
     for (const dealer of dealers) {
-      const factor = dealer.username === 'nile' ? 0.94 : 0.9;
+      const factor = dealer.username === 'nile' ? 0.94 : dealer.username === 'balqis' ? 0.92 : 0.9;
       await prisma.dealerPrice.create({
         data: {
           customerId: dealer.id,
@@ -617,6 +750,7 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
   );
 
   await seedStageMaterialMaps(prisma, variants);
+  await seedStageInstructions(prisma, variants);
 
   console.log(`  catalog: ${products.length} products · ${variants.length} variants · ${materials.length} raw SKUs`);
   return { products, variants, materials };
@@ -629,6 +763,7 @@ function stageCodeForRawSku(sku: string, codes: Set<string>): string | null {
   }
   if (
     sku.startsWith('MAT-VEL') ||
+    sku === 'MAT-VEL-OLV' ||
     sku.startsWith('MAT-LIN') ||
     sku.startsWith('MAT-BOU') ||
     sku.startsWith('MAT-LEA') ||
@@ -718,4 +853,41 @@ async function seedStageMaterialMaps(prisma: PrismaClient, variants: VariantRef[
     }
   }
   console.log(`  stage-material maps: ${count} SKU→stage rows`);
+}
+
+async function seedStageInstructions(prisma: PrismaClient, variants: VariantRef[]) {
+  const stages = await prisma.productionStageDefinition.findMany({
+    where: { isActive: true },
+    select: { id: true, code: true },
+  });
+  const stageId = new Map(stages.map((s) => [s.code, s.id]));
+  const workflows = await prisma.productionWorkflow.findMany({
+    where: { archivedAt: null },
+    select: { id: true, code: true },
+  });
+  const wfId = new Map(workflows.map((w) => [w.code, w.id]));
+  let count = 0;
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    if (!variant.isDefault) continue;
+    const workflowId = wfId.get(variant.workflowCode);
+    const stageDefinitionId = stageId.get('MATERIAL_PREP');
+    if (!workflowId || !stageDefinitionId) continue;
+    const key = `${variant.productId}:${workflowId}:${stageDefinitionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await prisma.productStageInstruction.create({
+      data: {
+        productId: variant.productId,
+        variantId: variant.id,
+        workflowId,
+        stageDefinitionId,
+        instructionsAr: variant.factoryNotesAr,
+        instructionsEn: variant.factoryNotesEn,
+        instructionsHe: variant.factoryNotesHe,
+      },
+    });
+    count += 1;
+  }
+  console.log(`  stage instructions: ${count}`);
 }

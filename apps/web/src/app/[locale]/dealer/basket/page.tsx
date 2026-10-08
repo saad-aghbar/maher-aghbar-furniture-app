@@ -1,13 +1,13 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import { BasketLinePhoto } from '@/components/dealer/dealer-line-details';
 import { useDealerMoney } from '@/components/dealer/catalog-shared';
 import { useOrderBasket } from '@/components/order-basket-provider';
 import { basketLineKind, lineHasProduct } from '@/lib/basket';
-import { mediaSrc } from '@/lib/media';
 import { useRouter } from '@/i18n/navigation';
 import { ActionDock, Board, Button, Figure, Ledger, LedgerRow, Ltr, Menu, NumberField, Stamp } from '@maher/ui';
-import { Armchair, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -65,7 +65,6 @@ export default function BasketPage() {
             {lines.map((line) => {
               const kind = basketLineKind(line);
               const kindLabel = kind === 'custom' ? tc('basketLineCustom') : kind === 'customized' ? tc('basketLineModified') : tc('basketLineStandard');
-              const img = mediaSrc(line.imageUrl);
               const qty = Math.max(1, Number(line.quantity) || 1);
               const unit = Number(line.dealerPrice);
               const dims = [line.dimWidth, line.dimHeight, line.dimDepth].filter(Boolean).join(' × ');
@@ -73,14 +72,7 @@ export default function BasketPage() {
                 <Board key={line.id} as="li" tone={kind === 'custom' ? 'info' : kind === 'customized' ? 'warning' : 'brand'}>
                   <div className="flex gap-4 px-4 py-4 sm:px-5">
                     <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[12px] bg-[var(--maher-surface-muted)] sm:h-24 sm:w-24">
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={img} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[var(--maher-text-tertiary)]">
-                          <Armchair className="h-6 w-6 opacity-40" />
-                        </div>
-                      )}
+                      <BasketLinePhoto line={line} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
@@ -90,6 +82,7 @@ export default function BasketPage() {
                             <Stamp tone={kind === 'custom' ? 'info' : kind === 'customized' ? 'warning' : 'neutral'} size="sm">{kindLabel}</Stamp>
                             {line.variantLabel ? <span>{line.variantLabel}</span> : null}
                             {dims ? <Ltr>{dims} cm</Ltr> : null}
+                            {line.notes.trim() ? <span className="max-w-[24ch] truncate">{line.notes}</span> : null}
                             {line.fabrics[0]?.type ? <span>{line.fabrics[0].type}</span> : null}
                           </p>
                         </div>
@@ -97,7 +90,7 @@ export default function BasketPage() {
                           aria-label={tCommon('actions')}
                           trigger={<Button size="sm" variant="ghost" aria-label={tCommon('actions')}><MoreHorizontal className="h-4 w-4" /></Button>}
                           items={[
-                            ...(line.productId ? [{ id: 'edit', label: tCommon('edit'), icon: <Pencil className="h-4 w-4" />, onSelect: () => router.push(`/dealer/catalog/${line.productId}/customize?variantId=${line.variantId}&qty=${line.quantity}&lineId=${line.id}`) }] : []),
+                            { id: 'edit', label: tCommon('edit'), icon: <Pencil className="h-4 w-4" />, onSelect: () => router.push(line.productId ? `/dealer/catalog/${line.productId}/customize?variantId=${line.variantId}&qty=${line.quantity}&lineId=${line.id}` : `/dealer/order/custom?lineId=${line.id}`) },
                             { id: 'remove', label: tc('removeFromBasket'), icon: <Trash2 className="h-4 w-4" />, tone: 'error' as const, separator: true, onSelect: () => basket.removeLine(line.id) },
                           ]}
                         />

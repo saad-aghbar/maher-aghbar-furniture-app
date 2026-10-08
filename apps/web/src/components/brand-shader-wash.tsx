@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/silence-three-clock';
 import { useTheme } from '@maher/ui';
 import { ShaderGradient, ShaderGradientCanvas } from '@shadergradient/react';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
@@ -99,7 +100,7 @@ export function BrandShaderWash({ variant = 'login' }: { variant?: Variant }) {
         pixelDensity={preset.pixelDensity}
         fov={45}
         pointerEvents="none"
-        lazyLoad
+        lazyLoad={false}
       >
         <ShaderGradient
           type="waterPlane"

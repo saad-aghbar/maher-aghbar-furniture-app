@@ -41,7 +41,7 @@ const EXPECTED_VARIANTS: Record<string, string[]> = {
 const EXPECTED_MATERIALS = Object.keys(MATERIAL_PHOTO_BY_SKU);
 const EXPECTED_BINS = ['RAW-MAIN', 'SEMI-MAIN', 'FIN-MAIN', 'FABRIC-HOLD'] as const;
 const EXPECTED_POS = ['PORD-DEMO-LATE', 'PORD-DEMO-OPEN', 'PORD-DEMO-PARTIAL', 'PORD-DEMO-RCVD'] as const;
-const EXPECTED_DEALERS = ['nile', 'oasis'] as const;
+const EXPECTED_DEALERS = ['nile', 'oasis', 'balqis'] as const;
 
 const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: string }> = {
   'Abdoun lounge set': { so: '*', status: 'DELIVERED' },
@@ -74,6 +74,7 @@ const REQUIRED_PERSONAS: Array<{ username: string; roleCode: string }> = [
   { username: 'driver', roleCode: 'PRODUCTION_WORKER' },
   { username: 'nile', roleCode: 'CUSTOMER' },
   { username: 'oasis', roleCode: 'CUSTOMER' },
+  { username: 'balqis', roleCode: 'CUSTOMER' },
 ];
 
 const SYNTHETIC_KIND_SUFFIX =
@@ -103,10 +104,11 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   await assertOrphans(prisma, fail);
   await assertPresentationReady(prisma, asOf, fail);
   await validateCostPerformanceWorld(prisma, fail);
+  await assertMonthCoverage(prisma, fail);
 
   const soCount = await prisma.salesOrder.count({ where: { archivedAt: null } });
-  if (soCount < 6) fail(`expected ≥6 sales orders in compact world, found ${soCount}`);
-  if (soCount > 40) fail(`expected ≤40 sales orders in compact world (no piece islands), found ${soCount}`);
+  if (soCount < 25) fail(`expected ≥25 sales orders in the month world, found ${soCount}`);
+  if (soCount > 120) fail(`expected ≤120 sales orders in the month world, found ${soCount}`);
 
   if (failures.length) throw new DemoValidationError(failures);
   console.log(`demo:validate passed (${soCount} sales orders)`);
@@ -201,10 +203,10 @@ async function assertDealers(
   }
   for (const username of dealerUsernames) {
     if (!EXPECTED_DEALERS.includes(username as (typeof EXPECTED_DEALERS)[number])) {
-      fail(`unexpected dealer ${username} (compact world is nile + oasis only)`);
+      fail(`unexpected dealer ${username} (month world is nile + oasis + balqis)`);
     }
   }
-  if (dealers.length !== 2) fail(`expected 2 dealers, found ${dealers.length}`);
+  if (dealers.length !== 3) fail(`expected 3 dealers, found ${dealers.length}`);
 }
 
 async function assertCatalog(
@@ -216,8 +218,8 @@ async function assertCatalog(
     include: { variants: { where: { archivedAt: null, isActive: true } } },
   });
   const bySku = new Map(products.map((p) => [p.sku, p]));
-  if (products.length !== EXPECTED_PRODUCTS.length) {
-    fail(`expected ${EXPECTED_PRODUCTS.length} active products, found ${products.length}`);
+  if (products.length < EXPECTED_PRODUCTS.length) {
+    fail(`expected at least ${EXPECTED_PRODUCTS.length} active products, found ${products.length}`);
   }
   for (const sku of EXPECTED_PRODUCTS) {
     const product = bySku.get(sku);
@@ -432,7 +434,7 @@ async function assertLifecycleIntegrity(
     include: { productionOrders: { include: { tasks: true } } },
   });
   for (const so of inProd) {
-    if (so.projectName === 'Nile blank production start') continue;
+    if (so.projectName === 'Nile blank production start' || so.projectName === 'Dabouq fresh sectional') continue;
     if (so.number.startsWith('SO-COST-')) continue;
     const started = so.productionOrders.flatMap((po) =>
       po.tasks.filter((t) =>
@@ -788,6 +790,40 @@ async function assertFinance(
   if (!hasOverdueOrUnpaid) fail('dealer invoices: expected at least one overdue/unpaid');
 }
 
+async function assertMonthCoverage(prisma: PrismaClient, fail: (msg: string) => void): Promise<void> {
+  const checks: Array<[string, number]> = [
+    ['wip kit', await prisma.wipKit.count()],
+    ['wip piece', await prisma.wipPiece.count()],
+    ['task blocker', await prisma.taskBlocker.count()],
+    ['quality defect', await prisma.qualityDefect.count()],
+    ['delivery load piece', await prisma.deliveryLoadPiece.count()],
+    ['inventory count', await prisma.inventoryCount.count()],
+    ['supplier quote', await prisma.supplierQuoteOffer.count()],
+    ['purchase run', await prisma.purchaseRun.count()],
+    ['contract', await prisma.contract.count()],
+    ['document', await prisma.document.count()],
+    ['comms', await prisma.communicationLog.count()],
+    ['AI job', await prisma.aIExtractionJob.count()],
+    ['chat', await prisma.aiChatConversation.count()],
+    ['time entry', await prisma.taskTimeEntry.count()],
+  ];
+  for (const [label, count] of checks) {
+    if (count < 1) fail(`month desk missing ${label}`);
+  }
+  const stories = [
+    'Rainbow banquet loveseats',
+    'Abdoun dining chairs inspection',
+    'Sweifieh coffee tables packed',
+    'Balqis unconfirmed loveseat',
+    'Rainbow Street committed late',
+    'Khalda bed after rework',
+  ];
+  for (const name of stories) {
+    const so = await prisma.salesOrder.findFirst({ where: { projectName: name }, select: { id: true } });
+    if (!so) fail(`month story missing ${name}`);
+  }
+}
+
 async function assertNotifications(
   prisma: PrismaClient,
   fail: (msg: string) => void,
@@ -797,8 +833,8 @@ async function assertNotifications(
     prisma.notificationOutbox.count(),
     prisma.devicePushToken.count(),
   ]);
-  if (notifications !== 0) fail(`Notification count must be 0, found ${notifications}`);
-  if (outbox !== 0) fail(`NotificationOutbox count must be 0, found ${outbox}`);
+  if (notifications < 1) fail(`expected a seeded inbox, found ${notifications}`);
+  if (outbox < 1) fail(`expected sent outbox rows, found ${outbox}`);
   if (pushTokens !== 0) fail(`DevicePushToken count must be 0, found ${pushTokens}`);
 }
 
@@ -915,7 +951,7 @@ async function assertPresentationReady(
       },
     },
   });
-  const justifiedPastDue = new Set(['Oasis Italian velvet sofa']);
+  const justifiedPastDue = new Set(['Oasis Italian velvet sofa', 'Rainbow Street committed late']);
   const unjustified = staleAlloc.filter(
     (a) => !justifiedPastDue.has(a.productionTask?.productionOrder.salesOrder?.projectName ?? ''),
   );

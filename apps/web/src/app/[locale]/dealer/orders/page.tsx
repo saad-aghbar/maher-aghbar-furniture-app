@@ -2,6 +2,8 @@
 
 import { Link } from '@/i18n/navigation';
 import { apiFetch, API_URL } from '@/lib/api-client';
+import type { OwnDeliveriesResponse } from '@/lib/dealer-schedule';
+import { asRows } from '@/lib/paginated';
 import {
   classifyHubLifecycle,
   countLifecycleTabs,
@@ -222,7 +224,7 @@ export default function OrdersPage() {
       const json = await apiFetch<{ data?: RequestRow[] } | RequestRow[]>(
         '/api/v1/requests?pageSize=50',
       );
-      return Array.isArray(json) ? json : (json.data ?? []);
+      return asRows<RequestRow>(json);
     },
   });
 
@@ -232,48 +234,51 @@ export default function OrdersPage() {
       const json = await apiFetch<{ data?: SalesOrderRow[] } | SalesOrderRow[]>(
         '/api/v1/sales-orders?pageSize=50',
       );
-      return Array.isArray(json) ? json : (json.data ?? []);
+      return asRows<SalesOrderRow>(json);
     },
   });
 
   const deliveriesQuery = useQuery({
     queryKey: ['customer-own-deliveries'],
-    queryFn: async () => {
-      const json = await apiFetch<{ data?: DealerDeliveryRow[] } | DealerDeliveryRow[]>(
-        '/api/v1/scheduling/own-deliveries',
-      );
-      return Array.isArray(json) ? json : (json.data ?? []);
-    },
+    queryFn: () =>
+      apiFetch<OwnDeliveriesResponse>('/api/v1/scheduling/own-deliveries').catch(() => ({
+        summary: { upcoming: 0, thisWeek: 0, awaitingConfirmation: 0, mayBeDelayed: 0 },
+        data: [],
+      })),
   });
+
+  const deliveryRows = useMemo(() => asRows<DealerDeliveryRow>(deliveriesQuery.data), [deliveriesQuery.data]);
+  const salesOrderRows = useMemo(() => asRows<SalesOrderRow>(salesOrdersQuery.data), [salesOrdersQuery.data]);
+  const requestRows = useMemo(() => asRows<RequestRow>(requestsQuery.data), [requestsQuery.data]);
 
   const deliveryByOrderId = useMemo(() => {
     const map = new Map<string, DealerDeliveryRow>();
-    for (const row of deliveriesQuery.data ?? []) {
+    for (const row of deliveryRows) {
       map.set(row.salesOrderId, row);
     }
     return map;
-  }, [deliveriesQuery.data]);
+  }, [deliveryRows]);
 
   const deliveryStatusByOrderId = useMemo(() => {
     const map = new Map<string, string>();
-    for (const row of deliveriesQuery.data ?? []) {
+    for (const row of deliveryRows) {
       const status = deliveryStatusFromCustomerStatus(row.customerStatus);
       if (status) map.set(row.salesOrderId, status);
     }
     return map;
-  }, [deliveriesQuery.data]);
+  }, [deliveryRows]);
 
   const rows = useMemo<HubRow[]>(() => {
-    const salesOrders: HubRow[] = (salesOrdersQuery.data ?? []).map((row) => ({
+    const salesOrders: HubRow[] = salesOrderRows.map((row) => ({
       kind: 'sales_order' as const,
       ...row,
       deliveryStatus: deliveryStatusByOrderId.get(row.id) ?? null,
     }));
-    const rfqs: HubRow[] = (requestsQuery.data ?? [])
+    const rfqs: HubRow[] = requestRows
       .filter((r) => !['QUOTED', 'CLOSED', 'CANCELLED'].includes(r.status))
       .map((row) => ({ kind: 'rfq' as const, ...row }));
     return [...rfqs, ...salesOrders];
-  }, [salesOrdersQuery.data, requestsQuery.data, deliveryStatusByOrderId]);
+  }, [salesOrderRows, requestRows, deliveryStatusByOrderId]);
 
   const tabCounts = useMemo(() => countLifecycleTabs(rows), [rows]);
 
@@ -297,12 +302,12 @@ export default function OrdersPage() {
 
   const rfqPreviewDocIds = useMemo(() => {
     const ids: string[] = [];
-    for (const row of requestsQuery.data ?? []) {
+    for (const row of requestRows) {
       const doc = firstImageDoc(row.documents);
       if (doc) ids.push(doc.id);
     }
     return ids;
-  }, [requestsQuery.data]);
+  }, [requestRows]);
 
   const rfqImageLinksQuery = useQuery({
     queryKey: ['customer-request-card-images', rfqPreviewDocIds.join(',')],

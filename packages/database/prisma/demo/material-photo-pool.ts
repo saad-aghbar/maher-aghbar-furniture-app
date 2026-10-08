@@ -18,6 +18,9 @@ export const MATERIAL_PHOTO_BY_SKU: Record<string, string> = {
   'MAT-LIN-NAT': photo('photo-1528459801416-a9e53bbf4e17'),
   'MAT-BOU-CRM': photo('photo-1567538096630-e0c55bd6374c'),
   'MAT-HW-KIT': photo('photo-1597484662317-9bd7bdda2907'),
+  'MAT-OAK': photo('photo-1541123603104-512919d6d98c'),
+  'MAT-VEL-OLV': photo('photo-1555041469-a586c61ea9bc'),
+  'MAT-BRASS': photo('photo-1513519245088-0e12902e5a38'),
 };
 
 /** @deprecated Cedar Italian velvet SKU removed from compact demo; kept for validate migration. */

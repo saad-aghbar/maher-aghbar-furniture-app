@@ -84,6 +84,7 @@ export const DEMO_WIPE_TABLES = [
   'goods_receipts',
   'purchase_order_lines',
   'purchase_orders',
+  'purchase_runs',
   'supplier_quote_offers',
   'purchase_request_lines',
   'purchase_requests',

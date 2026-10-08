@@ -1,7 +1,6 @@
 'use client';
 
 import { BrandMark } from '@/components/brand-mark';
-import { LoginGlassBackdrop } from '@/components/login-glass-backdrop';
 import { LoginWatermarkField } from '@/components/login-watermark-field';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { AppThemeToggle } from '@/components/theme-toggle';
@@ -27,8 +26,8 @@ export interface AuthPanelLayoutProps {
 }
 
 /**
- * AuthPanelLayout — the login atmosphere (shader wash, watermark field, glass
- * backdrop) with one paper panel board. Every auth page renders inside it.
+ * AuthPanelLayout — the login atmosphere (shader wash + watermark field)
+ * with one paper panel board. Every auth page renders inside it.
  */
 export function AuthPanelLayout({ title, hint, panelTitle, stamp, children, footer }: AuthPanelLayoutProps) {
   const t = useTranslations('auth');
@@ -42,7 +41,6 @@ export function AuthPanelLayout({ title, hint, panelTitle, stamp, children, foot
       <div className="pointer-events-none absolute inset-0">
         <LoginShaderWash />
         <LoginWatermarkField />
-        {dark ? <LoginGlassBackdrop /> : null}
       </div>
 
       <div className="fixed end-4 top-4 z-50 flex items-center gap-2 sm:end-6 sm:top-6">

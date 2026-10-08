@@ -1,9 +1,10 @@
-import { emptyOrderLine, normalizeOrderLine } from '../newOrderLine';
+import { emptyOrderLine, lineToRequestItem, normalizeOrderLine } from '../newOrderLine';
 import {
   addEmptyBasketLine,
   appendBasketLine,
   applyCatalogProductToBasket,
   basketLineKind,
+  patchBasketLine,
   removeBasketLine,
   upsertBasketLine,
 } from '../newOrderBasket';
@@ -28,40 +29,56 @@ describe('dealer basket mutations', () => {
     expect(two[0].id).toBe(one[0].id);
   });
 
-  it('updates the single existing product line when preferUpdate (STD → named variant)', () => {
+  it('keeps a raised quantity on one request item and appends the same product again', () => {
     const one = applyCatalogProductToBasket([emptyOrderLine()], {
       productId: 'p1',
-      quantity: '2',
+      quantity: '1',
+      customProductName: 'Chair',
       variantId: 'std',
       dimWidth: '220',
     });
-    const updated = applyCatalogProductToBasket(
-      one,
-      {
-        productId: 'p1',
-        quantity: '2',
-        variantId: 'xl',
-        variantLabel: 'Karina',
-        dimWidth: '250',
-      },
-      { preferUpdate: true },
-    );
-    expect(updated).toHaveLength(1);
-    expect(updated[0]?.variantId).toBe('xl');
-    expect(updated[0]?.dimWidth).toBe('250');
+    const raised = patchBasketLine(one, one[0].id, {
+      quantity: '8',
+      notes: 'Same fabric',
+      fabrics: [{ ...one[0].fabrics[0], type: 'Linen', color: 'Sand', role: 'Body' }],
+    });
+    expect(raised).toHaveLength(1);
+    const shared = lineToRequestItem(raised[0], 'Item', 'Seat');
+    expect(shared.quantity).toBe(8);
+    expect(shared.fabric).toBe('Linen');
+    expect(shared.notes).toBe('Same fabric');
+
+    const again = applyCatalogProductToBasket(raised, {
+      productId: 'p1',
+      quantity: '1',
+      customProductName: 'Chair',
+      variantId: 'xl',
+      dimWidth: '250',
+      preferUpdate: true,
+    });
+    expect(again).toHaveLength(2);
+    expect(again[0]?.id).toBe(raised[0].id);
+    expect(again[0]?.variantId).toBe('std');
+    expect(again[0]?.quantity).toBe('8');
+    expect(again[1]?.variantId).toBe('xl');
+    const items = again.map((line) => lineToRequestItem(line, 'Item', 'Seat'));
+    expect(items[1]?.quantity).toBe(1);
+    expect(items[1]?.productId).toBe('p1');
   });
 
-  it('appends when several lines of the same product already exist', () => {
-    const two = [
-      emptyOrderLine({ productId: 'p1', customProductName: 'A', variantId: 'std' }),
-      emptyOrderLine({ productId: 'p1', customProductName: 'A', variantId: 'xl' }),
-    ];
-    const next = applyCatalogProductToBasket(
-      two,
-      { productId: 'p1', quantity: '1', variantId: 'ukr' },
-      { preferUpdate: true },
-    );
-    expect(next).toHaveLength(3);
+  it('appends a custom item as its own request item', () => {
+    const catalog = applyCatalogProductToBasket([emptyOrderLine()], {
+      productId: 'p1',
+      quantity: '2',
+      customProductName: 'Chair',
+    });
+    const custom = emptyOrderLine({ customProductName: 'Bench', notes: 'Oak frame' });
+    const next = appendBasketLine(catalog, custom);
+    const items = next.map((line) => lineToRequestItem(line, 'Item', 'Seat'));
+    expect(items).toHaveLength(2);
+    expect(items[1]?.productName).toBe('Bench');
+    expect(items[1]?.notes).toBe('Oak frame');
+    expect(items[1]?.productId).toBeUndefined();
   });
 
   it('appends a modified customize line beside an existing catalog pick', () => {

@@ -90,7 +90,7 @@ export default function CatalogProductPage({ params }: { params: { id: string } 
     return rows.filter((r) => r.value);
   }, [product, selected, tc]);
 
-  function addToBasket(preferUpdate = true) {
+  function addToBasket() {
     if (!product) return;
     basket.addFromCatalog({
       productId: product.id,
@@ -105,7 +105,6 @@ export default function CatalogProductPage({ params }: { params: { id: string } 
       dimSeat: dim(selected?.seatHeight ?? product.seatHeight),
       imageUrl: product.imageUrl ?? undefined,
       dealerPrice: price != null ? String(price) : undefined,
-      preferUpdate,
     });
     toast.toast({ tone: 'success', title: tc('addedToBasket'), description: title, action: { label: tc('viewBasket'), onClick: () => router.push('/dealer/basket') } });
   }
@@ -203,7 +202,7 @@ export default function CatalogProductPage({ params }: { params: { id: string } 
               <div className="grid gap-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-end">
                 <NumberField label={tc('quantity')} value={qty} onChange={(v) => setQty(Math.max(1, Math.round(v ?? 1)))} min={1} step={1} decimals={0} />
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button className="flex-1" leadingIcon={<ShoppingCart className="h-4 w-4" />} onClick={() => addToBasket(true)}>
+                  <Button className="flex-1" leadingIcon={<ShoppingCart className="h-4 w-4" />} onClick={() => addToBasket()}>
                     {tc('addToBasket')}
                   </Button>
                   {selected ? (
@@ -230,7 +229,7 @@ export default function CatalogProductPage({ params }: { params: { id: string } 
       </div>
 
       <ActionDock className="md:hidden" note={<Ltr className="font-semibold">{money(price)}</Ltr>}>
-        <Button className="flex-1" leadingIcon={<ShoppingCart className="h-4 w-4" />} onClick={() => addToBasket(true)}>
+        <Button className="flex-1" leadingIcon={<ShoppingCart className="h-4 w-4" />} onClick={() => addToBasket()}>
           {tc('addToBasket')}
         </Button>
       </ActionDock>

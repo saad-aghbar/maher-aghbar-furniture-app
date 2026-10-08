@@ -75,33 +75,14 @@ function withReseededDims(line: NewOrderLine, pick: CatalogBasketPick): NewOrder
   };
 }
 
-/**
- * Catalog / favorites / ordered picks append when the basket already has a product.
- * PDP passes `preferUpdate`: a single existing line for that product is updated
- * (and STANDARD dims reseeded) instead of appending.
- */
-export function applyCatalogProductToBasket(
-  lines: NewOrderLine[],
-  pick: CatalogBasketPick,
-  opts?: { preferUpdate?: boolean },
-): NewOrderLine[] {
-  const preferUpdate = opts?.preferUpdate ?? Boolean(pick.preferUpdate);
+/** Fill an empty basket, otherwise append. A second add of the same product is its own line. */
+export function applyCatalogProductToBasket(lines: NewOrderLine[], pick: CatalogBasketPick): NewOrderLine[] {
   const patch = catalogPatch(pick);
   if (!lines.length) return [emptyOrderLine(withReseededDims(emptyOrderLine(patch), pick))];
   const first = lines[0];
   if (!first) return [emptyOrderLine(patch)];
   if (!lines.some(lineHasProduct)) {
     return [withReseededDims({ ...first, ...patch, id: first.id }, pick)];
-  }
-  if (preferUpdate) {
-    const sameProduct = lines.filter((line) => line.productId === pick.productId);
-    if (sameProduct.length === 1) {
-      const target = sameProduct[0]!;
-      return lines.map((line) => {
-        if (line.id !== target.id) return line;
-        return withReseededDims({ ...line, ...patch, id: line.id }, pick);
-      });
-    }
   }
   return [...lines, withReseededDims(emptyOrderLine(patch), pick)];
 }

@@ -419,18 +419,13 @@ export function NewOrderScreen() {
     if (appliedCatalogKey.current === catalogDeepLinkKey) return;
     appliedCatalogKey.current = catalogDeepLinkKey;
     setLines((prev) => {
-      const next = applyCatalogProductToBasket(
-        prev,
-        {
-          productId: catalogProductId,
-          quantity: catalogQty,
-          variantId: catalogVariantId,
-          variantLabel: catalogVariantLabel,
-          variantSku: catalogVariantSku,
-          preferUpdate: true,
-        },
-        { preferUpdate: true },
-      );
+      const next = applyCatalogProductToBasket(prev, {
+        productId: catalogProductId,
+        quantity: catalogQty,
+        variantId: catalogVariantId,
+        variantLabel: catalogVariantLabel,
+        variantSku: catalogVariantSku,
+      });
       const added = next[next.length - 1];
       if (added) setActiveLineId(added.id);
       return next;

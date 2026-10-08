@@ -17,6 +17,8 @@ type LifecycleKind =
   | 'INTERNAL_REVIEW'
   | 'APPROVED'
   | 'SENT'
+  | 'VIEWED'
+  | 'EXPIRED'
   | 'REJECTED'
   | 'REVISION_REQUESTED'
   | 'CANCELLED_THEN_ACCEPTED';
@@ -26,6 +28,8 @@ const KINDS: Array<{ kind: LifecycleKind; projectName: string }> = [
   { kind: 'INTERNAL_REVIEW', projectName: 'Oasis internal review quote' },
   { kind: 'APPROVED', projectName: 'Oasis approved unsent quote' },
   { kind: 'SENT', projectName: 'Oasis awaiting dealer accept' },
+  { kind: 'VIEWED', projectName: 'Oasis viewed unaccepted quote' },
+  { kind: 'EXPIRED', projectName: 'Oasis expired quote' },
   { kind: 'REJECTED', projectName: 'Oasis rejected quote' },
   { kind: 'REVISION_REQUESTED', projectName: 'Oasis revision requested' },
   { kind: 'CANCELLED_THEN_ACCEPTED', projectName: 'Oasis revised quote accepted' },
@@ -207,6 +211,8 @@ export async function seedDemoQuotationLifecycle(
     const status = QuotationStatus[row.kind];
     const sent =
       status === QuotationStatus.SENT ||
+      status === QuotationStatus.VIEWED ||
+      status === QuotationStatus.EXPIRED ||
       status === QuotationStatus.REJECTED ||
       status === QuotationStatus.REVISION_REQUESTED;
     const quote = await prisma.quotation.create({
@@ -216,11 +222,12 @@ export async function seedDemoQuotationLifecycle(
         customerId: oasis.id,
         requestId: rfq.id,
         status,
-        issueDate: createdAt,
-        expirationDate: addDays(createdAt, 21),
+        issueDate: status === QuotationStatus.EXPIRED ? addDays(asOf, -40) : createdAt,
+        expirationDate: status === QuotationStatus.EXPIRED ? addDays(asOf, -5) : addDays(createdAt, 21),
         salesRepId: opts.salesId,
         createdById: opts.salesId,
-        sentAt: sent ? createdAt : undefined,
+        sentAt: sent ? (status === QuotationStatus.EXPIRED ? addDays(asOf, -40) : createdAt) : undefined,
+        viewedAt: status === QuotationStatus.VIEWED ? asOf : undefined,
         rejectedAt: status === QuotationStatus.REJECTED ? createdAt : undefined,
         subtotal: money(totals.subtotal),
         taxTotal: money(totals.taxAmount),

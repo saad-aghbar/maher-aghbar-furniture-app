@@ -81,7 +81,7 @@ export function standardMeasurementsForProduct(input: {
 
   if (code === 'TABLE' || sku.startsWith('TABLE')) {
     const dining = sku.includes('DIN') || sku.includes('CONF');
-    const coffee = sku.includes('CF') || sku.includes('NEST') || sku.includes('SIDE');
+    const coffee = sku.includes('CF') || sku.includes('COF') || sku.includes('NEST') || sku.includes('SIDE');
     return {
       width: dining ? (sku.includes('8') || sku.includes('10') || sku.includes('CONF') ? 280 : 180) : coffee ? 110 : 120,
       height: dining ? 75 : coffee ? 42 : 78,

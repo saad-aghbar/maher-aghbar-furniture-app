@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch } from '@/lib/api-client';
+import { asRows } from '@/lib/paginated';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
@@ -80,7 +81,10 @@ export function NotificationsDesk({ surface = 'admin' }: { surface?: 'admin' | '
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
   const templatesQuery = useQuery({ queryKey: ['notification-templates'], queryFn: () => apiFetch<Template[]>('/api/v1/notifications/templates'), enabled: showTemplates });
-  const inboxQuery = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => apiFetch<InboxItem[]>('/api/v1/notifications') });
+  const inboxQuery = useQuery({
+    queryKey: ['notifications-inbox'],
+    queryFn: () => apiFetch<unknown>('/api/v1/notifications').then((json) => asRows<InboxItem>(json)),
+  });
   const topicsQuery = useQuery({ queryKey: ['notification-topics'], queryFn: () => apiFetch<TopicsResponse>('/api/v1/notifications/topics'), retry: false });
 
   const readAll = useMutation({
@@ -119,7 +123,7 @@ export function NotificationsDesk({ surface = 'admin' }: { surface?: 'admin' | '
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['notification-topics'] }),
   });
 
-  const inbox = useMemo(() => inboxQuery.data ?? [], [inboxQuery.data]);
+  const inbox = useMemo(() => asRows<InboxItem>(inboxQuery.data), [inboxQuery.data]);
   const unread = inbox.filter((n) => !n.readAt).length;
   const groups = useMemo(() => {
     const rows = filter === 'unread' ? inbox.filter((n) => !n.readAt) : inbox;

@@ -194,6 +194,7 @@ export async function seedDemoStock(
     number: string;
     /** Days after orderDate for expected delivery. Negative = already overdue. */
     expectedOffsetDays: number;
+    prStatus?: PurchaseRequestStatus;
   };
 
   const pos: PoSpec[] = [
@@ -246,6 +247,91 @@ export async function seedDemoStock(
       number: 'PORD-DEMO-LATE',
       expectedOffsetDays: -5,
     },
+    {
+      supplier: 'SUP-TIMBER',
+      status: PurchaseOrderStatus.DRAFT,
+      day: daysAgo(1, 9),
+      lines: [{ sku: 'MAT-OAK', qty: 20 }],
+      note: 'Draft oak order not sent',
+      number: 'PORD-DEMO-DRAFT',
+      expectedOffsetDays: 14,
+      prStatus: PurchaseRequestStatus.DRAFT,
+    },
+    {
+      supplier: 'SUP-FOAM',
+      status: PurchaseOrderStatus.APPROVED,
+      day: daysAgo(2, 11),
+      lines: [{ sku: 'MAT-FOAM-MD', qty: 16 }],
+      note: 'Approved foam, not yet sent',
+      number: 'PORD-DEMO-APPR',
+      expectedOffsetDays: 12,
+      prStatus: PurchaseRequestStatus.APPROVED,
+    },
+    {
+      supplier: 'SUP-FABRIC',
+      status: PurchaseOrderStatus.CANCELLED,
+      day: daysAgo(12, 9),
+      lines: [{ sku: 'MAT-VEL-OLV', qty: 30 }],
+      note: 'Cancelled olive velvet — dealer changed colour',
+      number: 'PORD-DEMO-CANC',
+      expectedOffsetDays: 7,
+      prStatus: PurchaseRequestStatus.REJECTED,
+    },
+    {
+      supplier: 'SUP-TIMBER',
+      status: PurchaseOrderStatus.CLOSED,
+      day: daysAgo(25, 10),
+      lines: [{ sku: 'MAT-PINE', qty: 30 }],
+      pay: 'partial',
+      note: 'Closed pine restock',
+      number: 'PORD-DEMO-CLOSED',
+      expectedOffsetDays: 6,
+      prStatus: PurchaseRequestStatus.CLOSED,
+    },
+    {
+      supplier: 'SUP-TIMBER',
+      status: PurchaseOrderStatus.RECEIVED,
+      day: daysAgo(28, 8),
+      lines: [
+        { sku: 'MAT-BEECH', qty: 500 },
+        { sku: 'MAT-OAK', qty: 240 },
+        { sku: 'MAT-PINE', qty: 80 },
+      ],
+      pay: 'full',
+      note: 'Month timber cover so production issues stay non-negative',
+      number: 'PORD-DEMO-MONTH-WOOD',
+      expectedOffsetDays: 4,
+    },
+    {
+      supplier: 'SUP-FABRIC',
+      status: PurchaseOrderStatus.RECEIVED,
+      day: daysAgo(27, 8),
+      lines: [
+        { sku: 'MAT-VEL-SAND', qty: 400 },
+        { sku: 'MAT-VEL-NAVY', qty: 120 },
+        { sku: 'MAT-LIN-NAT', qty: 160 },
+        { sku: 'MAT-BOU-CRM', qty: 280 },
+        { sku: 'MAT-VEL-OLV', qty: 80 },
+      ],
+      pay: 'partial',
+      note: 'Month fabric cover',
+      number: 'PORD-DEMO-MONTH-FAB',
+      expectedOffsetDays: 4,
+    },
+    {
+      supplier: 'SUP-FOAM',
+      status: PurchaseOrderStatus.RECEIVED,
+      day: daysAgo(26, 8),
+      lines: [
+        { sku: 'MAT-FOAM-HD', qty: 120 },
+        { sku: 'MAT-FOAM-MD', qty: 80 },
+        { sku: 'MAT-HW-KIT', qty: 100 },
+      ],
+      pay: 'none',
+      note: 'Month foam and hardware cover',
+      number: 'PORD-DEMO-MONTH-FOAM',
+      expectedOffsetDays: 3,
+    },
   ];
 
   for (const spec of pos) {
@@ -295,7 +381,7 @@ export async function seedDemoStock(
     await prisma.purchaseRequest.create({
       data: {
         number: prNumber,
-        status: PurchaseRequestStatus.ORDERED,
+        status: spec.prStatus ?? PurchaseRequestStatus.ORDERED,
         priority: Priority.NORMAL,
         requiredDate: po.expectedDeliveryDate,
         reason: spec.note,
@@ -316,7 +402,8 @@ export async function seedDemoStock(
 
     const shouldReceive =
       spec.status === PurchaseOrderStatus.RECEIVED ||
-      spec.status === PurchaseOrderStatus.PARTIALLY_RECEIVED;
+      spec.status === PurchaseOrderStatus.PARTIALLY_RECEIVED ||
+      spec.status === PurchaseOrderStatus.CLOSED;
     if (shouldReceive) {
       const receiptDate = new Date(spec.day.getTime() + 5 * 86400000);
       const grnNumber = await nextDoc(prisma, 'grn', opts.counters);
@@ -357,7 +444,7 @@ export async function seedDemoStock(
         });
       }
 
-      if (spec.status === PurchaseOrderStatus.RECEIVED && spec.pay) {
+      if ((spec.status === PurchaseOrderStatus.RECEIVED || spec.status === PurchaseOrderStatus.CLOSED) && spec.pay) {
         const invNumber = `SINV-${poNumber.replace(/^PORD-/, '')}`;
         const paid =
           spec.pay === 'full'
@@ -440,10 +527,10 @@ export async function seedDemoStock(
   }
 
   const beech = bySku.get('MAT-BEECH')!;
-  const openPr = await nextDoc(prisma, 'purchase_request', opts.counters);
-  await prisma.purchaseRequest.create({
+  const openPrNumber = await nextDoc(prisma, 'purchase_request', opts.counters);
+  const openPr = await prisma.purchaseRequest.create({
     data: {
-      number: openPr,
+      number: openPrNumber,
       status: PurchaseRequestStatus.SUBMITTED,
       priority: Priority.HIGH,
       requiredDate: daysAgo(0, 10),
@@ -463,6 +550,42 @@ export async function seedDemoStock(
         ],
       },
     },
+  });
+  await prisma.supplierQuoteOffer.createMany({
+    data: [
+      {
+        purchaseRequestId: openPr.id,
+        supplierId: supplierIds['SUP-TIMBER']!,
+        unitPrice: money(beech.unitCost),
+        leadTimeDays: 7,
+        qualityScore: money(0.9),
+        notes: 'Zarqa yard — selected',
+        isSelected: true,
+      },
+      {
+        purchaseRequestId: openPr.id,
+        supplierId: supplierIds['SUP-FOAM']!,
+        unitPrice: money(beech.unitCost * 1.08),
+        leadTimeDays: 12,
+        qualityScore: money(0.7),
+        notes: 'Alternate timber quote',
+        isSelected: false,
+      },
+    ],
+  });
+  const run = await prisma.purchaseRun.create({
+    data: {
+      number: 'PRUN-DEMO-1',
+      origin: 'LOW_STOCK',
+      notes: 'Open foam and hardware still inbound',
+      expectedDeliveryDate: daysAgo(-7, 10),
+      createdById: opts.purchasingId,
+      createdAt: daysAgo(3, 10),
+    },
+  });
+  await prisma.purchaseOrder.update({
+    where: { number: 'PORD-DEMO-OPEN' },
+    data: { purchaseRunId: run.id, origin: 'LOW_STOCK' },
   });
 
   // Transfer must not become consumption (signed move RAW→SEMI).

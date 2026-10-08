@@ -1,7 +1,26 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { ymd } from './clock';
+import { daysAgo, ymd } from './clock';
 
 const DEFAULT_WORKING_WEEKDAYS = [0, 1, 2, 3, 4, 6];
+
+/** Amman civil date, shifted off Friday (factory closed). Negative = upcoming. */
+function civilNotFriday(daysBeforeAsOf: number): Date {
+  for (let step = 0; step < 6; step += 1) {
+    const probe = daysAgo(daysBeforeAsOf - step, 12, 0);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Amman',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(probe);
+    const year = Number(parts.find((p) => p.type === 'year')?.value);
+    const month = Number(parts.find((p) => p.type === 'month')?.value);
+    const day = Number(parts.find((p) => p.type === 'day')?.value);
+    const date = ymd(year, month, day);
+    if (date.getUTCDay() !== 5) return date;
+  }
+  return ymd(2026, 1, 1);
+}
 
 export async function seedDemoCalendar(prisma: PrismaClient) {
   const calendar = await prisma.factoryCalendar.create({
@@ -22,10 +41,10 @@ export async function seedDemoCalendar(prisma: PrismaClient) {
 
   const exceptions: Array<{ date: Date; type: 'SHUTDOWN' | 'EXTRA_SHIFT'; note: string; shiftStart?: string; shiftEnd?: string }> =
     [
-      { date: ymd(2026, 6, 25), type: 'SHUTDOWN', note: 'Eid al-Adha factory shutdown' },
-      { date: ymd(2026, 8, 28), type: 'EXTRA_SHIFT', note: 'Sectional catch-up evening', shiftStart: '16:00', shiftEnd: '20:00' },
-      { date: ymd(2026, 9, 2), type: 'EXTRA_SHIFT', note: 'Hotel banquettes overtime', shiftStart: '16:00', shiftEnd: '20:00' },
-      { date: ymd(2026, 9, 8), type: 'EXTRA_SHIFT', note: 'September load evening', shiftStart: '16:00', shiftEnd: '20:00' },
+      { date: civilNotFriday(12), type: 'SHUTDOWN', note: 'Mid-month factory shutdown' },
+      { date: civilNotFriday(6), type: 'EXTRA_SHIFT', note: 'Sectional catch-up evening', shiftStart: '16:00', shiftEnd: '20:00' },
+      { date: civilNotFriday(2), type: 'EXTRA_SHIFT', note: 'Hotel banquettes overtime', shiftStart: '16:00', shiftEnd: '20:00' },
+      { date: civilNotFriday(-3), type: 'EXTRA_SHIFT', note: 'Forward load evening', shiftStart: '16:00', shiftEnd: '20:00' },
     ];
 
   for (const ex of exceptions) {

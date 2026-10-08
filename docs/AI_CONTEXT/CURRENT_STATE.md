@@ -11,7 +11,7 @@ Primary sources: [UNIVERSAL_APP_COMPLETE_IMPLEMENTATION.md](../UNIVERSAL_APP_COM
 - iOS Simulator UAT: iPhone COMPACT, iPad 11 MEDIUM, iPad 13 EXPANDED+WIDE — **PASS (AR)**.
 - Android tablet (`maher_tablet`): Admin / Dealer / Worker logged-in, EN/AR/HE — **PASS** (2026-09-19 closure; ignore stale 2026-09-17 FAIL rows unless re-confirmed).
 - iPad dealer (`nile`) and worker (`carpenter`) interactive UAT — **PASS**. Hebrew WIDE admin sidebar RTL / IDs LTR — **PASS**. iOS PDF share sheet — **PASS**.
-- Demo factory: `pnpm demo:reset` + `pnpm demo:validate` reproducible. Presentation walkthrough **PASS** ([father-demo-presentation-readiness.md](../father-demo-presentation-readiness.md), Aug 16 — seed truth, not adaptive-shell UAT).
+- Demo factory: `pnpm demo:reset` + `pnpm demo:validate` is a **30-day** world (`demo-factory-v2`), not the old 12-story compact cast. Father-demo “delayed = 3” / empty inbox numbers no longer apply. Empty launch world is still `pnpm db:seed`.
 - Domain closures (Sep 19 batch): scheduling, production-inventory, quotations, dealer receipt — see living architecture docs, not this file.
 
 ## Partial

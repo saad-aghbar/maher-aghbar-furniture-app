@@ -76,7 +76,7 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     '',
     'Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (factory), `nile` / `oasis` (dealers), `carpenter` / `inspector` (floor).',
     '',
-    '**Compact demo world:** nile + oasis only · Model 204 / Luna / Classic Chair / Queen bed · `SO-GOLDEN-001` · `SO-FB1042` · `RT-DEMO-001` · `PORD-DEMO-LATE` · low-stock `MAT-BEECH`.',
+    '**Month factory:** nile + oasis + balqis · sofas, chairs, beds, tables, ottoman, sectional · 30-day window · `SO-GOLDEN-001` · `SO-FB1042` · `RT-DEMO-001` · `PORD-DEMO-LATE` · low-stock `MAT-BEECH` and `MAT-BRASS`.',
     '',
     '## Scenarios',
     '',

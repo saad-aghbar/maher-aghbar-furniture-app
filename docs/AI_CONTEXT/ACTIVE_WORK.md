@@ -13,7 +13,7 @@ Branch: `main`. This file is the in-flight pointer, not a changelog.
 
 ## In flight
 
-- None. Unified web overhaul is the current landed stack.
+- Demo reset is a 30-day factory (`seededWorld: demo-factory-v2`): three dealers, expanded catalog, every production kind, invoices/cost, desk rows, and a small inbox. Run `pnpm demo:reset` then `pnpm demo:validate`. Empty launch world remains `pnpm db:seed`.
 
 ## Open follow-ups
 
