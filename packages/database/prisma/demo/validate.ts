@@ -20,6 +20,8 @@ import { marginFrom } from '../../../../apps/api/src/modules/reports/order-cost-
 import { isInventoryConsumption } from '../../../../apps/api/src/modules/reports/inventory-economics';
 import { DEMO_EXPECTED_USERNAMES } from './people';
 import { DEMO_RETURN_NUMBER } from './returns';
+import { demoObjectHead, demoObjectStat } from './demo-files';
+import { sequenceCounterGaps } from './seq';
 
 export class DemoValidationError extends Error {
   constructor(readonly failures: string[]) {
@@ -105,6 +107,10 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
   await assertPresentationReady(prisma, asOf, fail);
   await validateCostPerformanceWorld(prisma, fail);
   await assertMonthCoverage(prisma, fail);
+  await assertDemoFiles(prisma, fail);
+  await assertDeliveryShelf(prisma, fail);
+  await assertShortageLink(prisma, fail);
+  for (const gap of await sequenceCounterGaps(prisma)) fail(gap);
 
   const soCount = await prisma.salesOrder.count({ where: { archivedAt: null } });
   if (soCount < 25) fail(`expected ≥25 sales orders in the month world, found ${soCount}`);
@@ -763,6 +769,10 @@ async function assertFinance(
     if (Math.abs(paySum - Number(inv.paidAmount)) > 0.02) {
       fail(`${inv.number}: paidAmount ${inv.paidAmount} ≠ payment sum ${paySum}`);
     }
+    const outstanding = Number(inv.total) - Number(inv.paidAmount);
+    if (Math.abs(outstanding - Number(inv.outstandingAmount)) > 0.02) {
+      fail(`${inv.number}: outstanding ${inv.outstandingAmount} ≠ total − paid ${outstanding}`);
+    }
     if (inv.salesOrder) {
       const soTotal = Number(inv.salesOrder.total);
       if (Math.abs(soTotal - Number(inv.total)) > 0.05) {
@@ -788,6 +798,30 @@ async function assertFinance(
   if (!hasPaid) fail('dealer invoices: expected at least one PAID');
   if (!hasPartial) fail('dealer invoices: expected at least one PARTIALLY_PAID');
   if (!hasOverdueOrUnpaid) fail('dealer invoices: expected at least one overdue/unpaid');
+
+  const statements = await prisma.statementEntry.findMany({ orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }] });
+  const byRef = new Map<string, typeof statements>();
+  for (const entry of statements) {
+    const ref = entry.reference ?? entry.id;
+    const list = byRef.get(ref) ?? [];
+    list.push(entry);
+    byRef.set(ref, list);
+  }
+  for (const [ref, rows] of byRef) {
+    const net = rows.reduce((sum, row) => sum + Number(row.debit) - Number(row.credit), 0);
+    const last = rows[rows.length - 1]!;
+    if (Math.abs(Number(last.balance) - net) > 0.05) {
+      fail(`statement ${ref}: balance ${last.balance} ≠ net ${net}`);
+    }
+  }
+  for (const username of EXPECTED_DEALERS) {
+    const count = statements.filter((entry) =>
+      dealerInvoices.some(
+        (inv) => inv.number === entry.reference && inv.customer.users.some((user) => user.username === username),
+      ),
+    ).length;
+    if (count < 1) fail(`${username}: missing statement entries`);
+  }
 }
 
 async function assertMonthCoverage(prisma: PrismaClient, fail: (msg: string) => void): Promise<void> {
@@ -795,7 +829,10 @@ async function assertMonthCoverage(prisma: PrismaClient, fail: (msg: string) => 
     ['wip kit', await prisma.wipKit.count()],
     ['wip piece', await prisma.wipPiece.count()],
     ['task blocker', await prisma.taskBlocker.count()],
+    ['quality checklist item', await prisma.qualityInspectionItem.count()],
     ['quality defect', await prisma.qualityDefect.count()],
+    ['open rework', await prisma.reworkRequest.count({ where: { status: { not: 'COMPLETED' } } })],
+    ['completed rework', await prisma.reworkRequest.count({ where: { status: 'COMPLETED' } })],
     ['delivery load piece', await prisma.deliveryLoadPiece.count()],
     ['inventory count', await prisma.inventoryCount.count()],
     ['supplier quote', await prisma.supplierQuoteOffer.count()],
@@ -1384,4 +1421,70 @@ async function validateCostPerformanceWorld(
     where: { salesOrder: { number: { startsWith: 'SO-COST-CUSTOM' } } },
   });
   if (customAgg.some((l) => l.productId)) fail('Cost custom lines must stay outside catalog products');
+}
+
+async function assertDemoFiles(prisma: PrismaClient, fail: (msg: string) => void): Promise<void> {
+  const docs = await prisma.document.findMany({
+    select: { fileName: true, storageKey: true, sizeBytes: true },
+  });
+  if (!docs.length) fail('no documents seeded');
+  for (const doc of docs) {
+    const stat = demoObjectStat(doc.storageKey);
+    if (!stat.exists) {
+      fail(`${doc.fileName}: storage key ${doc.storageKey} has no file`);
+      continue;
+    }
+    if (stat.size !== doc.sizeBytes) {
+      fail(`${doc.fileName}: sizeBytes ${doc.sizeBytes} ≠ file ${stat.size}`);
+    }
+    if (doc.storageKey.endsWith('.pdf')) {
+      const head = demoObjectHead(doc.storageKey, 5);
+      if (head?.toString('utf8') !== '%PDF-') fail(`${doc.fileName}: file is not a PDF`);
+    }
+  }
+  const jobs = await prisma.aIExtractionJob.findMany({
+    where: { storageKey: { not: null } },
+    select: { number: true, storageKey: true, provider: true },
+  });
+  for (const job of jobs) {
+    if (!job.storageKey) continue;
+    const head = demoObjectHead(job.storageKey, 3);
+    if (!head) {
+      fail(`${job.number}: intake file ${job.storageKey} is missing`);
+      continue;
+    }
+    if (head[0] !== 0xff || head[1] !== 0xd8) fail(`${job.number}: intake file is not a JPEG`);
+    if (job.provider === 'openai') fail(`${job.number}: synthetic intake must not use a paid provider`);
+  }
+  const products = await prisma.product.findMany({
+    where: { archivedAt: null, imageUrl: { not: null } },
+    select: { sku: true, imageUrl: true },
+  });
+  for (const product of products) {
+    if (!isHttpImageUrl(product.imageUrl) || /localhost|127\.0\.0\.1/i.test(product.imageUrl ?? '')) {
+      fail(`${product.sku}: imageUrl is not a reachable http(s) URL`);
+    }
+  }
+}
+
+async function assertDeliveryShelf(prisma: PrismaClient, fail: (msg: string) => void): Promise<void> {
+  for (const status of ['READY', 'PLANNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RESCHEDULED'] as const) {
+    const count = await prisma.delivery.count({ where: { status } });
+    if (count < 1) fail(`missing delivery in status ${status}`);
+  }
+}
+
+async function assertShortageLink(prisma: PrismaClient, fail: (msg: string) => void): Promise<void> {
+  const linked = await prisma.salesOrder.findFirst({
+    where: {
+      status: 'WAITING_FOR_MATERIALS',
+      fabricProcurements: {
+        some: { state: { in: ['WAITING', 'AWAITING_SUPPLIER', 'PARTIALLY_AVAILABLE'] } },
+      },
+    },
+    select: { number: true },
+  });
+  if (!linked) {
+    fail('no WAITING_FOR_MATERIALS order linked to an open fabric procurement');
+  }
 }

@@ -59,6 +59,7 @@
     "demo:reset": "pnpm --filter @maher/database demo:reset",
     "demo:validate": "pnpm --filter @maher/database demo:validate",
     "demo:live-uat": "pnpm --filter @maher/database demo:live-uat",
+    "demo:workflow-walk": "pnpm --filter @maher/database demo:workflow-walk",
     "db:studio": "pnpm --filter @maher/database studio",
     "prepare:launch": "bash scripts/prepare-launch.sh",
     "launch": "bash scripts/launch.sh",

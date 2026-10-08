@@ -13,6 +13,7 @@
     "demo:reset": "dotenv -e ../../.env -- tsx prisma/demo/reset.ts",
     "demo:validate": "dotenv -e ../../.env -- tsx prisma/demo/validate-cli.ts",
     "demo:live-uat": "dotenv -e ../../.env -- tsx prisma/demo/live-uat.ts",
+    "demo:workflow-walk": "dotenv -e ../../.env -- tsx prisma/demo/workflow-walk.ts",
     "backfill:default-variants": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-default-variants.ts",
     "backfill:name-he": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-name-he.ts",
     "backfill:sales-order-item-letters": "dotenv -e ../../.env -- tsx prisma/scripts/backfill-sales-order-item-letters.ts",

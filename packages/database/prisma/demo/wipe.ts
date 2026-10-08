@@ -7,6 +7,16 @@ import { preservedRoleCodes } from '../seed/foundation';
  * departments, stage library, QC templates, notification templates, system_settings.
  */
 export const DEMO_WIPE_TABLES = [
+  'wip_handoffs',
+  'wip_pieces',
+  'wip_kits',
+  'delivery_load_pieces',
+  'return_recovery_lines',
+  'return_pieces',
+  'production_task_material_usages',
+  'sales_order_line_options',
+  'product_stage_instructions',
+  'product_stage_material_inputs',
   'ai_chat_messages',
   'ai_chat_conversations',
   'ai_extraction_fields',

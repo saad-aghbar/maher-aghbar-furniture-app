@@ -13,7 +13,7 @@ Branch: `main`. This file is the in-flight pointer, not a changelog.
 
 ## In flight
 
-- Demo reset is a 30-day factory (`seededWorld: demo-factory-v2`): three dealers, expanded catalog, every production kind, invoices/cost, desk rows, and a small inbox. Run `pnpm demo:reset` then `pnpm demo:validate`. Empty launch world remains `pnpm db:seed`.
+- Demo reset is a 30-day factory (`seededWorld: demo-factory-v2`). Pin `DEMO_AS_OF=2026-10-08` for the checked world (57 sales orders). `pnpm demo:reset` backs up `maher_erp`, drains only this app's Redis queues, writes real files under `uploads/demo/`, then `pnpm demo:validate`. `pnpm demo:live-uat` fails if the API is down. Empty launch world remains `pnpm db:seed`.
 
 ## Open follow-ups
 

@@ -1,8 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { assertDemoEnvironment } from './env-guard';
+import { backupDemoDatabase, drainDemoQueues, forceDemoTransports, stopLocalWorker } from './backup';
 import { demoAsOf } from './clock';
+import { clearDemoUploads } from './demo-files';
 import { runDemoReset } from './factory-world';
 import { releaseFabricUatSubject } from './release-fabric-uat';
+import { liftSequenceCounters } from './seq';
 import { validateDemoFactory } from './validate';
 import { seedMonthInbox } from './month-inbox';
 import { writeFatherWalkthrough } from './write-walkthrough';
@@ -18,12 +21,18 @@ async function clearDemoNotificationState(prisma: PrismaClient): Promise<void> {
 
 async function main() {
   const target = assertDemoEnvironment();
+  forceDemoTransports();
   console.log(`demo:reset starting against ${target.host}/${target.database} as of ${demoAsOf().toISOString()}`);
+  backupDemoDatabase(target);
+  stopLocalWorker();
+  drainDemoQueues();
+  clearDemoUploads();
   const prisma = new PrismaClient();
   try {
     await runDemoReset(prisma);
     console.log('Releasing the SO-FB1042 fabric UAT order through the canonical release…');
     releaseFabricUatSubject();
+    await liftSequenceCounters(prisma);
     console.log('Clearing notification / push state left by release…');
     await clearDemoNotificationState(prisma);
     console.log('Seeding role inbox and AI…');

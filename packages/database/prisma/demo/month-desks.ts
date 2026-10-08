@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { money } from '../seed/util';
 import { addDays, demoAsOf } from './clock';
+import { demoPdf, writeDemoObject } from './demo-files';
 import { defaultBinIdForWarehouse } from '../seed/warehouse-bins';
 import { applyDemoMovement } from './stock';
 import type { SeqBag } from './seq';
@@ -162,10 +163,10 @@ async function seedDeliveries(
   const planned = await prisma.delivery.findMany({
     where: { status: DeliveryStatus.PLANNED },
     orderBy: { deliveryDate: 'asc' },
-    take: 4,
+    take: 2,
     include: { salesOrder: { select: { customerId: true } } },
   });
-  const [ready, out, failed, resched] = planned;
+  const [ready, out] = planned;
   if (ready) {
     await prisma.delivery.update({ where: { id: ready.id }, data: { status: DeliveryStatus.READY } });
   }
@@ -175,20 +176,36 @@ async function seedDeliveries(
       data: { status: DeliveryStatus.OUT_FOR_DELIVERY, driverId: opts.driverId ?? out.driverId },
     });
   }
-  if (failed) {
-    await prisma.delivery.update({
-      where: { id: failed.id },
-      data: {
-        status: DeliveryStatus.FAILED,
-        failureReason: 'Showroom closed — nobody to receive.',
-        deliveryDate: addDays(demoAsOf(), 2),
-      },
+  const asOf = demoAsOf();
+  const plannedLeft = await prisma.delivery.count({ where: { status: DeliveryStatus.PLANNED } });
+  if (plannedLeft < 1) {
+    const host = await prisma.salesOrder.findFirst({
+      where: { status: SalesOrderStatus.READY_FOR_DELIVERY },
+      select: { id: true, customerId: true, deliveryAddress: true },
     });
+    if (host) {
+      await prisma.delivery.create({
+        data: {
+          number: 'DLV-SHELF-PLAN',
+          salesOrderId: host.id,
+          customerId: host.customerId,
+          deliveryAddress: host.deliveryAddress ?? 'Amman',
+          deliveryDate: addDays(asOf, 3),
+          status: DeliveryStatus.PLANNED,
+          notes: 'Van booked for the next showroom morning.',
+          driverId: opts.driverId,
+        },
+      });
+    }
   }
-  if (resched) {
+  const stalePlanned = await prisma.delivery.findMany({
+    where: { status: DeliveryStatus.PLANNED, deliveryDate: { lt: asOf } },
+    select: { id: true },
+  });
+  for (const row of stalePlanned) {
     await prisma.delivery.update({
-      where: { id: resched.id },
-      data: { status: DeliveryStatus.RESCHEDULED, deliveryDate: addDays(demoAsOf(), 4) },
+      where: { id: row.id },
+      data: { deliveryDate: addDays(asOf, 3) },
     });
   }
 
@@ -409,12 +426,16 @@ async function seedCommercial(prisma: PrismaClient, adminId: string, asOf: Date)
       },
     });
     if (so) {
+      const fileName = `${dealer.users[0]?.username ?? 'dealer'}-order.pdf`;
+      const storageKey = `demo/docs/${dealer.id}.pdf`;
+      const pdf = demoPdf(`Maher order ${fileName}`);
+      const sizeBytes = writeDemoObject(storageKey, pdf);
       await prisma.document.create({
         data: {
-          fileName: `${dealer.users[0]?.username ?? 'dealer'}-order.pdf`,
+          fileName,
           mimeType: 'application/pdf',
-          sizeBytes: 24000,
-          storageKey: `demo/docs/${dealer.id}.pdf`,
+          sizeBytes,
+          storageKey,
           category: 'ORDER',
           visibility: DocumentVisibility.CUSTOMER_VISIBLE,
           description: 'Signed order copy',
@@ -449,12 +470,15 @@ async function seedCommercial(prisma: PrismaClient, adminId: string, asOf: Date)
 
   const po = await prisma.productionOrder.findFirst({ select: { id: true } });
   if (po) {
+    const drawing = demoPdf('Maher shop drawing');
+    const drawingKey = 'demo/docs/shop-drawing.pdf';
+    const drawingSize = writeDemoObject(drawingKey, drawing);
     await prisma.document.create({
       data: {
         fileName: 'shop-drawing.pdf',
         mimeType: 'application/pdf',
-        sizeBytes: 18000,
-        storageKey: 'demo/docs/shop-drawing.pdf',
+        sizeBytes: drawingSize,
+        storageKey: drawingKey,
         category: 'DRAWING',
         visibility: DocumentVisibility.INTERNAL,
         uploadedById: adminId,

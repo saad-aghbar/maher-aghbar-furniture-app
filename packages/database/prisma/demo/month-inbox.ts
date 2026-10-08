@@ -4,6 +4,7 @@
  */
 import { Locale, type PrismaClient } from '@prisma/client';
 import { demoAsOf } from './clock';
+import { DEMO_INTAKE_JPEG, writeDemoObject } from './demo-files';
 
 export async function seedMonthInbox(prisma: PrismaClient, adminId: string): Promise<void> {
   const asOf = demoAsOf();
@@ -80,13 +81,15 @@ export async function seedMonthInbox(prisma: PrismaClient, adminId: string): Pro
   }
 
   const photoRfq = await prisma.requestForQuotation.findUnique({ where: { number: 'RFQ-SHELF-PHOTO' } });
+  const intakeKey = 'demo/ai/balqis-corner.jpg';
+  writeDemoObject(intakeKey, DEMO_INTAKE_JPEG);
   await prisma.aIExtractionJob.create({
     data: {
       number: 'AI-DEMO-1',
       requestId: photoRfq?.id,
       status: 'COMPLETED',
       sourceType: 'IMAGE',
-      storageKey: 'demo/ai/balqis-corner.jpg',
+      storageKey: intakeKey,
       originalText: 'Corner sectional, cream boucle, Jabal Amman.',
       detectedLanguage: Locale.en,
       targetLanguage: Locale.ar,
