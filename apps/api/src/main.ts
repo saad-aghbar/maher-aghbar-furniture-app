@@ -51,7 +51,7 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
 
-  const port = Number(process.env.API_PORT ?? 4000);
+  const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
   // Bind all interfaces so physical phones / LAN can reach the API
   await app.listen(port, '0.0.0.0');
   logger.info(`API listening on 0.0.0.0:${port}`);

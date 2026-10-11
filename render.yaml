@@ -1,0 +1,56 @@
+# Temporary client demo. Not the production deploy.
+# Password stays 123. Delete these services after the walkthrough.
+# Fill DATABASE_URL (Neon) and REDIS_URL (Upstash rediss://) in the Render dashboard.
+# Do not commit those values.
+services:
+  - type: web
+    name: maher-demo-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infra/docker/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Amman
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://maher-demo-web.onrender.com
+      - key: API_URL
+        value: https://maher-demo-api.onrender.com
+      - key: ADMIN_WEB_URL
+        value: https://maher-demo-web.onrender.com
+      - key: EMAIL_PROVIDER
+        value: console
+      - key: SMS_PROVIDER
+        value: console
+      - key: WHATSAPP_PROVIDER
+        value: console
+      - key: AI_PROVIDER
+        value: mock
+      - key: OCR_PROVIDER
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+  - type: web
+    name: maher-demo-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infra/docker/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /ar/login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://maher-demo-api.onrender.com

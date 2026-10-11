@@ -22,6 +22,7 @@ RUN pnpm --filter @maher/types build \
  && pnpm --filter @maher/api build
 
 FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app /app
