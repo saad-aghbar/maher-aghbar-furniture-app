@@ -17,6 +17,8 @@ RUN pnpm --filter @maher/types build \
  && pnpm --filter @maher/validation build \
  && pnpm --filter @maher/logging build \
  && pnpm --filter @maher/config build \
+ && pnpm --filter @maher/integrations build \
+ && pnpm --filter @maher/notifications build \
  && pnpm --filter @maher/database generate \
  && pnpm --filter @maher/database build \
  && pnpm --filter @maher/api build
