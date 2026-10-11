@@ -35,8 +35,8 @@ services:
         value: mock
       - key: DATABASE_URL
         sync: false
-      - key: REDIS_URL
-        sync: false
+      # REDIS_URL is optional. Leave it unset for this demo; the API still boots.
+      # Add an Upstash rediss:// URL later if scheduling jobs should run.
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
