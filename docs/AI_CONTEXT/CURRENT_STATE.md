@@ -1,6 +1,8 @@
 # CURRENT_STATE
 
-As of **2026-09-19**. Re-verify against the newest `docs/*UAT*.md` and `docs/*closure*.md` before treating a row as current.
+As of **2026-10-11**. Re-verify against the newest `docs/*UAT*.md` and `docs/*closure*.md` before treating a row as current.
+
+Temporary client demo (not production): https://maher-demo-web.onrender.com/ar/login — mock factory on Neon, password `123`. Free Render services sleep after idle. Tear the `maher-demo` blueprint down after the walkthrough. Redis is unset, so scheduling jobs do not run there.
 
 Primary sources: [UNIVERSAL_APP_COMPLETE_IMPLEMENTATION.md](../UNIVERSAL_APP_COMPLETE_IMPLEMENTATION.md), [UNIVERSAL_APP_FINAL_UAT.md](../UNIVERSAL_APP_FINAL_UAT.md).
 
