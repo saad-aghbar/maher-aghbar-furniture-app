@@ -21,3 +21,5 @@ if (typeof window !== 'undefined' && !window.__maherSilenceThreeClock) {
     orig(...args);
   };
 }
+
+export {};
