@@ -1,7 +1,7 @@
 # Terminal lifecycle — frontend closure report (runtime-honest)
 
 **Date:** 2026-08-25 (final repair execution)  
-**Verdict:** **PARTIAL PASS** — admin web + portal + API proven with fresh screenshots; **mobile Expo handset visual still PENDING** (agent cannot observe device UI). DEV markers **KEPT** until mobile proof.
+**Verdict:** **PARTIAL PASS** — admin web + portal + API proven with fresh screenshots; **mobile Expo handset visual still PENDING** (physical device UI has not been verified). DEV markers **KEPT** until mobile proof.
 
 ---
 

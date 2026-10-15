@@ -42,11 +42,10 @@ export function workerItemWorkState(
     'assignedToMe' | 'myTaskCount' | 'actionableCount' | 'blockedCount'
   >,
 ): WorkerItemWorkState {
-  if (item.assignedToMe && item.myTaskCount === 0) return 'done';
+  if (!item.assignedToMe) return 'locked';
+  if (item.myTaskCount === 0) return 'done';
   if (item.actionableCount > 0) return 'open';
-  if (item.blockedCount > 0) return 'locked';
-  if (item.assignedToMe && item.myTaskCount > 0) return 'locked';
-  return 'open';
+  return 'locked';
 }
 
 export function workerProductTitle(order: WorkerMyOrder, locale: Locale): string {
@@ -73,7 +72,7 @@ export function selectWorkerOrderCard(order: WorkerMyOrder, locale: Locale): Wor
     myTaskCount: order.myTaskCount,
     actionableCount: order.actionableCount,
     blockedCount: order.blockedCount,
-    assignedToMe: order.assignedToMe !== false,
+    assignedToMe: order.assignedToMe === true,
   };
 }
 

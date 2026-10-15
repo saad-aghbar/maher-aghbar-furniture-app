@@ -37,17 +37,30 @@ export function deriveOrderLifecycle(input: {
   const so = input.salesOrderStatus.toUpperCase();
   const delivery = input.deliveryStatus?.toUpperCase() ?? null;
 
-  if (delivery === 'DELIVERED' || so === 'DELIVERED' || so === 'COMPLETED') return 'delivered';
+  if (delivery === 'DELIVERED') return 'delivered';
   if (delivery === 'OUT_FOR_DELIVERY') return 'shipped';
   if (so === 'READY_FOR_DELIVERY' || delivery === 'READY' || delivery === 'PLANNED') return 'ready';
 
-  const po = input.productionOrders?.[0];
-  const code = po?.currentStageCode?.toUpperCase() ?? null;
-  if (code === 'PACKAGING') return 'packaging';
-  if (code === 'INSPECTION') return 'inspection';
-  if ((po?.progressPercent ?? 0) > 0 || so === 'IN_PRODUCTION') return 'production';
+  const pos = input.productionOrders ?? [];
+  if (!pos.length) return 'production';
 
-  return 'production';
+  const rank: Record<OrderLifecycleStep, number> = {
+    production: 0,
+    inspection: 1,
+    packaging: 2,
+    ready: 3,
+    shipped: 4,
+    delivered: 5,
+  };
+  const stepFor = (po: PoSnippet): OrderLifecycleStep => {
+    const status = po.status?.toUpperCase() ?? '';
+    const code = po.currentStageCode?.toUpperCase() ?? '';
+    if (status === 'COMPLETED') return 'ready';
+    if (code === 'PACKAGING' || status === 'READY_FOR_PACKAGING') return 'packaging';
+    if (code === 'INSPECTION' || status === 'QUALITY_CHECK') return 'inspection';
+    return 'production';
+  };
+  return pos.map(stepFor).reduce((least, step) => (rank[step] < rank[least] ? step : least));
 }
 
 export function stepLabelKey(step: OrderLifecycleStep): string {

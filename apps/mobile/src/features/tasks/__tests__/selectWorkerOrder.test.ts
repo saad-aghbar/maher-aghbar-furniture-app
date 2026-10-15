@@ -28,6 +28,7 @@ const order: WorkerMyOrder = {
   myTaskCount: 2,
   actionableCount: 1,
   blockedCount: 1,
+  assignedToMe: true,
 };
 
 describe('selectWorkerOrderCard', () => {
@@ -176,7 +177,7 @@ describe('workerItemWorkState', () => {
     ).toBe('open');
   });
 
-  it('does not treat view-only alone as locked', () => {
+  it('does not treat unassigned work as open', () => {
     expect(
       workerItemWorkState({
         assignedToMe: false,
@@ -184,7 +185,15 @@ describe('workerItemWorkState', () => {
         actionableCount: 0,
         blockedCount: 0,
       }),
-    ).toBe('open');
+    ).toBe('locked');
+    expect(
+      workerItemWorkState({
+        assignedToMe: false,
+        myTaskCount: 2,
+        actionableCount: 2,
+        blockedCount: 0,
+      }),
+    ).toBe('locked');
   });
 
   it('locks view-only siblings that still report blocked remaining work', () => {

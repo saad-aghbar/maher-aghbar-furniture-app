@@ -5,7 +5,7 @@ import { apiFetch } from '@/lib/api-client';
 import { asRows } from '@/lib/paginated';
 import type { AuthUser } from '@maher/types';
 import { BrandMark, SectionTabs, cn, isNavItemActive } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell,
   CalendarDays,
@@ -31,6 +31,7 @@ import { LanguageSwitcher } from '@/components/language-switcher';
 import { useOrderBasketCount } from '@/components/order-basket-provider';
 import { ShellAtmosphere } from '@/components/shell-atmosphere';
 import { AppThemeToggle } from '@/components/theme-toggle';
+import { resetAccountClientState } from '@/lib/reset-account-client';
 
 type NavKey =
   | 'dashboard'
@@ -87,8 +88,6 @@ const groups: NavGroup[] = [
       { href: '/dealer/invoices', key: 'invoices', icon: Receipt },
       { href: '/dealer/payments', key: 'payments', icon: Banknote },
       { href: '/dealer/statement', key: 'statement', icon: Scroll },
-      { href: '/dealer/contracts', key: 'contracts', icon: FileText },
-      { href: '/dealer/documents', key: 'documents', icon: FolderOpen },
     ],
   },
   {
@@ -97,6 +96,8 @@ const groups: NavGroup[] = [
     icon: User,
     items: [
       { href: '/dealer/profile', key: 'profile', icon: User },
+      { href: '/dealer/contracts', key: 'contracts', icon: FileText },
+      { href: '/dealer/documents', key: 'documents', icon: FolderOpen },
       { href: '/dealer/notifications', key: 'notifications', icon: Bell },
       { href: '/dealer/ai-chat', key: 'aiChat', icon: MessageSquare },
     ],
@@ -115,6 +116,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const tAuth = useTranslations('auth');
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
@@ -124,7 +126,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
     queryKey: ['auth-me'],
     queryFn: () => apiFetch<AuthUser>('/api/v1/auth/me'),
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15_000,
   });
 
   const notifications = useQuery({
@@ -152,6 +154,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
+    resetAccountClientState(queryClient);
     router.push('/login');
     router.refresh();
   }

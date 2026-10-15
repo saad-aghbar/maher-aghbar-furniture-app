@@ -902,6 +902,28 @@ export class InventoryService {
     },
     userId: string,
   ) {
+    const requested = Number(dto.quantity);
+    if (!(requested > 0)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Issue quantity must be greater than zero.',
+      });
+    }
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { inventoryItemId: dto.inventoryItemId, warehouseId: dto.warehouseId },
+      select: { availableQty: true },
+    });
+    const available = balances.reduce((sum, row) => sum + Number(row.availableQty ?? 0), 0);
+    if (!(available > 0) || available < requested) {
+      throw new BadRequestException({
+        code: 'INSUFFICIENT_STOCK',
+        message: 'Inventory cannot go negative.',
+        inventoryItemId: dto.inventoryItemId,
+        warehouseId: dto.warehouseId,
+        available,
+        requested,
+      });
+    }
     const result = await this.applyMovement({
       type: InventoryTxType.PRODUCTION_ISSUE,
       ...dto,

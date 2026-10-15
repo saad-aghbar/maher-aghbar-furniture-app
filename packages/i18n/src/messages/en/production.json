@@ -787,6 +787,7 @@
   "hubMaterials": "Materials",
   "hubTasks": "Tasks",
   "tasksHint": "One task per stage. Assign a worker, set the due time, attach photos.",
+  "manufacturingFinishedInspectionNext": "Manufacturing stages are finished. Inspection is next.",
   "usageOver": "Over plan",
   "photosCount": "{count, plural, one {# photo} other {# photos}}",
   "problemsHint": "Blockers workers raised from the bench. Answer them here — the worker sees the reply on the task.",

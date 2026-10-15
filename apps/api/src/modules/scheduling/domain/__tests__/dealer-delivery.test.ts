@@ -1,4 +1,5 @@
 import {
+  actualDeliveryValue,
   CUSTOMER_SAFE_PRODUCTION_DELAY,
   buildDealerDeliveryView,
   calendarDateForDealer,
@@ -22,6 +23,12 @@ import { addDaysYmd } from '../working-calendar';
 const TZ = 'Asia/Amman';
 
 describe('dealer-delivery mapping', () => {
+  it('uses actual receipt evidence rather than the planned delivery appointment', () => {
+    expect(actualDeliveryValue({ status: 'DELIVERED', deliveryDate: '2026-08-25' })).toBeNull();
+    expect(actualDeliveryValue({ status: 'DELIVERED', deliveryDate: '2026-08-25',
+      customerConfirmedAt: '2026-08-28T12:00:00Z' })).toBe('2026-08-28T12:00:00Z');
+    expect(actualDeliveryValue({ status: 'OUT_FOR_DELIVERY', deliveryDate: '2026-08-25' })).toBeNull();
+  });
   it('compact confirmed when requested = suggested = committed = projected', () => {
     const facts = {
       requestedYmd: '2026-08-25',

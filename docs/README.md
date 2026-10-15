@@ -2,7 +2,7 @@
 
 Start here:
 
-- [AI context memory](AI_CONTEXT/PROJECT_MAP.md) — compact maps for agents (`PROJECT_MAP`, `ARCHITECTURE_MAP`, `CURRENT_STATE`, `ACTIVE_WORK`)
+- [Source code review guide](../REVIEWER.md) — clean-clone setup, source layout, local accounts, and verification
 - [Repository map](architecture/repository-map.md) — where each app and package lives
 - [Where to change things](architecture/where-to-change-things.md) — feature → path
 - [Architecture audit](repository-architecture-audit.md)

@@ -1,0 +1,14 @@
+.portal-switch__option {
+  color: var(--maher-text-secondary);
+  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.portal-switch__option[aria-checked='true'] {
+  color: var(--maher-text-primary);
+}
+
+@media (hover: hover) {
+  .portal-switch__option:hover {
+    color: var(--maher-text-primary);
+  }
+}

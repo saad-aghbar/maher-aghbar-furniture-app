@@ -35,6 +35,9 @@ export const ibmSans = latinSans;
 /** @deprecated Prefer arabicSans */
 export const ibmSansArabic = arabicSans;
 
+/** All next/font variable classes. Kept on `<html>` so a locale switch can change font-family without a reload. */
+export const fontVariableClass = `${latinSans.variable} ${arabicSans.variable} ${heebo.variable}`;
+
 export function getFontClass(locale: string): string {
   if (locale === 'he') return `${heebo.variable} ${latinSans.variable}`;
   if (locale === 'ar') return `${arabicSans.variable} ${latinSans.variable}`;

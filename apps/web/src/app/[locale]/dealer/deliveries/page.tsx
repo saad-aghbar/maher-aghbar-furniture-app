@@ -20,7 +20,8 @@ import { localizedName } from '@maher/i18n';
 import { Board, BoardSkeleton, CalendarLegend, ErrorBoard, Figure, ListRow, ListRows, Ltr, MonthCalendar, Ribbon, SegmentedControl, Stamp, type BoardTone } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
 
 function statusTone(status: string): BoardTone {
   switch (status) {
@@ -114,13 +115,24 @@ function DeliveryRow({ row }: { row: DealerDeliveryDto }) {
 }
 
 export default function DeliveriesPage() {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={4} />}>
+      <DeliveriesDesk />
+    </Suspense>
+  );
+}
+
+function DeliveriesDesk() {
   const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const td = useTranslations('production.dealerDelivery');
   const locale = useLocale();
   const kit = useKitCopy();
-  const [segment, setSegment] = useState<'upcoming' | 'calendar'>('upcoming');
-  const initial = todayYmd();
+  const searchParams = useSearchParams();
+  const requestedDay = searchParams.get('date') ?? searchParams.get('day');
+  const openCalendar = searchParams.get('view') === 'calendar' || Boolean(requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay));
+  const [segment, setSegment] = useState<'upcoming' | 'calendar'>(openCalendar ? 'calendar' : 'upcoming');
+  const initial = requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) ? requestedDay : todayYmd();
   const [cursor, setCursor] = useState<CalendarCursor>(() => {
     const [y, m] = initial.split('-').map(Number);
     return { y: y ?? 2026, m: (m ?? 8) - 1 };

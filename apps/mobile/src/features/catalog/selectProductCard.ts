@@ -9,6 +9,7 @@ export type ProductCardModel = {
   currency: string;
   isAvailable: boolean;
   categoryName: string | null;
+  sku: string | null;
   dimensionHint: string | null;
   galleryCount: number;
 };
@@ -78,6 +79,7 @@ export function toProductCard(
     currency: item.priceCurrency || 'ILS',
     isAvailable: item.isActive !== false,
     categoryName: localizedCategoryName(item, locale),
+    sku: item.sku?.trim() || null,
     dimensionHint: dimensionHint(item),
     galleryCount: imageUrls.length,
   };

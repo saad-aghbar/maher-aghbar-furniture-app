@@ -63,6 +63,13 @@ export class ListTasksDto extends PaginationDto {
   @IsUUID()
   customerId?: string;
 
+  /** Finished or open tasks for one commercial parent. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => emptyToUndefined(value))
+  @IsUUID()
+  salesOrderId?: string;
+
   /** Inclusive lower bound for actualCompletion (YYYY-MM-DD). */
   @ApiPropertyOptional({ example: '2026-08-01' })
   @IsOptional()

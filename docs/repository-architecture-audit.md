@@ -62,7 +62,7 @@ packages/types + packages/permissions
 | `apps/` | — | Runnable applications | — | — | — | Developers, CI, launch scripts |
 | `packages/` | SHARED | Libraries and contracts | — | — | — | Apps |
 | `scripts/` | TOOLING | Launch, smoke, UAT, asset helpers | Tooling | Node/bash/python | Running API for smokes | `package.json` scripts |
-| `docs/` | DOCUMENTATION | Architecture, product, audits, UAT | Docs | None | — | Humans / agents |
+| `docs/` | DOCUMENTATION | Architecture, product, audits, UAT | Docs | None | — | Developers |
 | `e2e/` | TESTING | Playwright specs | Tooling | Playwright | Running Admin + API | `pnpm test:e2e:playwright` |
 | `infra/` | TOOLING | Docker Compose + Dockerfiles | Tooling | Docker | — | Local/prod deploy |
 | `design-references/` | DOCUMENTATION | Brand PNGs / intro QA frames | Design | None | — | Brand scripts, humans |

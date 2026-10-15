@@ -80,7 +80,7 @@ export function ReturnsLens() {
                       <>
                         {" · "}
                         <Link
-                          href={`/admin/orders/${row.salesOrder.id}`}
+                          href={`/admin/sales-orders/${row.salesOrder.id}`}
                           className="text-xs underline"
                         >
                           {row.salesOrder.number}

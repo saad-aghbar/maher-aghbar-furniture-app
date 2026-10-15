@@ -12,7 +12,7 @@ describe('production plan host line mapping', () => {
         productionOrders: pos,
         fallbackId: null,
       }),
-    ).toBe('po-a');
+    ).toBeNull();
   });
 
   it('maps a sales-order line onto its production order', () => {

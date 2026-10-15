@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const STACK = join(ROOT, '.cursor/skills/dev-stack/scripts/stack.sh');
+const STACK = join(ROOT, 'scripts/dev-stack.sh');
 const FLOWS_DIR = join(ROOT, 'e2e/mobile');
 
 function run(cmd, args, opts = {}) {
@@ -44,7 +44,7 @@ if (existsSync(STACK)) {
   process.stdout.write(status.stdout ?? '');
   process.stderr.write(status.stderr ?? '');
   if (status.status !== 0) {
-    console.warn('Dev stack is not fully healthy. Start it with /run, then retry.');
+    console.warn('Dev stack is not fully healthy. Start it with bash scripts/dev-stack.sh run, then retry.');
   }
 }
 

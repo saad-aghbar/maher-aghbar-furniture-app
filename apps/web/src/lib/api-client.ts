@@ -189,7 +189,8 @@ export type OrderSetupLine = {
 };
 
 export type OrderProductionSetup = {
-  id: string;
+  initialized?: boolean;
+  id: string | null;
   salesOrderId: string;
   status: string;
   releasedAt?: string | null;

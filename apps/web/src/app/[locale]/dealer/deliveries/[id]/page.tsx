@@ -15,6 +15,8 @@ type Delivery = {
   status: string;
   deliveryAddress?: string | null;
   deliveryDate?: string | null;
+  actualDeliveredAt?: string | null;
+  customerConfirmedAt?: string | null;
   plannedDate?: string | null;
   notes?: string | null;
   driverName?: string | null;
@@ -89,7 +91,7 @@ export default function DeliveryReceiptPage({ params }: { params: { id: string }
   const eff = idx >= 0 ? idx : status === 'SHIPPED' ? 2 : -1;
   const stages: StageStripStage[] = JOURNEY.map((key, i) => ({ key, label: label(key), state: status === 'CANCELLED' ? 'blocked' : i < eff ? 'done' : i === eff ? 'current' : 'todo' }));
   const canConfirm = status === 'OUT_FOR_DELIVERY' || status === 'SHIPPED';
-  const date = row.deliveryDate ?? row.plannedDate;
+  const date = status === 'DELIVERED' ? row.actualDeliveredAt ?? row.customerConfirmedAt : row.deliveryDate ?? row.plannedDate;
   const fmt = (iso: string) => new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
 
   return (
@@ -112,7 +114,7 @@ export default function DeliveryReceiptPage({ params }: { params: { id: string }
       </DetailHero>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
-      {status === 'DELIVERED' ? <Alert variant="success">{tl('receiptConfirmed')}</Alert> : canConfirm ? <Alert variant="warning">{tl('shippedAwaitingConfirm')}</Alert> : null}
+      {status === 'DELIVERED' ? <Alert variant={row.customerConfirmedAt ? 'success' : 'warning'}>{tl(row.customerConfirmedAt ? 'receiptConfirmed' : 'legacyReceiptMissing')}</Alert> : canConfirm ? <Alert variant="warning">{tl('shippedAwaitingConfirm')}</Alert> : null}
 
       <div className="grid gap-5 xl:grid-cols-12">
         <Board tone="neutral" className="xl:col-span-7">

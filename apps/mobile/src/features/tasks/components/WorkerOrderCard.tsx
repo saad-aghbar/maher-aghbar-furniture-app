@@ -13,8 +13,12 @@ export function WorkerOrderCard({ order, index = 0, animateEnter = true }: Props
   const { t } = useLocale();
   const workState = workerItemWorkState(order);
 
-  const metaStage =
-    workState === 'done'
+  const metaStage = !order.assignedToMe
+    ? {
+        label: t('mobile.tasks.viewOnly'),
+        value: t('mobile.tasks.viewOnly'),
+      }
+    : workState === 'done'
       ? {
           label: t('mobile.tasks.segments.done'),
           value: t('mobile.tasks.segments.done'),
@@ -25,12 +29,8 @@ export function WorkerOrderCard({ order, index = 0, animateEnter = true }: Props
             value: t('mobile.tasks.lockLocked'),
           }
         : {
-            label: order.assignedToMe
-              ? t('mobile.tasks.cardRemaining')
-              : t('mobile.tasks.viewOnly'),
-            value: order.assignedToMe
-              ? t('mobile.tasks.orderCardTasks', { count: order.myTaskCount })
-              : t('mobile.tasks.viewOnly'),
+            label: t('mobile.tasks.cardRemaining'),
+            value: t('mobile.tasks.orderCardTasks', { count: order.myTaskCount }),
           };
 
   return (
@@ -48,7 +48,7 @@ export function WorkerOrderCard({ order, index = 0, animateEnter = true }: Props
         imageUrl: order.imageUrl,
         priority: order.priority,
         deadline: order.deadline,
-        blocked: workState === 'locked' || order.blockedCount > 0,
+        blocked: order.assignedToMe && (workState === 'locked' || order.blockedCount > 0),
         workState,
       }}
     />

@@ -329,7 +329,7 @@ export function DealerReceiptDetailScreen({
                   textAlign: isRTL ? 'right' : 'left',
                 }}
               >
-                {t('mobile.dealerReceipts.receivedCaption')}
+                {t(row?.customerConfirmedAt ? 'mobile.dealerReceipts.receivedCaption' : 'lifecycle.legacyReceiptMissing')}
               </AppText>
             )}
           </DealerBoard>

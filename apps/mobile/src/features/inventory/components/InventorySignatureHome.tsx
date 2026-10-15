@@ -35,6 +35,8 @@ import {
   type InventoryItem,
   type WarehouseBinContents,
 } from '../api';
+import { listAdminProducts } from '@/api/modules/catalogAdmin';
+import { matchCatalogSku } from '../matchCatalogSku';
 import { isFinishedScanLot, resolveInventoryScan } from '../resolveInventoryScan';
 import { toGoodsReceiptArgs } from '../stockMoveSubmit';
 import {
@@ -657,6 +659,17 @@ export function InventorySignatureHome({
       return;
     }
     if (resolved.status === 'NOT_FOUND') {
+      try {
+        const page = await listAdminProducts({ q: trimmed, pageSize: 20 });
+        const product = matchCatalogSku(trimmed, page.data ?? []);
+        if (product) {
+          void haptics.confirmLight();
+          router.push(`/(app)/(admin)/products/${product.id}` as Href);
+          return;
+        }
+      } catch {
+        // Catalog lookup is optional. A miss still shows the material not-found sheet.
+      }
       void haptics.error();
       setScanResult('not-found');
       return;
@@ -1329,7 +1342,10 @@ export function InventorySignatureHome({
               canEdit={canEdit}
               canLabelPdf={canLabelPdf}
               onReceive={() => setMove({ mode: 'receive', item: item.model })}
-              onIssue={() => setMove({ mode: 'issue', item: item.model })}
+              onIssue={() => {
+                if (!(item.model.onHand > 0)) return;
+                setMove({ mode: 'issue', item: item.model });
+              }}
               onEdit={() => setEditItem(item.model)}
               onLabelPdf={() => openLabelPdf(item.model)}
               onQrCode={() => setQrItem(qrItemFromCard(item.model))}

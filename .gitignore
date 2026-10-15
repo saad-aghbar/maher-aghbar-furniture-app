@@ -12,9 +12,16 @@ coverage
 
 # Env / secrets
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
+!.env.*.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.mobileprovision
 
 # OS / IDE
 .DS_Store

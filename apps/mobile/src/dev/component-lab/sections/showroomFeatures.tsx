@@ -789,6 +789,7 @@ export function buildFeatureShowroomItems(): ShowroomItem[] {
               currency: 'ILS',
               isAvailable: true,
               categoryName: 'Sofas',
+              sku: 'SF-001',
               dimensionHint: '220×90',
               galleryCount: 0,
             }}

@@ -200,6 +200,7 @@ export type DealerDeliveryDto = {
   projectedDeliveryDate: string | null;
   plannedDeliveryDate?: string | null;
   actualDeliveryDate: string | null;
+  customerConfirmedAt?: string | null;
   calendarDate: string | null;
   customerStatus: CustomerDeliveryStatus | string;
   requiresDealerAttention: boolean;

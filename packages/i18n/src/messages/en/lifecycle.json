@@ -213,5 +213,6 @@
     "chargesPending": "Charges pending",
     "dealerMarkSent": "I have sent it",
     "dealerMarkSentConfirm": "Tell the factory the furniture is on its way. They will confirm when it arrives."
-  }
+  },
+  "legacyReceiptMissing": "Recorded as delivered. Receipt confirmation was not captured for this older record."
 }

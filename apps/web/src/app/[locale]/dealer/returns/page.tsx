@@ -9,7 +9,8 @@ import { Armchair } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 
 interface ReturnRow {
   id: string;
@@ -53,13 +54,22 @@ const RETURN_REASONS = [
 ] as const;
 
 export default function ReturnsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReturnsDesk />
+    </Suspense>
+  );
+}
+
+function ReturnsDesk() {
+  const searchParams = useSearchParams();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const copy = useReturnCopy();
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(searchParams.get('create') === '1');
   const [salesOrderId, setSalesOrderId] = useState('');
   const [productDesc, setProductDesc] = useState('');
   const [quantity, setQuantity] = useState('1');

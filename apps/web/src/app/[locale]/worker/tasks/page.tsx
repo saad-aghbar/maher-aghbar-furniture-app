@@ -21,6 +21,10 @@ type WorkerMyOrder = {
   productImageUrl: string | null;
   status: string;
   quantity?: string | number | null;
+  assignedToMe?: boolean;
+  myTaskCount?: number;
+  actionableCount?: number;
+  blockedCount?: number;
   product?: { nameEn?: string | null; nameAr?: string | null; nameHe?: string | null } | null;
 };
 
@@ -40,6 +44,14 @@ function mediaSrc(url: string | null | undefined): string | null {
   if (!url?.trim()) return null;
   if (/^https?:\/\//i.test(url) || url.startsWith('blob:')) return url;
   return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function itemReason(item: WorkerMyOrder, viewOnly: string, waiting: string, blocked: string, status: string): { label: string; tone: BoardTone } {
+  if (item.assignedToMe === false) return { label: viewOnly, tone: 'neutral' };
+  if ((item.myTaskCount ?? 0) > 0 && (item.actionableCount ?? 0) === 0) {
+    return { label: (item.blockedCount ?? 0) > 0 ? blocked : waiting, tone: 'warning' };
+  }
+  return { label: status, tone: statusTone(item.status) };
 }
 
 function statusTone(status: string): BoardTone {
@@ -203,7 +215,12 @@ export default function TasksPage() {
       ) : (
         <ul className={`maher-stagger grid gap-4 lg:grid-cols-2 ${ordersQuery.isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}`}>
           {groups.map((group) => {
-            const href = group.salesOrderId ? `/worker/orders/${group.salesOrderId}` : group.items[0] ? `/worker/lane/${group.items[0].id}` : '/worker/tasks';
+            const mine = group.items.find((item) => item.assignedToMe !== false);
+            const href = group.salesOrderId
+              ? `/worker/orders/${group.salesOrderId}?segment=${segment}${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ''}`
+              : mine
+                ? `/worker/lane/${mine.id}`
+                : '/worker/tasks';
             const active = group.items.filter((i) => i.status.toUpperCase() === 'IN_PROGRESS').length;
             const tone: BoardTone = active ? 'brand' : group.deadline && new Date(group.deadline).getTime() < Date.now() ? 'error' : 'neutral';
             return (
@@ -225,7 +242,7 @@ export default function TasksPage() {
                       leading={<RowThumb src={mediaSrc(item.productImageUrl)} icon={<Armchair className="h-4 w-4" />} />}
                       title={item.product ? localizedName(locale, item.product, item.productDescription ?? item.number) : item.productDescription ?? item.number}
                       meta={<Ltr>{item.number}{item.quantity ? ` · ×${item.quantity}` : ''}</Ltr>}
-                      trailing={<Stamp tone={statusTone(item.status)} size="sm">{statusLabel(item.status)}</Stamp>}
+                      trailing={<Stamp tone={itemReason(item, tm('viewOnly'), tm('lockLocked'), tm('orderCardBlocked', { count: item.blockedCount ?? 0 }), statusLabel(item.status)).tone} size="sm">{itemReason(item, tm('viewOnly'), tm('lockLocked'), tm('orderCardBlocked', { count: item.blockedCount ?? 0 }), statusLabel(item.status)).label}</Stamp>}
                       chevron={false}
                     />
                   ))}

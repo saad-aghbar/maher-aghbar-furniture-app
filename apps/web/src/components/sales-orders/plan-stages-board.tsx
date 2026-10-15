@@ -48,13 +48,24 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
   const hasWorkflow = lines.some((l) => l.workflowId);
   const enabled = released || opened;
 
-  const plan = useQuery({
-    queryKey: ['plan-orders', salesOrderId],
-    enabled,
-    queryFn: () => apiFetch<EnsurePlanResult>(`/api/v1/sales-orders/${salesOrderId}/production-setup/ensure-plan`, { method: 'POST' }),
+  const plan = useMutation({
+    mutationFn: () => apiFetch<EnsurePlanResult>(`/api/v1/sales-orders/${salesOrderId}/production-setup/ensure-plan`, { method: 'POST' }),
+    onSuccess: async () => {
+      setOpened(true);
+      await qc.invalidateQueries({ queryKey: ['sales-order-plan-ids', salesOrderId] });
+    },
+    onError: (err) => toast.error(mutationErrorMessage(err)),
+  });
+  const existing = useQuery({
+    queryKey: ['sales-order-plan-ids', salesOrderId],
+    enabled: released || opened,
+    queryFn: () =>
+      apiFetch<{ productionOrders?: Array<{ id: string }> }>(`/api/v1/sales-orders/${salesOrderId}`).then(
+        (order) => (order.productionOrders ?? []).map((po) => po.id),
+      ),
     staleTime: 30_000,
   });
-  const ids = plan.data?.productionOrderIds ?? [];
+  const ids = existing.data ?? [];
   const orders = useQueries({
     queries: ids.map((id) => ({
       queryKey: ['production-order', id],
@@ -90,10 +101,10 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
   const totals = orders.reduce(
     (acc, q) => {
       for (const s of q.data?.stages ?? []) {
-        const task = s.tasks[0];
-        if (!task) continue;
-        acc.total += 1;
-        if (task.assignedEmployee) acc.assigned += 1;
+        for (const task of s.tasks) {
+          acc.total += 1;
+          if (task.assignedEmployee) acc.assigned += 1;
+        }
       }
       return acc;
     },
@@ -107,8 +118,8 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
         description={t('orderSetup.stagesPeopleHint')}
         meta={enabled && totals.total ? <span className="tabular-nums">{`${totals.assigned}/${totals.total}`}</span> : undefined}
         actions={
-          enabled && ids.length ? (
-            <Link href={`/admin/production/${plan.data?.primaryProductionOrderId ?? ids[0]}`} className="maher-press inline-flex h-8 items-center rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 text-[13px] font-medium text-[var(--maher-text-primary)] hover:border-[var(--maher-border-strong)]">
+          released && ids.length === 1 ? (
+            <Link href={`/admin/production/${ids[0]}`} className="maher-press inline-flex h-8 items-center rounded-full border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 text-[13px] font-medium text-[var(--maher-text-primary)] hover:border-[var(--maher-border-strong)]">
               {t('orderSetup.openFactoryFloor')}
             </Link>
           ) : null
@@ -118,20 +129,31 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
         {!enabled ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="m-0 text-[13px] text-[var(--maher-text-secondary)]">{hasWorkflow ? t('orderSetup.planStagesHint') : t('orderSetup.noStagesYet')}</p>
-            <Button size="sm" disabled={!hasWorkflow} onClick={() => setOpened(true)} leadingIcon={<UserPlus className="h-4 w-4" />}>
+            <Button size="sm" disabled={!hasWorkflow} loading={plan.isPending} onClick={() => {
+              setOpened(true);
+              void (async () => {
+                const order = await apiFetch<{ productionOrders?: Array<{ id: string }> }>(`/api/v1/sales-orders/${salesOrderId}`);
+                const found = (order.productionOrders ?? []).map((po) => po.id);
+                if (found.length) {
+                  qc.setQueryData(['sales-order-plan-ids', salesOrderId], found);
+                  return;
+                }
+                plan.mutate();
+              })();
+            }} leadingIcon={<UserPlus className="h-4 w-4" />}>
               {t('orderSetup.planStages')}
             </Button>
           </div>
-        ) : plan.isLoading || orders.some((q) => q.isLoading) ? (
+        ) : existing.isLoading || plan.isPending || orders.some((q) => q.isLoading) ? (
           <BoardSkeleton rows={4} header={false} className="border-0 shadow-none" />
-        ) : plan.isError ? (
-          <p className="m-0 text-[13px] text-[var(--maher-error)]">{mutationErrorMessage(plan.error)}</p>
+        ) : existing.isError || plan.isError ? (
+          <p className="m-0 text-[13px] text-[var(--maher-error)]">{mutationErrorMessage(plan.error ?? existing.error)}</p>
         ) : (
           <div className="divide-y divide-[var(--maher-border)]">
-            {orders.map((q, idx) => {
+            {orders.map((q) => {
               const po = q.data;
               if (!po) return null;
-              const line = lines.find((l) => l.salesOrderLineId === po.salesOrderLineId) ?? lines[idx] ?? null;
+              const line = lines.find((l) => l.salesOrderLineId === po.salesOrderLineId) ?? null;
               return (
                 <section key={po.id} className="px-5 py-4">
                   <header className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -152,13 +174,13 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
                     <p className="m-0 text-[13px] text-[var(--maher-text-tertiary)]">{t('orderSetup.noStagesYet')}</p>
                   ) : (
                     <ol className="m-0 list-none space-y-1.5 p-0">
-                      {po.stages.map((stage, i) => {
-                        const task = stage.tasks[0];
+                      {po.stages.flatMap((stage, i) =>
+                        (stage.tasks.length ? stage.tasks : [undefined]).map((task) => {
                         const gate = isQualityGateStageCode(stage.stageDefinition.code);
                         const assignable = task && !LOCKED_STAGE.has(stage.status) && !LOCKED_TASK.has(task.status) && po.status !== 'COMPLETED' && po.status !== 'CANCELLED';
                         const workerName = task?.assignedEmployee ? `${task.assignedEmployee.firstName ?? ''} ${task.assignedEmployee.lastName ?? ''}`.trim() : null;
                         return (
-                          <li key={stage.id} className="flex items-center gap-3 rounded-[10px] bg-[var(--maher-surface-muted)] px-3 py-2">
+                          <li key={task?.id ?? stage.id} className="flex items-center gap-3 rounded-[10px] bg-[var(--maher-surface-muted)] px-3 py-2">
                             <span className="w-5 shrink-0 text-center text-[12px] tabular-nums text-[var(--maher-text-tertiary)]">{i + 1}</span>
                             <span className="min-w-0 flex-1">
                               <span className="flex flex-wrap items-center gap-1.5">
@@ -182,7 +204,8 @@ export function PlanStagesBoard({ salesOrderId, lines, released }: { salesOrderI
                             ) : null}
                           </li>
                         );
-                      })}
+                        }),
+                      )}
                     </ol>
                   )}
                 </section>

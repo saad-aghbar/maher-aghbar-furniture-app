@@ -10,9 +10,8 @@ function RedirectInner({ salesOrderId }: { salesOrderId: string }) {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const lineId = searchParams.get('lineId');
-    const qs = lineId ? `?lineId=${encodeURIComponent(lineId)}` : '';
-    router.replace(`/admin/sales-orders/${salesOrderId}/production-plan${qs}`);
+    const qs = searchParams.toString();
+    router.replace(`/admin/sales-orders/${salesOrderId}/production-plan${qs ? `?${qs}` : ''}`);
   }, [router, salesOrderId, searchParams]);
 
   return <Skeleton className="h-48 w-full" />;

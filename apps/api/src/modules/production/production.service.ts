@@ -41,7 +41,7 @@ import {
   productionBoardBucketWhere,
   type ProductionBoardBucketKey,
 } from './production-board-buckets';
-import { releasedToFactoryWhere } from './factory-release';
+import { isReleasedToFactory, releasedToFactoryWhere } from './factory-release';
 import {
   DEFAULT_FACTORY_TIMEZONE,
   assertValidOnDate,
@@ -123,6 +123,7 @@ export class ProductionService {
     const missing = listMissingExecutableTaskSpecs(
       order.stages.map((s) => ({
         id: s.id,
+        status: s.status,
         stageDefinitionId: s.stageDefinitionId,
         stageDefinition: s.stageDefinition,
         tasks: s.tasks,
@@ -955,16 +956,24 @@ export class ProductionService {
       : null;
     if (focusWhere) and.push(focusWhere);
 
+    const bucketAnd = bucketWhere.AND
+      ? Array.isArray(bucketWhere.AND)
+        ? bucketWhere.AND
+        : [bucketWhere.AND]
+      : [];
+    const { AND: _bucketAnd, ...bucketFields } = bucketWhere;
+    const mergedAnd = [...bucketAnd, ...and];
+
     return {
       archivedAt: null,
       ...customerScopeFilter(user),
       ...(query.status ? { status: query.status } : {}),
-      ...bucketWhere,
+      ...bucketFields,
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.assignedEmployeeId
         ? { tasks: { some: { assignedEmployeeId: query.assignedEmployeeId } } }
         : {}),
-      ...(and.length ? { AND: and } : {}),
+      ...(mergedAnd.length ? { AND: mergedAnd } : {}),
     };
   }
 
@@ -1897,18 +1906,15 @@ export class ProductionService {
    * send the calendar day in one shot without a prior Save.
    */
   async start(id: string, actorUserId?: string, plannedStartDateIso?: string) {
+    let order = await this.getById(id);
+    // Legacy on-floor orders remain released even when the old marker is absent.
+    if (isReleasedToFactory(order)) return order;
+
     if (plannedStartDateIso?.trim()) {
-      await this.setProductionStartAndSuggestSchedule(
-        id,
-        plannedStartDateIso.trim(),
-        actorUserId ?? 'system',
-      );
-    }
-
-    const order = await this.getById(id);
-
-    if (order.releasedToFactoryAt) {
-      return this.getById(id);
+      // Confirm saves the chosen day. Applying a suggested schedule is a
+      // separate action and must not overwrite manually planned task windows.
+      await this.update(id, { plannedStartDate: plannedStartDateIso.trim() });
+      order = await this.getById(id);
     }
 
     const allowed = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'];

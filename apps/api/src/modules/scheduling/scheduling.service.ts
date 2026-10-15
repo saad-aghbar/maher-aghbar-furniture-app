@@ -3208,7 +3208,7 @@ export class SchedulingService implements OnModuleInit {
             deliveries: {
               orderBy: { updatedAt: 'desc' },
               take: 1,
-              select: { status: true, deliveryDate: true },
+              select: { status: true, deliveryDate: true, actualDeliveredAt: true, customerConfirmedAt: true },
             },
           },
         },
@@ -3253,6 +3253,7 @@ export class SchedulingService implements OnModuleInit {
       projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
       plannedDeliveryDate: projectedDealer.planned,
       actualDeliveryDate: projectedDealer.actual,
+      customerConfirmedAt: delivery?.customerConfirmedAt ?? null,
       calendarDate: projectedDealer.view.calendarDate,
       customerStatus: projectedDealer.view.customerStatus,
       requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
@@ -3315,7 +3316,7 @@ export class SchedulingService implements OnModuleInit {
         deliveries: {
           orderBy: { updatedAt: 'desc' },
           take: 1,
-          select: { status: true, deliveryDate: true },
+          select: { status: true, deliveryDate: true, actualDeliveredAt: true, customerConfirmedAt: true },
         },
       },
     }),
@@ -3330,6 +3331,8 @@ export class SchedulingService implements OnModuleInit {
         number: true,
         status: true,
         deliveryDate: true,
+        actualDeliveredAt: true,
+        customerConfirmedAt: true,
         deliveryAddress: true,
         returnRequest: {
           select: {
@@ -3416,6 +3419,7 @@ export class SchedulingService implements OnModuleInit {
         projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
         plannedDeliveryDate: projectedDealer.planned,
         actualDeliveryDate: projectedDealer.actual,
+      customerConfirmedAt: delivery?.customerConfirmedAt ?? null,
         calendarDate: projectedDealer.view.calendarDate,
         customerStatus: projectedDealer.view.customerStatus,
         requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
@@ -3492,6 +3496,7 @@ export class SchedulingService implements OnModuleInit {
           projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
           plannedDeliveryDate: projectedDealer.planned,
           actualDeliveryDate: projectedDealer.actual,
+      customerConfirmedAt: delivery?.customerConfirmedAt ?? null,
           calendarDate: projectedDealer.view.calendarDate,
           customerStatus: projectedDealer.view.customerStatus,
           requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
@@ -3535,7 +3540,7 @@ export class SchedulingService implements OnModuleInit {
             deliveries: {
               orderBy: { updatedAt: 'desc' },
               take: 1,
-              select: { status: true, deliveryDate: true },
+              select: { status: true, deliveryDate: true, actualDeliveredAt: true, customerConfirmedAt: true },
             },
           },
         },
@@ -4354,7 +4359,7 @@ export class SchedulingService implements OnModuleInit {
       committedDeliveryDate?: Date | null;
     } | null;
     schedule?: Parameters<SchedulingService['classifyLoadedSchedule']>[1];
-    delivery: { status?: string | null; deliveryDate?: Date | string | null } | null;
+    delivery: { status?: string | null; deliveryDate?: Date | string | null; actualDeliveredAt?: Date | string | null; customerConfirmedAt?: Date | string | null } | null;
     requested: Date | string | null;
     suggested: Date | string | null;
     committed: Date | string | null;

@@ -18,6 +18,8 @@ export function classifyFloorTaskPhase(args: {
   anyWaitingProduction?: boolean;
   anyReadyToCollect?: boolean;
   anyPartial?: boolean;
+  /** Assigned work that is not executable yet (predecessor, unreleased, or still pending). */
+  waitingPrevious?: boolean;
 }): FloorTaskHint {
   const status = String(args.taskStatus ?? '').toUpperCase();
   if (args.openBlockerCount && args.openBlockerCount > 0) {
@@ -34,11 +36,25 @@ export function classifyFloorTaskPhase(args: {
       primaryAction: 'NONE',
     };
   }
-  if (status === 'IN_PROGRESS' || status === 'PAUSED') {
+  if (status === 'PAUSED') {
+    return {
+      phase: 'IN_PROGRESS',
+      labelKey: 'mobile.tasks.phasePaused',
+      primaryAction: 'COMPLETE',
+    };
+  }
+  if (status === 'IN_PROGRESS') {
     return {
       phase: 'IN_PROGRESS',
       labelKey: 'mobile.tasks.phaseInProgress',
       primaryAction: 'COMPLETE',
+    };
+  }
+  if (args.waitingPrevious || status === 'BLOCKED') {
+    return {
+      phase: 'WAITING_PREVIOUS',
+      labelKey: 'mobile.tasks.phaseWaitingPrevious',
+      primaryAction: 'NONE',
     };
   }
 
@@ -72,11 +88,13 @@ export function floorHintFromIncoming(args: {
   allReceived: boolean;
   lines: Array<{ statusKey: WipIncomingStatusKey }>;
   apiHint?: FloorTaskHint | null;
+  waitingPrevious?: boolean;
 }): FloorTaskHint {
   // Prefer live task status over API hint (incoming endpoint may pin READY).
   return classifyFloorTaskPhase({
     taskStatus: args.taskStatus,
     openBlockerCount: args.openBlockerCount,
+    waitingPrevious: args.waitingPrevious,
     consumesSemi: args.required,
     incomingRequired: args.required,
     allReceived: args.allReceived,
@@ -114,7 +132,7 @@ export function bucketOpenTaskForToday(args: {
     if (args.waitingPrevious || status === 'BLOCKED') return 'WAITING';
     if (status === 'NOT_STARTED' && args.needsReceive == null) return 'WAITING';
   }
-  if (status === 'READY' || status === 'NOT_STARTED') return 'DO_NOW';
+  if (status === 'READY' && !args.waitingPrevious) return 'DO_NOW';
   return 'WAITING';
 }
 

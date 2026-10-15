@@ -12,6 +12,7 @@ import {
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { inventoryDeepLink } from '@/lib/inventory-deep-link';
 import { useAuthMe } from '@/hooks/use-auth-me';
 import { FinishedOrderBoard } from '@/components/admin/finished-order-board';
 import { FinishedOrderDetail } from '@/components/admin/finished-order-detail';
@@ -284,7 +285,9 @@ async function uploadInventorySkuPhoto(file: File): Promise<string> {
   return `${API_URL}${res.downloadPath}`;
 }
 
-export default function InventoryPage() {
+export default function InventoryPage({ initialGroup = null }: { initialGroup?: string | null }) {
+  const linkedGroup = inventoryDeepLink(initialGroup);
+  const unknownGroup = Boolean(initialGroup?.trim()) && !linkedGroup;
   const locale = useLocale();
   const t = useTranslations('navigation');
   const ti = useTranslations('inventory');
@@ -302,9 +305,9 @@ export default function InventoryPage() {
   const canManageWarehouse = can(me.data, 'warehouse.manage');
 
   const [tab, setTab] = useState<Tab>('items');
-  const [lifecycle, setLifecycle] = useState<'materials' | 'semiFinished' | 'finished'>('materials');
+  const [lifecycle, setLifecycle] = useState<'materials' | 'semiFinished' | 'finished'>(linkedGroup?.lifecycle ?? 'materials');
   const [semiFilter, setSemiFilter] = useState<SemiOrderFilter>('active');
-  const [categoryGroup, setCategoryGroup] = useState<'fabric' | 'foam' | 'wood' | 'accessories'>('fabric');
+  const [categoryGroup, setCategoryGroup] = useState<'fabric' | 'foam' | 'wood' | 'accessories'>(linkedGroup?.categoryGroup ?? 'fabric');
   const router = useRouter();
   const [q, setQ] = useState('');
   const [fgSearch, setFgSearch] = useState('');
@@ -732,6 +735,12 @@ export default function InventoryPage() {
       if (!selectedItem || !warehouseId || !Number(quantity)) {
         throw new ApiClientError(ti('moveRequired'), 400);
       }
+      if (moveOpen !== 'receive') {
+        const onHand = Number(selectedItem.onHandQty ?? 0);
+        if (!(onHand > 0) || Number(quantity) > onHand) {
+          throw new ApiClientError('INSUFFICIENT_STOCK', 400);
+        }
+      }
       if (moveOpen === 'receive' && openReceipts.length > 0 && receiptKind !== 'manual') {
         if (!selectedPoId) {
           throw new ApiClientError(ti('choosePurchaseOrder'), 400);
@@ -1021,6 +1030,7 @@ export default function InventoryPage() {
     <div className="maher-stagger space-y-5">
       <InventoryHero title={t('inventory')} description={ti('hubHint')} actions={heroActions} overview={overview} groups={groupsQuery.data} />
       <InventoryScanBar />
+      {unknownGroup ? <Alert variant="warning">{ti('unknownGroup', { group: initialGroup ?? '' })}</Alert> : null}
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {actionError ? <Alert variant="error">{actionError}</Alert> : null}
 
@@ -1452,7 +1462,11 @@ export default function InventoryPage() {
                               <Button
                                 size="sm"
                                 variant="secondary"
-                                onClick={() => openMove('issue', row)}
+                                disabled={!(onHand > 0)}
+                                onClick={() => {
+                                  if (!(onHand > 0)) return;
+                                  openMove('issue', row);
+                                }}
                               >
                                 {ti('issue')}
                               </Button>

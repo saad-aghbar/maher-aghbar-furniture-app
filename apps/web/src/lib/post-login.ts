@@ -1,15 +1,34 @@
-import { resolveWebHomePath } from '@maher/permissions';
+import { resolveAppSurface } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
 
-/** After login, stay on this origin and land on the surface home. */
-export function redirectAfterLogin(user: AuthUser, locale: string, nextPath?: string | null): void {
-  if (typeof window === 'undefined') return;
-  const home = resolveWebHomePath(user);
-  if (nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')) {
-    const trimmed = nextPath.startsWith(`/${locale}/`) ? nextPath.slice(locale.length + 1) : nextPath;
-    const safe = trimmed === '/dashboard' || trimmed === 'dashboard' ? home : trimmed;
-    window.location.assign(`/${locale}${safe.startsWith('/') ? safe : `/${safe}`}`);
-    return;
-  }
-  window.location.assign(`/${locale}${home}`);
+export type LoginPortal = 'admin' | 'dealer' | 'worker';
+
+const PORTAL_SURFACE = {
+  admin: 'admin',
+  dealer: 'customer',
+  worker: 'employee',
+} as const;
+
+const PORTAL_HOME: Record<LoginPortal, string> = {
+  admin: '/admin/dashboard',
+  dealer: '/dealer/dashboard',
+  worker: '/worker/dashboard',
+};
+
+export function portalMatches(portal: LoginPortal, user: AuthUser): boolean {
+  return resolveAppSurface(user) === PORTAL_SURFACE[portal];
+}
+
+/** Locale-less path for the next-intl router. `next` is kept only inside the chosen portal. */
+export function loginDestination(portal: LoginPortal, locale: string, nextPath?: string | null): string {
+  const home = PORTAL_HOME[portal];
+  if (!nextPath || !nextPath.startsWith('/') || nextPath.startsWith('//')) return home;
+
+  let path = nextPath;
+  if (path.startsWith(`/${locale}/`)) path = path.slice(locale.length + 1);
+  if (!path.startsWith('/')) path = `/${path}`;
+
+  const prefix = `/${portal}`;
+  if (path === prefix || path.startsWith(`${prefix}/`)) return path;
+  return home;
 }

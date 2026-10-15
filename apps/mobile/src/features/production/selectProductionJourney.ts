@@ -40,6 +40,10 @@ export type ProductionWhereNow = {
   productTitle: string;
   imageUrl: string | null;
   currentStageName: string | null;
+  /** Status of the manufacturing task that is still open. Null once every manufacturing task is completed. */
+  currentWorkStatus: string | null;
+  /** Every manufacturing task is completed and inspection is the next step. */
+  inspectionNext: boolean;
   activeWorkerName: string | null;
   completedStageNames: string[];
   waitingStageNames: string[];
@@ -52,6 +56,31 @@ export type ProductionWhereNow = {
   operationalState: string;
   attentionCount: number;
 };
+
+const DONE_WORK = new Set(['COMPLETED', 'SKIPPED', 'DONE', 'CANCELLED']);
+const AFTER_MANUFACTURING = new Set(['INSPECTION', 'QC', 'QUALITY', 'PACKAGING', 'PACK', 'DELIVERY']);
+
+function isManufacturingCode(code: string | null | undefined): boolean {
+  const normalized = String(code ?? '').toUpperCase();
+  return normalized.length > 0 && !AFTER_MANUFACTURING.has(normalized);
+}
+
+function manufacturingStageRowsFinished(
+  stages: ProductionOrderDetail['stages'] | undefined,
+): boolean {
+  const rows = (stages ?? []).filter((stage) =>
+    isManufacturingCode(stage.code ?? stage.stageDefinition?.code),
+  );
+  return rows.length > 0 && rows.every((stage) => stageWorkDone(stage));
+}
+
+function stageWorkDone(stage: NonNullable<ProductionOrderDetail['stages']>[number]): boolean {
+  const tasks = stage.tasks ?? [];
+  if (tasks.length > 0) {
+    return tasks.every((task) => DONE_WORK.has(String(task.status ?? '').toUpperCase()));
+  }
+  return DONE_WORK.has(String(stage.status ?? '').toUpperCase());
+}
 
 function stageDisplayName(
   stage: NonNullable<ProductionOrderDetail['stages']>[number],
@@ -194,7 +223,8 @@ export function selectProductionJourney(
       (t.blockers ?? []).some((b) => !b.resolvedAt),
     );
     const primaryTask =
-      stage.tasks?.find((t) => t.status === 'IN_PROGRESS') ??
+      stage.tasks?.find((t) => t.status === 'IN_PROGRESS' || t.status === 'PAUSED') ??
+      stage.tasks?.find((t) => !DONE_WORK.has(String(t.status ?? '').toUpperCase())) ??
       stage.tasks?.[0] ??
       null;
     const problemReason =
@@ -202,11 +232,12 @@ export function selectProductionJourney(
       taskWithBlocker?.blockers?.find((b) => !b.resolvedAt)?.reason ??
       null;
 
+    const taskStatus = primaryTask?.status ? String(primaryTask.status) : null;
     return {
       key: `${code ?? 'stage'}:${index}`,
       code,
       name: stageDisplayName(stage, locale),
-      status: String(stage.status ?? 'PENDING'),
+      status: taskStatus ?? String(stage.status ?? 'PENDING'),
       sortOrder: stage.sortOrder ?? index,
       dependsOnCodes: depsList[index]!.dependsOnCodes,
       assigneeName: assigneeFromStage(stage),
@@ -270,6 +301,16 @@ export function selectProductionWhereNow(
   const currentFromApi = order.currentStage
     ? localizedName(locale, order.currentStage, order.currentStage.code)
     : null;
+  const openWork =
+    journey.find(
+      (stage) => isManufacturingCode(stage.code) && !DONE_WORK.has(stage.status.toUpperCase()),
+    ) ?? null;
+  const inspectionNext =
+    String(order.status ?? '').toUpperCase() === 'IN_PROGRESS' &&
+    !openWork &&
+    !currentFromApi &&
+    !active &&
+    manufacturingStageRowsFinished(order.stages);
 
   let plannedVsActual: ProductionWhereNow['plannedVsActualLabel'] = 'unknown';
   if (!order.actualStartDate) {
@@ -291,7 +332,9 @@ export function selectProductionWhereNow(
     dealerName: opts.dealerName,
     productTitle: opts.productTitle,
     imageUrl: opts.imageUrl,
-    currentStageName: currentFromApi || active?.name || null,
+    currentStageName: openWork?.name || currentFromApi || active?.name || null,
+    currentWorkStatus: openWork?.status ?? null,
+    inspectionNext,
     activeWorkerName: active?.assigneeName ?? null,
     completedStageNames: completed,
     waitingStageNames: waiting,

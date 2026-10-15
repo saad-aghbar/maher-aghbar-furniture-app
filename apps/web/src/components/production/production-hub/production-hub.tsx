@@ -10,8 +10,12 @@ import { OrderWorkflowSection } from '@/components/workflow/order-workflow-secti
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { apiFetch } from '@/lib/api-client';
+import { useAuthMe } from '@/hooks/use-auth-me';
+import { salesOrderPlanHref } from '@/lib/production-destination';
+import { can } from '@maher/permissions';
 import { useKitCopy } from '@/lib/kit-copy';
 import { allocationPersonLabel, fmtTime } from '@/lib/scheduling';
+import { manufacturingStagesFinished, openManufacturingWork } from '@/lib/production-lifecycle';
 import { isQualityGateStageCode } from '@/lib/workflow-terminal';
 import { localizedName } from '@maher/i18n';
 import {
@@ -61,6 +65,8 @@ export function ProductionHub({ id }: { id: string }) {
   const copy = useProductionCopy();
   const t = useTranslations('navigation');
   const tp = useTranslations('production');
+  const tSetup = useTranslations('mobile.production.setup');
+  const me = useAuthMe();
   const tc = useTranslations('catalog');
   const tm = useTranslations('mobile.production');
   const tSales = useTranslations('sales');
@@ -81,7 +87,11 @@ export function ProductionHub({ id }: { id: string }) {
   if (detail.isError || !ctl.order) return <ErrorBoard title={t('production')} description={mutationErrorMessage(detail.error)} onRetry={() => detail.refetch()} />;
   const order = ctl.order;
   const isCompleted = order.status === 'COMPLETED' || order.status === 'CANCELLED';
-  const canStart = !isCompleted && PRE_START.has(order.status);
+  const releasedToFactory = Boolean(order.releasedToFactoryAt || order.actualStartDate);
+  const legacyOnFloor = ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(order.status);
+  const notReleased = !releasedToFactory && !legacyOnFloor;
+  const showRelease = !isCompleted && PRE_START.has(order.status) && notReleased && Boolean(me.data && can(me.data, 'production-order.update'));
+  const canRelease = showRelease && order.readiness?.canStart === true;
   const openBlockers = order.stages.flatMap((s) => s.tasks.flatMap((task) => (task.blockers ?? []).filter((b) => !b.resolvedAt).map((b) => ({ ...b, task, stage: s }))));
   const title = order.product ? localizedName(copy.locale, { nameEn: order.product.nameEn ?? '', nameAr: order.product.nameAr, nameHe: order.product.nameHe }, order.product.nameEn ?? '') || order.productDescription : order.productDescription || order.number;
   const due = order.committedDeliveryDate ?? order.plannedCompletionDate ?? order.requiredDeliveryDate;
@@ -89,6 +99,20 @@ export function ProductionHub({ id }: { id: string }) {
   const late = !isCompleted && days != null && days < 0;
   const tone: BoardTone = isCompleted ? 'success' : openBlockers.length || order.status === 'ON_HOLD' ? 'error' : late ? 'error' : productionTone(order.status);
   const currentStage = order.stages.find((s) => s.stageDefinition.code === order.currentStageCode);
+  const openWork = openManufacturingWork(order.stages);
+  const inspectionNext =
+    order.status === 'IN_PROGRESS' &&
+    !openWork &&
+    !order.currentStageCode &&
+    manufacturingStagesFinished(order.stages) &&
+    ctl.queries.delivery.data?.status?.toUpperCase() !== 'DELIVERED';
+  const currentLine = openWork
+    ? `${localizedName(copy.locale, openWork.stage.stageDefinition)} · ${copy.status(openWork.status)}`
+    : currentStage
+      ? localizedName(copy.locale, currentStage.stageDefinition)
+      : inspectionNext
+        ? tp('manufacturingFinishedInspectionNext')
+        : order.currentStageCode ?? '—';
   const doneStages = order.stages.filter((s) => s.status === 'COMPLETED' || s.status === 'SKIPPED').length;
 
   const tabs = [
@@ -124,7 +148,7 @@ export function ProductionHub({ id }: { id: string }) {
           </span>
         }
         facts={[
-          { label: tc('current'), value: currentStage ? localizedName(copy.locale, currentStage.stageDefinition) : order.currentStageCode ?? '—' },
+          { label: tc('current'), value: currentLine },
           { label: tm('dueDate'), value: copy.date(due), ltr: true, tone: late ? 'error' : undefined },
           { label: tSales('desk.stage'), value: days == null || isCompleted ? '—' : late ? tSales('desk.lateBy', { count: Math.abs(days) }) : tSales('desk.dueIn', { count: days }), ltr: true, tone: late ? 'error' : days != null && days <= 2 ? 'warning' : undefined },
           { label: tc('priority'), value: copy.priority(order.priority), tone: priorityTone(order.priority) },
@@ -132,10 +156,13 @@ export function ProductionHub({ id }: { id: string }) {
           { label: tm('blocked'), value: String(openBlockers.length), ltr: true, tone: openBlockers.length ? 'error' : 'success' },
         ]}
         primary={
-          canStart ? (
-            <Button leadingIcon={<Play className="h-4 w-4" />} onClick={() => setConfirmStart(true)}>
-              {tc('startProduction')}
-            </Button>
+          showRelease ? (
+            <div className="flex max-w-xs flex-col items-stretch gap-1.5">
+              <Button disabled={!canRelease} leadingIcon={<Play className="h-4 w-4" />} onClick={() => setConfirmStart(true)}>
+                {tSetup('releaseToFactory')}
+              </Button>
+              {!canRelease ? <p className="m-0 text-center text-[12px] leading-4 text-[var(--maher-text-secondary)]">{tSetup('incompleteBody')}</p> : null}
+            </div>
           ) : order.salesOrder ? (
             <Button variant="secondary" onClick={() => router.push(`/${copy.locale}/admin/sales-orders/${order.salesOrder!.id}`)}>
               {tSales('systemOrderNumber')}
@@ -147,7 +174,7 @@ export function ProductionHub({ id }: { id: string }) {
             aria-label={tCommon('more')}
             trigger={<Button variant="secondary" aria-label={tCommon('more')}><MoreHorizontal className="h-4 w-4" /></Button>}
             items={[
-              ...(order.salesOrder ? [{ id: 'so', label: tSales('systemOrderNumber'), href: `/admin/sales-orders/${order.salesOrder.id}` }, { id: 'plan', label: t('productionPlan'), href: `/admin/sales-orders/${order.salesOrder.id}/production-plan` }] : []),
+              ...(order.salesOrder ? [{ id: 'so', label: tSales('systemOrderNumber'), href: `/admin/sales-orders/${order.salesOrder.id}` }, { id: 'plan', label: t('productionPlan'), href: salesOrderPlanHref(order.salesOrder.id, order.salesOrderLineId) }] : []),
               ...(order.returnRequest ? [{ id: 'ret', label: order.returnRequest.number, href: `/admin/returns/${order.returnRequest.id}` }] : []),
               { id: 'resync', label: tp('planResync'), icon: <RefreshCw className="h-4 w-4" />, onSelect: () => ctl.resync.mutate(), separator: true },
             ]}
@@ -184,9 +211,9 @@ export function ProductionHub({ id }: { id: string }) {
 
       <ConfirmDialog
         open={confirmStart}
-        title={tp('startConfirmTitle')}
-        description={tp('startConfirmDescription')}
-        confirmLabel={tc('startProduction')}
+        title={tSetup('releaseConfirmTitle')}
+        description={tSetup('releaseConfirmBody')}
+        confirmLabel={tSetup('releaseToFactory')}
         cancelLabel={tCommon('cancel')}
         loading={ctl.start.isPending}
         onClose={() => setConfirmStart(false)}
@@ -334,7 +361,8 @@ function TasksTab({ ctl }: { ctl: ProductionOrderCtl }) {
         <ol className="divide-y divide-[var(--maher-border)]">
           {order.stages.map((stage, index) => {
             const task = stage.tasks[0];
-            const stageTone = productionTone(stage.status === 'BLOCKED' ? 'ON_HOLD' : stage.status === 'COMPLETED' ? 'COMPLETED' : stage.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : stage.status === 'READY_FOR_INSPECTION' ? 'QUALITY_CHECK' : 'PLANNED');
+            const rowStatus = task?.status ?? stage.status;
+            const stageTone = productionTone(rowStatus === 'BLOCKED' ? 'ON_HOLD' : rowStatus === 'COMPLETED' ? 'COMPLETED' : rowStatus === 'IN_PROGRESS' || rowStatus === 'PAUSED' ? 'IN_PROGRESS' : rowStatus === 'READY_FOR_INSPECTION' ? 'QUALITY_CHECK' : 'PLANNED');
             const gate = isQualityGateStageCode(stage.stageDefinition.code);
             const docs = task ? docsFor(task.id) : [];
             const running = task?.timing?.status === 'running';
@@ -347,7 +375,7 @@ function TasksTab({ ctl }: { ctl: ProductionOrderCtl }) {
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-[14px] font-semibold text-[var(--maher-text-primary)]">{localizedName(copy.locale, stage.stageDefinition)}</span>
                     <Stamp tone={stageTone} size="sm">
-                      {copy.status(stage.status)}
+                      {copy.status(rowStatus)}
                     </Stamp>
                     {gate ? <Stamp tone="info" size="sm">{tp('hubQuality')}</Stamp> : null}
                   </span>

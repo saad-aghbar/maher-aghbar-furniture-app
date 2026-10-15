@@ -532,6 +532,10 @@ export function ProductionDetailScreen({
   };
 
   const onRelease = () => {
+    if (!releasedToFactory && !floorStarted) {
+      setReleaseConfirmOpen(false);
+      return;
+    }
     setStartReasons([]);
     startMutation.mutate(undefined, {
       onSuccess: () => {
@@ -1256,6 +1260,7 @@ export function ProductionDetailScreen({
                 poStatus={detail.status}
                 currentStageCode={query.data?.currentStage?.code ?? null}
                 deliveryStatus={deliveryQuery.data?.status ?? null}
+                manufacturingFinished={whereNow?.inspectionNext ?? false}
               />
               {/* Ready for Factory: Replan only — no priority/delivery free edits. */}
               {canUpdate && !isReadyDossier ? (
@@ -1794,23 +1799,33 @@ export function ProductionDetailScreen({
               canAssign,
               canUpdate,
             }) === 'release' ? (
-              <PrimaryButton
-                label={
-                  host === 'orders'
-                    ? t('mobile.orders.journey.confirmPlan')
-                    : t('mobile.production.setup.releaseToFactory')
-                }
-                loading={startMutation.isPending}
-                disabled={startMutation.isPending}
-                onPress={() => {
-                  void haptics.selection();
-                  setReleaseConfirmOpen(true);
-                }}
-                style={{
-                  ...productionBoardShadow(colorScheme),
-                  borderRadius: theme.radius.xl,
-                }}
-              />
+              <>
+                <PrimaryButton
+                  label={
+                    host === 'orders'
+                      ? t('mobile.orders.journey.confirmPlan')
+                      : t('mobile.production.setup.releaseToFactory')
+                  }
+                  loading={startMutation.isPending}
+                  disabled={
+                    startMutation.isPending || (!releasedToFactory && !floorStarted)
+                  }
+                  onPress={() => {
+                    if (!releasedToFactory && !floorStarted) return;
+                    void haptics.selection();
+                    setReleaseConfirmOpen(true);
+                  }}
+                  style={{
+                    ...productionBoardShadow(colorScheme),
+                    borderRadius: theme.radius.xl,
+                  }}
+                />
+                {!releasedToFactory && !floorStarted ? (
+                  <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
+                    {t('mobile.productionSetup.notReleasedToFactory')}
+                  </AppText>
+                ) : null}
+              </>
             ) : shouldOpenPlanSheet({
                 canStart: Boolean(readiness?.canStart),
                 executableCount: executableTasks.length,

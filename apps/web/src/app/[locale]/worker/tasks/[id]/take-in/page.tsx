@@ -9,11 +9,26 @@ import { ArrowRight, ScanLine } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+type IncomingLine = {
+  id?: string;
+  kitId?: string | null;
+  qrCode?: string | null;
+  status?: string;
+  statusKey?: string;
+  label?: string | null;
+  fromStage?: string | null;
+  fromStageCode?: string | null;
+};
+
 type Incoming = {
   required: boolean;
   allReceived: boolean;
-  lines?: Array<{ id: string; qrCode?: string; status?: string; label?: string | null; fromStage?: string | null }>;
+  lines?: IncomingLine[];
 };
+
+function lineStatus(line: IncomingLine) {
+  return String(line.statusKey ?? line.status ?? '').toUpperCase();
+}
 
 export default function TaskTakeInPage({ params }: { params: { id: string } }) {
   const t = useTranslations('production');
@@ -48,7 +63,7 @@ export default function TaskTakeInPage({ params }: { params: { id: string } }) {
 
   const board = incoming.data;
   const lines = board?.lines ?? [];
-  const received = lines.filter((l) => (l.status ?? '').toUpperCase() === 'RECEIVED').length;
+  const received = lines.filter((line) => lineStatus(line) === 'RECEIVED').length;
   const ready = Boolean(board && (!board.required || board.allReceived));
   const label = (code: string) => {
     try {
@@ -72,7 +87,7 @@ export default function TaskTakeInPage({ params }: { params: { id: string } }) {
         status={{ label: ready ? label('RECEIVED') : label('AWAITING_RECEIPT'), tone: ready ? 'success' : 'info' }}
         facts={[
           { label: t('kitLines'), value: `${received}/${lines.length}`, ltr: true },
-          { label: tCommon('status'), value: board?.required ? label('PENDING') : label('READY'), tone: board?.required && !board.allReceived ? 'info' : 'success' },
+          { label: tCommon('status'), value: board?.allReceived ? label('RECEIVED') : board?.required ? label('PENDING') : label('READY'), tone: board?.required && !board.allReceived ? 'info' : 'success' },
         ]}
         primary={ready ? <Button trailingIcon={<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />} onClick={() => router.push(`/worker/tasks/${params.id}`)}>{t('takeInContinue')}</Button> : <Button leadingIcon={<ScanLine className="h-4 w-4" />} onClick={scan} loading={receive.isPending}>{tCommon('scanTitle')}</Button>}
       >
@@ -88,8 +103,9 @@ export default function TaskTakeInPage({ params }: { params: { id: string } }) {
         ) : (
           <Ledger className="px-5 pb-2">
             {lines.map((line) => {
-              const done = (line.status ?? '').toUpperCase() === 'RECEIVED';
-              return <LedgerRow key={line.id} label={<Ltr className="font-medium">{line.label ?? line.qrCode ?? line.id}</Ltr>} hint={line.fromStage ?? (line.qrCode && line.label ? line.qrCode : undefined)} value={<Stamp tone={done ? 'success' : 'info'} size="sm">{label(line.status ?? 'PENDING')}</Stamp>} tone={done ? 'success' : 'info'} stamp />;
+              const status = lineStatus(line);
+              const done = status === 'RECEIVED';
+              return <LedgerRow key={line.kitId ?? line.id ?? line.qrCode ?? status} label={<Ltr className="font-medium">{line.label ?? line.qrCode ?? line.id}</Ltr>} hint={line.fromStage ?? line.fromStageCode ?? (line.qrCode && line.label ? line.qrCode : undefined)} value={<Stamp tone={done ? 'success' : 'info'} size="sm">{label(status || 'PENDING')}</Stamp>} tone={done ? 'success' : 'info'} stamp />;
             })}
           </Ledger>
         )}

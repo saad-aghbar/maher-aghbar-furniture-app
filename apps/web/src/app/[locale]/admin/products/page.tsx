@@ -349,7 +349,8 @@ function ProductsPageInner() {
                   <div className="flex flex-1 flex-col gap-1.5 px-3 pb-3 pt-2.5">
                     <p className="line-clamp-2 text-[14px] font-semibold leading-5 text-[var(--maher-text-primary)]">{title}</p>
                     <p className="truncate text-[12px] leading-4 text-[var(--maher-text-secondary)]">
-                      {p.category ? localizedName(copy.locale, p.category) : <Ltr>{p.sku}</Ltr>}
+                      <Ltr>{p.sku}</Ltr>
+                      {p.category ? <span>{` · ${localizedName(copy.locale, p.category)}`}</span> : null}
                     </p>
                     <div className="mt-auto flex items-end justify-between gap-2 border-t border-[var(--maher-border)] pt-2">
                       <span className="min-w-0">

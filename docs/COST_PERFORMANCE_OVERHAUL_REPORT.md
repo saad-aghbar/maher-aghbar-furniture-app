@@ -147,7 +147,7 @@ Seeded by `packages/database/prisma/demo/cost-performance-uat.ts` after catalog,
 
 ## 21. Simulator UAT
 
-**Not a physical iPhone pass.** Device: iPhone 17 Simulator, iOS 26.5. Account **`admin` / `123`**. `pnpm demo:reset` + `pnpm demo:validate` passed (206 sales orders). Walk screenshots were captured on the agent machine under `/tmp/cost-uat/`.
+**Not a physical iPhone pass.** Device: iPhone 17 Simulator, iOS 26.5. Account **`admin` / `123`**. `pnpm demo:reset` + `pnpm demo:validate` passed (206 sales orders). Walk screenshots were captured on the test workstation under `/tmp/cost-uat/`.
 
 Device civil date during the walk was **2026-09-14** (Monday), so in-app **Today** is 14 Sep and **This week** is Sunday 13 Sep → 14 Sep. Seeded “week not today” rows (~8 Sep) sit in **This month**, not This week, relative to the Simulator clock. API month (delivered) matched Money **₪29,933.60**.
 

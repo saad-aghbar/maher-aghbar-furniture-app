@@ -1,4 +1,5 @@
 import { ConditionalShell } from '@/components/conditional-shell';
+import { DocumentLocale } from '@/components/document-locale';
 import { DeskToolsI18n } from '@/providers/desk-tools-i18n';
 import { QueryProvider } from '@/providers/query-provider';
 import { StatusI18nProvider } from '@/providers/status-i18n-provider';
@@ -33,6 +34,7 @@ export default async function LocaleLayout({ children, params }: Props) {
 
   return (
     <NextIntlClientProvider messages={messages}>
+      <DocumentLocale />
       <ThemeProvider>
         <StatusI18nProvider>
           <QueryProvider>

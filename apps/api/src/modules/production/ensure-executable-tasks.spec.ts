@@ -4,6 +4,15 @@ import {
 } from './ensure-executable-tasks';
 
 describe('ensure-executable-tasks', () => {
+  it('does not recreate open work on completed or skipped stages', () => {
+    const specs = listMissingExecutableTaskSpecs(
+      ['COMPLETED', 'SKIPPED', 'PENDING'].map((status) => ({
+        id: status, status, stageDefinitionId: 'carpentry',
+        stageDefinition: { code: 'CARPENTRY', executionKind: 'PRODUCTION' }, tasks: [],
+      })), 'Sofa', 1,
+    );
+    expect(specs.map((spec) => spec.stageInstanceId)).toEqual(['PENDING']);
+  });
   it('excludes LOGISTICS/DELIVERY and stages that already have tasks', () => {
     const specs = listMissingExecutableTaskSpecs(
       [

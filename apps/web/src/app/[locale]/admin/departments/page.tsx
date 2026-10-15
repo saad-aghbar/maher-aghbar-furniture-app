@@ -1,6 +1,15 @@
 import { redirect } from 'next/navigation';
+import { localeCompatHref } from '@/lib/compat-href';
 
-/** Departments — org structure under Settings. */
-export default function DepartmentsRedirectPage({ params }: { params: { locale: string } }) {
-  redirect(`/${params.locale}/admin/settings`);
+type Search = Record<string, string | string[] | undefined>;
+
+/** Department assignment lives on the employee desk. */
+export default function DepartmentsRedirectPage({
+  params,
+  searchParams,
+}: {
+  params: { locale: string };
+  searchParams?: Search;
+}) {
+  redirect(localeCompatHref(params.locale, '/admin/employees', searchParams));
 }

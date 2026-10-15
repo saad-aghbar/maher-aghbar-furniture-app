@@ -213,7 +213,7 @@ describe('TasksService assignment isolation', () => {
     );
   });
 
-  it('forbids Worker A from viewing own task while stage is still PENDING', async () => {
+  it('shows an assigned worker their own task while the stage is still waiting', async () => {
     const { service, productionTaskFindUniqueOrThrow } = makeService();
     productionTaskFindUniqueOrThrow.mockResolvedValue({
       id: 'task-locked',
@@ -229,11 +229,9 @@ describe('TasksService assignment isolation', () => {
       },
     });
 
-    await expect(
-      service.getById('task-locked', 'worker-a', WORKER_PERMS),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'STAGE_LOCKED' }),
-    });
+    const result = await service.getById('task-locked', 'worker-a', WORKER_PERMS);
+    expect(result.id).toBe('task-locked');
+    expect(result.waitingOnPredecessor).toBe(true);
   });
 
   it('allows Worker A to view own unlocked READY task and strips progressPercent', async () => {

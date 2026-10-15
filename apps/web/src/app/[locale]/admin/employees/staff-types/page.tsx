@@ -9,7 +9,8 @@ import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, MoreHorizontal, Pencil, Power, Trash2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 
 export type StaffTypeRow = {
   id: string;
@@ -29,11 +30,24 @@ export type StaffTypeRow = {
 };
 
 export default function StaffTypesPage() {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={4} />}>
+      <StaffTypesDesk />
+    </Suspense>
+  );
+}
+
+function StaffTypesDesk() {
+  const searchParams = useSearchParams();
   const locale = useLocale();
   const t = useTranslations('users');
   const tCommon = useTranslations('common');
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (searchParams.get('create') === '1') router.replace('/admin/employees/staff-types/new');
+  }, [router, searchParams]);
   const [banner, setBanner] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ type: 'deactivate' | 'delete'; id: string } | null>(null);

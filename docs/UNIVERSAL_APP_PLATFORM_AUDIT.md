@@ -382,13 +382,13 @@ Respond to **available window width**, not device marketing name. An iPad in 1/3
 
 ## 12. Universal aesthetic strategy
 
-From `.cursor/skills/mobile-floor-aesthetic/SKILL.md`:
+From the [mobile design system](mobile-design-system.md):
 
 **Keep universal:** parchment/linen canvas; oak/bronze brand; board recipe (rail, header band, inset meta, shadow); restrained motion; tactile hierarchy; StatusBadge; RTL rules; Arabic title weight.
 
 **Change on large screens:** denser information; smaller radii (e.g. `lg`/`md` vs `xl`); more dividers; less vertical stacking; tables / split panes; persistent navigation; pointer hover; tighter spacing; do **not** simply enlarge phone cards.
 
-**Skill evolution (do not create yet):** prefer shared base + layout sections, or evolve to `maher-universal-app-aesthetic` with density tokens. Phone skill remains the touch-density source of truth.
+**Design-system evolution (future):** prefer shared base + layout sections, or evolve to `maher-universal-app-aesthetic` with density tokens. Phone design tokens remain the touch-density source of truth.
 
 ---
 
@@ -967,7 +967,7 @@ Website remains **FROZEN / FUTURE OPTIONAL WEB CLIENT** — same backend concept
 
 ## 49. First implementation phase
 
-**After this audit, give Cursor:**
+**Implementation handoff:**
 
 1. Adaptive layout API (`useMaherLayout`) + tests  
 2. Shared navigation shell (admin tabs → rail → sidebar from `tabConfig` + `ADMIN_OVERFLOW_MODULES`)  
@@ -995,7 +995,7 @@ Website remains **FROZEN / FUTURE OPTIONAL WEB CLIENT** — same backend concept
 | O5 | When to enable Mac App Store “iPad app on Mac” | After Phase 4 UAT |
 | O6 | Whether factory mandates Windows terminals in year 1 | Business |
 | O7 | FlashList adoption for desktop-dense lists | Open |
-| O8 | Evolve floor skill vs new universal aesthetic skill | Prefer after Phase 2 |
+| O8 | Extend floor design tokens or introduce universal design tokens | Prefer after Phase 2 |
 | O9 | Delivery load typed-scan before desktop factory UAT | Required |
 | O10 | Dirty worktree — keep universal work off demo/users branch noise | Process |
 

@@ -15,7 +15,8 @@ import { useRouter } from '@/i18n/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Armchair, Truck, Undo2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 interface CustomerRequestItem {
   id: string;
@@ -123,6 +124,15 @@ function mediaSrc(url: string | null | undefined): string | null {
 }
 
 export default function OrderTrackingPage({ params }: { params: { id: string } }) {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={4} />}>
+      <OrderTrackingDesk params={params} />
+    </Suspense>
+  );
+}
+
+function OrderTrackingDesk({ params }: { params: { id: string } }) {
+  const searchParams = useSearchParams();
   const t = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
@@ -145,6 +155,11 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
     queryKey: ['order', params.id],
     queryFn: () => apiFetch<OrderDetail>(`/api/v1/sales-orders/${params.id}`),
   });
+
+  useEffect(() => {
+    if (searchParams.get('tab') !== 'progress' || !data) return;
+    document.getElementById('dealer-order-progress')?.scrollIntoView({ block: 'start' });
+  }, [data, searchParams]);
 
   const queryClient = useQueryClient();
   const confirmReceiptMutation = useMutation({
@@ -438,7 +453,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
       ) : null}
 
       <MotionSection delayMs={140}>
-      <Board tone="brand">
+      <Board id="dealer-order-progress" tone="brand" className="scroll-mt-24">
         <Board.Header title={t('tracking')} meta={pos.length ? <Stamp tone="brand" size="sm">{pos.length}</Stamp> : undefined} />
         {pos.length === 0 ? (
           <Board.Empty title={t('noProductionYet')} />

@@ -4,7 +4,7 @@ Date: 2026-09-15 (second run, same calendar day as the first attempt)
 
 Slices 1–7 remain complete (catalog → persist → `NotificationsService.emit` → inbox + outbox → Expo when a deliverable token exists). This session is **acceptance testing of the real APNs path only**. No topic, outbox, recipient, or permission architecture was changed.
 
-Paired protocol: agent drove environment lock, EAS, DB inspection; a physical operator would install/tap. Lock-screen taps never started because no push-capable IPA exists.
+Environment lock, EAS setup, and DB inspection were performed before the planned physical installation and tap checks. Lock-screen taps never started because no push-capable IPA exists.
 
 ## Environment lock (printed before any install/build)
 
@@ -39,7 +39,7 @@ Paired protocol: agent drove environment lock, EAS, DB inspection; a physical op
 **Push-capability stop:** EAS `development-device --platform ios`:
 
 1. `--non-interactive` → `EAS CLI couldn't find any credentials suitable for internal distribution`.
-2. Interactive → encryption prompt answered **yes** (could not write `ITSAppUsesNonExemptEncryption` into dynamic `app.config.ts`; left unchanged — not a notification-catalog change). Then **Apple ID login required**. No Apple password was entered from this agent.
+2. Interactive → encryption prompt answered **yes** (could not write `ITSAppUsesNonExemptEncryption` into dynamic `app.config.ts`; left unchanged — not a notification-catalog change). Then **Apple ID login required**. No Apple password was entered.
 3. Expo account has **no Apple team**, so it cannot generate a push-capable internal provisioning profile / APNs key.
 
 Local Personal Team profile `iOS Team Provisioning Profile: jo.maheraghbar.furniture` entitlements are only `application-identifier`, team id, `get-task-allow`, keychain groups — **no `aps-environment`**. Per freeze rules, Expo Go and this Personal Team binary were **not** used as substitutes.
@@ -117,7 +117,7 @@ No BLOCKER/HIGH/MEDIUM/LOW **product** defects were demonstrated by physical pus
 Infrastructure blockers (must clear before a re-run; **not** notification-catalog work):
 
 1. **No push-capable iOS binary** — zero EAS iOS builds; Expo account has **no Apple team**; local Personal Team profile has **no `aps-environment`**.
-2. **EAS internal-distribution credentials missing** — cloud `development-device` iOS stops at Apple ID / credential setup. Agent did not submit an Apple password.
+2. **EAS internal-distribution credentials missing** — cloud `development-device` iOS stops at Apple ID / credential setup. No Apple password was submitted.
 3. **No `DevicePushToken`** — dispatcher cannot call Expo (`no_deliverable_device`).
 4. **Paid Apple Developer team + APNs key on EAS** still not linked (`APPLE_TEAM_ID` unset; EAS Apple teams empty).
 5. **Do not use** `preview`/`production` EAS profiles until real non-production HTTPS APIs exist (hosts still have no DNS). Correct UAT API remains local/LAN demo.

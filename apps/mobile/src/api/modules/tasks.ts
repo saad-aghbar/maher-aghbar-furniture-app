@@ -137,6 +137,9 @@ export type TaskDetail = TaskListItem & {
     requiresPhotos?: boolean;
     executionKind?: string | null;
   };
+  stageInstance?: { status?: string | null } | null;
+  /** Server: this assigned stage is visible but not executable yet. */
+  waitingOnPredecessor?: boolean;
   /** Snapshot: stage produces semi-finished WIP kit pieces. */
   producesSemiFinished?: boolean;
   /** Soft target piece count from workflow snapshot (produce-semi only). */

@@ -70,6 +70,9 @@ export interface ProductionDetail {
   requiredDeliveryDate?: string | null;
   committedDeliveryDate?: string | null;
   actualCompletionDate?: string | null;
+  readiness?: { canStart: boolean };
+  releasedToFactoryAt?: string | null;
+  actualStartDate?: string | null;
   estimatedMinutes?: number | null;
   currentStageCode?: string | null;
   manufacturingComplexity?: string | null;
@@ -111,6 +114,7 @@ export const LOCKED_TASK = new Set(['COMPLETED', 'CANCELLED', 'IN_PROGRESS', 'RE
 export function useProductionOrder(id: string) {
   const tp = useTranslations('production');
   const tc = useTranslations('catalog');
+  const tSetup = useTranslations('mobile.production.setup');
   const tCommon = useTranslations('common');
   const toast = useToast();
   const qc = useQueryClient();
@@ -154,7 +158,7 @@ export function useProductionOrder(id: string) {
   const start = useMutation({
     mutationFn: (plannedStartDate?: string) => apiFetch(`/api/v1/production-orders/${id}/start`, { method: 'POST', body: JSON.stringify(plannedStartDate ? { plannedStartDate } : {}) }),
     onSuccess: async () => {
-      toast.success(tc('productionStarted'));
+      toast.success(tSetup('startSuccess'));
       await invalidate();
     },
     onError,

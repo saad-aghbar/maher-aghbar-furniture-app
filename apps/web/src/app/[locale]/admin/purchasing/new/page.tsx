@@ -35,7 +35,8 @@ import {
 import { localizedName } from "@maher/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 type Warehouse = {
   id: string;
@@ -92,6 +93,14 @@ const CATEGORIES = [
 ] as const;
 
 export default function PurchaseOrderBuilderPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+      <PurchaseOrderBuilder />
+    </Suspense>
+  );
+}
+
+function PurchaseOrderBuilder() {
   const locale = useLocale();
   const router = useRouter();
   const tc = useTranslations("catalog");
@@ -101,7 +110,8 @@ export default function PurchaseOrderBuilderPage() {
   const tNav = useTranslations("navigation");
   const { openScanner } = useCodeScanner();
 
-  const [supplierId, setSupplierId] = useState("");
+  const urlSearch = useSearchParams();
+  const [supplierId, setSupplierId] = useState(() => urlSearch.get("supplierId") ?? "");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [lines, setLines] = useState<BuilderLine[]>([]);

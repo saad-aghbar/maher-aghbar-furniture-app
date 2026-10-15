@@ -65,7 +65,7 @@ export function ProductionBoard({
                   alignItems: 'center',
                 }}
               >
-                <AppText variant="label" weight="medium" style={{ flex: 1 }} numberOfLines={1}>
+                <AppText variant="label" weight="medium" style={{ flex: 1 }} numberOfLines={2}>
                   {label}
                 </AppText>
                 <CountUp value={tile.count} variant="title" color={colors.brand} />

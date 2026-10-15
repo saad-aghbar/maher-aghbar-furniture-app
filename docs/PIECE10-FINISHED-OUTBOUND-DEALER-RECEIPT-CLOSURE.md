@@ -193,7 +193,7 @@ Report: `docs/piece10-finished-outbound-uat-report.md`
 
 ### Visual checklist (§41)
 
-Honesty rule: **PENDING** = not physically observed in Cursor (HANDSET/BROWSER). Code presence ≠ observed pass.
+Honesty rule: **PENDING** = not physically observed during verification (HANDSET/BROWSER). Code presence ≠ observed pass.
 
 | Check | Code | Observed |
 |---|---|---|
@@ -280,7 +280,7 @@ Still for you on device: aesthetic/RTL feel (HANDSET / BROWSER).
 
 ## Known gaps / honesty
 
-- HANDSET / BROWSER not physically observed in Cursor
+- HANDSET / BROWSER not physically observed during verification
 - Urgency chip counts on FG board remain client-side on the fetched page; lot **dataset** count uses server `meta.totalItems` for scope/q/warehouse
 - Dedicated “left factory” template reuses `DELIVERY_APPROACHING` code with updated copy (re-seed foundation for DB templates)
 

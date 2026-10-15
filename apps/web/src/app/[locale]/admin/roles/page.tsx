@@ -1,6 +1,15 @@
 import { redirect } from 'next/navigation';
+import { localeCompatHref } from '@/lib/compat-href';
 
-/** Roles & permissions — managed under Settings. */
-export default function RolesRedirectPage({ params }: { params: { locale: string } }) {
-  redirect(`/${params.locale}/admin/settings`);
+type Search = Record<string, string | string[] | undefined>;
+
+/** Staff types are the role editor. */
+export default function RolesRedirectPage({
+  params,
+  searchParams,
+}: {
+  params: { locale: string };
+  searchParams?: Search;
+}) {
+  redirect(localeCompatHref(params.locale, '/admin/employees/staff-types', searchParams));
 }

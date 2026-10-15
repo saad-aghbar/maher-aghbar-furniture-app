@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { useLocale } from '@/i18n';
+import { presentStatus } from '@/lib/presentStatus';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { ProductionWhereNow } from '../selectProductionJourney';
@@ -15,6 +16,15 @@ type Props = {
   where: ProductionWhereNow;
   onPressImage?: () => void;
 };
+
+function currentWorkLine(where: ProductionWhereNow, t: (key: string) => string): string {
+  if (where.currentWorkStatus && where.currentStageName) {
+    const state = presentStatus(where.currentWorkStatus, t);
+    return state ? `${where.currentStageName} · ${state}` : where.currentStageName;
+  }
+  if (where.inspectionNext) return t('mobile.production.dossier.manufacturingFinishedInspectionNext');
+  return where.currentStageName ?? '—';
+}
 
 function Fact({
   label,
@@ -158,7 +168,7 @@ export function ProductionWhereNowBoard({ where, onPressImage }: Props) {
         <View style={productionInsetStyle(theme, colors)}>
           <Fact
             label={t('mobile.production.dossier.currentStage')}
-            value={where.currentStageName ?? '—'}
+            value={currentWorkLine(where, t)}
             tone="brand"
           />
           <Fact

@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Href } from 'expo-router';
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
-import { can } from '@maher/permissions';
 import { ApiError } from '@/api/errors';
-import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -43,16 +41,13 @@ export function OrderProductionPlanScreen({
   const { windowClass, isWide } = useMaherLayout();
   const desk = isAtLeast(windowClass, 'expanded');
   const nestDesk = desk && !embedded;
-  const { user } = useAuth();
   const router = useRouter();
   const query = useSalesOrderQuery(salesOrderId, Boolean(salesOrderId));
   const setupQuery = useOrderProductionSetupQuery(salesOrderId, Boolean(salesOrderId));
-  const canEditSetup = can(user, 'production.setup.edit');
   const actions = useOrderProductionSetupActions(salesOrderId);
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
   const [ensuredPoId, setEnsuredPoId] = useState<string | null>(null);
-  const attempted = useRef(false);
 
   const order = query.data;
   const mappedPoId = lineId
@@ -74,61 +69,6 @@ export function OrderProductionPlanScreen({
   const hasSetupLines = Boolean(
     (setupQuery.data?.lines ?? order?.productionSetup?.lines ?? []).length,
   );
-
-  useEffect(() => {
-    if (!order || released || attempted.current || booting) return;
-    if (lineId && poId) return;
-    if (!lineId && hasSetupLines) return;
-    if (!canEditSetup) {
-      if (lineId) setBootError(t('mobile.orders.journey.planNeedsPo'));
-      return;
-    }
-
-    attempted.current = true;
-    setBooting(true);
-    setBootError(null);
-
-    void (async () => {
-      try {
-        const result = await actions.ensurePlan.mutateAsync(undefined);
-        const refreshed = await query.refetch();
-        await setupQuery.refetch();
-        if (!lineId) return;
-        const id = productionOrderIdForLineId({
-          lineId,
-          productionOrders: refreshed.data?.productionOrders,
-          setupLines:
-            refreshed.data?.productionSetup?.lines ?? order?.productionSetup?.lines,
-          fallbackId: result.primaryProductionOrderId ?? result.productionOrderIds[0] ?? null,
-        });
-        if (!id) {
-          setBootError(t('mobile.orders.journey.planNeedsPo'));
-          return;
-        }
-        setEnsuredPoId(id);
-      } catch (err) {
-        const message =
-          err instanceof ApiError && err.message
-            ? err.message
-            : t('mobile.productionSetup.actionFailed');
-        setBootError(message);
-      } finally {
-        setBooting(false);
-      }
-    })();
-  }, [
-    order,
-    poId,
-    released,
-    canEditSetup,
-    actions.ensurePlan,
-    query,
-    setupQuery,
-    booting,
-    lineId,
-    hasSetupLines,
-    t,
-  ]);
 
   if (query.isLoading) {
     return (
@@ -152,10 +92,7 @@ export function OrderProductionPlanScreen({
 
   if (!lineId || nestDesk) {
     const setupLines = setupQuery.data?.lines ?? [];
-    if (
-      !lineId &&
-      (booting || (!bootError && canEditSetup && !attempted.current && !hasSetupLines))
-    ) {
+    if (!lineId && booting) {
       return (
         <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
           {embedded ? null : (
@@ -252,7 +189,7 @@ export function OrderProductionPlanScreen({
     );
   }
 
-  if (booting || (!bootError && canEditSetup && !attempted.current)) {
+  if (booting) {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
         {embedded ? null : (
@@ -294,12 +231,24 @@ export function OrderProductionPlanScreen({
       <ErrorState
         title={t('mobile.productionSetup.planTitle')}
         description={bootError ?? t('mobile.orders.journey.planNeedsPo')}
-        retryLabel={t('mobile.orderDetail.retry')}
+        retryLabel={t('mobile.orders.prepareProduction')}
         onRetry={() => {
-          attempted.current = false;
+          setBooting(true);
           setBootError(null);
-          setEnsuredPoId(null);
-          void query.refetch();
+          void actions.ensurePlan
+            .mutateAsync(undefined)
+            .catch((err) => {
+              const message =
+                err instanceof ApiError && err.message
+                  ? err.message
+                  : t('mobile.productionSetup.actionFailed');
+              setBootError(message);
+            })
+            .finally(() => {
+              setBooting(false);
+              void query.refetch();
+              void setupQuery.refetch();
+            });
         }}
       />
     </AppScreen>

@@ -10,6 +10,7 @@ Flat on purpose. Root `package.json` points at these paths. Do not nest without 
 | `launch.sh` | `pnpm launch` |
 | `start-all.sh` | `pnpm start:all` |
 | `stop-all.sh` | `pnpm stop:all` |
+| `dev-stack.sh` | `bash scripts/dev-stack.sh run\|start\|fix\|stop\|status` (API, web, Metro) |
 
 ## Smoke / UAT
 

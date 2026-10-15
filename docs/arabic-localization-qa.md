@@ -4,7 +4,7 @@ Locale: **ar** (RTL). Do not mirror logos or product photos. Mixed IDs (`ORD-125
 
 Pass = readable, no clip, correct term (تاجر / طلبية / سير الإنتاج), no raw keys, no English chrome.
 
-Verification method: catalog + call-site review against the glossary. Expo (`pnpm mobile:start`) was running during the wrap-up, but this agent cannot capture the iOS/Android simulator framebuffer. Screenshot files were therefore not written.
+Verification method: catalog + call-site review against the glossary. Expo (`pnpm mobile:start`) was running during the wrap-up, but iOS/Android simulator framebuffer capture was unavailable. Screenshot files were therefore not written.
 
 ## Mobile Admin
 

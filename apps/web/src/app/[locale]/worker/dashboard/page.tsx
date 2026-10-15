@@ -2,11 +2,12 @@
 
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
+import { isDeliveryFloorWorker } from '@/lib/is-delivery-floor-worker';
 import { localizedName } from '@maher/i18n';
-import type { Locale } from '@maher/types';
+import type { AuthUser, Locale } from '@maher/types';
 import { API_URL } from '@/lib/api-client';
 import { Board, BoardSkeleton, Button, ErrorBoard, Figure, ListRow, ListRows, Ltr, Ribbon, RowThumb, Stamp, type BoardTone } from '@maher/ui';
-import { Armchair, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Armchair, ArrowRight, CheckCircle2, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -81,35 +82,41 @@ function allOpen(data: WorkerHomePayload): WorkerHomeTask[] {
   return [data.urgentTask, ...rest];
 }
 
+function isExecutable(status: string): boolean {
+  const key = status.toUpperCase();
+  return key === 'IN_PROGRESS' || key === 'PAUSED' || key === 'READY';
+}
+
 function currentTask(data: WorkerHomePayload): WorkerHomeTask | null {
-  const open = allOpen(data);
+  const open = allOpen(data).filter((task) => isExecutable(task.status));
   if (!open.length) return null;
   const inProgress = open.find((t) => String(t.status).toUpperCase() === 'IN_PROGRESS');
   if (inProgress) return inProgress;
-  if (data.urgentTask) return data.urgentTask;
   return open[0] ?? null;
 }
 
-export default function WorkerHomePage() {
-  const locale = useLocale() as Locale;
+type DriverDelivery = {
+  id: string;
+  number: string;
+  status: string;
+  deliveryAddress?: string | null;
+  salesOrder?: { number?: string | null } | null;
+};
+
+const DRIVER_READY = new Set(['READY', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY']);
+
+function driverCanAct(status: string): boolean {
+  return DRIVER_READY.has(status.toUpperCase());
+}
+
+function DriverHome({ name }: { name: string }) {
   const t = useTranslations('mobile');
-  const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
-
-  const me = useQuery({
-    queryKey: ['auth-me'],
-    queryFn: () => apiFetch<{ name?: string }>('/api/v1/auth/me'),
-  });
-
-  const query = useQuery({
-    queryKey: ['worker-home'],
-    queryFn: () =>
-      apiFetch<WorkerHomePayload>('/api/v1/reports/worker-home', {
-        headers: { 'Accept-Language': locale },
-      }),
-  });
-
   const tStatus = useTranslations('statuses');
+  const query = useQuery({
+    queryKey: ['my-deliveries'],
+    queryFn: () => apiFetch<{ data: DriverDelivery[] }>('/api/v1/deliveries?mine=true&pageSize=50').then((r) => r.data ?? []),
+  });
   const statusLabel = (code: string) => {
     try {
       return tStatus(code as 'PENDING');
@@ -125,6 +132,110 @@ export default function WorkerHomePage() {
         <BoardSkeleton rows={4} />
       </div>
     );
+  }
+  if (query.isError) {
+    return <ErrorBoard title={t('deliveryLoad.errorTitle')} description={t('deliveryLoad.errorBody')} onRetry={() => query.refetch()} retryLabel={tCommon('retry')} />;
+  }
+
+  const rows = query.data ?? [];
+  const ready = rows.filter((row) => driverCanAct(row.status));
+  const waiting = rows.filter((row) => !driverCanAct(row.status) && !['DELIVERED', 'CANCELLED'].includes(row.status.toUpperCase()));
+
+  return (
+    <div className="maher-stagger space-y-5">
+      <Board variant="ink" tone="brand" wash="top" as="section">
+        <div className="px-5 py-5 sm:px-6">
+          <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em] sm:text-[28px] sm:leading-9 rtl:tracking-normal">{t(`workerHome.greeting.${greetingKey()}`, { name })}</h1>
+          <p className="mt-1 text-[14px] leading-5 text-[var(--maher-text-secondary)]">{t('deliveryLoad.openCaption')}</p>
+        </div>
+      </Board>
+
+      <Board tone={ready.length ? 'info' : 'neutral'}>
+        <Board.Header title={t('deliveryLoad.homeCurrent')} meta={<Stamp tone={ready.length ? 'info' : 'neutral'} size="sm">{ready.length}</Stamp>} />
+        {ready.length === 0 ? (
+          <Board.Empty title={t('deliveryLoad.homeIdleTitle')} description={t('deliveryLoad.homeIdleBody')} />
+        ) : (
+          <ListRows>
+            {ready.map((row) => (
+              <ListRow
+                key={row.id}
+                leading={<RowThumb icon={<Truck className="h-4 w-4" />} />}
+                title={<Ltr>{row.number}</Ltr>}
+                meta={<span className="flex flex-wrap gap-x-2"><span>{t('deliveryLoad.openLoadSheet')}</span>{row.salesOrder?.number ? <Ltr>{row.salesOrder.number}</Ltr> : null}{row.deliveryAddress ? <span className="truncate">{row.deliveryAddress}</span> : null}</span>}
+                trailing={<Stamp tone="info" size="sm">{statusLabel(row.status)}</Stamp>}
+                href={`/worker/deliveries/${row.id}`}
+                LinkComponent={Link}
+              />
+            ))}
+          </ListRows>
+        )}
+      </Board>
+
+      <Board tone={waiting.length ? 'warning' : 'neutral'}>
+        <Board.Header title={t('deliveryLoad.homeWaiting')} meta={<Stamp tone={waiting.length ? 'warning' : 'neutral'} size="sm">{waiting.length}</Stamp>} />
+        {waiting.length === 0 ? (
+          <Board.Empty title={t('deliveryLoad.homeIdleTitle')} />
+        ) : (
+          <ListRows>
+            {waiting.map((row) => (
+              <ListRow
+                key={row.id}
+                leading={<RowThumb icon={<Truck className="h-4 w-4" />} />}
+                title={<Ltr>{row.number}</Ltr>}
+                meta={<span>{row.status.toUpperCase() === 'PLANNED' ? t('deliveryLoad.waitingPlanned') : statusLabel(row.status)}</span>}
+                trailing={<Stamp tone="warning" size="sm">{statusLabel(row.status)}</Stamp>}
+                href={`/worker/deliveries/${row.id}`}
+                LinkComponent={Link}
+              />
+            ))}
+          </ListRows>
+        )}
+      </Board>
+    </div>
+  );
+}
+
+export default function WorkerHomePage() {
+  const locale = useLocale() as Locale;
+  const t = useTranslations('mobile');
+  const tNav = useTranslations('navigation');
+  const tCommon = useTranslations('common');
+
+  const me = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: () => apiFetch<AuthUser>('/api/v1/auth/me'),
+  });
+  const driver = isDeliveryFloorWorker(me.data);
+
+  const query = useQuery({
+    queryKey: ['worker-home'],
+    enabled: me.isSuccess && !driver,
+    queryFn: () =>
+      apiFetch<WorkerHomePayload>('/api/v1/reports/worker-home', {
+        headers: { 'Accept-Language': locale },
+      }),
+  });
+
+  const tStatus = useTranslations('statuses');
+  const statusLabel = (code: string) => {
+    try {
+      return tStatus(code as 'PENDING');
+    } catch {
+      return code.replaceAll('_', ' ').toLowerCase();
+    }
+  };
+
+  if (me.isLoading || (!driver && query.isLoading)) {
+    return (
+      <div className="space-y-5">
+        <BoardSkeleton rows={3} />
+        <BoardSkeleton rows={4} />
+      </div>
+    );
+  }
+
+  if (driver) {
+    return <DriverHome name={me.data?.name ?? t('workerHome.fallbackName')} />;
   }
 
   if (query.isError || !query.data) {
@@ -225,7 +336,7 @@ export default function WorkerHomePage() {
                   leading={<RowThumb src={mediaSrc(task.imageUrl)} icon={<Armchair className="h-4 w-4" />} />}
                   title={taskName(task)}
                   meta={<span className="flex items-center gap-2"><span className="truncate">{productName(task)}</span><Ltr className="text-[var(--maher-text-tertiary)]">{task.orderNumber}</Ltr></span>}
-                  trailing={<Stamp tone={statusTone(task.status)} size="sm">{statusLabel(task.status)}</Stamp>}
+                  trailing={<Stamp tone={isExecutable(task.status) ? statusTone(task.status) : 'warning'} size="sm">{isExecutable(task.status) ? statusLabel(task.status) : t('tasks.lockLocked')}</Stamp>}
                   href={`/worker/tasks/${task.id}`}
                   LinkComponent={Link}
                 />

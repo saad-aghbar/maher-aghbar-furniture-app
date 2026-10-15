@@ -199,7 +199,7 @@ Still for you on device: aesthetic/RTL feel (HANDSET).
 - Partial unit QC (5 pass / 1 fail packaging) not supported — PO-level only  
 - Packaging live complete on P9-H may need SEMI stock in some environments; P9-K proves FIN×1  
 - Notification templates reuse generic ORDER_CONFIRMED (dedicated QC templates not required for Piece 9)  
-- Mobile QC UI not physically observed in Cursor  
+- Mobile QC UI not physically observed during verification
 
 ---
 

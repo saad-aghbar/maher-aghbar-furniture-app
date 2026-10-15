@@ -26,7 +26,8 @@ export function WorkerSalesOrderItemRow({ item, onPress }: Props) {
   const mediaUri = resolveOrderMediaUri(item.imageUrl);
   const workState = workerItemWorkState(item);
 
-  const hint = !item.assignedToMe
+  const viewOnly = !item.assignedToMe;
+  const hint = viewOnly
     ? t('mobile.tasks.viewOnly')
     : workState === 'done'
       ? t('mobile.tasks.segments.done')
@@ -34,8 +35,9 @@ export function WorkerSalesOrderItemRow({ item, onPress }: Props) {
         ? t('mobile.tasks.lockLocked')
         : t('mobile.tasks.orderCardTasks', { count: item.myTaskCount });
 
-  const statusLabel =
-    workState === 'done'
+  const statusLabel = viewOnly
+    ? null
+    : workState === 'done'
       ? t('mobile.tasks.itemStatusDone')
       : workState === 'locked'
         ? t('mobile.tasks.itemStatusLocked')
@@ -52,8 +54,9 @@ export function WorkerSalesOrderItemRow({ item, onPress }: Props) {
     hint,
   ].filter(Boolean);
 
-  const borderColor =
-    workState === 'done'
+  const borderColor = viewOnly
+    ? colors.border
+    : workState === 'done'
       ? colors.success
       : workState === 'locked'
         ? colors.error
@@ -86,7 +89,7 @@ export function WorkerSalesOrderItemRow({ item, onPress }: Props) {
     >
       <View style={{ width: THUMB, height: THUMB }}>
         <ProductThumb uri={mediaUri} size={THUMB} radius={theme.radius.md} />
-        {workState === 'done' || workState === 'locked' ? (
+        {(!viewOnly && (workState === 'done' || workState === 'locked')) ? (
           <View
             pointerEvents="none"
             style={{

@@ -26,6 +26,9 @@ export function productionOrderIdForLineId(args: {
       const bySetup = pos.find((po) => po.salesOrderLineId === setup.salesOrderLineId);
       if (bySetup) return bySetup.id;
     }
+    return null;
   }
-  return args.fallbackId ?? pos[0]?.id ?? null;
+  const fallback = args.fallbackId?.trim() || '';
+  if (fallback && pos.some((po) => po.id === fallback)) return fallback;
+  return null;
 }

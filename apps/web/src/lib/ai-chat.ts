@@ -93,20 +93,20 @@ export function remapChatHref(href: string | undefined, surface: AiChatSurface):
   const path = href.replace(/^\/\(app\)\/\(admin\)/, '').replace(/^\/\(app\)\/\(customer\)/, '');
 
   const adminMap: Array<[RegExp, string]> = [
-    [/^\/orders\/([^/]+)/, '/sales-orders/$1'],
-    [/^\/invoices\/([^/]+)/, '/invoices/$1'],
-    [/^\/dealers\/([^/]+)/, '/customers/$1'],
-    [/^\/products\/([^/]+)/, '/products/$1'],
-    [/^\/requests\/([^/]+)/, '/requests/$1'],
-    [/^\/inventory\/items\/([^/]+)/, '/inventory'],
-    [/^\/catalog\/([^/]+)/, '/products/$1'],
+    [/^\/orders\/([^/]+)/, '/admin/sales-orders/$1'],
+    [/^\/invoices\/([^/]+)/, '/admin/invoices/$1'],
+    [/^\/dealers\/([^/]+)/, '/admin/customers/$1'],
+    [/^\/products\/([^/]+)/, '/admin/products/$1'],
+    [/^\/requests\/([^/]+)/, '/admin/requests/$1'],
+    [/^\/inventory\/items\/([^/]+)/, '/admin/inventory'],
+    [/^\/catalog\/([^/]+)/, '/admin/products/$1'],
   ];
   const dealerMap: Array<[RegExp, string]> = [
-    [/^\/orders\/([^/]+)/, '/orders/$1'],
-    [/^\/invoices\/([^/]+)/, '/invoices/$1'],
-    [/^\/requests\/([^/]+)/, '/orders/requests/$1'],
-    [/^\/catalog\/([^/]+)/, '/catalog'],
-    [/^\/account\/statement/, '/statement'],
+    [/^\/orders\/([^/]+)/, '/dealer/orders/$1'],
+    [/^\/invoices\/([^/]+)/, '/dealer/invoices/$1'],
+    [/^\/requests\/([^/]+)/, '/dealer/orders/requests/$1'],
+    [/^\/catalog\/([^/]+)/, '/dealer/catalog'],
+    [/^\/account\/statement/, '/dealer/statement'],
   ];
 
   const table = surface === 'dealer' ? dealerMap : adminMap;

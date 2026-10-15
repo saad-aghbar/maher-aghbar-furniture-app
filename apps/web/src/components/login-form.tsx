@@ -1,9 +1,13 @@
 'use client';
 
+import { PortalSwitch } from '@/components/auth/portal-switch';
+import { useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
-import { redirectAfterLogin } from '@/lib/post-login';
+import { loginDestination, portalMatches, type LoginPortal } from '@/lib/post-login';
+import { resetAccountClientState } from '@/lib/reset-account-client';
 import { Button, Input, Alert } from '@maher/ui';
 import type { AuthUser } from '@maher/types';
+import { useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, Shield, User } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -12,8 +16,11 @@ import { useState, type FormEvent } from 'react';
 export function LoginForm() {
   const t = useTranslations('auth');
   const locale = useLocale();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const search = useSearchParams();
   const nextPath = search.get('next');
+  const [portal, setPortal] = useState<LoginPortal>('admin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -36,8 +43,21 @@ export function LoginForm() {
           ...(mfaRequired || mfaCode ? { mfaCode: mfaCode.trim() } : {}),
         }),
       });
-      await new Promise((resolve) => window.setTimeout(resolve, 400));
-      redirectAfterLogin(res.user, locale, nextPath);
+      if (!portalMatches(portal, res.user)) {
+        try {
+          await apiFetch('/api/v1/auth/logout', { method: 'POST', body: '{}' });
+        } catch {
+          /* cookies may already be clear */
+        }
+        setError(t('portalMismatch'));
+        setShakeKey((key) => key + 1);
+        setLoading(false);
+        resetAccountClientState(queryClient);
+        return;
+      }
+      resetAccountClientState(queryClient);
+      router.replace(loginDestination(portal, locale, nextPath));
+      router.refresh();
     } catch (err) {
       if (err instanceof ApiClientError && err.body?.code === 'MFA_REQUIRED') {
         setMfaRequired(true);
@@ -93,6 +113,16 @@ export function LoginForm() {
           </button>
         }
         className="h-12 text-base"
+      />
+      <PortalSwitch
+        label={t('loginAs')}
+        value={portal}
+        onChange={setPortal}
+        options={[
+          { value: 'admin', label: t('portalAdmin') },
+          { value: 'dealer', label: t('portalDealer') },
+          { value: 'worker', label: t('portalWorker') },
+        ]}
       />
       {mfaRequired ? (
         <Input

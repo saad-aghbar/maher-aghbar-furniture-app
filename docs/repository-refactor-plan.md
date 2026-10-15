@@ -7,7 +7,7 @@ This is a **behavior-preserving** navigation refactor. The monorepo already has 
 
 ## Goal
 
-After this work, a developer (or agent) can see immediately where Mobile, Admin Web, API, shared contracts, permissions, Prisma, tests, scripts, and docs live — and can work in Admin Web without reading Mobile internals.
+After this work, a developer can see immediately where Mobile, Admin Web, API, shared contracts, permissions, Prisma, tests, scripts, and docs live — and can work in Admin Web without reading Mobile internals.
 
 ## Leave in place (explicit)
 

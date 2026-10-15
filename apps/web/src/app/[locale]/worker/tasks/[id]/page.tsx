@@ -5,6 +5,7 @@ import { FabricDispositionSheet, TaskFabricBoard, useTaskFabric } from '@/compon
 import { QualityGatePanel, useQualityFloor } from '@/components/worker/quality-gate-panel';
 import { RecoveryFloorPanel, useRecoveryPiece } from '@/components/worker/recovery-floor-panel';
 import { classifyTaskQualityKind, countPriorFails } from '@/lib/task-quality-kind';
+import { classifyWorkerTaskAction } from '@/lib/floor-task-action';
 import { useRouter } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { isScheduledForToday, toDateOnly } from '@/lib/worker-scheduling';
@@ -82,6 +83,8 @@ interface TaskDetail {
     dependsOnCodes?: string[];
     requiresPhotos?: boolean;
   };
+  stageInstance?: { id?: string; status?: string | null } | null;
+  waitingOnPredecessor?: boolean;
   blockers?: Array<{ id: string; reason: string; resolvedAt?: string | null }>;
   photos?: Array<{
     id: string;
@@ -123,12 +126,22 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
   const [problemReason, setProblemReason] = useState('');
   const tStatus = useTranslations('statuses');
   const tMobileProd = useTranslations('mobile.production');
+  const tMobile = useTranslations('mobile');
   const tQuality = useTranslations('mobile.quality');
   const router = useRouter();
 
   const { data, isLoading, isError, error: loadError, refetch } = useQuery({
     queryKey: ['task', params.id],
     queryFn: () => apiFetch<TaskDetail>(`/api/v1/tasks/${params.id}`),
+  });
+  const incoming = useQuery({
+    queryKey: ['task-wip-incoming', params.id],
+    queryFn: () =>
+      apiFetch<{
+        required: boolean;
+        allReceived: boolean;
+        lines?: Array<{ statusKey?: string; status?: string }>;
+      }>(`/api/v1/tasks/${params.id}/wip-incoming`),
   });
 
   async function runAction(path: 'start' | 'pause' | 'resume' | 'complete') {
@@ -229,11 +242,27 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     return <ErrorBoard title={t('taskDetail')} description={loadError ? translateApiError(locale, loadError, tCommon('loadFailed')) : tCommon('loadFailed')} onRetry={() => refetch()} retryLabel={tCommon('retry')} />;
   }
 
-  const waiting = data.status === 'NOT_STARTED' && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0 ? data.stageDefinition!.dependsOnCodes!.join(', ') : null;
-  const canFinish = !['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(data.status);
-  const canStart = ['NOT_STARTED', 'READY'].includes(data.status) && !waiting;
+  const stageStatus = String(data.stageInstance?.status ?? '').toUpperCase();
+  const predecessorLocked = Boolean(data.waitingOnPredecessor) || (data.status === 'NOT_STARTED' && stageStatus !== 'READY' && stageStatus !== 'IN_PROGRESS');
+  const waitingOn = predecessorLocked && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0 ? data.stageDefinition!.dependsOnCodes!.join(', ') : null;
+  const waiting = predecessorLocked || data.status === 'BLOCKED';
+  const lineKey = (line: { statusKey?: string; status?: string }) => String(line.statusKey ?? line.status ?? '').toUpperCase();
+  const incomingLines = incoming.data?.lines ?? [];
+  const dock = classifyWorkerTaskAction({
+    taskStatus: data.status,
+    openBlockerCount: (data.blockers ?? []).filter((b) => !b.resolvedAt).length,
+    waitingPrevious: waiting,
+    incomingRequired: incoming.isSuccess ? Boolean(incoming.data?.required) : false,
+    allReceived: incoming.isSuccess ? Boolean(incoming.data?.allReceived) : true,
+    anyWaitingProduction: incomingLines.some((line) => lineKey(line) === 'WAITING_PRODUCTION'),
+    anyReadyToCollect: incomingLines.some((line) => lineKey(line) === 'READY_TO_COLLECT'),
+    anyPartial: incomingLines.some((line) => lineKey(line) === 'PARTIALLY_RECEIVED'),
+  });
+  const receiveFirst = incoming.isSuccess && dock.primaryAction === 'RECEIVE_SEMI';
+  const canFinish = dock.primaryAction === 'COMPLETE';
+  const canStart = incoming.isFetched && dock.primaryAction === 'START';
   const canStop = data.status === 'IN_PROGRESS';
-  const canResume = data.status === 'PAUSED' && !waiting;
+  const canResume = data.status === 'PAUSED' && dock.primaryAction === 'COMPLETE';
   const canAttach = canFinish;
   const openBlockers = (data.blockers ?? []).filter((b) => !b.resolvedAt);
   const needsPhotos = Boolean(data.stageDefinition?.requiresPhotos) && !(data.photos?.length) && !/INSPECTION|QC/.test((data.stageDefinition?.code ?? '').toUpperCase());
@@ -293,7 +322,11 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const primaryControl = canStart ? (
+  const primaryControl = receiveFirst ? (
+    <Button size="lg" leadingIcon={<PackageOpen className="h-4 w-4" />} onClick={() => router.push(`/worker/tasks/${params.id}/take-in`)}>
+      {tMobile('tasks.lockReceiveStamp')}
+    </Button>
+  ) : canStart ? (
     <Button size="lg" leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('start')} loading={loading}>
       {t('startTask')}
     </Button>
@@ -348,7 +381,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
         {estimated ? <Meter value={Math.min(elapsed, estimated)} max={estimated} tone={elapsed > estimated ? 'warning' : tone} label={t('timerLabel')} valueLabel={`${fmtMinutes(elapsed)} / ${fmtMinutes(estimated)}`} /> : null}
       </DetailHero>
 
-      {waiting ? <Ticket tone="warning" wash title={t('notReady')} why={`${t('waitingFor')}: ${waiting}`} /> : null}
+      {waiting ? <Ticket tone="warning" wash title={t('notReady')} why={waitingOn ? `${t('waitingFor')}: ${waitingOn}` : t('notReady')} /> : null}
       {openBlockers.length > 0 ? <Ticket tone="error" wash title={t('blockedReason')} why={openBlockers[0]?.reason} /> : null}
       {needsPhotos ? <Alert variant="warning">{tc('photosRequired')}</Alert> : null}
       {banner ? <Alert variant="success">{banner}</Alert> : null}
@@ -400,6 +433,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                 <Figure size="lg" value={<Ltr>{estimated ? fmtMinutes(estimated) : '—'}</Ltr>} label={t('estimated')} />
               </div>
               <div className="flex flex-wrap gap-2">
+                {receiveFirst ? <Button leadingIcon={<PackageOpen className="h-4 w-4" />} onClick={() => router.push(`/worker/tasks/${params.id}/take-in`)}>{tMobile('tasks.lockReceiveStamp')}</Button> : null}
                 {canStart ? <Button leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('start')} loading={loading}>{t('startTask')}</Button> : null}
                 {canStop ? <Button variant="secondary" leadingIcon={<Pause className="h-4 w-4" />} onClick={() => void runAction('pause')} loading={loading}>{t('stopTimer')}</Button> : null}
                 {canResume ? <Button leadingIcon={<Play className="h-4 w-4" />} onClick={() => void runAction('resume')} loading={loading}>{t('resumeTask')}</Button> : null}

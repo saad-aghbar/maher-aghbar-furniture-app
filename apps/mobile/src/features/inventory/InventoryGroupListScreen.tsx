@@ -258,7 +258,10 @@ export function InventoryGroupListScreen({
             canEdit={canEdit}
             canLabelPdf={canLabelPdf}
             onReceive={() => setMove({ mode: 'receive', item })}
-            onIssue={() => setMove({ mode: 'issue', item })}
+            onIssue={() => {
+              if (!(item.onHand > 0)) return;
+              setMove({ mode: 'issue', item });
+            }}
             onEdit={() => setEditItem(item)}
             onLabelPdf={() => openLabelPdf(item)}
             onQrCode={() => setQrItem(qrItemFromCard(item))}

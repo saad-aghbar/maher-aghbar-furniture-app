@@ -59,7 +59,8 @@ export function ProductHub({ id }: { id: string }) {
   const kit = useKitCopy();
   const router = useRouter();
   const search = useSearchParams();
-  const tab = (TABS as readonly string[]).includes(search.get('tab') ?? '') ? (search.get('tab') as Tab) : 'overview';
+  const requestedTab = search.get('tab') === 'production-setup' ? 'setup' : search.get('tab');
+  const tab = (TABS as readonly string[]).includes(requestedTab ?? '') ? (requestedTab as Tab) : 'overview';
   const setTab = useCallback(
     (next: string) => {
       const sp = new URLSearchParams(search.toString());

@@ -8,6 +8,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { apiFetch, fetchOrderProductionSetup, type OrderProductionSetup } from '@/lib/api-client';
 import { useKitCopy } from '@/lib/kit-copy';
+import { adminProductionDestination } from '@/lib/production-destination';
 import { localizedName } from '@maher/i18n';
 import {
   ActionDock,
@@ -125,7 +126,7 @@ interface SalesOrderDetail {
   quotation?: { id: string; number: string; status: string } | null;
   customerRequest?: CustomerRequest | null;
   orderedItems?: CustomerRequestItem[];
-  productionOrders?: Array<{ id: string; number: string; status: string; progressPercent?: number | null; currentStageCode?: string | null; salesOrderLineId?: string | null }>;
+  productionOrders?: Array<{ id: string; number: string; status: string; progressPercent?: number | null; currentStageCode?: string | null; salesOrderLineId?: string | null; releasedToFactoryAt?: string | null; actualStartDate?: string | null }>;
   invoices?: Array<{ id: string; number: string; status: string; total?: string | number; outstandingAmount?: string | number }>;
   deliveries?: Array<{ id: string; number: string; status: string; deliveryDate?: string | null }>;
   returns?: Array<{ id: string; number: string; approvalStatus: string; reason: string; productDesc: string; quantity?: string | number }>;
@@ -364,7 +365,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         {tSales('resume')}
       </InkPill>
     ) : (order.productionOrders?.length ?? 0) > 0 ? (
-      <Link href={`/admin/production/${order.productionOrders![0]!.id}`} className="maher-press inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--maher-text-primary)] px-4 text-[13px] font-semibold text-[var(--maher-background)] hover:opacity-90">
+      <Link href={`/admin/sales-orders/${params.id}/production-plan`} className="maher-press inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--maher-text-primary)] px-4 text-[13px] font-semibold text-[var(--maher-background)] hover:opacity-90">
         {tSales('desk.openProduction')}
       </Link>
     ) : null;
@@ -457,7 +458,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                                 </Stamp>
                               ) : null}
                               {po ? (
-                                <Link href={`/admin/production/${po.id}`} className="hover:underline">
+                                <Link href={adminProductionDestination({ ...po, salesOrderId: params.id })} className="hover:underline">
                                   <Ltr>{po.number}</Ltr>
                                 </Link>
                               ) : null}
@@ -569,7 +570,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                   return (
                     <ListRow
                       key={line.id}
-                      href={child ? `/admin/production/${child.id}` : undefined}
+                      href={child ? adminProductionDestination({ ...child, salesOrderId: params.id }) : `/admin/sales-orders/${params.id}/production-plan?lineId=${encodeURIComponent(line.salesOrderLineId ?? line.id)}`}
                       LinkComponent={Link}
                       tone={line.materials?.length ? 'success' : 'neutral'}
                       title={line.manufacturingName ?? line.description ?? '—'}
@@ -725,7 +726,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                 {order.productionOrders!.map((po) => (
                   <ListRow
                     key={po.id}
-                    href={`/admin/production/${po.id}`}
+                    href={adminProductionDestination({ ...po, salesOrderId: params.id })}
                     LinkComponent={Link}
                     tone={po.status === 'COMPLETED' ? 'success' : po.status === 'ON_HOLD' || po.status === 'BLOCKED' ? 'warning' : 'info'}
                     title={<Ltr>{po.number}</Ltr>}

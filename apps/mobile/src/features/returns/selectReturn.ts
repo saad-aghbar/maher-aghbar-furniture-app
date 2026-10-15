@@ -98,7 +98,7 @@ export function returnLifecycleLabelKey(phase: ReturnLifecyclePhase): string {
 /**
  * Map API approval + physical (+ fate) → dealer human lifecycle.
  *
- * Reported → Under review → Approved → Waiting for return → Being resolved → Resolved
+ * Requested → Under review → Approved → Waiting for return → Being resolved → Resolved
  */
 export function mapReturnLifecyclePhase(input: {
   approvalStatus?: string | null;

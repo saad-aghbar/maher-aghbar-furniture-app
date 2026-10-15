@@ -682,6 +682,41 @@ export class OrderProductionSetupService {
     return rows;
   }
 
+  async readSetup(salesOrderId: string, user?: AuthUser): Promise<Record<string, unknown>> {
+    this.assertStaff(user);
+    const existing = await this.prisma.salesOrderProductionSetup.findUnique({
+      where: { salesOrderId },
+      select: { id: true },
+    });
+    if (!existing) {
+      const order = await this.prisma.salesOrder.findUnique({
+        where: { id: salesOrderId },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          projectName: true,
+          customer: { select: { id: true, nameEn: true, nameAr: true, code: true } },
+        },
+      });
+      if (!order) {
+        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Sales order not found.' });
+      }
+      return {
+        initialized: false,
+        id: null,
+        status: 'SETUP_REQUIRED',
+        salesOrder: order,
+        lines: [],
+        progress: { readyLines: 0, totalLines: 0, percent: 0, needsReviewLines: 0, steps: [] },
+        validation: { ok: false, issues: [] },
+        materialReadiness: { status: 'NEEDS_REVIEW', anyShortage: false },
+      };
+    }
+    const setup = await this.getSetup(salesOrderId, user);
+    return { initialized: true, ...setup };
+  }
+
   async getSetup(salesOrderId: string, user?: AuthUser): Promise<Record<string, unknown>> {
     this.assertStaff(user);
     const setup = await this.prisma.salesOrderProductionSetup.findUnique({

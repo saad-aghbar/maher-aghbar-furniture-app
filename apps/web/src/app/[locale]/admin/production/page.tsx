@@ -2,7 +2,7 @@
 
 import { DealerCombobox } from '@/components/orders/dealer-combobox';
 import { ProductionBasketBoard, type ProductionBasket } from '@/components/production/production-basket-board';
-import { bucketTone, COMPLEXITIES, PRIORITIES, PRODUCTION_BUCKETS, priorityTone, productionTone, useProductionCopy, type AssignableWorker, type Complexity, type DaySummary, type Priority, type ProductionBucket, type ProductionRow } from '@/components/production/production-shared';
+import { bucketTone, COMPLEXITIES, PRIORITIES, PRODUCTION_BUCKETS, priorityTone, productionRowReleased, productionTone, useProductionCopy, type AssignableWorker, type Complexity, type DaySummary, type Priority, type ProductionBucket, type ProductionRow } from '@/components/production/production-shared';
 import { Link } from '@/i18n/navigation';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { apiFetch } from '@/lib/api-client';
@@ -150,6 +150,7 @@ function ProductionPageInner() {
           <Stamp tone={productionTone(row.status)} size="sm">
             {stage(row)}
           </Stamp>
+          {!productionRowReleased(row) ? <Stamp tone="neutral" size="sm">{tSales('orderSetup.notReleasedToFactory')}</Stamp> : null}
           {row.originType === 'RETURN_WORK' || row.originType === 'REPLACEMENT' ? <Stamp tone="warning" size="sm">{row.originType === 'REPLACEMENT' ? tm('origin.replacement') : tm('origin.returnWork')}</Stamp> : null}
           {(row.openBlockersCount ?? 0) > 0 ? <Stamp tone="error" size="sm">{tm('blocked')}</Stamp> : null}
         </span>
@@ -183,7 +184,7 @@ function ProductionPageInner() {
       numeric: true,
       width: '120px',
       cell: (row) =>
-        START_STATUSES.has(row.status) ? (
+        START_STATUSES.has(row.status) && productionRowReleased(row) ? (
           <Button size="sm" variant="secondary" leadingIcon={<Play className="h-3.5 w-3.5" />} onClick={(e) => (e.preventDefault(), e.stopPropagation(), setStartRow(row))}>
             {tp('start')}
           </Button>
@@ -314,7 +315,7 @@ function ProductionPageInner() {
           mobileRow={(r) => ({
             leading: <RowThumb src={r.imageUrl ?? r.product?.imageUrl} icon={<Armchair className="h-4 w-4" />} />,
             title: title(r),
-            meta: `${r.number} · ${stage(r)}`,
+            meta: [r.number, stage(r), productionRowReleased(r) ? null : tSales('orderSetup.notReleasedToFactory')].filter(Boolean).join(' · '),
             trailing: <Stamp tone={productionTone(r.status)} size="sm">{`${Math.round(Number(r.progressPercent ?? 0))}%`}</Stamp>,
           })}
           empty={<Board.Empty title={tm('emptyTitle')} description={filtered ? tm('emptySearchBody') : tm('emptyBody')} action={filtered ? <Button size="sm" variant="secondary" onClick={reset}>{tCommon('clearFilters')}</Button> : undefined} />}

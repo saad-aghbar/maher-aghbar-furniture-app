@@ -105,7 +105,7 @@ export function receiptDay(row: DealerDeliveryDto): string | null {
   const kind = receiptKindFromStatus(row.customerStatus);
   const raw =
     kind === 'received'
-      ? row.actualDeliveryDate ?? row.calendarDate
+      ? row.actualDeliveryDate
       : row.calendarDate ?? row.committedDeliveryDate ?? row.plannedDeliveryDate;
   return toReceiptYmd(raw);
 }

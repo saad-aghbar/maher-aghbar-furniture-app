@@ -40,7 +40,7 @@ Audit stats, review filters, technical file registry. Use for H1 inventory work 
 Needs work · Review later · Approved + optional note (from ⓘ or Coverage).  
 Stored in AsyncStorage — never sent to the API.
 
-## Cursor prompt example
+## Example component change
 
 > Update `NotificationBoardCard`.  
 > Dev Tests → search `NotificationBoardCard`.  

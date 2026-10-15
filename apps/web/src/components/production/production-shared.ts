@@ -32,6 +32,8 @@ export interface ProductionRow {
   plannedCompletionDate?: string | null;
   plannedStartDate?: string | null;
   actualCompletionDate?: string | null;
+  actualStartDate?: string | null;
+  releasedToFactoryAt?: string | null;
   committedDeliveryDate?: string | null;
   imageUrl?: string | null;
   isLate?: boolean;
@@ -70,6 +72,25 @@ export interface AssignableWorker {
   activeTaskCount?: number;
   recommendBand?: string;
   recommendReason?: string | null;
+}
+
+const LEGACY_FLOOR_STATUSES = new Set([
+  'IN_PROGRESS',
+  'ON_HOLD',
+  'QUALITY_CHECK',
+  'READY_FOR_PACKAGING',
+  'READY_FOR_DELIVERY',
+  'COMPLETED',
+]);
+
+/** Released to the factory, or already on the floor from before the release flag. */
+export function productionRowReleased(row: {
+  releasedToFactoryAt?: string | null;
+  actualStartDate?: string | null;
+  status?: string | null;
+}): boolean {
+  if (row.releasedToFactoryAt || row.actualStartDate) return true;
+  return LEGACY_FLOOR_STATUSES.has(String(row.status ?? '').toUpperCase());
 }
 
 export function productionTone(status: string): BoardTone {

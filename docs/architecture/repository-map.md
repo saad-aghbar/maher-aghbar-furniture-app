@@ -1,6 +1,6 @@
 # Repository map
 
-**Date:** 2026-08-14  
+**Updated:** 2026-10-15
 See also: [where-to-change-things.md](./where-to-change-things.md), [repository-architecture-audit.md](../repository-architecture-audit.md).
 
 The top-level `apps/` and `packages/` names already match ownership. This map explains them; it does not propose a rename.
@@ -11,14 +11,14 @@ The top-level `apps/` and `packages/` names already match ownership. This map ex
 maher-aghbar-furniture-app
 ├── apps
 │   ├── api                 Nest REST API (:4000)
-│   ├── admin-web           Admin / staff website (:3000)
-│   ├── customer-portal     Dealer website (:3001)
-│   ├── employee-portal     Worker website (:3002)
+│   ├── web                 Unified admin / staff / dealer / worker website (:3000)
 │   ├── mobile              Expo / React Native app (Metro :8081)
 │   └── worker              BullMQ background jobs
 ├── packages
 │   ├── types               Shared TS contracts
 │   ├── permissions         Canonical RBAC / Staff
+│   ├── workflow-domain     Shared workflow and production lifecycle logic
+│   ├── notifications       Shared notification contracts and rules
 │   ├── i18n                ar/en/he message catalogs
 │   ├── ui                  Next.js DOM components (not Mobile)
 │   ├── database            Prisma schema + seeds
@@ -42,9 +42,7 @@ maher-aghbar-furniture-app
 | Directory | What lives here |
 |-----------|-----------------|
 | `apps/api` | Nest modules under `src/modules/<feature>/`. Business behavior. |
-| `apps/admin-web` | Next App Router admin UI. Routes in `src/app/[locale]/`. |
-| `apps/customer-portal` | Dealer-facing Next UI. |
-| `apps/employee-portal` | Worker-facing Next UI. |
+| `apps/web` | Next App Router UI. Admin, dealer, and worker routes in `src/app/[locale]/`. |
 | `apps/mobile` | Finished Expo app. Feature code in `src/features/`. Do not mix with Web. |
 | `apps/worker` | Queue consumers. Not a UI. |
 
@@ -55,7 +53,9 @@ maher-aghbar-furniture-app
 | `packages/types` | Shared types consumed by apps over `@maher/types`. |
 | `packages/permissions` | Permission catalog, `can()`, Staff kinds, home/tab helpers. |
 | `packages/i18n` | Translation JSON for all UIs. |
-| `packages/ui` | Tailwind/DOM kit for the three Next apps only. |
+| `packages/ui` | Tailwind/DOM kit for the unified Next app only. |
+| `packages/workflow-domain` | Shared workflow and production lifecycle logic. |
+| `packages/notifications` | Shared notification contracts and rules. |
 | `packages/database` | `prisma/schema.prisma` and seeds. |
 | `packages/integrations` | Provider factories for API + worker. |
 | `packages/logging` | `createLogger`. |
@@ -63,7 +63,7 @@ maher-aghbar-furniture-app
 
 ## Communication
 
-Mobile and websites talk to the API **over HTTP** (`/api/v1`). They do not import `apps/api/src`. Mobile does not import Admin Web. Admin Web does not import Mobile.
+Mobile and the website talk to the API **over HTTP** (`/api/v1`). They do not import `apps/api/src`. Mobile and Web do not import each other's source.
 
 ## Generated (do not edit)
 

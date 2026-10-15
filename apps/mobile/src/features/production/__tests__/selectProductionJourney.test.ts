@@ -79,10 +79,80 @@ describe('selectProductionJourney / whereNow', () => {
       attentionCount: 1,
     });
     expect(where.currentStageName).toBe('Assembly');
+    expect(where.currentWorkStatus).toBe('IN_PROGRESS');
     expect(where.activeWorkerName).toBe('Omar');
     expect(where.completedStageNames).toContain('Cutting');
     expect(where.waitingStageNames).toContain('Upholstery');
     expect(where.plannedVsActualLabel).toBe('on_track');
     expect(where.salesOrderNumber).toBe('SO-9');
+    expect(where.inspectionNext).toBe(false);
+  });
+
+  it('names a not-started task instead of calling inspection next', () => {
+    const finished: ProductionOrderDetail = {
+      ...order,
+      currentStage: null,
+      progressPercent: 100,
+      stages: [
+        {
+          code: 'CARPENTRY',
+          nameEn: 'Carpentry',
+          status: 'COMPLETED',
+          tasks: [{ id: 'carp', number: 'TSK-1', name: 'Carpentry', status: 'NOT_STARTED' }],
+        },
+        {
+          code: 'FOAM',
+          nameEn: 'Foam preparation',
+          status: 'COMPLETED',
+          tasks: [{ id: 'foam', number: 'TSK-2', name: 'Foam', status: 'COMPLETED' }],
+        },
+      ],
+    };
+    const journey = selectProductionJourney(finished, 'en');
+    expect(journey[0]?.status).toBe('NOT_STARTED');
+    expect(journey[1]?.status).toBe('COMPLETED');
+    const where = selectProductionWhereNow(finished, 'en', {
+      dealerName: null,
+      productTitle: 'Chair',
+      imageUrl: null,
+      deliveryLabel: null,
+      progressLabel: null,
+      attentionCount: 0,
+    });
+    expect(where.currentStageName).toBe('Carpentry');
+    expect(where.currentWorkStatus).toBe('NOT_STARTED');
+    expect(where.inspectionNext).toBe(false);
+    expect(where.completedStageNames).toEqual(['Foam preparation']);
+  });
+
+  it('calls inspection next only after every manufacturing task is completed', () => {
+    const finished: ProductionOrderDetail = {
+      ...order,
+      currentStage: null,
+      stages: [
+        {
+          code: 'CARPENTRY',
+          nameEn: 'Carpentry',
+          status: 'COMPLETED',
+          tasks: [{ id: 'carp', number: 'TSK-1', name: 'Carpentry', status: 'COMPLETED' }],
+        },
+        {
+          code: 'FOAM',
+          nameEn: 'Foam preparation',
+          status: 'COMPLETED',
+          tasks: [{ id: 'foam', number: 'TSK-2', name: 'Foam', status: 'COMPLETED' }],
+        },
+      ],
+    };
+    const where = selectProductionWhereNow(finished, 'en', {
+      dealerName: null,
+      productTitle: 'Chair',
+      imageUrl: null,
+      deliveryLabel: null,
+      progressLabel: null,
+      attentionCount: 0,
+    });
+    expect(where.currentWorkStatus).toBeNull();
+    expect(where.inspectionNext).toBe(true);
   });
 });

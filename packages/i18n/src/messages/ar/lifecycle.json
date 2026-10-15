@@ -213,5 +213,6 @@
     "chargesPending": "رسوم معلّقة",
     "dealerMarkSent": "أرسلتها",
     "dealerMarkSentConfirm": "أخبر المصنع أن القطعة في طريقها. سيؤكدون عند وصولها."
-  }
+  },
+  "legacyReceiptMissing": "مسجل كتسليم مكتمل. لم يُحفظ تأكيد الاستلام لهذا السجل القديم."
 }

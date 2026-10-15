@@ -241,6 +241,7 @@
   "finishedGoods": "Finished goods",
   "scanUnknown": "Code not found",
   "hubHint": "Raw materials, semi-finished kits and finished goods — what the factory holds right now.",
+  "unknownGroup": "“{group}” is not a fabric, foam, wood, accessories, materials, semi-finished, or finished group.",
   "category": "Category",
   "fabricHolding": "Fabric holding",
   "fabricHoldingHint": "Dealer fabric that arrived for a specific order and waits for its bench.",

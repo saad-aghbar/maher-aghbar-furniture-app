@@ -105,7 +105,7 @@ No vague statuses.
 | DATA OWNERSHIP | **PASS** | [`PIECE14-DATA-OWNERSHIP-MAP.md`](./PIECE14-DATA-OWNERSHIP-MAP.md) |
 | COUNT=DATASET | **PASS** | Management-summary tile counts are numbers (smoke sample) |
 | LOCALIZATION | **PASS** | EN/AR/HE keys present (code); visual RTL separate |
-| RTL | **PENDING DEVICE** | Not observed on handset/browser in Cursor |
+| RTL | **PENDING DEVICE** | Not observed on handset/browser during verification |
 | PERFORMANCE | **PARTIAL** | No known N+1 blockers fixed as P14 scope; no load-test green bar |
 | FILE STORAGE | **PARTIAL** | Local default works for demo; durable volume/S3 required for prod files |
 | BACKUP | **PARTIAL** | Requirements documented; jobs not claimed running here |

@@ -245,8 +245,13 @@ export class TasksService {
             },
           }
         : {}),
-      ...(query.customerId
-        ? { productionOrder: { customerId: query.customerId } }
+      ...(query.customerId || query.salesOrderId
+        ? {
+            productionOrder: {
+              ...(query.customerId ? { customerId: query.customerId } : {}),
+              ...(query.salesOrderId ? { salesOrderId: query.salesOrderId } : {}),
+            },
+          }
         : {}),
       ...dateAndSearch,
     };
@@ -867,13 +872,9 @@ export class TasksService {
           message: 'You can only view tasks assigned to you.',
         });
       }
-      if (!canSeeAll && isPrereqLockedForWorker(task)) {
-        throw new ForbiddenException({
-          code: 'STAGE_LOCKED',
-          message: 'This task is not available until previous stages are completed.',
-        });
-      }
     }
+
+    const waitingOnPredecessor = isPrereqLockedForWorker(task);
 
     const photoDocs = await this.prisma.document.findMany({
       where: {
@@ -988,6 +989,7 @@ export class TasksService {
       producesSemiFinished,
       expectedPieceCount,
       requiresPhotos,
+      waitingOnPredecessor,
     };
 
     const carry = this.scheduling

@@ -343,6 +343,10 @@ export function AddStockSheet({
       setError(t('mobile.inventory.addStockQtyInvalid'));
       return;
     }
+    if (mode === 'issue' && (!(Number(item.onHand) > 0) || quantity > Number(item.onHand))) {
+      setError(t('mobile.inventory.addStockQtyInvalid'));
+      return;
+    }
     if (mode === 'receive' && openReceipts.length > 0 && receiptKind !== 'manual') {
       if (!selectedPoId) {
         setError(t('mobile.inventory.choosePurchaseOrder'));

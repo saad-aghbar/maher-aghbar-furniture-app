@@ -32,7 +32,8 @@ import { CalendarDays, Building2, Plug, ShieldCheck } from 'lucide-react';
 import { renderWhatsAppTemplate } from '@/lib/low-stock-review';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
@@ -105,14 +106,28 @@ const PROVIDER_OPTIONS = {
 
 type SettingsTab = 'company' | 'calendar' | 'integrations' | 'security';
 
+function settingsTab(raw: string | null): SettingsTab {
+  if (raw === 'calendar' || raw === 'integrations' || raw === 'security' || raw === 'company') return raw;
+  return 'company';
+}
+
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<BoardSkeleton rows={6} />}>
+      <SettingsDesk />
+    </Suspense>
+  );
+}
+
+function SettingsDesk() {
+  const searchParams = useSearchParams();
   const tc = useTranslations('catalog');
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
   const locale = useLocale();
   const kit = useKitCopy();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<SettingsTab>('company');
+  const [tab, setTab] = useState<SettingsTab>(() => settingsTab(searchParams.get('tab')));
   const today = new Date();
   const [calCursor, setCalCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [companyForm, setCompanyForm] = useState<CompanySettings | null>(null);

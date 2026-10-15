@@ -45,12 +45,12 @@ export function dealerLifecycleCardCopy(
         confirmCta: false,
       };
     case 'delivered': {
-      const date = input.deliveredAt ?? input.deliveryDate;
+      const date = input.deliveredAt;
       return {
         lifecycleStatus: t('lifecycle.tabs.delivered'),
         summary: date
           ? t('lifecycle.receivedOn', { date: formatDate(date) })
-          : t('lifecycle.receiptConfirmed'),
+          : t('lifecycle.legacyReceiptMissing'),
         confirmCta: false,
       };
     }

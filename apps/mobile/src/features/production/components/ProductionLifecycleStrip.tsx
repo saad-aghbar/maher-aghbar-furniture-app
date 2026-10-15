@@ -19,6 +19,7 @@ function deriveStep(input: {
   poStatus: string;
   currentStageCode?: string | null;
   deliveryStatus?: string | null;
+  manufacturingFinished?: boolean;
 }): Step {
   const po = input.poStatus.toUpperCase();
   const delivery = input.deliveryStatus?.toUpperCase() ?? null;
@@ -30,6 +31,9 @@ function deriveStep(input: {
   const code = input.currentStageCode?.toUpperCase() ?? '';
   if (code === 'PACKAGING') return 'packaging';
   if (code === 'INSPECTION') return 'inspection';
+  if (input.manufacturingFinished && (po === 'IN_PROGRESS' || po === 'READY') && !code) {
+    return 'inspection';
+  }
   return 'production';
 }
 
@@ -84,13 +88,19 @@ type Props = {
   poStatus: string;
   currentStageCode?: string | null;
   deliveryStatus?: string | null;
+  manufacturingFinished?: boolean;
 };
 
 /** Compact terminal lifecycle strip on admin mobile production detail. */
-export function ProductionLifecycleStrip({ poStatus, currentStageCode, deliveryStatus }: Props) {
+export function ProductionLifecycleStrip({
+  poStatus,
+  currentStageCode,
+  deliveryStatus,
+  manufacturingFinished,
+}: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
-  const current = deriveStep({ poStatus, currentStageCode, deliveryStatus });
+  const current = deriveStep({ poStatus, currentStageCode, deliveryStatus, manufacturingFinished });
   const idx = STEPS.indexOf(current);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 

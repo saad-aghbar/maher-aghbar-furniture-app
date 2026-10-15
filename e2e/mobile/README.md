@@ -4,7 +4,7 @@ Device flows for the Expo dev client (`jo.maheraghbar.furniture`).
 
 ## Prerequisites
 
-- API `:4000`, admin-web `:3000`, Metro `:8081` (see `.cursor/skills/dev-stack/SKILL.md`)
+- API `:4000`, unified web `:3000`, Metro `:8081` (check with `bash scripts/dev-stack.sh status`)
 - Simulator or device with the development client installed
 - [Maestro CLI](https://docs.maestro.dev)
 

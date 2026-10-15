@@ -213,5 +213,6 @@
     "chargesPending": "חיובים ממתינים",
     "dealerMarkSent": "שלחתי",
     "dealerMarkSentConfirm": "הודיעו למפעל שהרהיט בדרך. הם יאשרו כשיגיע."
-  }
+  },
+  "legacyReceiptMissing": "רשום כנמסר. אישור הקבלה לא נשמר ברשומה הישנה הזו."
 }

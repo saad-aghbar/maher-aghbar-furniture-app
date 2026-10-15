@@ -484,7 +484,7 @@ export default function CustomerDashboard() {
               <Board.Body grow>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {stats.hub.map((row) => {
-                    const href = row.kind === 'rfq' ? `/orders/requests/${row.id}` : `/orders/${row.id}`;
+                    const href = row.kind === 'rfq' ? `/dealer/orders/requests/${row.id}` : `/dealer/orders/${row.id}`;
                     const img = mediaSrc(row.imageUrl);
                     const pct = row.kind === 'sales_order' ? progressOf(row) : 8;
                     const title = orderTitle(row);

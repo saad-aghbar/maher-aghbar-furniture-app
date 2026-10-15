@@ -18,6 +18,12 @@ export class OrderProductionSetupController {
   @RequirePermissions('production.setup.view')
   @Get()
   get(@Param('salesOrderId') salesOrderId: string, @CurrentUser() user: AuthUser) {
+    return this.setups.readSetup(salesOrderId, user);
+  }
+
+  @RequirePermissions('production.setup.edit')
+  @Post('ensure')
+  ensure(@Param('salesOrderId') salesOrderId: string, @CurrentUser() user: AuthUser) {
     return this.setups.ensureSetup(salesOrderId, user);
   }
 

@@ -12,7 +12,7 @@ import {
   type ChatMessage,
   type SendMessageResult,
 } from '@/lib/ai-chat';
-import { Board, BoardSkeleton, Button, ErrorBoard, Figure, Ledger, LedgerRow, Ltr, Meter, Stamp, cn } from '@maher/ui';
+import { Board, Button, Figure, Ledger, LedgerRow, Ltr, Meter, Stamp, cn } from '@maher/ui';
 import { Send, Sparkles } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,6 +34,29 @@ function renderMarkdown(text: string) {
     }
     return <span key={i}>{part}</span>;
   });
+}
+
+function localWelcome(
+  t: (key: string) => string,
+  surface: AiChatSurface,
+): ChatMessage {
+  return {
+    id: 'welcome',
+    role: 'assistant',
+    createdAt: new Date().toISOString(),
+    blocks: [{ type: 'text', markdown: t('aiChat.demo.welcome') }],
+    suggestions:
+      surface === 'dealer'
+        ? [
+            { id: 'chip-orders', label: t('aiChat.demo.chipEntities') },
+            { id: 'chip-invoice', label: t('aiChat.demo.chipInvoice') },
+          ]
+        : [
+            { id: 'chip-profit', label: t('aiChat.demo.chipProfit') },
+            { id: 'chip-late', label: t('aiChat.demo.chipLate') },
+            { id: 'chip-stock', label: t('aiChat.demo.chipStock') },
+          ],
+  };
 }
 
 function statusTone(status: string): 'success' | 'warning' | 'error' | 'brand' | 'neutral' {
@@ -216,11 +239,9 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
   const locale = useLocale();
   const t = useTranslations('mobile');
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [localWelcome(t, surface)]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [booting, setBooting] = useState(true);
-  const [bootError, setBootError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const scrollToEnd = useCallback(() => {
@@ -231,53 +252,15 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setBooting(true);
-      setBootError(null);
-      setMessages([]);
-      setConversationId(null);
-      try {
-        const conv = await apiFetch<AiChatConversation>('/api/v1/ai-chat/conversations', {
-          method: 'POST',
-          body: JSON.stringify({ locale }),
-        });
-        if (cancelled) return;
-        setConversationId(conv.id);
-        setMessages([
-          {
-            id: 'welcome',
-            role: 'assistant',
-            createdAt: new Date().toISOString(),
-            blocks: [{ type: 'text', markdown: t('aiChat.demo.welcome') }],
-            suggestions:
-              surface === 'dealer'
-                ? [
-                    { id: 'chip-orders', label: t('aiChat.demo.chipEntities') },
-                    { id: 'chip-invoice', label: t('aiChat.demo.chipInvoice') },
-                  ]
-                : [
-                    { id: 'chip-profit', label: t('aiChat.demo.chipProfit') },
-                    { id: 'chip-late', label: t('aiChat.demo.chipLate') },
-                    { id: 'chip-stock', label: t('aiChat.demo.chipStock') },
-                  ],
-          },
-        ]);
-      } catch {
-        if (!cancelled) setBootError(t('aiChat.errorStart'));
-      } finally {
-        if (!cancelled) setBooting(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [locale, surface, t]);
+    setMessages((prev) =>
+      prev.length === 1 && prev[0]?.id === 'welcome' ? [localWelcome(t, surface)] : prev,
+    );
+  }, [surface, t]);
 
   const runTurn = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || busy || !conversationId) return;
+      if (!trimmed || busy) return;
       setBusy(true);
       setDraft('');
       const userMsg = userTextMessage(trimmed);
@@ -285,8 +268,17 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
       setMessages((prev) => [...prev, userMsg, thinking]);
       scrollToEnd();
       try {
+        let id = conversationId;
+        if (!id) {
+          const conv = await apiFetch<AiChatConversation>('/api/v1/ai-chat/conversations', {
+            method: 'POST',
+            body: JSON.stringify({ locale }),
+          });
+          id = conv.id;
+          setConversationId(id);
+        }
         const result = await apiFetch<SendMessageResult>(
-          `/api/v1/ai-chat/conversations/${conversationId}/messages`,
+          `/api/v1/ai-chat/conversations/${id}/messages`,
           {
             method: 'POST',
             body: JSON.stringify({
@@ -333,14 +325,6 @@ export function AiChatPanel({ surface, onNavigate }: Props) {
     },
     [onNavigate, runTurn, surface],
   );
-
-  if (booting) {
-    return <BoardSkeleton rows={6} />;
-  }
-
-  if (bootError) {
-    return <ErrorBoard title={t('aiChat.errorTitle')} description={bootError} onRetry={() => window.location.reload()} />;
-  }
 
   return (
     <Board tone="brand" wash="top" className="flex min-h-[34rem] flex-col">

@@ -29,27 +29,53 @@ function pkgDir(name) {
 
 const expoRouterDir = fs.realpathSync(pkgDir('expo-router'));
 
+/**
+ * pnpm keeps a separate copy of these packages for every peer hash.
+ * The iOS bundle was pulling React 18 next to React 19 (and a second
+ * Reanimated). Hermes then crashes during GC on launch. Collapse every
+ * copy onto the one the mobile app resolves.
+ */
+const singletonDirs = {
+  react: fs.realpathSync(pkgDir('react')),
+  'react-native': fs.realpathSync(pkgDir('react-native')),
+  'expo-router': expoRouterDir,
+  'react-native-reanimated': fs.realpathSync(pkgDir('react-native-reanimated')),
+  'react-native-worklets': fs.realpathSync(pkgDir('react-native-worklets')),
+  'expo-modules-core': fs.realpathSync(
+    path.dirname(
+      require.resolve('expo-modules-core/package.json', {
+        paths: [pkgDir('expo')],
+      }),
+    ),
+  ),
+};
+
+const singletonNames = Object.keys(singletonDirs).sort((a, b) => b.length - a.length);
+
+function canonicalizeSingletonPath(filePath) {
+  if (!filePath) return filePath;
+  const posix = filePath.replace(/\\/g, '/');
+  for (const name of singletonNames) {
+    const marker = `/node_modules/${name}/`;
+    const idx = posix.lastIndexOf(marker);
+    if (idx === -1) continue;
+    const rest = posix.slice(idx + marker.length);
+    return rest ? path.join(singletonDirs[name], rest) : singletonDirs[name];
+  }
+  return filePath;
+}
+
 config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules ?? {}),
   'expo-audio': pkgDir('expo-audio'),
   'expo-speech': pkgDir('expo-speech'),
   'expo-router': expoRouterDir,
+  react: singletonDirs.react,
+  'react-native': singletonDirs['react-native'],
+  'expo-modules-core': singletonDirs['expo-modules-core'],
+  'react-native-reanimated': singletonDirs['react-native-reanimated'],
+  'react-native-worklets': singletonDirs['react-native-worklets'],
 };
-
-/**
- * pnpm keeps two expo-router@6.0.24 peer-hash folders. Expo Go may still request
- * the old entry URL after install. Collapse every copy onto the app's realpath
- * so Route + LinkPreview React contexts stay the same instance as `Stack`.
- */
-function canonicalizeExpoRouterPath(filePath) {
-  if (!filePath) return filePath;
-  const posix = filePath.replace(/\\/g, '/');
-  const marker = '/node_modules/expo-router/';
-  const idx = posix.lastIndexOf(marker);
-  if (idx === -1) return filePath;
-  const rest = posix.slice(idx + marker.length);
-  return rest ? path.join(expoRouterDir, rest) : expoRouterDir;
-}
 
 const upstreamResolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -57,7 +83,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     ? upstreamResolve(context, moduleName, platform)
     : context.resolveRequest(context, moduleName, platform);
   if (resolved?.type === 'sourceFile' && resolved.filePath) {
-    const next = canonicalizeExpoRouterPath(resolved.filePath);
+    const next = canonicalizeSingletonPath(resolved.filePath);
     if (next !== resolved.filePath) {
       return { ...resolved, filePath: next };
     }

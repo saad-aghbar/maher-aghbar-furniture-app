@@ -28,8 +28,10 @@ import {
 } from "@maher/ui";
 import { localizedName } from "@maher/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { supplierOrdersTab } from "@/lib/supplier-orders-tab";
 import { useLocale, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 type PurchaseOrder = {
   id: string;
@@ -81,7 +83,17 @@ export default function SupplierDetailPage({
 }: {
   params: { id: string };
 }) {
+  return (
+    <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+      <SupplierDetail params={params} />
+    </Suspense>
+  );
+}
+
+function SupplierDetail({ params }: { params: { id: string } }) {
   const locale = useLocale();
+  const searchParams = useSearchParams();
+  const ordersTab = supplierOrdersTab(searchParams.get("tab"));
   const tc = useTranslations("catalog");
   const tPurchasing = useTranslations("purchasing");
   const tCommon = useTranslations("common");
@@ -233,7 +245,7 @@ export default function SupplierDetailPage({
         </Board>
       </div>
 
-      <Tabs defaultValue="open">
+      <Tabs key={ordersTab} defaultValue={ordersTab}>
         <TabList>
           <Tab value="open" count={supplier.openPurchaseOrders?.length}>
             {tPurchasing("openOrders")}

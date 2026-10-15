@@ -55,6 +55,18 @@ describe('canSeeNav', () => {
     expect(canSeeNav(receive, ['inventory.read'])).toBe(false);
   });
 
+  it('keeps scheduling inside Production, not as its own sidebar door', () => {
+    expect(navItems.some((item) => item.key === 'scheduling' || item.href === '/admin/production/scheduling')).toBe(false);
+    const production = nestedNavGroups.find((group) => group.key === 'production')!;
+    expect(production.items.some((item) => item.href === '/admin/production/scheduling')).toBe(true);
+  });
+
+  it('keeps workflow inside Production, not as its own sidebar door', () => {
+    expect(navItems.some((item) => item.key === 'workflow' || item.href === '/admin/production/workflow')).toBe(false);
+    const production = nestedNavGroups.find((group) => group.key === 'production')!;
+    expect(production.items.some((item) => item.href === '/admin/production/workflow')).toBe(true);
+  });
+
   it('does not expose a standalone AI intake nested item', () => {
     const orders = nestedNavGroups.find((g) => g.parentHref === '/admin/orders')!;
     expect(orders.items.some((i) => i.key === 'aiIntake' || i.href === '/admin/ai-intake')).toBe(false);

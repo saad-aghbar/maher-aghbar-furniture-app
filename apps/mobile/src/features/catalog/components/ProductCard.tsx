@@ -37,7 +37,9 @@ export function ProductCard({
   const { formatCurrency, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const subtitle = [product.categoryName, product.dimensionHint].filter(Boolean).join(' · ');
+  const subtitle = [product.sku, product.categoryName, product.dimensionHint]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <ListItemEnter
@@ -99,6 +101,7 @@ export function ProductCard({
               variant="caption"
               color="muted"
               numberOfLines={1}
+              dir="ltr"
               style={{ fontSize: 12, lineHeight: 16 }}
             >
               {subtitle}

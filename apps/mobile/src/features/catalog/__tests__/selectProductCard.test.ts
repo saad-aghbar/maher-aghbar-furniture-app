@@ -13,11 +13,11 @@ describe('selectProductCard', () => {
     expect(card.price).toBe(850);
     expect(card.isAvailable).toBe(true);
     expect(card.categoryName).toBe('Sofas');
+    expect(card.sku).toBe('SF-001');
     expect(card.dimensionHint).toBe('220×85×90');
     assertProductCardSafe(card);
     expect(JSON.stringify(card)).not.toContain('manufacturingCost');
     expect(JSON.stringify(card)).not.toContain('basePrice');
-    expect(JSON.stringify(card)).not.toContain('sku');
   });
 
   it('prefers dealerPrice over list price', () => {

@@ -100,12 +100,13 @@ export function daysBetweenYmd(fromYmd: string, toYmd: string): number {
   return Math.round((to - from) / 86_400_000);
 }
 
-/** Actual commercial delivery day — `deliveryDate`, never `updatedAt`. */
+/** Actual receipt evidence; a planned appointment is never an actual receipt. */
 export function actualDeliveryValue(
-  delivery: { status?: string | null; deliveryDate?: Date | string | null } | null | undefined,
+  delivery: { status?: string | null; deliveryDate?: Date | string | null;
+    actualDeliveredAt?: Date | string | null; customerConfirmedAt?: Date | string | null } | null | undefined,
 ): Date | string | null {
   if (!delivery || delivery.status !== 'DELIVERED') return null;
-  return delivery.deliveryDate ?? null;
+  return delivery.actualDeliveredAt ?? delivery.customerConfirmedAt ?? null;
 }
 
 /** Logistics appointment — truck day, not production completion. */

@@ -2,6 +2,8 @@
 
 Production ERP for **مفروشات ماهر الأغبر وأولاده** — furniture manufacturing from inquiry through production, delivery, and payment.
 
+**Reviewing the source? Start with [REVIEWER.md](REVIEWER.md)** for the repository layout, clean-clone setup, local review accounts, and verification commands. The operator notes below also include details specific to the owner's development Mac and iPhone.
+
 ## Account types
 
 Authorization is **Role → permissions**. Users inherit grants from the assigned role. Staff Types are reusable roles with `kind = STAFF` (define the job once, then assign it on Add User).

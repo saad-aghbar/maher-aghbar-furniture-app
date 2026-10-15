@@ -39,6 +39,10 @@ function row(overrides: Partial<DealerDeliveryDto> = {}): DealerDeliveryDto {
 }
 
 describe('selectDealerReceipts', () => {
+  it('does not report the planned calendar date as a historical receipt date', () => {
+    expect(selectReceiptStub(row({ customerStatus: 'DELIVERED', actualDeliveryDate: null,
+      calendarDate: '2026-08-25' }))).toEqual({ kind: 'received', ymd: null });
+  });
   it('treats shipped as awaiting and delivered as received; ready stays off the desk', () => {
     expect(receiptKindFromStatus('OUT_FOR_DELIVERY')).toBe('awaiting');
     expect(receiptKindFromStatus('SHIPPED')).toBe('awaiting');

@@ -4,7 +4,7 @@ import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { asRows } from '@/lib/paginated';
 import { Button, cn, isNavItemActive } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +14,7 @@ import { ScanButton } from './scan-button';
 import { allNavItems, navFooterItems, navGroups, nestedNavGroups } from './nav-items';
 import { AppThemeToggle } from './theme-toggle';
 import { useAuthMe } from '@/hooks/use-auth-me';
+import { resetAccountClientState } from '@/lib/reset-account-client';
 import { can } from '@maher/permissions';
 
 interface NotificationItem {
@@ -34,6 +35,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
   const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
@@ -83,6 +85,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
     } catch {
       /* ignore */
     }
+    resetAccountClientState(queryClient);
     router.push('/login');
     router.refresh();
   }

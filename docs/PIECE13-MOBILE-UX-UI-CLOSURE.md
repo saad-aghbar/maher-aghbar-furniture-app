@@ -125,7 +125,7 @@ HIGH fixes addressed in code: sticky CTA fragmentation, StatusBadge raw enums, O
 | `piece13-ux-primitives.test.ts` | PASS |
 | `adminOrderLifecycle.test.ts` | PASS |
 | `deliveryHumanPhase.test.ts` | PASS (present; included in §33 rerun) |
-| `selectInvoice` finance tone tests | updated/pass per finance agent |
+| `selectInvoice` finance tone tests | updated/pass per finance verification |
 
 See **§33 Verification rerun** for latest timestamps and counts.
 

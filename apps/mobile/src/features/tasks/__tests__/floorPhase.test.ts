@@ -9,6 +9,15 @@ import { selectTodayFloorBuckets } from '@/features/worker-home/selectWorkerHome
 import type { WorkerHomeTaskWithFloor } from '@/features/worker-home/selectWorkerHome';
 
 describe('floorPhase', () => {
+  it('does not offer start while a predecessor is still waiting', () => {
+    const hint = classifyFloorTaskPhase({
+      taskStatus: 'NOT_STARTED',
+      waitingPrevious: true,
+    });
+    expect(hint.phase).toBe('WAITING_PREVIOUS');
+    expect(hint.primaryAction).toBe('NONE');
+  });
+
   it('classifies receive before start when SEMI outstanding', () => {
     const hint = classifyFloorTaskPhase({
       taskStatus: 'READY',
@@ -18,6 +27,12 @@ describe('floorPhase', () => {
     });
     expect(hint.phase).toBe('READY_TO_RECEIVE');
     expect(hint.primaryAction).toBe('RECEIVE_SEMI');
+  });
+
+  it('labels a paused task as paused and does not offer start', () => {
+    const hint = classifyFloorTaskPhase({ taskStatus: 'PAUSED' });
+    expect(hint.labelKey).toBe('mobile.tasks.phasePaused');
+    expect(hint.primaryAction).toBe('COMPLETE');
   });
 
   it('prefers in-progress over receive gate', () => {
@@ -65,6 +80,8 @@ describe('floorPhase', () => {
     expect(
       bucketOpenTaskForToday({ status: 'BLOCKED', waitingPrevious: true }),
     ).toBe('WAITING');
+    expect(bucketOpenTaskForToday({ status: 'NOT_STARTED' })).toBe('WAITING');
+    expect(bucketOpenTaskForToday({ status: 'READY' })).toBe('DO_NOW');
   });
 
   it('stamps Inspection / Rework / Packaging for Today', () => {

@@ -26,8 +26,11 @@ export function productionLifecycleSteps(): ProductionLifecycleStep[] {
 
 type StageRow = {
   status: string;
-  stageDefinition: { code: string };
+  stageDefinition: { code: string; sortOrder?: number };
+  tasks?: Array<{ status: string }>;
 };
+
+const DONE_WORK = new Set(['COMPLETED', 'SKIPPED', 'DONE', 'CANCELLED']);
 
 /** Quality / rework holds that belong on the inspection lane. */
 export function isInspectionLaneStatus(poStatus: string): boolean {
@@ -44,11 +47,9 @@ export function deriveProductionLifecycle(input: {
   const po = input.poStatus.toUpperCase();
   const delivery = input.deliveryStatus?.toUpperCase() ?? null;
 
-  if (delivery === 'DELIVERED' || po === 'COMPLETED') {
-    return delivery === 'OUT_FOR_DELIVERY' ? 'shipped' : 'delivered';
-  }
+  if (delivery === 'DELIVERED') return 'delivered';
   if (delivery === 'OUT_FOR_DELIVERY') return 'shipped';
-  if (po === 'READY_FOR_DELIVERY') return 'ready';
+  if (po === 'COMPLETED' || po === 'READY_FOR_DELIVERY') return 'ready';
 
   const stages = input.stages ?? [];
   const byCode = (code: string) =>
@@ -77,7 +78,59 @@ export function deriveProductionLifecycle(input: {
 
   if (insp?.status === 'COMPLETED' && pack?.status !== 'COMPLETED') return 'packaging';
 
+  // Manufacturing stages are done and inspection is still ahead. Do not call this delivered.
+  if (
+    (po === 'IN_PROGRESS' || po === 'READY') &&
+    manufacturingStagesFinished(stages)
+  ) {
+    return 'inspection';
+  }
+
   return 'production';
+}
+
+const AFTER_MANUFACTURING = new Set([
+  'INSPECTION',
+  'QC',
+  'QUALITY',
+  'PACKAGING',
+  'PACK',
+  'DELIVERY',
+]);
+
+function isManufacturingStage(stage: StageRow): boolean {
+  return !AFTER_MANUFACTURING.has(stage.stageDefinition.code.toUpperCase());
+}
+
+/** Task status wins when a stage has tasks. A Completed stage row must not hide a Not started task. */
+export function effectiveManufacturingStatus(stage: StageRow): string {
+  const tasks = stage.tasks ?? [];
+  if (tasks.length === 0) return stage.status;
+  const open = tasks.find((task) => !DONE_WORK.has(String(task.status).toUpperCase()));
+  return open ? open.status : 'COMPLETED';
+}
+
+/** True when every manufacturing task is completed. Stage rows are used only when a stage has no tasks. */
+export function manufacturingStagesFinished(stages: StageRow[] | undefined): boolean {
+  const rows = (stages ?? []).filter(isManufacturingStage);
+  return (
+    rows.length > 0 &&
+    rows.every((stage) => DONE_WORK.has(effectiveManufacturingStatus(stage).toUpperCase()))
+  );
+}
+
+/** Earliest manufacturing stage whose task is not completed. */
+export function openManufacturingWork<T extends StageRow>(
+  stages: T[] | undefined,
+): { stage: T; status: string } | null {
+  const rows = [...(stages ?? [])]
+    .filter(isManufacturingStage)
+    .sort((a, b) => (a.stageDefinition.sortOrder ?? 0) - (b.stageDefinition.sortOrder ?? 0));
+  for (const stage of rows) {
+    const status = effectiveManufacturingStatus(stage);
+    if (!DONE_WORK.has(status.toUpperCase())) return { stage, status };
+  }
+  return null;
 }
 
 export type ProductionLifecycleFilter =

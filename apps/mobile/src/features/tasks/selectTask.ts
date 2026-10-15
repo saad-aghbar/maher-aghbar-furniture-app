@@ -295,10 +295,19 @@ export function selectTaskDetail(
 
   const status = card.status;
   const terminal = status === 'COMPLETED' || status === 'CANCELLED';
-  const waitingOn =
+  const stageStatus = String(task.stageInstance?.status ?? '').toUpperCase();
+  const stageStillPending =
+    status === 'NOT_STARTED' &&
+    stageStatus !== '' &&
+    stageStatus !== 'READY' &&
+    stageStatus !== 'IN_PROGRESS';
+  const namedWaiting =
     status === 'NOT_STARTED' && (task.stageDefinition?.dependsOnCodes?.length ?? 0) > 0
       ? formatWaitingOnStages(task.stageDefinition!.dependsOnCodes!, locale) || null
       : null;
+  const predecessorLocked =
+    Boolean(task.waitingOnPredecessor) || stageStillPending || Boolean(namedWaiting);
+  const waitingOn = predecessorLocked ? namedWaiting || 'previous stages' : null;
 
   const product = productTitle(task, locale);
   const stage = stageLabel(task, locale);
@@ -360,7 +369,8 @@ export function selectTaskDetail(
           ? 1
           : null,
     problems,
-    canStart: ['NOT_STARTED', 'READY', 'READY_FOR_INSPECTION'].includes(status) && !waitingOn,
+    canStart:
+      ['NOT_STARTED', 'READY', 'READY_FOR_INSPECTION'].includes(status) && !predecessorLocked,
     canStop: status === 'IN_PROGRESS',
     canResume: (status === 'PAUSED' || status === 'BLOCKED') && !waitingOn,
     // Soft problem reports do not lock the dock — only terminal / hard BLOCKED do.

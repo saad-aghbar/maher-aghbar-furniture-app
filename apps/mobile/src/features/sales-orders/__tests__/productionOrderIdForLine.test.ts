@@ -40,6 +40,17 @@ describe('productionOrderIdForLineId', () => {
         fallbackId: pos[0]!.id,
       }),
     ).toBe('po-c');
-    expect(pos[0]!.id).toBe('po-a');
+    expect(
+      productionOrderIdForLineId({
+        lineId: 'missing-line',
+        productionOrders: pos,
+        fallbackId: pos[0]!.id,
+      }),
+    ).toBeNull();
+    expect(
+      productionOrderIdForLineId({
+        productionOrders: pos,
+      }),
+    ).toBeNull();
   });
 });

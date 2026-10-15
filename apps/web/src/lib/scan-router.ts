@@ -1,3 +1,4 @@
+import { apiFetch } from './api-client';
 import { resolveInventoryScan, type InventoryScanResolve } from './resolve-inventory-scan';
 
 /**
@@ -55,10 +56,38 @@ export function targetFromResolve(code: string, result: InventoryScanResolve, _s
   }
 }
 
+type ProductSkuRow = { id: string; sku: string; nameEn?: string | null };
+
+/** Exact catalog SKU only. A contains-match must not open a different product. */
+export function matchProductSku(code: string, rows: ProductSkuRow[]): ScanTarget | null {
+  const wanted = code.trim().toLowerCase();
+  if (!wanted) return null;
+  const hit = rows.find((row) => row.sku.trim().toLowerCase() === wanted);
+  if (!hit?.id) return null;
+  return {
+    kind: 'route',
+    href: `/admin/products/${hit.id}`,
+    label: hit.nameEn?.trim() || hit.sku,
+  };
+}
+
+async function productSkuTarget(code: string): Promise<ScanTarget | null> {
+  try {
+    const page = await apiFetch<{ data?: ProductSkuRow[] }>(
+      `/api/v1/products?q=${encodeURIComponent(code.trim())}&pageSize=20`,
+    );
+    return matchProductSku(code, page.data ?? []);
+  } catch {
+    return null;
+  }
+}
+
 /** Resolve a scanned code against the API and pick its route. */
 export async function routeForScan(code: string, surface: ScanSurface = 'admin'): Promise<ScanTarget> {
   const direct = orderCodeTarget(code, surface);
   if (direct) return direct;
   const result = await resolveInventoryScan(code);
-  return targetFromResolve(code, result, surface);
+  const target = targetFromResolve(code, result, surface);
+  if (target.kind !== 'unknown') return target;
+  return (await productSkuTarget(code)) ?? target;
 }

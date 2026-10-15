@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { filenameFromDisposition, pdfQuery, withPdfQuery } from '../../../../packages/ui/src/documents/pdf-query';
-import { orderCodeTarget, targetFromResolve } from './scan-router';
+import { matchProductSku, orderCodeTarget, targetFromResolve } from './scan-router';
 
 describe('scan-router', () => {
   it('routes order-shaped codes straight to search', () => {
@@ -17,6 +17,15 @@ describe('scan-router', () => {
     expect(targetFromResolve('MAT-1', { status: 'FOUND', item: { id: 'i1', sku: 'MAT-1' } }, 'worker')).toMatchObject({ href: '/admin/inventory/items/i1' });
     expect(targetFromResolve('??', { status: 'NOT_FOUND' }, 'admin')).toEqual({ kind: 'unknown', code: '??' });
     expect(targetFromResolve('??', { status: 'ERROR' }, 'admin')).toEqual({ kind: 'error', code: '??' });
+  });
+
+  it('opens a catalog product only when the SKU matches exactly', () => {
+    expect(
+      matchProductSku('ARM-01', [{ id: 'p1', sku: 'ARM-01', nameEn: 'Classic Chair' }]),
+    ).toEqual({ kind: 'route', href: '/admin/products/p1', label: 'Classic Chair' });
+    expect(
+      matchProductSku('ARM', [{ id: 'p1', sku: 'ARM-01', nameEn: 'Classic Chair' }]),
+    ).toBeNull();
   });
 });
 

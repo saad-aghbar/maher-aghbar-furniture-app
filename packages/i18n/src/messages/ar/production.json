@@ -787,6 +787,7 @@
   "hubMaterials": "المواد",
   "hubTasks": "المهام",
   "tasksHint": "مهمة واحدة لكل مرحلة. عيّن عاملًا وحدد وقت الاستحقاق وأرفق الصور.",
+  "manufacturingFinishedInspectionNext": "مراحل التصنيع اكتملت. الفحص هو التالي.",
   "usageOver": "فوق المخطط",
   "photosCount": "{count, plural, zero {لا صور} one {صورة واحدة} two {صورتان} few {# صور} many {# صورة} other {# صورة}}",
   "problemsHint": "عوائق رفعها العمال من طاولة العمل. أجب عنها هنا — يرى العامل الرد على المهمة.",

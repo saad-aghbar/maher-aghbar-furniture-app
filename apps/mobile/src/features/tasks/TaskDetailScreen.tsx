@@ -271,6 +271,7 @@ export function TaskDetailScreen({
       required: incomingInfo.required,
       allReceived: incomingInfo.allReceived,
       lines: incomingInfo.lines,
+      waitingPrevious: Boolean(vm.waitingOn),
     });
   }, [vm, incomingInfo]);
 

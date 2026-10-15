@@ -787,6 +787,7 @@
   "hubMaterials": "חומרים",
   "hubTasks": "משימות",
   "tasksHint": "משימה אחת לכל שלב. שייכו עובד, קבעו זמן יעד והצמידו תמונות.",
+  "manufacturingFinishedInspectionNext": "שלבי הייצור הסתיימו. הבדיקה היא הבאה.",
   "usageOver": "מעל התכנון",
   "photosCount": "{count, plural, one {תמונה אחת} other {# תמונות}}",
   "problemsHint": "חסימות שעובדים העלו מהשולחן. ענו כאן — העובד רואה את התשובה במשימה.",

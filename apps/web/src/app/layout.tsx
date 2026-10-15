@@ -1,4 +1,4 @@
-import { getFontClass, getPrimaryFontFamily } from '@/lib/fonts';
+import { fontVariableClass, getPrimaryFontFamily } from '@/lib/fonts';
 import { defaultLocale, getDirection, isValidLocale } from '@maher/i18n';
 import { THEME_FOUC_SCRIPT } from '@maher/ui';
 import { headers } from 'next/headers';
@@ -11,7 +11,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const locale = isValidLocale(requested) ? requested : defaultLocale;
 
   return (
-    <html lang={locale} dir={getDirection(locale)} className={getFontClass(locale)} suppressHydrationWarning>
+    <html lang={locale} dir={getDirection(locale)} className={fontVariableClass} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_FOUC_SCRIPT }} />
       </head>

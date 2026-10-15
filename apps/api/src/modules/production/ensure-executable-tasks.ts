@@ -6,6 +6,7 @@
 export type EnsureTaskStageInput = {
   id: string;
   stageDefinitionId: string;
+  status?: string;
   stageDefinition?: {
     code?: string | null;
     nameEn?: string | null;
@@ -41,6 +42,8 @@ export function listMissingExecutableTaskSpecs(
 ): EnsureTaskCreateSpec[] {
   const out: EnsureTaskCreateSpec[] = [];
   for (const stage of stages) {
+    // Historical completed/skipped stages must never acquire new open work.
+    if (stage.status === 'COMPLETED' || stage.status === 'SKIPPED') continue;
     const def = stage.stageDefinition;
     if (
       isLogisticsOrDeliveryStage({

@@ -28,6 +28,7 @@ import {
   DELIVERY_FLOOR_CREAM,
   deliverySectionLabelStyle,
 } from './deliveryFloorStyle';
+import { splitDriverHomeDeliveries } from './driverHomeDeliveries';
 import { useMyDeliveriesQuery } from './query';
 
 const HERO_HEIGHT = 360;
@@ -143,6 +144,14 @@ function DeliveryCurrentHero({ item }: { item: DeliveryListItem }) {
             </View>
 
             <View style={{ gap: theme.spacing.xs, width: '100%' }}>
+              <AppText
+                variant="caption"
+                weight="semibold"
+                dir="ltr"
+                style={{ color: DELIVERY_FLOOR_CREAM, letterSpacing: 0.4 }}
+              >
+                {item.number}
+              </AppText>
               <AppText
                 variant="title"
                 weight="semibold"
@@ -297,6 +306,56 @@ function DeliveryCurrentIdle() {
   );
 }
 
+function DeliveryWaitingRow({ item }: { item: DeliveryListItem }) {
+  const { t, isRTL } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const planned = String(item.status ?? '').trim().toUpperCase() === 'PLANNED';
+
+  return (
+    <View
+      style={{
+        borderRadius: theme.radius.xl,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        padding: theme.spacing.lg,
+        gap: theme.spacing.sm,
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+        }}
+      >
+        <AppText variant="body" weight="semibold" dir="ltr">
+          {item.number}
+        </AppText>
+        <View
+          style={{
+            paddingHorizontal: 9,
+            paddingVertical: 5,
+            borderRadius: theme.radius.full,
+            backgroundColor: colors.warningSoft,
+            borderWidth: 1,
+            borderColor: colors.warning,
+          }}
+        >
+          <AppText variant="caption" weight="semibold" style={{ color: colors.warning }}>
+            {planned ? t('mobile.deliveryLoad.statusPlanned') : item.status}
+          </AppText>
+        </View>
+      </View>
+      <AppText variant="bodySecondary" align="start" color="secondary">
+        {planned ? t('mobile.deliveryLoad.waitingPlanned') : t('mobile.deliveryLoad.homeWaiting')}
+      </AppText>
+    </View>
+  );
+}
+
 export function DeliveryWorkerHomeScreen() {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -359,11 +418,12 @@ export function DeliveryWorkerHomeScreen() {
   }
 
   const open = openQuery.data?.data ?? [];
-  const hero = open[0] ?? null;
-  const upcoming = open.slice(1);
+  const { ready, waiting } = splitDriverHomeDeliveries(open);
+  const hero = ready[0] ?? null;
+  const moreReady = ready.slice(1);
   const shippedCount = (doneQuery.data?.data ?? []).length;
-  const truckLoaded = open.reduce((sum, d) => sum + (d.loadProgress?.loaded ?? 0), 0);
-  const truckTotal = open.reduce((sum, d) => sum + (d.loadProgress?.total ?? 0), 0);
+  const truckLoaded = ready.reduce((sum, d) => sum + (d.loadProgress?.loaded ?? 0), 0);
+  const truckTotal = ready.reduce((sum, d) => sum + (d.loadProgress?.total ?? 0), 0);
 
   return (
     <ScrollableScreen
@@ -423,7 +483,7 @@ export function DeliveryWorkerHomeScreen() {
 
         {hero ? <DeliveryCurrentHero item={hero} /> : <DeliveryCurrentIdle />}
 
-        {upcoming.length > 0 ? (
+        {moreReady.length > 0 ? (
           <Animated.View
             entering={reduce ? undefined : softFadeDown(80)}
             style={{ gap: theme.spacing.md }}
@@ -473,7 +533,7 @@ export function DeliveryWorkerHomeScreen() {
                       weight="semibold"
                       style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
                     >
-                      {String(upcoming.length)}
+                      {String(moreReady.length)}
                     </AppText>
                   </View>
                 </View>
@@ -502,13 +562,29 @@ export function DeliveryWorkerHomeScreen() {
             </View>
 
             <View style={{ gap: 0 }}>
-              {upcoming.map((item, index) => (
+              {moreReady.map((item, index) => (
                 <DeliveryFloorOrderCard
                   key={item.id}
                   item={item}
                   index={index}
                   animateEnter={false}
                 />
+              ))}
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {waiting.length > 0 ? (
+          <Animated.View
+            entering={reduce ? undefined : softFadeDown(90)}
+            style={{ gap: theme.spacing.md }}
+          >
+            <AppText variant="title" weight="semibold" align="start">
+              {t('mobile.deliveryLoad.homeWaiting')}
+            </AppText>
+            <View style={{ gap: theme.spacing.md }}>
+              {waiting.map((item) => (
+                <DeliveryWaitingRow key={item.id} item={item} />
               ))}
             </View>
           </Animated.View>

@@ -1,6 +1,8 @@
 'use client';
 
 import { OrderLineSetupPanel } from '@/components/sales-orders/order-line-setup-panel';
+import { PlanLineOutputs } from '@/components/sales-orders/plan-line-outputs';
+import { PlanLineSchedule } from '@/components/sales-orders/plan-line-schedule';
 import { PlanStagesBoard } from '@/components/sales-orders/plan-stages-board';
 import { OrderFabricTracker } from '@/components/purchasing/order-fabric-tracker';
 import { useOrdersCopy } from '@/components/orders/orders-shared';
@@ -30,16 +32,14 @@ import {
   Ltr,
   Meter,
   RowThumb,
-  StageStrip,
   Stamp,
   Ticket,
   useToast,
   type BoardTone,
-  type StageStripStage,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type WorkflowRow = {
   id: string;
@@ -52,8 +52,6 @@ type WorkflowRow = {
   activeVersionId?: string | null;
   activeVersion?: { id: string } | null;
 };
-
-const STEP_KEYS = ['setup', 'lines', 'ready', 'released'] as const;
 
 type Props = { salesOrderId: string; initialLineId?: string | null };
 
@@ -82,6 +80,13 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
   }, [initialLineId]);
 
   const setupQuery = useQuery({ queryKey: ['order-production-setup', salesOrderId], queryFn: () => fetchOrderProductionSetup(salesOrderId) });
+  const orderQuery = useQuery({
+    queryKey: ['sales-order', salesOrderId],
+    queryFn: () =>
+      apiFetch<{ productionOrders?: Array<{ id: string; salesOrderLineId?: string | null; releasedToFactoryAt?: string | null }> }>(
+        `/api/v1/sales-orders/${salesOrderId}`,
+      ),
+  });
   const workflowsQuery = useQuery({
     queryKey: ['production-workflows'],
     queryFn: async () => {
@@ -115,6 +120,12 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const ensureMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/sales-orders/${salesOrderId}/production-setup/ensure`, { method: 'POST' }),
+    onSuccess: () => void invalidate(),
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   const openRelease = async () => {
     setError(null);
     try {
@@ -129,20 +140,6 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
   const readOnly = setup?.status === 'RELEASED';
   const customerName = setup?.salesOrder.customer ? localizedName(copy.locale, setup.salesOrder.customer, setup.salesOrder.customer.nameEn ?? '') : undefined;
 
-  const steps = useMemo<StageStripStage[]>(() => {
-    const map = new Map((setup?.progress.steps ?? []).map((s) => [s.key, s.done]));
-    let currentSet = false;
-    return STEP_KEYS.map((key) => {
-      const done = Boolean(map.get(key));
-      let state: StageStripStage['state'] = 'done';
-      if (!done && !currentSet) {
-        state = 'current';
-        currentSet = true;
-      } else if (!done) state = 'todo';
-      return { key, label: t(`orderSetup.steps.${key}`), state };
-    });
-  }, [setup?.progress.steps, t]);
-
   if (setupQuery.isLoading) {
     return (
       <div className="space-y-5">
@@ -152,8 +149,32 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
     );
   }
   if (setupQuery.isError || !setup) return <ErrorBoard title={tNav('productionPlan')} onRetry={() => setupQuery.refetch()} />;
+  if (setup.initialized === false) {
+    return (
+      <Board tone="neutral">
+        <Board.Header title={tNav('productionPlan')} description={<Ltr>{setup.salesOrder.number}</Ltr>} />
+        <Board.Empty title={t('orderSetup.noLines')} description={t('orderSetup.planStagesHint')} />
+        <Board.Footer>
+          <Button size="sm" loading={ensureMutation.isPending} onClick={() => ensureMutation.mutate()}>
+            {t('prepareProduction')}
+          </Button>
+          {error ? <p className="m-0 text-[13px] text-[var(--maher-error)]">{error}</p> : null}
+        </Board.Footer>
+      </Board>
+    );
+  }
 
-  const resolvedExpanded = setup.lines.find((line) => line.id === expandedLineId || line.salesOrderLineId === expandedLineId)?.id ?? expandedLineId;
+  const focusedLine = initialLineId
+    ? setup.lines.find((line) => line.id === initialLineId || line.salesOrderLineId === initialLineId) ?? null
+    : null;
+  const lineOrders = (orderQuery.data?.productionOrders ?? []).filter(
+    (po) => !focusedLine || po.salesOrderLineId === focusedLine.salesOrderLineId,
+  );
+  const factoryReleased = lineOrders.some((po) => Boolean(po.releasedToFactoryAt));
+  const statusLabel =
+    setup.status === 'RELEASED'
+      ? t(factoryReleased ? 'orderSetup.releasedToFactory' : 'orderSetup.setupOrdersCreated')
+      : copy.status(setup.status);
   const readiness = setup.materialReadiness;
   const tone: BoardTone = readOnly ? 'success' : setup.validation.ok ? 'brand' : 'warning';
   const canMarkReady = !setup.validation.ok || setup.status === 'READY_FOR_RELEASE' ? false : true;
@@ -178,37 +199,32 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
     <div className="maher-stagger space-y-5 pb-24 md:pb-0">
       <DetailHero
         LinkComponent={Link}
-        back={{ label: setup.salesOrder.number, href: `/admin/sales-orders/${salesOrderId}` }}
+        back={{
+          label: initialLineId ? t('orderSetup.lines') : setup.salesOrder.number,
+          href: initialLineId
+            ? `/admin/sales-orders/${salesOrderId}/production-plan`
+            : `/admin/sales-orders/${salesOrderId}`,
+        }}
         code={setup.salesOrder.number}
         title={tNav('productionPlan')}
         subtitle={[customerName, setup.salesOrder.projectName].filter(Boolean).join(' · ') || undefined}
-        status={{ label: copy.status(setup.status), tone }}
+        status={{ label: statusLabel, tone: factoryReleased ? 'success' : tone }}
         facts={[
           { label: t('orderSetup.progress'), value: `${setup.progress.readyLines}/${setup.progress.totalLines}`, ltr: true },
           { label: t('orderSetup.readiness'), value: copy.status(readiness.status), tone: readinessTone(readiness.status) },
           { label: t('orderSetup.issuesTitle'), value: String(setup.validation.issues.length), ltr: true, tone: setup.validation.issues.length ? 'warning' : 'success' },
           { label: tc('lineItems'), value: String(setup.lines.length), ltr: true },
+          ...(setup.status === 'RELEASED'
+            ? [{ label: t('orderSetup.factoryFloor'), value: factoryReleased ? t('orderSetup.releasedToFactory') : t('orderSetup.notReleasedToFactory'), tone: (factoryReleased ? 'success' : 'neutral') as BoardTone }]
+            : []),
         ]}
         primary={primary}
         actions={secondary}
       >
         <div className="space-y-4">
           <Meter value={setup.progress.percent} max={100} tone={readOnly ? 'success' : 'brand'} label={t('orderSetup.progressSummary', { ready: String(setup.progress.readyLines), total: String(setup.progress.totalLines), percent: String(setup.progress.percent) })} valueLabel={`${setup.progress.percent}%`} />
-          <StageStrip stages={steps} />
         </div>
       </DetailHero>
-
-      <Board tone="neutral" wash="top">
-        <Board.Body>
-          <p className="m-0 text-[13px] leading-5 text-[var(--maher-text-secondary)]">
-            <span className="font-semibold text-[var(--maher-text-primary)]">{t('orderSetup.prepareSurface')}</span>
-            {' · '}
-            <span className="font-semibold text-[var(--maher-text-primary)]">{t('orderSetup.factorySurface')}</span>
-            {' — '}
-            {t('orderSetup.surfaceHint')}
-          </p>
-        </Board.Body>
-      </Board>
 
       {!setup.validation.ok || readiness.anyShortage ? (
         <Board tone="warning" wash="top">
@@ -224,12 +240,13 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
             })}
           </ul>
         </Board>
-      ) : (
+      ) : initialLineId ? null : (
         <Board tone="success">
           <Board.Header title={t('orderSetup.validationOk')} description={t('orderSetup.reviewReleaseHint')} />
         </Board>
       )}
 
+      {initialLineId ? null : (
       <Board tone="brand">
         <Board.Header title={t('orderSetup.lines')} description={t('orderSetup.reviewReleaseHint')} meta={<span className="tabular-nums">{setup.lines.length}</span>} />
         {setup.lines.length === 0 ? (
@@ -239,13 +256,13 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
             {setup.lines.map((line) => {
               const complexity = line.manufacturingComplexity ?? 'STANDARD';
               const kind = complexity === 'CUSTOM' ? tc('lineKindCustom') : complexity === 'MODIFIED' ? tc('lineKindCustomized') : tc('lineKindStandard');
-              const selected = resolvedExpanded === line.id;
               const done = line.status === 'READY' || line.status === 'RELEASED';
               return (
                 <ListRow
                   key={line.id}
-                  selected={selected}
-                  onClick={() => setExpandedLineId(line.id === resolvedExpanded ? null : line.id)}
+                  href={`/admin/sales-orders/${salesOrderId}/production-plan?lineId=${encodeURIComponent(line.salesOrderLineId ?? line.id)}`}
+                  LinkComponent={Link}
+                  selected={focusedLine?.id === line.id}
                   leading={<RowThumb src={line.product?.imageUrl} className="h-11 w-11" icon={<Stamp tone={complexity === 'CUSTOM' ? 'warning' : complexity === 'MODIFIED' ? 'info' : 'neutral'} />} />}
                   title={
                     <span className="flex items-center gap-2">
@@ -265,25 +282,32 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
           </ListRows>
         )}
       </Board>
+      )}
 
-      {setup.lines.map((line) => (
-        <OrderLineSetupPanel
-          key={line.id}
-          salesOrderId={salesOrderId}
-          line={line}
-          workflows={workflowsQuery.data ?? []}
-          readOnly={readOnly}
-          expanded={resolvedExpanded === line.id}
-          onToggle={() => setExpandedLineId((prev) => (prev === line.id ? null : line.id))}
-          onUpdated={() => void invalidate()}
-        />
-      ))}
+      {initialLineId ? (
+        focusedLine ? (
+          <OrderLineSetupPanel
+            salesOrderId={salesOrderId}
+            line={focusedLine}
+            workflows={workflowsQuery.data ?? []}
+            readOnly={readOnly}
+            expanded
+            onToggle={() => undefined}
+            onUpdated={() => void invalidate()}
+          />
+        ) : (
+          <ErrorBoard title={tNav('productionPlan')} description={t('orderSetup.lineMissing')} />
+        )
+      ) : null}
 
-      <OrderFabricTracker salesOrderId={salesOrderId} />
-
-      <PlanStagesBoard salesOrderId={salesOrderId} lines={setup.lines} released={readOnly} />
-
-      {readOnly ? <ReleasedSpecSummary setup={setup} /> : null}
+      {focusedLine ? (
+        <>
+          <PlanLineSchedule salesOrderId={salesOrderId} salesOrderLineId={focusedLine.salesOrderLineId} />
+          {lineOrders[0] ? <PlanLineOutputs productionOrderId={lineOrders[0].id} /> : null}
+          <OrderFabricTracker salesOrderId={salesOrderId} />
+          <PlanStagesBoard salesOrderId={salesOrderId} lines={[focusedLine]} released={readOnly} />
+        </>
+      ) : null}
 
       <ActionDock className="md:hidden" note={<Ltr>{`${setup.progress.percent}%`}</Ltr>}>
         {secondary}
@@ -316,35 +340,5 @@ export function OrderProductionSetupView({ salesOrderId, initialLineId }: Props)
         ) : null}
       </ConfirmDialog>
     </div>
-  );
-}
-
-function ReleasedSpecSummary({ setup }: { setup: OrderProductionSetup }) {
-  const copy = useOrdersCopy();
-  const t = useTranslations('sales');
-  return (
-    <Board tone="success">
-      <Board.Header title={t('orderSetup.releasedSpec')} description={t('orderSetup.releasedSpecHint')} />
-      <ListRows>
-        {setup.lines.map((line) => {
-          const dims = [line.orderDimensions?.width, line.orderDimensions?.height, line.orderDimensions?.depth].map((v) => (v != null ? String(v) : null)).filter(Boolean).join(' × ');
-          return (
-            <ListRow
-              key={line.id}
-              tone="success"
-              title={line.manufacturingName ?? '—'}
-              meta={[line.workflow ? localizedName(copy.locale, line.workflow, line.workflow.code) : null, dims ? `${dims} cm` : null].filter(Boolean).join(' · ')}
-              chevron={false}
-              trailing={
-                <span className="flex flex-col items-end text-[12px] text-[var(--maher-text-secondary)]">
-                  <Ltr>× {line.quantity}</Ltr>
-                  <span>{t('orderSetup.materialCount', { count: String(line.materials.length) })}</span>
-                </span>
-              }
-            />
-          );
-        })}
-      </ListRows>
-    </Board>
   );
 }

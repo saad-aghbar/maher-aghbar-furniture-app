@@ -234,7 +234,15 @@ export function InventoryMaterialRow({
               <ActionChip label={t('mobile.inventory.receive')} tone="brand" onPress={onReceive} />
             ) : null}
             {canIssue && onIssue ? (
-              <ActionChip label={t('mobile.inventory.issue')} tone="solid" onPress={onIssue} />
+              <ActionChip
+                label={t('mobile.inventory.issue')}
+                tone="solid"
+                disabled={!(item.onHand > 0)}
+                onPress={() => {
+                  if (!(item.onHand > 0)) return;
+                  onIssue();
+                }}
+              />
             ) : null}
             {canEdit && onEdit ? (
               <ActionChip label={t('mobile.inventory.edit')} tone="ghost" onPress={onEdit} />
@@ -307,10 +315,12 @@ function ActionChip({
   label,
   tone,
   onPress,
+  disabled = false,
 }: {
   label: string;
   tone: 'brand' | 'solid' | 'ghost';
   onPress: () => void;
+  disabled?: boolean;
 }) {
   const { colors, theme } = useTheme();
   const { locale } = useLocale();
@@ -322,7 +332,9 @@ function ActionChip({
       variant="button"
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       onPress={() => {
+        if (disabled) return;
         void haptics.selection();
         onPress();
       }}
@@ -332,19 +344,35 @@ function ActionChip({
         borderRadius: theme.radius.full,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: brand
-          ? colors.brandSoft
-          : ghost
-            ? colors.surfaceSecondary
-            : colors.brand,
+        backgroundColor: disabled
+          ? colors.surfaceSecondary
+          : brand
+            ? colors.brandSoft
+            : ghost
+              ? colors.surfaceSecondary
+              : colors.brand,
         borderWidth: 1,
-        borderColor: brand ? colors.brand : ghost ? colors.border : colors.brand,
+        borderColor: disabled
+          ? colors.border
+          : brand
+            ? colors.brand
+            : ghost
+              ? colors.border
+              : colors.brand,
       }}
     >
       <AppText
         variant="caption"
         weight={locale === 'ar' ? 'medium' : 'semibold'}
-        style={{ color: brand ? colors.brand : ghost ? colors.textPrimary : colors.onBrand }}
+        style={{
+          color: disabled
+            ? colors.textMuted
+            : brand
+              ? colors.brand
+              : ghost
+                ? colors.textPrimary
+                : colors.onBrand,
+        }}
       >
         {label}
       </AppText>
