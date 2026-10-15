@@ -525,15 +525,6 @@ export class CostPerformanceService {
       finalizedAt: row.finalizedAt,
       isRework: row.task.isRework,
     }));
-    const scrapCost = usageEnrichment.reduce((sum, row) => {
-      if (row.unitCost == null || !(row.scrapQty > 0)) return sum;
-      return sum + row.unitCost * row.scrapQty;
-    }, 0);
-    const reworkMaterial = usageEnrichment.reduce((sum, row) => {
-      if (!row.isRework || row.extendedCost == null) return sum;
-      return sum + row.extendedCost;
-    }, 0);
-
     const returnCost = await this.returnLifetime(order.id, returnPos, txs, mix.total);
     const qty = order.lines.reduce((sum, line) => sum + Number(line.quantity), 0);
 

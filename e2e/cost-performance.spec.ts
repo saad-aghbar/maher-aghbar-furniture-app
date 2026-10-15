@@ -16,7 +16,7 @@ test.describe('Cost & Performance — routed sections', () => {
     }
     await assertLoginVisible(page);
     for (const locale of LOCALES) {
-      const next = await gotoAdminLogin(page, locale);
+      const next = await gotoAdminLogin(page, locale, { authenticate: true });
       if (next.status >= 500) continue;
       await page.screenshot({
         path: `e2e/screenshots/reports-login-${locale}.png`,
@@ -27,7 +27,7 @@ test.describe('Cost & Performance — routed sections', () => {
 
   for (const locale of LOCALES) {
     test(`reports money / orders / products / returns / coverage (${locale})`, async ({ page }) => {
-      const first = await gotoAdminLogin(page, locale);
+      const first = await gotoAdminLogin(page, locale, { authenticate: true });
       if (first.status >= 500 || first.status === 0) {
         test.skip(true, `Admin web returned ${first.status}`);
         return;
@@ -81,7 +81,7 @@ test.describe('Cost & Performance — routed sections', () => {
   }
 
   test('CSV export controls remain on the money desk', async ({ page }) => {
-    const first = await gotoAdminLogin(page, 'en');
+    const first = await gotoAdminLogin(page, 'en', { authenticate: true });
     if (first.status >= 500 || first.status === 0) {
       test.skip(true, `Admin web returned ${first.status}`);
       return;

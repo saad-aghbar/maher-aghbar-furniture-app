@@ -4,7 +4,7 @@ import { ADMIN, LOCALES, gotoAdminLogin } from './helpers';
 test.describe('Handwritten intake — admin sheet record', () => {
   for (const locale of LOCALES) {
     test(`request desk can open attachments (${locale})`, async ({ page }) => {
-      const first = await gotoAdminLogin(page, locale);
+      const first = await gotoAdminLogin(page, locale, { authenticate: true });
       if (first.status >= 500 || first.status === 0) {
         test.skip(true, `Admin web returned ${first.status}`);
         return;

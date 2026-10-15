@@ -5,10 +5,26 @@ export const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 export const LOCALES = ['en', 'ar', 'he'] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export async function gotoAdminLogin(page: Page, locale: Locale = 'en') {
+export async function gotoAdminLogin(
+  page: Page,
+  locale: Locale = 'en',
+  options: { authenticate?: boolean } = {},
+) {
   const url = `${ADMIN}/${locale}/login`;
   const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+  if (options.authenticate) {
+    expect(res?.ok(), `login page ${locale}`).toBeTruthy();
+    const login = await page.request.post(`${API}/api/v1/auth/login`, {
+      data: { username: 'admin', password: '123' },
+    });
+    expect(login.ok(), 'local admin fixture login').toBeTruthy();
+  }
   return { url, status: res?.status() ?? 0 };
+}
+
+export async function selectLoginPortal(page: Page, portal: 'dealer' | 'worker') {
+  const name = portal === 'dealer' ? /^(Dealer|تاجر|סוכן)$/ : /^(Worker|عامل|עובד)$/;
+  await page.getByRole('radio', { name }).click();
 }
 
 export async function assertLoginVisible(page: Page) {

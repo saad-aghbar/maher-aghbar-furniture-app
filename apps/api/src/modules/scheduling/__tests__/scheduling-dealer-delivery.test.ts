@@ -181,7 +181,7 @@ describe('dealer own schedule + own-deliveries isolation', () => {
     expect(dto).not.toHaveProperty('unschedulableReason');
   });
 
-  it('uses Delivery.deliveryDate as actual, not updatedAt', async () => {
+  it('uses actual receipt evidence, not the planned appointment or updatedAt', async () => {
     const { service, prisma } = makeService();
     const deliveredOn = new Date('2026-08-12T00:00:00.000Z');
     prisma.productionOrder.findFirst.mockResolvedValue({
@@ -198,7 +198,8 @@ describe('dealer own schedule + own-deliveries isolation', () => {
         deliveries: [
           {
             status: 'DELIVERED',
-            deliveryDate: deliveredOn,
+            deliveryDate: new Date('2026-08-10T00:00:00.000Z'),
+            actualDeliveredAt: deliveredOn,
             updatedAt: new Date('2026-08-15T12:00:00.000Z'),
           },
         ],

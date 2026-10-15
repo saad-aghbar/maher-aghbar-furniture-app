@@ -4,7 +4,7 @@ import { ADMIN, LOCALES, gotoAdminLogin } from './helpers';
 test.describe('Admin verification desk', () => {
   for (const locale of LOCALES) {
     test(`request desk shows the handwritten sheet (${locale})`, async ({ page }) => {
-      const first = await gotoAdminLogin(page, locale);
+      const first = await gotoAdminLogin(page, locale, { authenticate: true });
       if (first.status >= 500 || first.status === 0) {
         test.skip(true, `Admin web returned ${first.status}`);
         return;

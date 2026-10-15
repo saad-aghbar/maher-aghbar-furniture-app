@@ -4,7 +4,7 @@ import { ADMIN, LOCALES, gotoAdminLogin } from './helpers';
 test.describe('Labor costing — Cost & Performance slots', () => {
   for (const locale of LOCALES) {
     test(`money desk and order dossier labor (${locale})`, async ({ page }) => {
-      const first = await gotoAdminLogin(page, locale);
+      const first = await gotoAdminLogin(page, locale, { authenticate: true });
       if (first.status >= 500 || first.status === 0) {
         test.skip(true, `Admin web returned ${first.status}`);
         return;

@@ -165,14 +165,6 @@ import { PlacementService } from './placement.service';
 
 const DEBOUNCE_WINDOW_MS = 60_000;
 
-function isSameUtcDay(a: Date, b: Date): boolean {
-  return (
-    a.getUTCFullYear() === b.getUTCFullYear() &&
-    a.getUTCMonth() === b.getUTCMonth() &&
-    a.getUTCDate() === b.getUTCDate()
-  );
-}
-
 function mean(values: number[]): number {
   if (!values.length) return 0;
   return values.reduce((s, v) => s + v, 0) / values.length;

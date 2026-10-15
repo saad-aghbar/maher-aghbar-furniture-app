@@ -450,7 +450,7 @@ export class VariantsService {
   }
 
   async copyFromStandard(productId: string, id: string, userId: string) {
-    const target = await this.requireVariant(productId, id);
+    await this.requireVariant(productId, id);
     const standard = await this.prisma.productVariant.findFirst({
       where: { productId, isDefault: true, archivedAt: null },
       include: VARIANT_INCLUDE,
@@ -465,7 +465,7 @@ export class VariantsService {
       });
     }
     await this.clearVariantStageConfig(productId, id);
-    const row = await this.prisma.productVariant.update({
+    await this.prisma.productVariant.update({
       where: { id },
       data: {
         basePrice: standard.basePrice,

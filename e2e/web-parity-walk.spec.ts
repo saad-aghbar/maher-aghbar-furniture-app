@@ -1,11 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-
-test.use({
-  channel: 'chrome',
-  launchOptions: {
-    args: ['--guest'],
-  },
-});
+import { selectLoginPortal } from './helpers';
 
 const ADMIN = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
 const CUSTOMER = process.env.NEXT_PUBLIC_WEB_URL ?? process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://localhost:3000';
@@ -29,6 +23,9 @@ async function fillControlled(page: Page, autocomplete: string, value: string) {
 
 async function loginPortal(page: Page, origin: string, locale: string, username: string) {
   await page.goto(`${origin}/${locale}/login`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  if (username !== 'admin') {
+    await selectLoginPortal(page, username === 'nile' ? 'dealer' : 'worker');
+  }
   await fillControlled(page, 'username', username);
   await fillControlled(page, 'current-password', '123');
   const loginResponse = page.waitForResponse(
