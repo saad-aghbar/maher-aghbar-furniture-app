@@ -53,6 +53,8 @@ export type ProductionAttentionBlock = {
   ctaKind: ProductionAttentionCtaKind;
   taskId?: string | null;
   stageName?: string | null;
+  /** Stable list identity. Same code + task can still be two different cards. */
+  listKey?: string;
 };
 
 const CODE_SET = new Set<string>([
@@ -235,21 +237,36 @@ export function collectProductionAttention(input: {
 }): ProductionAttentionBlock[] {
   const out: ProductionAttentionBlock[] = [];
   const seen = new Set<string>();
+  const blockers = input.blockers ?? [];
+  // Readiness repeats each open blocker as OPEN_BLOCKER. The blocker row already
+  // carries category, task name, and the human reason — keep that one.
+  const blockerTaskIds = new Set(
+    blockers
+      .map((blocker) => blocker.taskId?.trim())
+      .filter((taskId): taskId is string => Boolean(taskId)),
+  );
 
   for (const reason of input.reasons ?? []) {
     const block = mapReadinessReasonToAttention(reason);
-    const key = `${block.code}:${block.taskId ?? ''}:${block.stageName ?? ''}`;
+    if (
+      block.code === 'OPEN_BLOCKER' &&
+      block.taskId &&
+      blockerTaskIds.has(block.taskId)
+    ) {
+      continue;
+    }
+    const key = `reason:${block.code}:${block.taskId ?? ''}:${block.stageName ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(block);
+    out.push({ ...block, listKey: key });
   }
 
-  for (const blocker of input.blockers ?? []) {
+  for (const blocker of blockers) {
     const block = mapBlockerToAttention(blocker);
     const key = `blocker:${blocker.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(block);
+    out.push({ ...block, listKey: key });
   }
 
   if (input.isLate && !out.some((b) => b.code === 'TASK_LATE')) {
@@ -259,6 +276,7 @@ export function collectProductionAttention(input: {
       whyKey: 'mobile.production.attention.why.TASK_LATE',
       nextKey: 'mobile.production.attention.next.TASK_LATE',
       ctaKind: 'scheduling',
+      listKey: 'late:TASK_LATE',
     });
   }
 

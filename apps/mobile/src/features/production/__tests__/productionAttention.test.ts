@@ -59,6 +59,44 @@ describe('productionAttention', () => {
     ).toContain('scheduling');
   });
 
+  it('shows one card when readiness repeats an open blocker on the same task', () => {
+    const taskId = 'e3d92eb4-593d-49f1-adf3-6d9097c69280';
+    const blocks = collectProductionAttention({
+      reasons: [
+        {
+          code: 'OPEN_BLOCKER',
+          taskId,
+          message: 'Waiting on hardware',
+        },
+      ],
+      blockers: [
+        {
+          id: 'blocker-1',
+          category: 'OTHER',
+          reason: 'Waiting on hardware',
+          taskId,
+          taskName: 'Assembly',
+        },
+      ],
+    });
+    const open = blocks.filter((block) => block.code === 'OPEN_BLOCKER');
+    expect(open).toHaveLength(1);
+    expect(open[0]?.taskId).toBe(taskId);
+    expect(open[0]?.stageName).toBe('Assembly');
+    expect(open[0]?.listKey).toBe('blocker:blocker-1');
+  });
+
+  it('keeps two blockers on the same task as separate cards', () => {
+    const taskId = 'task-1';
+    const blocks = collectProductionAttention({
+      blockers: [
+        { id: 'b1', category: 'OTHER', reason: 'Missing hinge', taskId },
+        { id: 'b2', category: 'OTHER', reason: 'Torn fabric', taskId },
+      ],
+    });
+    expect(blocks.map((block) => block.listKey)).toEqual(['blocker:b1', 'blocker:b2']);
+  });
+
   it('keeps human whyDetail when message is not a code', () => {
     const block = mapReadinessReasonToAttention({
       code: 'OPEN_BLOCKER',

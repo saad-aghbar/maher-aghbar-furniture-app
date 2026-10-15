@@ -72,7 +72,7 @@ export function ProductionAttentionBoard({
 
           return (
             <View
-              key={`${block.code}:${block.taskId ?? index}`}
+              key={block.listKey ?? `${block.code}:${block.taskId ?? 'task'}:${index}`}
               style={{
                 ...productionInsetStyle(theme, colors),
                 borderColor: colors.warning,

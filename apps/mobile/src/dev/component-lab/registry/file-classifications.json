@@ -606,7 +606,7 @@
     ],
     "notes": "route:/reports/coverage/[issueType]",
     "exportNames": [
-      "ReportsCoverageIssuesRoute"
+      "ReportsCoverageIssueRoute"
     ]
   },
   "app/(app)/(admin)/reports/coverage/[type].tsx": {
@@ -986,7 +986,7 @@
     ],
     "notes": "route:/catalog/[id]/customize",
     "exportNames": [
-      "CustomerCustomizeVariantRoute"
+      "LegacyCustomerCustomizeVariantRoute"
     ]
   },
   "app/(app)/(customer)/catalog/[id]/index.tsx": {
@@ -1047,6 +1047,16 @@
     "notes": "route:/order/custom",
     "exportNames": [
       "CustomerCustomItemRoute"
+    ]
+  },
+  "app/(app)/(customer)/order/modify.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-order-modify"
+    ],
+    "notes": "route:/order/modify",
+    "exportNames": [
+      "CustomerModifyCatalogItemRoute"
     ]
   },
   "app/(app)/(customer)/orders/[id]/flow.tsx": {
@@ -2141,6 +2151,16 @@
       "SectionHeader"
     ]
   },
+  "src/components/layout/StickyLogoutDock.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.sticky-logout-dock"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "StickyLogoutDock"
+    ]
+  },
   "src/components/maps/LocationMapPicker.tsx": {
     "classification": "REGISTERED",
     "registryIds": [
@@ -2239,6 +2259,16 @@
     "notes": "shared/motion",
     "exportNames": [
       "BottomSheet"
+    ]
+  },
+  "src/components/sheets/BottomSheetPanel.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.sheet-panel"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SheetPanel"
     ]
   },
   "src/components/sheets/ConfirmationSheet.tsx": {
@@ -3067,6 +3097,16 @@
       "CatalogScreen"
     ]
   },
+  "src/features/catalog/DealerCatalogDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.dealer-catalog-desk-host"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "DealerCatalogDeskHost"
+    ]
+  },
   "src/features/catalog/DealerCustomItemScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -3095,6 +3135,16 @@
     "notes": "feature-screen",
     "exportNames": [
       "ProductDetailScreen"
+    ]
+  },
+  "src/features/catalog/ProductsDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.products-desk-host"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductsDeskHost"
     ]
   },
   "src/features/catalog/components/BilingualNameField.tsx": {
@@ -3601,6 +3651,16 @@
       "DealerReceiptDetailScreen"
     ]
   },
+  "src/features/dealer-receipts/DealerReceiptsDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-receipts.dealer-receipts-desk-host"
+    ],
+    "notes": "parent-domain:dealer-receipts",
+    "exportNames": [
+      "DealerReceiptsDeskHost"
+    ]
+  },
   "src/features/dealer-receipts/DealerReceiptsListScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -3811,6 +3871,16 @@
     "notes": "feature-screen",
     "exportNames": [
       "DealerDetailScreen"
+    ]
+  },
+  "src/features/dealers/DealersDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealers-desk-host"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealersDeskHost"
     ]
   },
   "src/features/dealers/DealersListScreen.tsx": {
@@ -4983,6 +5053,16 @@
       "InvoiceDetailScreen"
     ]
   },
+  "src/features/invoices/InvoicesDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoices-desk-host"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoicesDeskHost"
+    ]
+  },
   "src/features/invoices/InvoicesListScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -5388,6 +5468,16 @@
     ],
     "notes": "parent-domain:pdf",
     "exportNames": []
+  },
+  "src/features/production/ProductionDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-desk-host"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionDeskHost"
+    ]
   },
   "src/features/production/ProductionDetailScreen.tsx": {
     "classification": "SCREEN_LINK",
@@ -5925,6 +6015,16 @@
       "PurchaseRunDetailScreen"
     ]
   },
+  "src/features/purchasing/PurchasingDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-desk-host"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingDeskHost"
+    ]
+  },
   "src/features/purchasing/PurchasingHubScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -6386,6 +6486,16 @@
       "DealerQuotationDetailScreen"
     ]
   },
+  "src/features/quotations/DealerQuotationsDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.dealer-quotations-desk-host"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "DealerQuotationsDeskHost"
+    ]
+  },
   "src/features/quotations/DealerQuotationsEntry.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -6538,6 +6648,26 @@
     "notes": "feature-screen",
     "exportNames": [
       "ReportsCoverageScreen"
+    ]
+  },
+  "src/features/reports/ReportsDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.reports.reports-money-desk-host",
+      "feature.reports.reports-orders-desk-host",
+      "feature.reports.reports-products-desk-host",
+      "feature.reports.reports-inventory-desk-host",
+      "feature.reports.reports-returns-desk-host",
+      "feature.reports.reports-coverage-desk-host"
+    ],
+    "notes": "parent-domain:reports",
+    "exportNames": [
+      "ReportsMoneyDeskHost",
+      "ReportsOrdersDeskHost",
+      "ReportsProductsDeskHost",
+      "ReportsInventoryDeskHost",
+      "ReportsReturnsDeskHost",
+      "ReportsCoverageDeskHost"
     ]
   },
   "src/features/reports/ReportsFallbackScreen.tsx": {
@@ -7154,6 +7284,16 @@
     "notes": "feature-screen",
     "exportNames": [
       "ReturnDetailScreen"
+    ]
+  },
+  "src/features/returns/ReturnsDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.returns-desk-host"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnsDeskHost"
     ]
   },
   "src/features/returns/ReturnsListScreen.tsx": {
@@ -8404,6 +8544,16 @@
       "TasksListScreen"
     ]
   },
+  "src/features/tasks/WorkerCompletedDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-completed-desk-host"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerCompletedDeskHost"
+    ]
+  },
   "src/features/tasks/WorkerCompletedSalesOrderItemsScreen.tsx": {
     "classification": "SCREEN_LINK",
     "registryIds": [
@@ -8432,6 +8582,16 @@
     "notes": "feature-screen",
     "exportNames": [
       "WorkerSalesOrderItemsScreen"
+    ]
+  },
+  "src/features/tasks/WorkerTasksDeskHost.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.worker-tasks-desk-host"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "WorkerTasksDeskHost"
     ]
   },
   "src/features/tasks/components/CompletedDatePickerSheet.tsx": {
@@ -9574,12 +9734,24 @@
     "classification": "REGISTERED",
     "registryIds": [
       "shared.split-pane",
+      "shared.split-pane-aside",
       "shared.split-pane-placeholder"
     ],
     "notes": "shared/motion",
     "exportNames": [
       "SplitPane",
+      "SplitPaneAside",
       "SplitPanePlaceholder"
+    ]
+  },
+  "src/adaptive/keyboardShortcuts.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.keyboard-shortcuts-host"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "KeyboardShortcutsHost"
     ]
   },
   "src/adaptive/windowMetrics.tsx": {

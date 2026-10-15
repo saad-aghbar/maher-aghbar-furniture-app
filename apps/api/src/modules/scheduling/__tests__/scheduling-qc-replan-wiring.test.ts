@@ -186,9 +186,6 @@ function makeQuality() {
     listEligibleReworkStages: jest.fn(),
     qualityAttentionCards: jest.fn(),
   } as any;
-  const notifications = {
-    notifyAdminUsers: jest.fn().mockResolvedValue({ ok: true, count: 0 }),
-  } as any;
   const inspections = new QualityInspectionService(
     prisma,
     sequences,

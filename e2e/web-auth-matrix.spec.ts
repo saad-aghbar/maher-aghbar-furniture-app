@@ -1,11 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { selectLoginPortal } from './helpers';
 
 const WEB = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'http://127.0.0.1:3000';
-
-test.use({
-  channel: 'chrome',
-  launchOptions: { args: ['--guest'] },
-});
 
 async function fillControlled(page: Page, autocomplete: string, value: string) {
   const input = page.locator(`input[autocomplete="${autocomplete}"]`);
@@ -45,6 +41,7 @@ test.describe('unified web auth matrix', () => {
 
   test('dealer cannot open admin dashboard', async ({ page }) => {
     await page.goto(`${WEB}/en/login`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await selectLoginPortal(page, 'dealer');
     await fillControlled(page, 'username', 'nile');
     await fillControlled(page, 'current-password', '123');
     const loginResponse = page.waitForResponse(
